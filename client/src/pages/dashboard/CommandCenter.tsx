@@ -13,14 +13,8 @@ import LaborCostIcon from '@assets/icons/actual_labor_cost.svg?react';
 import StarIcon from '@assets/icons/star.svg?react';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../../store/store';
-import { commandCenterService } from '../../services/commandCenter.service';
+import { commandCenterService, type HourlySalesRow } from '../../services/commandCenter.service';
 import type { CommandCenterKPIItem } from '../../components/CommandCenter';
-
-const hourlySalesXAxis = ['08 am', '11 am', '02 pm', '05 pm', '07 pm'];
-const hourlySalesSeries = [
-  { id: 'today', label: 'Today', data: [20, 100, 250, 450, 380], color: '#FBC52A' },
-  { id: 'lastWeek', label: 'Last Week', data: [15, 85, 220, 400, 420], color: '#22C55E' },
-];
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(value);
@@ -31,6 +25,9 @@ export const CommandCenter = () => {
   const [kpis, setKpis] = useState<Awaited<ReturnType<typeof commandCenterService.getKPIs>> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hourlySales, setHourlySales] = useState<HourlySalesRow[] | null>(null);
+  const [hourlySalesLoading, setHourlySalesLoading] = useState(false);
+  const [hourlySalesError, setHourlySalesError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentLocation?._id) {
@@ -45,6 +42,24 @@ export const CommandCenter = () => {
       .then(setKpis)
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load KPIs'))
       .finally(() => setLoading(false));
+  }, [currentLocation?._id]);
+
+  useEffect(() => {
+    if (!currentLocation?._id) {
+      setHourlySales(null);
+      setHourlySalesError(null);
+      return;
+    }
+    setHourlySalesLoading(true);
+    setHourlySalesError(null);
+    commandCenterService
+      .getHourlySales(currentLocation._id)
+      .then(setHourlySales)
+      .catch((err) => {
+        setHourlySalesError(err instanceof Error ? err.message : 'Failed to load hourly sales');
+        setHourlySales(null);
+      })
+      .finally(() => setHourlySalesLoading(false));
   }, [currentLocation?._id]);
 
   const commandCenterKPIs = useMemo((): CommandCenterKPIItem[] => {
@@ -87,6 +102,26 @@ export const CommandCenter = () => {
     ];
   }, [kpis, loading]);
 
+  const hourlyChartData = useMemo(() => {
+    if (hourlySales && hourlySales.length > 0) {
+      return {
+        xAxisData: hourlySales.map((r) => r.hour),
+        series: [
+          { id: 'today', label: 'Today', data: hourlySales.map((r) => r.today) },
+          { id: 'lastWeek', label: 'Last Week', data: hourlySales.map((r) => r.last_week) },
+        ],
+      };
+    }
+    const emptyHours = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
+    return {
+      xAxisData: emptyHours,
+      series: [
+        { id: 'today', label: 'Today', data: emptyHours.map(() => null) },
+        { id: 'lastWeek', label: 'Last Week', data: emptyHours.map(() => 0) },
+      ],
+    };
+  }, [hourlySales]);
+
   const showContentLoader = loading && currentLocation?._id;
 
   return (
@@ -117,10 +152,13 @@ export const CommandCenter = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
               <HourlySalesChartCard
-                xAxisData={hourlySalesXAxis}
-                series={hourlySalesSeries}
+                xAxisData={hourlyChartData.xAxisData}
+                series={hourlyChartData.series}
                 height={256}
                 className="lg:col-span-2"
+                yAxis={{ valueFormatter: (v) => formatCurrency(Number(v)) }}
+                loading={hourlySalesLoading}
+                error={hourlySalesError}
               />
               <LaborCostGaugeCard
                 value={kpis?.laborCostPercentToday ?? 0}

@@ -5,7 +5,8 @@ import { LineChart } from '@mui/x-charts/LineChart';
 export interface TimeSeriesSeries {
   id: string;
   label: string;
-  data: number[];
+  /** Y values; null skips/breaks the line (e.g. future hours). */
+  data: (number | null)[];
   color?: string;
 }
 
@@ -65,8 +66,8 @@ export const TimeSeriesLineChart = ({
     };
 
   const baseYAxisConfig = isDesktop
-    ? { tickLabelStyle: LABEL_FONT, labelStyle: LABEL_FONT }
-    : { tickLabelStyle: { ...LABEL_FONT, fontSize: 10 }, labelStyle: { ...LABEL_FONT, fontSize: 9 } };
+    ? { width: 76, tickNumber: 5, tickLabelStyle: { ...LABEL_FONT, overflow: 'visible' }, labelStyle: LABEL_FONT }
+    : { width: 64, tickNumber: 5, tickLabelStyle: { ...LABEL_FONT, fontSize: 10, overflow: 'visible' }, labelStyle: { ...LABEL_FONT, fontSize: 9 } };
   const yAxisConfig = yAxisOverrides
     ? { ...baseYAxisConfig, ...yAxisOverrides }
     : baseYAxisConfig;
@@ -79,6 +80,7 @@ export const TimeSeriesLineChart = ({
         series={chartSeries}
         height={height}
         margin={isDesktop ? desktopMargin : mobileMargin}
+        grid={{ vertical: true, horizontal: true }}
         hideLegend
       />
     </ThemeProvider>

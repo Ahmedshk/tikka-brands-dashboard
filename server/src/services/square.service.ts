@@ -23,6 +23,7 @@ interface NetAmounts {
 }
 
 interface SquareOrder {
+  created_at?: string;
   total_money?: Money;
   net_amounts?: NetAmounts;
   /** Tenders that were used to pay (Square returns this array). */
@@ -113,7 +114,8 @@ function orderNetSalesCents(order: SquareOrder): number {
   const tip = moneyToCents(net.tip_money);
   const serviceCharge = moneyToCents(net.service_charge_money);
   const cardSurcharge = moneyToCents(net.card_surcharge_money);
-  return Math.max(0, total - tax - tip - serviceCharge - cardSurcharge);
+  // return Math.max(0, total - tax - tip - serviceCharge - cardSurcharge);
+  return Math.max(0, total - tax - tip - cardSurcharge);
 }
 
 /**
@@ -186,4 +188,86 @@ export async function getNetSalesInRange(
   } while (cursor);
 
   return totalCents / 100;
+}
+
+export interface OrderInRange {
+  created_at: string;
+  amountCents: number;
+}
+
+/**
+ * Fetch all paid orders in the given time range with created_at and net sales (cents).
+ * Same filter and pagination as getNetSalesInRange; returns per-order data for bucketing.
+ */
+export async function searchOrdersInRange(
+  squareLocationId: string,
+  range: TimeRange,
+): Promise<OrderInRange[]> {
+  getAccessToken();
+  const { startAt, endAt } = range;
+
+  const result: OrderInRange[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const body: {
+      location_ids: string[];
+      query: {
+        filter: {
+          date_time_filter: {
+            created_at: { start_at: string; end_at: string };
+          };
+        };
+        sort: { sort_field: string; sort_order?: string };
+      };
+      limit?: number;
+      cursor?: string;
+    } = {
+      location_ids: [squareLocationId],
+      query: {
+        filter: {
+          date_time_filter: {
+            created_at: { start_at: startAt, end_at: endAt },
+          },
+        },
+        sort: { sort_field: "CREATED_AT", sort_order: "DESC" },
+      },
+      limit: 500,
+    };
+    if (cursor) body.cursor = cursor;
+
+    const res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Square API error ${res.status}: ${errText}`);
+    }
+
+    const data = (await res.json()) as SearchOrdersResponse;
+    if (data.errors && data.errors.length > 0) {
+      throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+    }
+
+    const orders = data.orders ?? [];
+    for (const order of orders) {
+      if (!isPaidOrder(order)) continue;
+      const created_at = order.created_at ?? "";
+      if (!created_at) continue;
+      result.push({
+        created_at,
+        amountCents: orderNetSalesCents(order),
+      });
+    }
+
+    cursor = data.cursor;
+  } while (cursor);
+
+  return result;
 }

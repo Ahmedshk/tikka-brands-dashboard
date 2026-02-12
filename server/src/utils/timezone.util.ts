@@ -180,3 +180,111 @@ export function getTodayRange(timezone?: string): {
     endAt: endDate.toISOString(),
   };
 }
+
+/**
+ * Get start and end of "today" as full calendar day (00:00:00 to 23:59:59) in RFC 3339 format.
+ * Does not clamp to current time; use for hourly bucketing where future hours will be null.
+ */
+export function getTodayRangeFullDay(timezone: string): {
+  startAt: string;
+  endAt: string;
+} {
+  const now = new Date();
+  const tz = timezone.trim();
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(now);
+  const get = (type: string) =>
+    parts.find((p) => p.type === type)?.value ?? "0";
+  const y = Number.parseInt(get("year"), 10);
+  const m = Number.parseInt(get("month"), 10) - 1;
+  const d = Number.parseInt(get("day"), 10);
+
+  const utcNoon = Date.UTC(y, m, d, 12, 0, 0, 0);
+  const hourFormatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+  });
+  const hourStr = hourFormatter.format(utcNoon);
+  const hour = Number.parseInt(hourStr.split(":")[0] ?? "0", 10);
+  const offsetHours = hour - 12;
+
+  const startDate = new Date(Date.UTC(y, m, d, -offsetHours, 0, 0, 0));
+  const endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+  return {
+    startAt: startDate.toISOString(),
+    endAt: endDate.toISOString(),
+  };
+}
+
+/**
+ * Get start and end of "same day last week" (today minus 7 days) in RFC 3339 format.
+ * "Today" is the local calendar day in the given IANA timezone; same day last week is that day minus 7.
+ */
+export function getSameDayLastWeekRange(timezone: string): {
+  startAt: string;
+  endAt: string;
+} {
+  const tz = timezone.trim();
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(now);
+  const get = (type: string) =>
+    parts.find((p) => p.type === type)?.value ?? "0";
+  const y = Number.parseInt(get("year"), 10);
+  const m = Number.parseInt(get("month"), 10) - 1;
+  const d = Number.parseInt(get("day"), 10);
+
+  const lastWeekDate = new Date(y, m, d - 7);
+  const y2 = lastWeekDate.getFullYear();
+  const m2 = lastWeekDate.getMonth();
+  const d2 = lastWeekDate.getDate();
+
+  const startDate = getStartOfDayUtc(y2, m2, d2, tz);
+  const endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+  return {
+    startAt: startDate.toISOString(),
+    endAt: endDate.toISOString(),
+  };
+}
+
+/**
+ * Get the current hour (0-23) in the given IANA timezone.
+ */
+export function getCurrentHourInTimezone(timezone: string): number {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone.trim(),
+    hour: "2-digit",
+    hour12: false,
+  });
+  const hourStr = formatter.format(new Date());
+  return Number.parseInt(hourStr, 10) || 0;
+}
+
+/**
+ * Get the hour (0-23) of an ISO 8601 timestamp when interpreted in the given IANA timezone.
+ */
+export function getHourInTimezone(isoDateString: string, timezone: string): number {
+  const date = new Date(isoDateString);
+  if (Number.isNaN(date.getTime())) return 0;
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone.trim(),
+    hour: "2-digit",
+    hour12: false,
+  });
+  const hourStr = formatter.format(date);
+  return Number.parseInt(hourStr, 10) || 0;
+}

@@ -20,5 +20,6 @@ export const API_ENDPOINTS = {
   GOALS: "/goals",
   COMMAND_CENTER: {
     KPIS: "/command-center/kpis",
+    HOURLY_SALES: "/command-center/hourly-sales",
   },
 } as const;

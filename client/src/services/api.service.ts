@@ -3,10 +3,20 @@ import axios, {
   AxiosError,
   InternalAxiosRequestConfig,
 } from "axios";
+import toast from "react-hot-toast";
 import { API_BASE_URL, API_ENDPOINTS } from "../utils/constants";
 import { ApiResponse } from "../types";
 import { store } from "../store/store";
 import { clearUser } from "../store/slices/auth.slice";
+
+function getErrorMessage(error: AxiosError<ApiResponse>): string {
+  const message = error.response?.data?.message;
+  if (typeof message === "string" && message.trim()) return message;
+  if (error.response?.status) {
+    return `Request failed (${error.response.status})`;
+  }
+  return error.message || "Something went wrong";
+}
 
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -58,6 +68,7 @@ api.interceptors.response.use(
         originalRequest.url?.includes("/auth/refresh") === true;
       if (isRefreshRequest) {
         store.dispatch(clearUser());
+        toast.error(getErrorMessage(error));
         throw error;
       }
 
@@ -67,10 +78,12 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch {
         store.dispatch(clearUser());
+        toast.error(getErrorMessage(error));
         throw error;
       }
     }
 
+    toast.error(getErrorMessage(error));
     throw error;
   }
 );
