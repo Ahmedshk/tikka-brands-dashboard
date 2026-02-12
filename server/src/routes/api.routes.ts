@@ -3,6 +3,7 @@ import authRoutes from "./auth.routes.js";
 import locationRoutes from "./location.routes.js";
 import goalRoutes from "./goal.routes.js";
 import commandCenterRoutes from "./commandCenter.routes.js";
+import salesLaborRoutes from "./salesLabor.routes.js";
 import { healthCheck } from "../controllers/health.controller.js";
 
 const router = Router();
@@ -21,5 +22,8 @@ router.use("/goals", goalRoutes);
 
 // Command Center KPIs (auth + role required)
 router.use("/command-center", commandCenterRoutes);
+
+// Sales & Labor Detail (auth + role required)
+router.use("/sales-labor", salesLaborRoutes);
 
 export default router;

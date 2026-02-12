@@ -22,10 +22,20 @@ interface NetAmounts {
   discount_money?: Money;
 }
 
+/** Order-level return amounts (Square Order.return_amounts). */
+interface OrderMoneyAmounts {
+  total_money?: Money;
+  [key: string]: unknown;
+}
+
 interface SquareOrder {
   created_at?: string;
   total_money?: Money;
   net_amounts?: NetAmounts;
+  /** Refund/return amounts for the order (Square Order.return_amounts). */
+  return_amounts?: OrderMoneyAmounts;
+  /** Refund transactions on this order (Square Order.refunds). */
+  refunds?: unknown[];
   /** Tenders that were used to pay (Square returns this array). */
   tenders?: unknown[];
   tender_ids?: string[];
@@ -270,4 +280,104 @@ export async function searchOrdersInRange(
   } while (cursor);
 
   return result;
+}
+
+export interface OrderStatsInRange {
+  orderCount: number;
+  netSalesCents: number;
+  totalDiscountCents: number;
+  totalRefundCents: number;
+  refundCount: number;
+}
+
+/**
+ * Aggregate order stats in range: count, net sales, total discounts, total refunds (all paid orders).
+ */
+export async function getOrderStatsInRange(
+  squareLocationId: string,
+  range: TimeRange,
+): Promise<OrderStatsInRange> {
+  getAccessToken();
+  const { startAt, endAt } = range;
+
+  const stats: OrderStatsInRange = {
+    orderCount: 0,
+    netSalesCents: 0,
+    totalDiscountCents: 0,
+    totalRefundCents: 0,
+    refundCount: 0,
+  };
+
+  let cursor: string | undefined;
+
+  do {
+    const body: {
+      location_ids: string[];
+      query: {
+        filter: {
+          date_time_filter: {
+            created_at: { start_at: string; end_at: string };
+          };
+        };
+        sort: { sort_field: string; sort_order?: string };
+      };
+      limit?: number;
+      cursor?: string;
+    } = {
+      location_ids: [squareLocationId],
+      query: {
+        filter: {
+          date_time_filter: {
+            created_at: { start_at: startAt, end_at: endAt },
+          },
+        },
+        sort: { sort_field: "CREATED_AT", sort_order: "DESC" },
+      },
+      limit: 500,
+    };
+    if (cursor) body.cursor = cursor;
+
+    const res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Square API error ${res.status}: ${errText}`);
+    }
+
+    const data = (await res.json()) as SearchOrdersResponse;
+    if (data.errors && data.errors.length > 0) {
+      throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+    }
+
+    const orders = data.orders ?? [];
+    for (const order of orders) {
+      const isPaid = isPaidOrder(order);
+      const refundCents = moneyToCents(order.return_amounts?.total_money);
+      const hasRefunds = refundCents > 0;
+
+      if (isPaid) {
+        stats.orderCount += 1;
+        stats.netSalesCents += orderNetSalesCents(order);
+        stats.totalDiscountCents += moneyToCents(
+          order.net_amounts?.discount_money,
+        );
+      }
+      // Include refunds from both paid orders (partial/full refunds) and refund-only orders (e.g. return records with no tenders).
+      if (hasRefunds) {
+        stats.totalRefundCents += refundCents;
+        stats.refundCount += Array.isArray(order.refunds) ? order.refunds.length : 1;
+      }
+    }
+
+    cursor = data.cursor;
+  } while (cursor);
+
+  return stats;
 }

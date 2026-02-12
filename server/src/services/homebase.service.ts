@@ -145,3 +145,47 @@ export async function getLaborCostInRange(
 
   return total;
 }
+
+/**
+ * Fetch total hours from Homebase timecards in the given time range.
+ * Sums labor.paid_hours (or labor.regular_hours) for each timecard with clock_in in the range.
+ */
+export async function getTotalHoursInRange(
+  homebaseLocationId: string,
+  range: TimeRange,
+): Promise<number> {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    return 0;
+  }
+
+  const locationUuid = homebaseLocationId.trim();
+  if (!locationUuid) {
+    return 0;
+  }
+
+  const { startAt, endAt } = range;
+  const timecards = await getTimecardsForDateRange(
+    locationUuid,
+    startAt,
+    endAt,
+  );
+
+  let total = 0;
+  for (const tc of timecards) {
+    const labor = tc.labor;
+    const hours =
+      (typeof labor?.paid_hours === "number" &&
+      Number.isFinite(labor.paid_hours)
+        ? labor.paid_hours
+        : undefined) ??
+      (typeof labor?.regular_hours === "number" &&
+      Number.isFinite(labor.regular_hours)
+        ? labor.regular_hours
+        : undefined) ??
+      0;
+    total += hours;
+  }
+
+  return total;
+}

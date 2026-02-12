@@ -84,7 +84,7 @@ export const KPICard = ({
       return (
         <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
           {subtitleIcon}
-          {subtitle != null && <span className="text-base md:text-lg 2xl:text-xl font-medium text-primary">{subtitle}</span>}
+          {subtitle != null && <span className="text-[10px] md:text-xs 2xl:text-sm font-medium text-primary">{subtitle}</span>}
           {extra != null && (
             <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] md:text-xs 2xl:text-sm font-medium ${extraClassName}`}>
               {extra}
