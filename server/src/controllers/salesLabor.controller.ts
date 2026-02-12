@@ -4,7 +4,10 @@ import {
   getTotalHoursInRange,
 } from "../services/homebase.service.js";
 import { LocationService } from "../services/location.service.js";
-import { getOrderStatsInRange } from "../services/square.service.js";
+import {
+  getOrderStatsAndSourcesInRange,
+  type SourcesOfSalesSegment,
+} from "../services/square.service.js";
 import type { TimeRange } from "../utils/businessHours.util.js";
 import { getBusinessStartTimeRange } from "../utils/timezone.util.js";
 import { NotFoundError } from "../utils/errors.util.js";
@@ -21,6 +24,7 @@ export interface SalesLaborKPIsData {
   totalDiscounts: number | null;
   totalRefunds: number | null;
   totalRefundCount: number | null;
+  sourcesOfSales: SourcesOfSalesSegment[];
 }
 
 export const getSalesLaborKPIs = async (
@@ -50,23 +54,25 @@ export const getSalesLaborKPIs = async (
       timezone,
       businessStartTime,
     );
-    console.log("🚀 ~ getSalesLaborKPIs ~ range:", range);
 
     let actualTotalSales: number | null = null;
     let transactionCount: number | null = null;
     let totalDiscounts: number | null = null;
     let totalRefunds: number | null = null;
     let totalRefundCount: number | null = null;
+    let sourcesOfSales: SourcesOfSalesSegment[] = [];
 
     const squareLocationId = location.squareLocationId?.trim();
     if (squareLocationId) {
       try {
-        const orderStats = await getOrderStatsInRange(squareLocationId, range);
+        const { orderStats, sourcesOfSales: segments } =
+          await getOrderStatsAndSourcesInRange(squareLocationId, range);
         actualTotalSales = orderStats.netSalesCents / 100;
         transactionCount = orderStats.orderCount;
         totalDiscounts = orderStats.totalDiscountCents / 100;
         totalRefunds = orderStats.totalRefundCents / 100;
         totalRefundCount = orderStats.refundCount;
+        sourcesOfSales = segments;
       } catch (err) {
         console.error("[Sales Labor] Square order stats error:", err);
       }
@@ -124,6 +130,7 @@ export const getSalesLaborKPIs = async (
         totalDiscounts,
         totalRefunds,
         totalRefundCount,
+        sourcesOfSales,
       },
     });
   } catch (error) {
@@ -142,5 +149,6 @@ function buildEmptySalesLaborKPIs(): SalesLaborKPIsData {
     totalDiscounts: null,
     totalRefunds: null,
     totalRefundCount: null,
+    sourcesOfSales: [],
   };
 }

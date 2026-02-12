@@ -29,13 +29,6 @@ const hourlyLabels = ['08 am', '09 am', '10 am', '11 am', '12 pm', '01 pm', '02 
 const hourlySalesData = [120, 280, 420, 580, 720, 650, 480, 520, 610, 750, 680, 390];
 const hourlyLaborCostData = [18, 19, 20, 21, 22, 23, 22, 21, 22, 23, 24, 22];
 
-const sourcesOfSalesSegments = [
-  { id: 'kiosk', label: 'Kiosk', value: 52, amount: '$4,381', color: '#FBC52A' },
-  { id: 'pickup', label: 'Pickup', value: 24, amount: '$2,022', color: '#00BCD4' },
-  { id: 'doordash', label: 'DoorDash', value: 16, amount: '$1,348', color: '#EF4444' },
-  { id: 'grubhub', label: 'GrubHub', value: 8, amount: '$674', color: '#22C55E' },
-];
-
 const clockedInStaffRows = [
   { name: 'Alex Jonson', role: 'Line Cook', clockIn: '10:00 am', currentHours: 6.5, status: 'On Clock' as const },
   { name: 'Kraven meachle', role: 'Prep Cook', clockIn: '8:00 am', currentHours: 6.5, status: 'On Break' as const },
@@ -184,8 +177,12 @@ export const SalesLaborDetails = () => {
                 className="lg:col-span-2"
               />
               <SourcesOfSalesCard
-                totalSales="$8,425"
-                segments={sourcesOfSalesSegments}
+                totalSales={
+                  kpis?.actualTotalSales != null
+                    ? formatCurrency(kpis.actualTotalSales)
+                    : '—'
+                }
+                segments={kpis?.sourcesOfSales ?? []}
                 subtitle="Today"
               />
             </div>

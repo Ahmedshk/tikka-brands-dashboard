@@ -40,6 +40,10 @@ interface SquareOrder {
   tenders?: unknown[];
   tender_ids?: string[];
   payment_ids?: string[];
+  /** Origination of the order (Square Order.source). */
+  source?: { name?: string };
+  /** Fulfillment details (Square Order.fulfillments). */
+  fulfillments?: Array<{ type?: string }>;
 }
 
 interface SearchOrdersResponse {
@@ -125,7 +129,239 @@ function orderNetSalesCents(order: SquareOrder): number {
   const serviceCharge = moneyToCents(net.service_charge_money);
   const cardSurcharge = moneyToCents(net.card_surcharge_money);
   // return Math.max(0, total - tax - tip - serviceCharge - cardSurcharge);
-  return Math.max(0, total - tax - tip - cardSurcharge);
+  return Math.max(0, total - tax - tip - cardSurcharge); //Do not include service charge for now
+}
+
+/**
+ * Shared SearchOrders pagination: fetches all orders in the given location and created_at range.
+ * Used so we can run both order stats and sources-of-sales aggregation in one pass.
+ */
+async function fetchOrdersInRange(
+  squareLocationId: string,
+  range: TimeRange,
+): Promise<SquareOrder[]> {
+  const { startAt, endAt } = range;
+  const all: SquareOrder[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const body: {
+      location_ids: string[];
+      query: {
+        filter: {
+          date_time_filter: {
+            created_at: { start_at: string; end_at: string };
+          };
+        };
+        sort: { sort_field: string; sort_order?: string };
+      };
+      limit?: number;
+      cursor?: string;
+    } = {
+      location_ids: [squareLocationId],
+      query: {
+        filter: {
+          date_time_filter: {
+            created_at: { start_at: startAt, end_at: endAt },
+          },
+        },
+        sort: { sort_field: "CREATED_AT", sort_order: "DESC" },
+      },
+      limit: 500,
+    };
+    if (cursor) body.cursor = cursor;
+
+    const res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Square API error ${res.status}: ${errText}`);
+    }
+
+    const data = (await res.json()) as SearchOrdersResponse;
+    if (data.errors && data.errors.length > 0) {
+      throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+    }
+
+    const orders = data.orders ?? [];
+    all.push(...orders);
+    cursor = data.cursor;
+  } while (cursor);
+
+  return all;
+}
+
+/**
+ * Aggregate order stats from an array of orders (same logic as getOrderStatsInRange).
+ */
+function getOrderStatsFromOrders(orders: SquareOrder[]): OrderStatsInRange {
+  const stats: OrderStatsInRange = {
+    orderCount: 0,
+    netSalesCents: 0,
+    totalDiscountCents: 0,
+    totalRefundCents: 0,
+    refundCount: 0,
+  };
+
+  for (const order of orders) {
+    const isPaid = isPaidOrder(order);
+    const refundCents = moneyToCents(order.return_amounts?.total_money);
+    const hasRefunds = refundCents > 0;
+
+    if (isPaid) {
+      stats.orderCount += 1;
+      stats.netSalesCents += orderNetSalesCents(order);
+      stats.totalDiscountCents += moneyToCents(
+        order.net_amounts?.discount_money,
+      );
+    }
+    if (hasRefunds) {
+      stats.totalRefundCents += refundCents;
+      stats.refundCount += Array.isArray(order.refunds)
+        ? order.refunds.length
+        : 1;
+    }
+  }
+
+  return stats;
+}
+
+export interface SourcesOfSalesSegment {
+  id: string;
+  label: string;
+  value: number;
+  amount: string;
+  color: string;
+}
+
+const SOURCE_LABEL_MAP: Record<string, string> = {
+  "square point of sale": "In-Store",
+  "square for restaurants": "In-Store",
+  "square pos": "In-Store",
+  pos: "In-Store",
+  pickup: "Pickup",
+  delivery: "Delivery",
+  shipment: "Shipment",
+  kiosk: "Kiosk",
+  doordash: "DoorDash",
+  grubhub: "GrubHub",
+  "grub hub": "GrubHub",
+  other: "Other",
+  "in-store": "In-Store",
+  simple: "Order",
+  order: "Order",
+};
+
+/**
+ * Sources of Sales chart palette: no repeated colors.
+ * First 11 = KPI card accent colors (green, gold, blue, orange, purple, red, yellow, gray, azure, positive, negative).
+ * Next 9 = extra distinct colors for additional segments.
+ */
+const SOURCES_CHART_PALETTE: string[] = [
+  "#5DC54F",   // green
+  "#FDB90E",   // gold
+  "#009BBE",   // blue
+  "#F59E0B",   // orange
+  "#BE68FF",   // purple
+  "#FF1C28",   // red
+  "#FFFF00",   // yellow
+  "#6D6D6D",   // gray
+  "#79AFFF",   // azure
+  "#22C55E",   // positive (green)
+  "#EF4444",   // negative (red)
+  "#00BCD4",   // cyan
+  "#E91E63",   // pink
+  "#9C27B0",   // deep purple
+  "#3F51B5",   // indigo
+  "#009688",   // teal
+  "#8BC34A",   // light green
+  "#FF9800",   // amber
+  "#795548",   // brown
+  "#607D8B",   // blue grey
+];
+
+function deriveSegmentKey(order: SquareOrder): string {
+  const sourceName = (order.source?.name ?? "").trim().toLowerCase();
+  const fulfillmentType = order.fulfillments?.[0]?.type?.trim().toLowerCase();
+
+  if (sourceName) {
+    const mapped = SOURCE_LABEL_MAP[sourceName];
+    if (mapped) return mapped.toLowerCase().replace(/\s+/g, "-");
+    return sourceName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  }
+  if (fulfillmentType) {
+    const mapped = SOURCE_LABEL_MAP[fulfillmentType];
+    if (mapped) return mapped.toLowerCase().replace(/\s+/g, "-");
+    return fulfillmentType;
+  }
+  return "order";
+}
+
+function segmentKeyToLabel(key: string): string {
+  const normalized = key.toLowerCase().replace(/\s+/g, "-");
+  return SOURCE_LABEL_MAP[normalized] ?? key.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function segmentColorByIndex(index: number): string {
+  return SOURCES_CHART_PALETTE[index % SOURCES_CHART_PALETTE.length] ?? "#6D6D6D";
+}
+
+/**
+ * Aggregate net sales by source/fulfillment from an array of orders.
+ * Returns segments with id, label, value (percentage 0-100), amount (formatted), color.
+ */
+function getSourcesOfSalesFromOrders(orders: SquareOrder[]): SourcesOfSalesSegment[] {
+  const byKey: Record<string, number> = {};
+
+  for (const order of orders) {
+    if (!isPaidOrder(order)) continue;
+    const cents = orderNetSalesCents(order);
+    if (cents <= 0) continue;
+    const key = deriveSegmentKey(order);
+    byKey[key] = (byKey[key] ?? 0) + cents;
+  }
+
+  const totalCents = Object.values(byKey).reduce((a, b) => a + b, 0);
+  if (totalCents <= 0) return [];
+
+  const keys = Object.keys(byKey).sort((a, b) => a.localeCompare(b));
+  return keys.map((key, index) => {
+    const amountCents = byKey[key] ?? 0;
+    const value = Math.round((amountCents / totalCents) * 1000) / 10;
+    const amountDollars = amountCents / 100;
+    const amount = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amountDollars);
+    return {
+      id: key,
+      label: segmentKeyToLabel(key),
+      value,
+      amount,
+      color: segmentColorByIndex(index),
+    };
+  });
+}
+
+/**
+ * Fetch sources-of-sales segments for the given location and range.
+ */
+export async function getSourcesOfSalesInRange(
+  squareLocationId: string,
+  range: TimeRange,
+): Promise<SourcesOfSalesSegment[]> {
+  getAccessToken();
+  const orders = await fetchOrdersInRange(squareLocationId, range);
+  return getSourcesOfSalesFromOrders(orders);
 }
 
 /**
@@ -292,92 +528,33 @@ export interface OrderStatsInRange {
 
 /**
  * Aggregate order stats in range: count, net sales, total discounts, total refunds (all paid orders).
+ * Uses shared fetchOrdersInRange + getOrderStatsFromOrders.
  */
 export async function getOrderStatsInRange(
   squareLocationId: string,
   range: TimeRange,
 ): Promise<OrderStatsInRange> {
   getAccessToken();
-  const { startAt, endAt } = range;
+  const orders = await fetchOrdersInRange(squareLocationId, range);
+  return getOrderStatsFromOrders(orders);
+}
 
-  const stats: OrderStatsInRange = {
-    orderCount: 0,
-    netSalesCents: 0,
-    totalDiscountCents: 0,
-    totalRefundCents: 0,
-    refundCount: 0,
+export interface OrderStatsAndSourcesResult {
+  orderStats: OrderStatsInRange;
+  sourcesOfSales: SourcesOfSalesSegment[];
+}
+
+/**
+ * Fetch orders once and return both order stats and sources-of-sales segments (one SearchOrders flow).
+ */
+export async function getOrderStatsAndSourcesInRange(
+  squareLocationId: string,
+  range: TimeRange,
+): Promise<OrderStatsAndSourcesResult> {
+  getAccessToken();
+  const orders = await fetchOrdersInRange(squareLocationId, range);
+  return {
+    orderStats: getOrderStatsFromOrders(orders),
+    sourcesOfSales: getSourcesOfSalesFromOrders(orders),
   };
-
-  let cursor: string | undefined;
-
-  do {
-    const body: {
-      location_ids: string[];
-      query: {
-        filter: {
-          date_time_filter: {
-            created_at: { start_at: string; end_at: string };
-          };
-        };
-        sort: { sort_field: string; sort_order?: string };
-      };
-      limit?: number;
-      cursor?: string;
-    } = {
-      location_ids: [squareLocationId],
-      query: {
-        filter: {
-          date_time_filter: {
-            created_at: { start_at: startAt, end_at: endAt },
-          },
-        },
-        sort: { sort_field: "CREATED_AT", sort_order: "DESC" },
-      },
-      limit: 500,
-    };
-    if (cursor) body.cursor = cursor;
-
-    const res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${getAccessToken()}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Square API error ${res.status}: ${errText}`);
-    }
-
-    const data = (await res.json()) as SearchOrdersResponse;
-    if (data.errors && data.errors.length > 0) {
-      throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
-    }
-
-    const orders = data.orders ?? [];
-    for (const order of orders) {
-      const isPaid = isPaidOrder(order);
-      const refundCents = moneyToCents(order.return_amounts?.total_money);
-      const hasRefunds = refundCents > 0;
-
-      if (isPaid) {
-        stats.orderCount += 1;
-        stats.netSalesCents += orderNetSalesCents(order);
-        stats.totalDiscountCents += moneyToCents(
-          order.net_amounts?.discount_money,
-        );
-      }
-      // Include refunds from both paid orders (partial/full refunds) and refund-only orders (e.g. return records with no tenders).
-      if (hasRefunds) {
-        stats.totalRefundCents += refundCents;
-        stats.refundCount += Array.isArray(order.refunds) ? order.refunds.length : 1;
-      }
-    }
-
-    cursor = data.cursor;
-  } while (cursor);
-
-  return stats;
 }

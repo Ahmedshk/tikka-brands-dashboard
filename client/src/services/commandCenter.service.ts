@@ -16,6 +16,14 @@ export interface HourlySalesRow {
   last_week: number;
 }
 
+export interface SourcesOfSalesSegment {
+  id: string;
+  label: string;
+  value: number;
+  amount: string;
+  color: string;
+}
+
 export interface SalesLaborKPIsData {
   actualTotalSales: number | null;
   actualLaborCostPercent: number | null;
@@ -26,6 +34,7 @@ export interface SalesLaborKPIsData {
   totalDiscounts: number | null;
   totalRefunds: number | null;
   totalRefundCount: number | null;
+  sourcesOfSales: SourcesOfSalesSegment[];
 }
 
 export const commandCenterService = {
