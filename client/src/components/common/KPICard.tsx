@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 
-export type KPICardAccentColor = 'green' | 'gray' | 'gold' | 'blue' | 'orange' | 'purple' | 'red' | 'yellow' | 'azure';
+export type KPICardAccentColor = 'green' | 'gray' | 'gold' | 'blue' | 'orange' | 'purple' | 'red' | 'yellow' | 'azure' | 'positive' | 'negative';
 
 const accentBorderClass: Record<KPICardAccentColor, string> = {
   green: 'border-l-[#5DC54F]',
@@ -11,7 +11,9 @@ const accentBorderClass: Record<KPICardAccentColor, string> = {
   red: 'border-l-[#FF1C28]',
   yellow: "border-l-[#FFFF00]",
   gray: "border-l-[#6D6D6D]",
-  azure: "border-l-[#79AFFF]"
+  azure: "border-l-[#79AFFF]",
+  positive: 'border-l-positive',
+  negative: 'border-l-negative',
 };
 
 export interface KPICardProps {

@@ -72,6 +72,9 @@ export const locationService = {
     storeName: string;
     address: string;
     squareLocationId: string;
+    homebaseLocationId: string;
+    timezone: string;
+    businessStartTime: string;
   }): Promise<Location> {
     const res = await api.post<ApiResponse<{ location: Location }>>(
       BASE,
@@ -89,6 +92,9 @@ export const locationService = {
       storeName: string;
       address: string;
       squareLocationId: string;
+      homebaseLocationId: string;
+      timezone: string;
+      businessStartTime: string;
     }>
   ): Promise<Location> {
     const res = await api.put<ApiResponse<{ location: Location }>>(

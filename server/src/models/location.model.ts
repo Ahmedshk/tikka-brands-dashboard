@@ -24,6 +24,21 @@ const locationSchema = new Schema<LocationDocument>(
       required: true,
       trim: true,
     },
+    homebaseLocationId: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    timezone: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    businessStartTime: {
+      type: String,
+      required: true,
+      trim: true,
+    },
   },
   {
     timestamps: true,

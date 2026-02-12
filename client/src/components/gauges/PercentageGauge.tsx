@@ -15,12 +15,28 @@ export interface PercentageGaugeProps {
   segmentStops?: number[];
   /** Colors for segments (default green, yellow, red) */
   segmentColors?: string[];
+  /** If set, show a tick mark on the arc at this value (e.g. goal line) */
+  goalTick?: number | null;
   /** Gauge size (e.g. max width); component is responsive */
   size?: number;
 }
 
 const DEFAULT_SEGMENT_STOPS = [33, 66, 100];
 const DEFAULT_SEGMENT_COLORS = ['#22C55E', '#EAB308', '#EF4444'];
+
+const INTERVAL_TICKS = [0, 20, 40, 60, 80, 100];
+const GOAL_TICK_COLOR = '#FBC52A';
+
+function buildTicks(goalTick: number | null): number[] {
+  if (goalTick == null || goalTick <= 0 || goalTick >= 100) {
+    return INTERVAL_TICKS;
+  }
+  const hasGoal = INTERVAL_TICKS.some((t) => Math.abs(t - goalTick) < 1);
+  if (hasGoal) {
+    return INTERVAL_TICKS;
+  }
+  return [...INTERVAL_TICKS, goalTick].sort((a, b) => a - b);
+}
 
 export const PercentageGauge = ({
   value,
@@ -31,6 +47,7 @@ export const PercentageGauge = ({
   overTarget = null,
   segmentStops = DEFAULT_SEGMENT_STOPS,
   segmentColors = DEFAULT_SEGMENT_COLORS,
+  goalTick = null,
   size = 280,
 }: PercentageGaugeProps) => {
   const subArcs = segmentStops.map((limit, i) => ({
@@ -38,6 +55,21 @@ export const PercentageGauge = ({
     color: segmentColors[i] ?? segmentColors.at(-1) ?? '#6B7280',
     showTick: false,
   }));
+
+  const tickValues = buildTicks(goalTick);
+  const isGoalTick = (v: number) =>
+    goalTick != null && Math.abs(v - goalTick) < 0.5;
+  const ticks = tickValues.map((v) =>
+    isGoalTick(v)
+      ? {
+          value: v,
+          valueConfig: { style: { fill: GOAL_TICK_COLOR, fontWeight: 'bold' } },
+          lineConfig: { color: GOAL_TICK_COLOR },
+        }
+      : { value: v }
+  );
+  const formatTickLabel = (val: number): string =>
+    goalTick != null && Math.abs(val - goalTick) < 0.5 ? `${val}% (Goal)` : `${val}%`;
 
   const formatValue = (val: number) => `${val.toFixed(1)}${unit}`;
 
@@ -65,7 +97,11 @@ export const PercentageGauge = ({
             hide: true,
           },
           tickLabels: {
-            hideMinMax: true,
+            hideMinMax: false,
+            ticks,
+            defaultTickValueConfig: {
+              formatTextValue: formatTickLabel,
+            },
           },
         }}
         minValue={min}
@@ -79,7 +115,7 @@ export const PercentageGauge = ({
         <>
           <hr className="w-full border-gray-200 mt-3 mb-2" />
           <p
-            className={`flex items-center justify-center gap-1 text-sm font-medium ${overTarget > 0 ? 'text-red-600' : 'text-green-600'}`}
+            className={`flex items-center justify-center gap-1 text-sm font-medium ${overTarget > 0 ? 'text-negative' : 'text-positive'}`}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               {overTarget > 0 ? (

@@ -3,6 +3,9 @@ export interface ILocation {
   storeName: string;
   address: string;
   squareLocationId: string;
+  homebaseLocationId: string;
+  timezone: string;
+  businessStartTime: string;
   createdAt?: Date;
   updatedAt?: Date;
 }

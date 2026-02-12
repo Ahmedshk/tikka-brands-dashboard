@@ -128,6 +128,12 @@ export const LocationManagement = () => {
                         <p className="text-xs text-gray-500 mt-0.5 line-clamp-2" title={loc.address}>
                           {loc.address}
                         </p>
+                        <p className="text-xs text-gray-600 mt-1" title={loc.timezone}>
+                          <span className="font-medium">Timezone:</span> {loc.timezone}
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          <span className="font-medium">Business start time:</span> {loc.businessStartTime}
+                        </p>
                       </div>
                       <div className="flex items-center justify-end gap-0 sm:gap-2">
                         <button
@@ -154,11 +160,13 @@ export const LocationManagement = () => {
 
               {/* Desktop: table */}
               <div className="hidden md:block overflow-x-auto">
-                <table className="w-full table-fixed min-w-[32rem]">
+                <table className="w-full table-fixed min-w-[40rem]">
                   <thead>
                     <tr className="bg-button-primary text-white">
-                      <th className="w-[30%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">Store name</th>
-                      <th className="w-[60%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">Address</th>
+                      <th className="w-[20%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">Store name</th>
+                      <th className="w-[35%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">Address</th>
+                      <th className="w-[22%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">Timezone</th>
+                      <th className="w-[13%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">Business start time</th>
                       <th className="text-right text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">Actions</th>
                     </tr>
                   </thead>
@@ -167,8 +175,10 @@ export const LocationManagement = () => {
                       const rowBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                       return (
                         <tr key={loc._id} className={rowBg}>
-                          <td className="w-[30%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.storeName}>{loc.storeName}</td>
-                          <td className="w-[60%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.address}>{loc.address}</td>
+                          <td className="w-[20%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.storeName}>{loc.storeName}</td>
+                          <td className="w-[35%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.address}>{loc.address}</td>
+                          <td className="w-[22%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.timezone}>{loc.timezone}</td>
+                          <td className="w-[13%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary">{loc.businessStartTime}</td>
                           <td className="px-4 lg:px-6 py-3 lg:py-4 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <button

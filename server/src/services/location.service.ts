@@ -54,12 +54,25 @@ export class LocationService {
     }
   }
 
-  private toLocation(doc: { _id: unknown; storeName: string; address: string; squareLocationId: string; createdAt: Date; updatedAt: Date }): ILocation {
+  private toLocation(doc: {
+    _id: unknown;
+    storeName: string;
+    address: string;
+    squareLocationId: string;
+    homebaseLocationId?: string;
+    timezone?: string;
+    businessStartTime?: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }): ILocation {
     return {
       _id: String(doc._id),
       storeName: doc.storeName,
       address: doc.address,
       squareLocationId: doc.squareLocationId,
+      homebaseLocationId: doc.homebaseLocationId ?? "",
+      timezone: doc.timezone ?? "",
+      businessStartTime: doc.businessStartTime ?? "00:00",
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     };

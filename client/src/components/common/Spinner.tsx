@@ -1,13 +1,14 @@
 export interface SpinnerProps {
   className?: string;
   /** Size preset; overridden by className width/height */
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 const sizeClasses = {
   sm: 'h-4 w-4',
   md: 'h-6 w-6',
   lg: 'h-10 w-10',
+  xl: 'h-16 w-16',
 };
 
 export const Spinner = ({ className = '', size = 'md' }: SpinnerProps) => (

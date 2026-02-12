@@ -9,8 +9,15 @@ export const createLocation = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { storeName, address, squareLocationId } = req.body;
-    const location = await locationService.create({ storeName, address, squareLocationId });
+    const { storeName, address, squareLocationId, homebaseLocationId, timezone, businessStartTime } = req.body;
+    const location = await locationService.create({
+      storeName,
+      address,
+      squareLocationId,
+      homebaseLocationId,
+      timezone,
+      businessStartTime,
+    });
     res.status(201).json({
       success: true,
       message: 'Location created successfully',
@@ -84,8 +91,15 @@ export const updateLocation = async (
       res.status(400).json({ success: false, message: 'Invalid location id' });
       return;
     }
-    const { storeName, address, squareLocationId } = req.body;
-    const location = await locationService.update(id, { storeName, address, squareLocationId });
+    const { storeName, address, squareLocationId, homebaseLocationId, timezone, businessStartTime } = req.body;
+    const location = await locationService.update(id, {
+      ...(storeName !== undefined && { storeName }),
+      ...(address !== undefined && { address }),
+      ...(squareLocationId !== undefined && { squareLocationId }),
+      ...(homebaseLocationId !== undefined && { homebaseLocationId }),
+      ...(timezone !== undefined && { timezone }),
+      ...(businessStartTime !== undefined && { businessStartTime }),
+    });
     res.status(200).json({
       success: true,
       message: 'Location updated successfully',

@@ -1,9 +1,17 @@
 import { z } from "zod";
 
+const businessStartTimeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+
 const locationBodySchema = z.object({
   storeName: z.string().min(1, "Store name is required").trim(),
   address: z.string().min(1, "Address is required").trim(),
   squareLocationId: z.string().min(1, "Square location ID is required").trim(),
+  homebaseLocationId: z.string().min(1, "Homebase location ID is required").trim(),
+  timezone: z.string().min(1, "Timezone is required").trim(),
+  businessStartTime: z
+    .string()
+    .trim()
+    .regex(businessStartTimeRegex, "Use HH:mm 24h format"),
 });
 
 export const createLocationSchema = z.object({

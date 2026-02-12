@@ -39,6 +39,9 @@ export interface Location {
   storeName: string;
   address: string;
   squareLocationId: string;
+  homebaseLocationId: string;
+  timezone: string;
+  businessStartTime: string;
   createdAt?: string;
   updatedAt?: string;
 }
