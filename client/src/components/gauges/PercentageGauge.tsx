@@ -25,7 +25,7 @@ const DEFAULT_SEGMENT_STOPS = [33, 66, 100];
 const DEFAULT_SEGMENT_COLORS = ['#22C55E', '#EAB308', '#EF4444'];
 
 const INTERVAL_TICKS = [0, 20, 40, 60, 80, 100];
-const GOAL_TICK_COLOR = '#FBC52A';
+const GOAL_TICK_COLOR = '#000000';
 
 function buildTicks(goalTick: number | null): number[] {
   if (goalTick == null || goalTick <= 0 || goalTick >= 100) {
@@ -59,15 +59,21 @@ export const PercentageGauge = ({
   const tickValues = buildTicks(goalTick);
   const isGoalTick = (v: number) =>
     goalTick != null && Math.abs(v - goalTick) < 0.5;
-  const ticks = tickValues.map((v) =>
-    isGoalTick(v)
-      ? {
-          value: v,
-          valueConfig: { style: { fill: GOAL_TICK_COLOR, fontWeight: 'bold' } },
-          lineConfig: { color: GOAL_TICK_COLOR },
-        }
-      : { value: v }
-  );
+  const showLabel = (v: number) =>
+    v === 0 || v === 100 || isGoalTick(v);
+  const ticks = tickValues.map((v) => {
+    if (isGoalTick(v)) {
+      return {
+        value: v,
+        valueConfig: { style: { fill: GOAL_TICK_COLOR, fontWeight: 'bold' } },
+        lineConfig: { color: GOAL_TICK_COLOR },
+      };
+    }
+    if (!showLabel(v)) {
+      return { value: v, valueConfig: { hide: true } };
+    }
+    return { value: v };
+  });
   const formatTickLabel = (val: number): string =>
     goalTick != null && Math.abs(val - goalTick) < 0.5 ? `${val}% (Goal)` : `${val}%`;
 
@@ -97,6 +103,7 @@ export const PercentageGauge = ({
             hide: true,
           },
           tickLabels: {
+            type: 'inner',
             hideMinMax: false,
             ticks,
             defaultTickValueConfig: {
@@ -115,7 +122,7 @@ export const PercentageGauge = ({
         <>
           <hr className="w-full border-gray-200 mt-3 mb-2" />
           <p
-            className={`flex items-center justify-center gap-1 text-sm font-medium ${overTarget > 0 ? 'text-negative' : 'text-positive'}`}
+            className={`flex items-center justify-center gap-1 text-sm font-bold ${overTarget > 0 ? 'text-negative' : 'text-positive'}`}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               {overTarget > 0 ? (

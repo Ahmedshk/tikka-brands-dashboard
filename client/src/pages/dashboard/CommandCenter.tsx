@@ -9,12 +9,12 @@ import {
 } from '../../components/CommandCenter';
 import CommandCenterIcon from '@assets/icons/command_center.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
+import LaborCostIcon from '@assets/icons/actual_labor_cost.svg?react';
 import StarIcon from '@assets/icons/star.svg?react';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../../store/store';
 import { commandCenterService } from '../../services/commandCenter.service';
 import type { CommandCenterKPIItem } from '../../components/CommandCenter';
-import type { KPICardAccentColor } from '../../components/common/KPICard';
 
 const hourlySalesXAxis = ['08 am', '11 am', '02 pm', '05 pm', '07 pm'];
 const hourlySalesSeries = [
@@ -52,21 +52,9 @@ export const CommandCenter = () => {
       ? formatCurrency(kpis.netSalesToday)
       : (loading ? '…' : 'Unavailable');
 
-    const laborPercentValue = kpis?.laborCostPercentToday != null
-      ? `${kpis.laborCostPercentToday.toFixed(1)}%`
+    const laborCostValue = kpis?.laborCostToday != null
+      ? formatCurrency(kpis.laborCostToday)
       : (loading ? '…' : 'Unavailable');
-    const laborGoal = kpis?.laborCostGoal ?? 0;
-    const laborPercent = kpis?.laborCostPercentToday ?? null;
-    const hasLaborData = laborPercent != null;
-    const isUnderGoal = hasLaborData && laborGoal != null && laborPercent < laborGoal;
-    const isOverGoal = hasLaborData && laborGoal != null && laborPercent >= laborGoal;
-    const laborBadge = hasLaborData ? `Goal ${laborGoal}%` : undefined;
-    const laborValueClassName = isUnderGoal ? 'text-positive' : isOverGoal ? 'text-negative' : undefined;
-    const laborBadgeClassName = isUnderGoal
-      ? 'bg-positive/20 text-primary text-[10px] md:text-xs 2xl:text-sm px-4'
-      : isOverGoal
-        ? 'bg-negative/20 text-primary text-[10px] md:text-xs 2xl:text-sm px-4'
-        : 'bg-gray-200 text-secondary text-[10px] md:text-xs 2xl:text-sm px-4';
 
     return [
       {
@@ -78,13 +66,12 @@ export const CommandCenter = () => {
         rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
       },
       {
-        title: 'Labor Cost %',
+        title: 'Labor Cost',
         timePeriod: 'Today',
-        value: laborPercentValue,
+        value: laborCostValue,
         accentColor: 'blue',
-        valueClassName: laborValueClassName,
-        badge: laborBadge,
-        badgeClassName: laborBadgeClassName,
+        valueClassName: kpis?.laborCostToday != null ? 'text-secondary' : undefined,
+        rightIcon: <LaborCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
       },
       {
         title: 'Review Rating',
@@ -138,7 +125,7 @@ export const CommandCenter = () => {
               <LaborCostGaugeCard
                 value={kpis?.laborCostPercentToday ?? 0}
                 goal={kpis?.laborCostGoal ?? null}
-                subtitle="Labor vs Goals"
+                subtitle="Labor Cost as % of Sales"
                 overTarget={
                   kpis?.laborCostPercentToday != null && kpis?.laborCostGoal != null
                     ? kpis.laborCostPercentToday - kpis.laborCostGoal
