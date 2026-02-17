@@ -6,6 +6,7 @@ import { LocationModal } from '../../components/modal/LocationModal';
 import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
 import { locationService } from '../../services/location.service';
 import type { Location } from '../../types';
+import { CiImageOn } from 'react-icons/ci';
 import AdminAndSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
 import EditIcon from '@assets/icons/edit.svg?react';
@@ -122,8 +123,15 @@ export const LocationManagement = () => {
                       className={`${cardBg} px-4 py-4 sm:px-5 sm:py-4 flex flex-col gap-3`}
                     >
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-primary truncate" title={loc.storeName}>
-                          {loc.storeName}
+                        <p className="flex items-center gap-2 text-sm font-medium text-primary truncate" title={loc.storeName}>
+                          <span className="w-8 h-8 flex items-center justify-center shrink-0 text-gray-400">
+                            {loc.logoDataUrl ? (
+                              <img src={loc.logoDataUrl} alt="" className="w-8 h-8 rounded-lg object-contain" />
+                            ) : (
+                              <CiImageOn className="w-5 h-5" aria-hidden />
+                            )}
+                          </span>
+                          <span className="truncate">{loc.storeName}</span>
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5 line-clamp-2" title={loc.address}>
                           {loc.address}
@@ -175,7 +183,18 @@ export const LocationManagement = () => {
                       const rowBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                       return (
                         <tr key={loc._id} className={rowBg}>
-                          <td className="w-[20%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.storeName}>{loc.storeName}</td>
+                          <td className="w-[20%] px-4 lg:px-6 py-3 lg:py-4">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-8 h-8 flex items-center justify-center shrink-0 text-gray-400">
+                                {loc.logoDataUrl ? (
+                                  <img src={loc.logoDataUrl} alt="" className="w-8 h-8 rounded-lg object-contain" />
+                                ) : (
+                                  <CiImageOn className="w-5 h-5" aria-hidden />
+                                )}
+                              </span>
+                              <span className="text-xs 2xl:text-sm text-primary truncate" title={loc.storeName}>{loc.storeName}</span>
+                            </div>
+                          </td>
                           <td className="w-[35%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.address}>{loc.address}</td>
                           <td className="w-[22%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.timezone}>{loc.timezone}</td>
                           <td className="w-[13%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary">{loc.businessStartTime}</td>
@@ -223,7 +242,14 @@ export const LocationManagement = () => {
       <LocationModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSaved={fetchLocations}
+        onSaved={(updatedLocation) => {
+          if (updatedLocation) {
+            setLocations((prev) =>
+              prev.map((loc) => (loc._id === updatedLocation._id ? updatedLocation : loc))
+            );
+          }
+          fetchLocations();
+        }}
         editLocation={editLocation}
       />
 

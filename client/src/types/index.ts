@@ -34,6 +34,14 @@ export interface ApiResponse<T = unknown> {
   }>;
 }
 
+export interface Logo {
+  _id: string;
+  dataUrl: string;
+  contentType?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Location {
   _id: string;
   storeName: string;
@@ -42,6 +50,14 @@ export interface Location {
   homebaseLocationId: string;
   timezone: string;
   businessStartTime: string;
+  /** True when location has a stored Square token (value never sent to client). */
+  hasSquareAccessToken?: boolean;
+  /** True when location has a stored Homebase API key (value never sent to client). */
+  hasHomebaseApiKey?: boolean;
+  /** Reference to logo document; when set, logoDataUrl is populated for display. */
+  logoId?: string;
+  /** Data URL for the location logo (populated by API when logoId is set). */
+  logoDataUrl?: string;
   createdAt?: string;
   updatedAt?: string;
 }

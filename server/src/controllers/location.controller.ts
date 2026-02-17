@@ -9,7 +9,17 @@ export const createLocation = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { storeName, address, squareLocationId, homebaseLocationId, timezone, businessStartTime } = req.body;
+    const {
+      storeName,
+      address,
+      squareLocationId,
+      homebaseLocationId,
+      timezone,
+      businessStartTime,
+      squareAccessToken,
+      homebaseApiKey,
+      logoId,
+    } = req.body;
     const location = await locationService.create({
       storeName,
       address,
@@ -17,6 +27,9 @@ export const createLocation = async (
       homebaseLocationId,
       timezone,
       businessStartTime,
+      squareAccessToken,
+      homebaseApiKey,
+      ...(logoId != null && logoId !== '' && { logoId: String(logoId).trim() }),
     });
     res.status(201).json({
       success: true,
@@ -91,7 +104,19 @@ export const updateLocation = async (
       res.status(400).json({ success: false, message: 'Invalid location id' });
       return;
     }
-    const { storeName, address, squareLocationId, homebaseLocationId, timezone, businessStartTime } = req.body;
+    const {
+      storeName,
+      address,
+      squareLocationId,
+      homebaseLocationId,
+      timezone,
+      businessStartTime,
+      squareAccessToken,
+      homebaseApiKey,
+      logoId,
+    } = req.body;
+    const squareTrim = typeof squareAccessToken === 'string' ? squareAccessToken.trim() : '';
+    const homebaseTrim = typeof homebaseApiKey === 'string' ? homebaseApiKey.trim() : '';
     const location = await locationService.update(id, {
       ...(storeName !== undefined && { storeName }),
       ...(address !== undefined && { address }),
@@ -99,6 +124,9 @@ export const updateLocation = async (
       ...(homebaseLocationId !== undefined && { homebaseLocationId }),
       ...(timezone !== undefined && { timezone }),
       ...(businessStartTime !== undefined && { businessStartTime }),
+      ...(squareTrim && { squareAccessToken: squareTrim }),
+      ...(homebaseTrim && { homebaseApiKey: homebaseTrim }),
+      ...(logoId !== undefined && { logoId: logoId === null || logoId === '' ? null : String(logoId).trim() }),
     });
     res.status(200).json({
       success: true,

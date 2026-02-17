@@ -26,10 +26,11 @@ export const getCommandCenterKPIs = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
-    const location = await locationService.getById(locationId);
-    if (!location) {
+    const withCreds = await locationService.getByIdWithCredentials(locationId);
+    if (!withCreds) {
       throw new NotFoundError("Location not found");
     }
+    const { location, squareAccessToken, homebaseApiKey } = withCreds;
 
     const goals = await goalService.getByLocationId(locationId);
     const laborCostGoal = goals.laborCostGoal ?? 0;
@@ -45,6 +46,7 @@ export const getCommandCenterKPIs = async (
         netSalesToday = await getNetSalesInRange(
           location.squareLocationId,
           range,
+          { accessToken: squareAccessToken ?? undefined },
         );
       } catch (err) {
         console.error("[Command Center] Square net sales error:", err);
@@ -58,6 +60,7 @@ export const getCommandCenterKPIs = async (
         laborCostToday = await getLaborCostInRange(
           location.homebaseLocationId,
           range,
+          { apiKey: homebaseApiKey ?? undefined },
         );
       } catch (err) {
         console.error("[Command Center] Homebase labor cost error:", err);
@@ -105,10 +108,11 @@ export const getHourlySales = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
-    const location = await locationService.getById(locationId);
-    if (!location) {
+    const withCreds = await locationService.getByIdWithCredentials(locationId);
+    if (!withCreds) {
       throw new NotFoundError("Location not found");
     }
+    const { location, squareAccessToken } = withCreds;
     const timezone = location.timezone?.trim();
     const squareLocationId = location.squareLocationId?.trim();
     if (!timezone || !squareLocationId) {
@@ -119,12 +123,13 @@ export const getHourlySales = async (
       return;
     }
 
+    const squareOptions = { accessToken: squareAccessToken ?? undefined };
     const todayRange = getTodayRangeFullDay(timezone);
     const lastWeekRange = getSameDayLastWeekRange(timezone);
 
     const [todayOrders, lastWeekOrders] = await Promise.all([
-      searchOrdersInRange(squareLocationId, todayRange),
-      searchOrdersInRange(squareLocationId, lastWeekRange),
+      searchOrdersInRange(squareLocationId, todayRange, squareOptions),
+      searchOrdersInRange(squareLocationId, lastWeekRange, squareOptions),
     ]);
 
     const todayBuckets = new Array<number>(24).fill(0);

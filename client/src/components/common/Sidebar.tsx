@@ -1,8 +1,10 @@
 import { useState, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../store/store';
 import { RoleGuard } from './RoleGuard';
 import { navigationConfig } from '../../utils/navigation.config';
-import logoBlack from '@assets/logos/logo_black.png';
+import MainLogo from '@assets/logos/main_logo.svg?react';
 import ArrowUpIcon from '@assets/icons/arrow_up.svg?react';
 import ArrowDownIcon from '@assets/icons/arrow_down.svg?react';
 
@@ -17,6 +19,7 @@ interface SidebarProps {
 
 const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, onClose, onToggle }: SidebarProps) => {
   const navigate = useNavigate();
+  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [isMobile, setIsMobile] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [mouseStartX, setMouseStartX] = useState<number | null>(null);
@@ -338,8 +341,12 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
             )}
           </button>
           {/* Logo */}
-          <div className="px-6 py-4 border-b border-gray-200">
-            <img src={logoBlack} alt="Tikka Spice Logo" className="w-full max-w-[180px]" />
+          <div className="px-6 py-4 border-b border-gray-200 flex justify-center items-center">
+            {currentLocation?.logoDataUrl ? (
+              <img src={currentLocation.logoDataUrl} alt="" className="max-w-[180px] w-full h-10 object-contain object-center" />
+            ) : (
+              <MainLogo className="max-w-[180px] w-full" />
+            )}
           </div>
 
           {/* Navigation Items */}
@@ -468,16 +475,21 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
 
   return (
     <aside
-      className={`hidden lg:flex bg-card-background border-r border-gray-200 flex-col h-screen shrink-0 transition-[width] duration-200 ease-in-out ${
-        isDesktopExpanded ? 'w-64' : 'w-16'
-      }`}
+      className={`hidden lg:flex bg-card-background border-r border-gray-200 flex-col h-screen shrink-0 transition-[width] duration-200 ease-in-out ${isDesktopExpanded ? 'w-64' : 'w-16'
+        }`}
     >
       {/* Logo - same height as navbar (72px) so the border aligns with navbar bottom */}
-      <div className={`h-[72px] min-h-[72px] border-b border-gray-200 flex items-center shrink-0 ${isDesktopExpanded ? 'px-6' : 'px-3 justify-center'}`}>
-        {isDesktopExpanded ? (
-          <img src={logoBlack} alt="Tikka Spice Logo" className="w-full max-w-[180px]" />
+      <div className={`h-[72px] min-h-[72px] border-b border-gray-200 flex items-center justify-center shrink-0 ${isDesktopExpanded ? 'px-6' : 'px-3'}`}>
+        {currentLocation?.logoDataUrl ? (
+          isDesktopExpanded ? (
+            <img src={currentLocation.logoDataUrl} alt="" className="max-w-[180px] w-full h-10 object-contain object-center" />
+          ) : (
+            <img src={currentLocation.logoDataUrl} alt="" className="h-8 w-8 object-contain" />
+          )
+        ) : isDesktopExpanded ? (
+          <MainLogo className="max-w-[180px] w-full" />
         ) : (
-          <img src={logoBlack} alt="Tikka Spice" className="h-8 w-8 object-contain" />
+          <MainLogo className="h-8 w-8 object-contain" />
         )}
       </div>
 
@@ -572,9 +584,8 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
                       <item.icon className="w-5 h-5 flex-shrink-0" />
                       {isDesktopExpanded && (
                         <span
-                          className={`ml-3 flex-1 text-[10px] md:text-xs 2xl:text-sm truncate ${
-                            activePath === itemPath ? 'font-bold text-quaternary' : 'text-primary font-medium'
-                          }`}
+                          className={`ml-3 flex-1 text-[10px] md:text-xs 2xl:text-sm truncate ${activePath === itemPath ? 'font-bold text-quaternary' : 'text-primary font-medium'
+                            }`}
                         >
                           {item.label}
                         </span>

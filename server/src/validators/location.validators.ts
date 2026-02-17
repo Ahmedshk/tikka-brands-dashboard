@@ -12,6 +12,9 @@ const locationBodySchema = z.object({
     .string()
     .trim()
     .regex(businessStartTimeRegex, "Use HH:mm 24h format"),
+  squareAccessToken: z.string().min(1, "Square access token is required").trim(),
+  homebaseApiKey: z.string().min(1, "Homebase API key is required").trim(),
+  logoId: z.string().trim().optional().nullable(),
 });
 
 export const createLocationSchema = z.object({
@@ -22,7 +25,11 @@ export const updateLocationSchema = z.object({
   params: z.object({
     id: z.string().min(1, "Location ID is required"),
   }),
-  body: locationBodySchema.partial(),
+  body: locationBodySchema.partial().extend({
+    squareAccessToken: z.string().trim().optional(),
+    homebaseApiKey: z.string().trim().optional(),
+    logoId: z.string().trim().optional().nullable(),
+  }),
 });
 
 export const getLocationSchema = z.object({

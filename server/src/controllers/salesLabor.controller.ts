@@ -35,10 +35,11 @@ export const getSalesLaborKPIs = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
-    const location = await locationService.getById(locationId);
-    if (!location) {
+    const withCreds = await locationService.getByIdWithCredentials(locationId);
+    if (!withCreds) {
       throw new NotFoundError("Location not found");
     }
+    const { location, squareAccessToken, homebaseApiKey } = withCreds;
 
     const timezone = location.timezone?.trim();
     const businessStartTime = location.businessStartTime?.trim() ?? "00:00";
@@ -66,7 +67,9 @@ export const getSalesLaborKPIs = async (
     if (squareLocationId) {
       try {
         const { orderStats, sourcesOfSales: segments } =
-          await getOrderStatsAndSourcesInRange(squareLocationId, range);
+          await getOrderStatsAndSourcesInRange(squareLocationId, range, {
+            accessToken: squareAccessToken ?? undefined,
+          });
         actualTotalSales = orderStats.netSalesCents / 100;
         transactionCount = orderStats.orderCount;
         totalDiscounts = orderStats.totalDiscountCents / 100;
@@ -84,9 +87,10 @@ export const getSalesLaborKPIs = async (
     const homebaseLocationId = location.homebaseLocationId?.trim();
     if (homebaseLocationId) {
       try {
+        const homebaseOptions = { apiKey: homebaseApiKey ?? undefined };
         const [cost, hours] = await Promise.all([
-          getLaborCostInRange(homebaseLocationId, range),
-          getTotalHoursInRange(homebaseLocationId, range),
+          getLaborCostInRange(homebaseLocationId, range, homebaseOptions),
+          getTotalHoursInRange(homebaseLocationId, range, homebaseOptions),
         ]);
         laborCost = cost;
         totalHours = hours;

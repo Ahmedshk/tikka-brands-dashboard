@@ -75,6 +75,9 @@ export const locationService = {
     homebaseLocationId: string;
     timezone: string;
     businessStartTime: string;
+    squareAccessToken: string;
+    homebaseApiKey: string;
+    logoId?: string | null;
   }): Promise<Location> {
     const res = await api.post<ApiResponse<{ location: Location }>>(
       BASE,
@@ -95,7 +98,11 @@ export const locationService = {
       homebaseLocationId: string;
       timezone: string;
       businessStartTime: string;
-    }>
+    }> & {
+      squareAccessToken?: string;
+      homebaseApiKey?: string;
+      logoId?: string | null;
+    }
   ): Promise<Location> {
     const res = await api.put<ApiResponse<{ location: Location }>>(
       `${BASE}/${id}`,

@@ -31,11 +31,23 @@ function getApiKey(): string | undefined {
   return process.env.HOMEBASE_API_KEY?.trim() || undefined;
 }
 
+export interface HomebaseServiceOptions {
+  apiKey?: string | undefined;
+}
+
+function resolveApiKey(override?: string): string | undefined {
+  if (override != null && String(override).trim() !== "") {
+    return String(override).trim();
+  }
+  return getApiKey();
+}
+
 async function homebaseFetch(
   path: string,
   searchParams: Record<string, string>,
+  apiKeyOverride?: string,
 ): Promise<Response> {
-  const apiKey = getApiKey();
+  const apiKey = resolveApiKey(apiKeyOverride);
   if (!apiKey) {
     throw new Error("HOMEBASE_API_KEY is not set");
   }
@@ -74,6 +86,7 @@ export async function getTimecardsForDateRange(
   locationUuid: string,
   startAt: string,
   endAt: string,
+  options?: HomebaseServiceOptions,
 ): Promise<HomebaseTimecard[]> {
   const all: HomebaseTimecard[] = [];
   let page = 1;
@@ -88,6 +101,7 @@ export async function getTimecardsForDateRange(
         per_page: String(PER_PAGE),
         page: String(page),
       },
+      options?.apiKey,
     );
 
     const data = (await res.json()) as HomebaseTimecard[];
@@ -117,8 +131,9 @@ export async function getTimecardsForDateRange(
 export async function getLaborCostInRange(
   homebaseLocationId: string,
   range: TimeRange,
+  options?: HomebaseServiceOptions,
 ): Promise<number> {
-  const apiKey = getApiKey();
+  const apiKey = resolveApiKey(options?.apiKey);
   if (!apiKey) {
     return 0;
   }
@@ -133,6 +148,7 @@ export async function getLaborCostInRange(
     locationUuid,
     startAt,
     endAt,
+    options,
   );
 
   let total = 0;
@@ -153,8 +169,9 @@ export async function getLaborCostInRange(
 export async function getTotalHoursInRange(
   homebaseLocationId: string,
   range: TimeRange,
+  options?: HomebaseServiceOptions,
 ): Promise<number> {
-  const apiKey = getApiKey();
+  const apiKey = resolveApiKey(options?.apiKey);
   if (!apiKey) {
     return 0;
   }
@@ -169,6 +186,7 @@ export async function getTotalHoursInRange(
     locationUuid,
     startAt,
     endAt,
+    options,
   );
 
   let total = 0;

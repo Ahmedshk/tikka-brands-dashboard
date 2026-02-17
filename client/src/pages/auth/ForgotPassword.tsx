@@ -2,8 +2,8 @@ import { useState, FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Spinner } from '../../components/common/Spinner';
 import loginBackground from '@assets/images/login_background.png';
-import logoWhite from '@assets/logos/logo_white.png';
-import logoBlack from '@assets/logos/logo_black.png';
+import LogoWhite from '@assets/logos/main_logo_white.svg?react';
+import MainLogo from '@assets/logos/main_logo.svg?react';
 
 export const ForgotPassword = () => {
   const [email, setEmail] = useState('');
@@ -28,11 +28,7 @@ export const ForgotPassword = () => {
       <div className="w-full h-full flex flex-col rounded-4xl overflow-hidden shadow-lg bg-white">
         {/* Logo for smaller screens */}
         <div className="lg:hidden flex justify-center p-6 mt-12 mb-30">
-          <img
-            src={logoBlack}
-            alt="Tikka Spice Logo"
-            className="max-w-xs w-full"
-          />
+          <MainLogo className="max-w-2xl w-full px-8" />
         </div>
 
         <div className="flex flex-1">
@@ -44,11 +40,7 @@ export const ForgotPassword = () => {
                 style={{ backgroundImage: `url(${loginBackground})` }}
               />
               <div className="absolute inset-0 flex items-center justify-center">
-                <img
-                  src={logoWhite}
-                  alt="Tikka Spice Logo"
-                  className="max-w-2xl w-full px-8"
-                />
+                <LogoWhite className="max-w-2xl w-full px-8" />
               </div>
             </div>
           </div>

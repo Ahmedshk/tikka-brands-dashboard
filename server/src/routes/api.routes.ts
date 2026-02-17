@@ -1,6 +1,7 @@
 import { Router } from "express";
 import authRoutes from "./auth.routes.js";
 import locationRoutes from "./location.routes.js";
+import logoRoutes from "./logo.routes.js";
 import goalRoutes from "./goal.routes.js";
 import commandCenterRoutes from "./commandCenter.routes.js";
 import salesLaborRoutes from "./salesLabor.routes.js";
@@ -16,6 +17,9 @@ router.use("/auth", authRoutes);
 
 // Location management (auth + role required)
 router.use("/locations", locationRoutes);
+
+// Logos (auth + role required)
+router.use("/logos", logoRoutes);
 
 // Goal setting (auth + role required)
 router.use("/goals", goalRoutes);

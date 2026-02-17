@@ -68,14 +68,26 @@ function getAccessToken(): string {
   return token;
 }
 
+export interface SquareServiceOptions {
+  accessToken?: string | undefined;
+}
+
+function resolveAccessToken(override?: string): string {
+  if (override != null && String(override).trim() !== "") {
+    return String(override).trim();
+  }
+  return getAccessToken();
+}
+
 /**
  * Fetch a single Square location by ID (GET /v2/locations/{location_id}).
  * Used to get business_hours and timezone for the selected store.
  */
 export async function getSquareLocation(
   squareLocationId: string,
+  options?: SquareServiceOptions,
 ): Promise<SquareLocationForHours | null> {
-  const token = getAccessToken();
+  const token = resolveAccessToken(options?.accessToken);
   const res = await fetch(
     `${SQUARE_BASE}/v2/locations/${encodeURIComponent(squareLocationId)}`,
     {
@@ -126,10 +138,9 @@ function orderNetSalesCents(order: SquareOrder): number {
   const total = moneyToCents(net.total_money);
   const tax = moneyToCents(net.tax_money);
   const tip = moneyToCents(net.tip_money);
-  const serviceCharge = moneyToCents(net.service_charge_money);
   const cardSurcharge = moneyToCents(net.card_surcharge_money);
-  // return Math.max(0, total - tax - tip - serviceCharge - cardSurcharge);
-  return Math.max(0, total - tax - tip - cardSurcharge); //Do not include service charge for now
+  // Service charge excluded from net sales per product
+  return Math.max(0, total - tax - tip - cardSurcharge);
 }
 
 /**
@@ -139,7 +150,9 @@ function orderNetSalesCents(order: SquareOrder): number {
 async function fetchOrdersInRange(
   squareLocationId: string,
   range: TimeRange,
+  accessToken?: string,
 ): Promise<SquareOrder[]> {
+  const token = resolveAccessToken(accessToken);
   const { startAt, endAt } = range;
   const all: SquareOrder[] = [];
   let cursor: string | undefined;
@@ -175,7 +188,7 @@ async function fetchOrdersInRange(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getAccessToken()}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(body),
     });
@@ -265,26 +278,26 @@ const SOURCE_LABEL_MAP: Record<string, string> = {
  * Next 9 = extra distinct colors for additional segments.
  */
 const SOURCES_CHART_PALETTE: string[] = [
-  "#5DC54F",   // green
-  "#FDB90E",   // gold
-  "#009BBE",   // blue
-  "#F59E0B",   // orange
-  "#BE68FF",   // purple
-  "#FF1C28",   // red
-  "#FFFF00",   // yellow
-  "#6D6D6D",   // gray
-  "#79AFFF",   // azure
-  "#22C55E",   // positive (green)
-  "#EF4444",   // negative (red)
-  "#00BCD4",   // cyan
-  "#E91E63",   // pink
-  "#9C27B0",   // deep purple
-  "#3F51B5",   // indigo
-  "#009688",   // teal
-  "#8BC34A",   // light green
-  "#FF9800",   // amber
-  "#795548",   // brown
-  "#607D8B",   // blue grey
+  "#5DC54F", // green
+  "#FDB90E", // gold
+  "#009BBE", // blue
+  "#3F51B5", // indigo
+  "#BE68FF", // purple
+  "#FF1C28", // red
+  "#00BCD4", // cyan
+  "#79AFFF", // azure
+  "#6D6D6D", // gray
+  "#F59E0B", // orange
+  "#FFFF00", // yellow
+  "#22C55E", // positive (green)
+  "#EF4444", // negative (red)
+  "#E91E63", // pink
+  "#9C27B0", // deep purple
+  "#009688", // teal
+  "#8BC34A", // light green
+  "#FF9800", // amber
+  "#795548", // brown
+  "#607D8B", // blue grey
 ];
 
 function deriveSegmentKey(order: SquareOrder): string {
@@ -306,18 +319,25 @@ function deriveSegmentKey(order: SquareOrder): string {
 
 function segmentKeyToLabel(key: string): string {
   const normalized = key.toLowerCase().replace(/\s+/g, "-");
-  return SOURCE_LABEL_MAP[normalized] ?? key.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return (
+    SOURCE_LABEL_MAP[normalized] ??
+    key.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
 }
 
 function segmentColorByIndex(index: number): string {
-  return SOURCES_CHART_PALETTE[index % SOURCES_CHART_PALETTE.length] ?? "#6D6D6D";
+  return (
+    SOURCES_CHART_PALETTE[index % SOURCES_CHART_PALETTE.length] ?? "#6D6D6D"
+  );
 }
 
 /**
  * Aggregate net sales by source/fulfillment from an array of orders.
  * Returns segments with id, label, value (percentage 0-100), amount (formatted), color.
  */
-function getSourcesOfSalesFromOrders(orders: SquareOrder[]): SourcesOfSalesSegment[] {
+function getSourcesOfSalesFromOrders(
+  orders: SquareOrder[],
+): SourcesOfSalesSegment[] {
   const byKey: Record<string, number> = {};
 
   for (const order of orders) {
@@ -358,9 +378,9 @@ function getSourcesOfSalesFromOrders(orders: SquareOrder[]): SourcesOfSalesSegme
 export async function getSourcesOfSalesInRange(
   squareLocationId: string,
   range: TimeRange,
+  options?: SquareServiceOptions,
 ): Promise<SourcesOfSalesSegment[]> {
-  getAccessToken();
-  const orders = await fetchOrdersInRange(squareLocationId, range);
+  const orders = await fetchOrdersInRange(squareLocationId, range, options?.accessToken);
   return getSourcesOfSalesFromOrders(orders);
 }
 
@@ -371,8 +391,9 @@ export async function getSourcesOfSalesInRange(
 export async function getNetSalesInRange(
   squareLocationId: string,
   range: TimeRange,
+  options?: SquareServiceOptions,
 ): Promise<number> {
-  getAccessToken();
+  const token = resolveAccessToken(options?.accessToken);
   const { startAt, endAt } = range;
 
   let totalCents = 0;
@@ -409,7 +430,7 @@ export async function getNetSalesInRange(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getAccessToken()}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(body),
     });
@@ -448,8 +469,9 @@ export interface OrderInRange {
 export async function searchOrdersInRange(
   squareLocationId: string,
   range: TimeRange,
+  options?: SquareServiceOptions,
 ): Promise<OrderInRange[]> {
-  getAccessToken();
+  const token = resolveAccessToken(options?.accessToken);
   const { startAt, endAt } = range;
 
   const result: OrderInRange[] = [];
@@ -486,7 +508,7 @@ export async function searchOrdersInRange(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getAccessToken()}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(body),
     });
@@ -533,9 +555,9 @@ export interface OrderStatsInRange {
 export async function getOrderStatsInRange(
   squareLocationId: string,
   range: TimeRange,
+  options?: SquareServiceOptions,
 ): Promise<OrderStatsInRange> {
-  getAccessToken();
-  const orders = await fetchOrdersInRange(squareLocationId, range);
+  const orders = await fetchOrdersInRange(squareLocationId, range, options?.accessToken);
   return getOrderStatsFromOrders(orders);
 }
 
@@ -550,9 +572,9 @@ export interface OrderStatsAndSourcesResult {
 export async function getOrderStatsAndSourcesInRange(
   squareLocationId: string,
   range: TimeRange,
+  options?: SquareServiceOptions,
 ): Promise<OrderStatsAndSourcesResult> {
-  getAccessToken();
-  const orders = await fetchOrdersInRange(squareLocationId, range);
+  const orders = await fetchOrdersInRange(squareLocationId, range, options?.accessToken);
   return {
     orderStats: getOrderStatsFromOrders(orders),
     sourcesOfSales: getSourcesOfSalesFromOrders(orders),

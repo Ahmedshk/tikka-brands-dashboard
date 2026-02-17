@@ -39,6 +39,22 @@ const locationSchema = new Schema<LocationDocument>(
       required: true,
       trim: true,
     },
+    squareAccessTokenEnc: {
+      type: String,
+      required: false,
+      default: undefined,
+    },
+    homebaseApiKeyEnc: {
+      type: String,
+      required: false,
+      default: undefined,
+    },
+    logoId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Logo',
+      required: false,
+      default: undefined,
+    },
   },
   {
     timestamps: true,

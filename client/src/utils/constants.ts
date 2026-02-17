@@ -17,6 +17,7 @@ export const API_ENDPOINTS = {
   },
   HEALTH: "/health",
   LOCATIONS: "/locations",
+  LOGOS: "/logos",
   GOALS: "/goals",
   COMMAND_CENTER: {
     KPIS: "/command-center/kpis",
