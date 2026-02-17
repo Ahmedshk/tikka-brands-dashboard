@@ -20,6 +20,16 @@ function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(value);
 }
 
+/** Convert "HH:00" or "HH:mm" to "12 am", "01 am", "12 pm", "01 pm", etc. */
+function formatHourToAmPm(hourStr: string): string {
+  const parts = hourStr.trim().split(':');
+  const h = Number.parseInt(parts[0] ?? '0', 10) % 24;
+  if (h === 0) return '12 am';
+  if (h === 12) return '12 pm';
+  if (h < 12) return `${String(h).padStart(2, '0')} am`;
+  return `${String(h - 12).padStart(2, '0')} pm`;
+}
+
 export const CommandCenter = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [kpis, setKpis] = useState<Awaited<ReturnType<typeof commandCenterService.getKPIs>> | null>(null);
@@ -105,19 +115,21 @@ export const CommandCenter = () => {
   const hourlyChartData = useMemo(() => {
     if (hourlySales && hourlySales.length > 0) {
       return {
-        xAxisData: hourlySales.map((r) => r.hour),
+        xAxisData: hourlySales.map((r) => formatHourToAmPm(r.hour)),
         series: [
-          { id: 'today', label: 'Today', data: hourlySales.map((r) => r.today) },
           { id: 'lastWeek', label: 'Last Week', data: hourlySales.map((r) => r.last_week) },
+          { id: 'today', label: 'Today', data: hourlySales.map((r) => r.today) },
         ],
       };
     }
-    const emptyHours = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
+    const emptyHours = Array.from({ length: 24 }, (_, h) =>
+      formatHourToAmPm(`${String(h).padStart(2, '0')}:00`)
+    );
     return {
       xAxisData: emptyHours,
       series: [
-        { id: 'today', label: 'Today', data: emptyHours.map(() => null) },
         { id: 'lastWeek', label: 'Last Week', data: emptyHours.map(() => 0) },
+        { id: 'today', label: 'Today', data: emptyHours.map(() => null) },
       ],
     };
   }, [hourlySales]);

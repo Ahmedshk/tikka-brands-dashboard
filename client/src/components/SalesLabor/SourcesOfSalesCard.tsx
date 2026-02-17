@@ -20,7 +20,7 @@ export const SourcesOfSalesCard = ({
 }: SourcesOfSalesCardProps) => {
   return (
     <div className={`${cardClass} ${className}`}>
-      <div className="p-5 pb-4 flex items-center justify-center">
+      <div className="p-5 pb-0 flex items-center justify-center">
         <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-secondary text-center">
           Sources of Sales
           {subtitle != null && (

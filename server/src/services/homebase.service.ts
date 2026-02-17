@@ -4,6 +4,7 @@
  * See: GET /locations/{location_uuid}/timecards (start_date, end_date, date_filter=clock_in).
  */
 import type { TimeRange } from "../utils/businessHours.util.js";
+import { getBusinessHourSlotBounds } from "../utils/timezone.util.js";
 
 const HOMEBASE_BASE = "https://api.joinhomebase.com";
 const PER_PAGE = 100;
@@ -206,4 +207,70 @@ export async function getTotalHoursInRange(
   }
 
   return total;
+}
+
+/**
+ * Fetch labor cost per business-hour slot (0-23) by prorating timecard labor.costs
+ * by overlap with each slot. Returns 24 numbers (dollars per slot).
+ */
+export async function getLaborCostPerHourInRange(
+  homebaseLocationId: string,
+  range: TimeRange,
+  timezone: string,
+  businessStartTime: string,
+  options?: HomebaseServiceOptions,
+): Promise<number[]> {
+  const apiKey = resolveApiKey(options?.apiKey);
+  const result = new Array<number>(24).fill(0);
+  if (!apiKey) {
+    return result;
+  }
+
+  const locationUuid = homebaseLocationId.trim();
+  if (!locationUuid) {
+    return result;
+  }
+
+  const { startAt, endAt } = range;
+  const timecards = await getTimecardsForDateRange(
+    locationUuid,
+    startAt,
+    endAt,
+    options,
+  );
+
+  const tz = timezone.trim();
+  const bizStart = businessStartTime?.trim() ?? "00:00";
+
+  for (const tc of timecards) {
+    const costs = tc.labor?.costs;
+    if (typeof costs !== "number" || !Number.isFinite(costs)) {
+      continue;
+    }
+    const clockIn = tc.clock_in
+      ? new Date(tc.clock_in).getTime()
+      : Number.NaN;
+    const clockOut = tc.clock_out
+      ? new Date(tc.clock_out).getTime()
+      : Number.NaN;
+    if (Number.isNaN(clockIn)) continue;
+    const endMs = Number.isNaN(clockOut) ? new Date(endAt).getTime() : clockOut;
+    const totalMs = Math.max(0, endMs - clockIn);
+    if (totalMs <= 0) continue;
+
+    for (let slot = 0; slot < 24; slot++) {
+      const { startAt: slotStartAt, endAt: slotEndAt } =
+        getBusinessHourSlotBounds(tz, bizStart, slot);
+      const slotStartMs = new Date(slotStartAt).getTime();
+      const slotEndMs = new Date(slotEndAt).getTime() + 1;
+      const overlapStart = Math.max(clockIn, slotStartMs);
+      const overlapEnd = Math.min(endMs, slotEndMs);
+      const overlapMs = Math.max(0, overlapEnd - overlapStart);
+      if (overlapMs > 0) {
+        result[slot] = (result[slot] ?? 0) + (overlapMs / totalMs) * costs;
+      }
+    }
+  }
+
+  return result;
 }

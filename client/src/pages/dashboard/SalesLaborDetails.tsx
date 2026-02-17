@@ -18,16 +18,16 @@ import SalesPerManHourIcon from '@assets/icons/sales_per_man_hour.svg?react';
 import NoOfTransactionsIcon from '@assets/icons/no_of_transactions.svg?react';
 import AverageCheckIcon from '@assets/icons/average_check.svg?react';
 import TotalDiscountsIcon from '@assets/icons/total_discounts.svg?react';
-import { commandCenterService, type SalesLaborKPIsData } from '../../services/commandCenter.service';
+import {
+  commandCenterService,
+  type SalesLaborKPIsData,
+  type HourlyBreakdownData,
+} from '../../services/commandCenter.service';
 import type { RootState } from '../../store/store';
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
-
-const hourlyLabels = ['08 am', '09 am', '10 am', '11 am', '12 pm', '01 pm', '02 pm', '03 pm', '04 pm', '05 pm', '06 pm', '07 pm'];
-const hourlySalesData = [120, 280, 420, 580, 720, 650, 480, 520, 610, 750, 680, 390];
-const hourlyLaborCostData = [18, 19, 20, 21, 22, 23, 22, 21, 22, 23, 24, 22];
 
 const clockedInStaffRows = [
   { name: 'Alex Jonson', role: 'Line Cook', clockIn: '10:00 am', currentHours: 6.5, status: 'On Clock' as const },
@@ -47,23 +47,32 @@ const dailyTargetsItems = [
 export const SalesLaborDetails = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [kpis, setKpis] = useState<SalesLaborKPIsData | null>(null);
+  const [hourlyBreakdown, setHourlyBreakdown] = useState<HourlyBreakdownData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentLocation?._id) {
       setKpis(null);
+      setHourlyBreakdown(null);
       setError(null);
       return;
     }
     setLoading(true);
     setError(null);
-    commandCenterService
-      .getSalesLaborKPIs(currentLocation._id)
-      .then(setKpis)
+    const locationId = currentLocation._id;
+    Promise.all([
+      commandCenterService.getSalesLaborKPIs(locationId),
+      commandCenterService.getHourlyBreakdown(locationId),
+    ])
+      .then(([kpisData, hourlyData]) => {
+        setKpis(kpisData);
+        setHourlyBreakdown(hourlyData);
+      })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to load Sales & Labor KPIs');
+        setError(err instanceof Error ? err.message : 'Failed to load Sales & Labor data');
         setKpis(null);
+        setHourlyBreakdown(null);
       })
       .finally(() => setLoading(false));
   }, [currentLocation?._id]);
@@ -170,9 +179,11 @@ export const SalesLaborDetails = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
               <HourlyBreakdownCard
-                xAxisLabels={hourlyLabels}
-                salesData={hourlySalesData}
-                laborCostData={hourlyLaborCostData}
+                xAxisLabels={hourlyBreakdown?.labels ?? []}
+                salesData={hourlyBreakdown?.netSalesPerHour ?? []}
+                laborCostData={
+                  hourlyBreakdown?.laborCostPercentPerHour?.map((p) => p ?? 0) ?? []
+                }
                 height={280}
                 className="lg:col-span-2"
               />

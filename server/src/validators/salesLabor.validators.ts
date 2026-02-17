@@ -5,3 +5,9 @@ export const getSalesLaborKPIsQuerySchema = z.object({
     locationId: z.string().min(1, "Location ID is required"),
   }),
 });
+
+export const getHourlyBreakdownQuerySchema = z.object({
+  query: z.object({
+    locationId: z.string().min(1, "Location ID is required"),
+  }),
+});

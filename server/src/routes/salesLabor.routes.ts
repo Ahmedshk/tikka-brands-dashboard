@@ -1,7 +1,13 @@
 import { Router } from "express";
-import { getSalesLaborKPIs } from "../controllers/salesLabor.controller.js";
+import {
+  getSalesLaborKPIs,
+  getHourlyBreakdown,
+} from "../controllers/salesLabor.controller.js";
 import { validate } from "../utils/zod.util.js";
-import { getSalesLaborKPIsQuerySchema } from "../validators/salesLabor.validators.js";
+import {
+  getSalesLaborKPIsQuerySchema,
+  getHourlyBreakdownQuerySchema,
+} from "../validators/salesLabor.validators.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/rbac.middleware.js";
 import { UserRole } from "../types/user.types.js";
@@ -21,6 +27,12 @@ router.get(
   "/kpis",
   validate(getSalesLaborKPIsQuerySchema),
   getSalesLaborKPIs,
+);
+
+router.get(
+  "/hourly-breakdown",
+  validate(getHourlyBreakdownQuerySchema),
+  getHourlyBreakdown,
 );
 
 export default router;

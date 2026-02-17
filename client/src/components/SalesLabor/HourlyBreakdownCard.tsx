@@ -33,13 +33,15 @@ export const HourlyBreakdownCard = ({
           Labor Cost Per hours
         </span>
       </div>
-      <div className="-mx-3 px-3 pb-3 md:mx-0 md:px-5 md:pb-5">
-        <HourlyBreakdownChart
-          xAxisLabels={xAxisLabels}
-          salesData={salesData}
-          laborCostData={laborCostData}
-          height={height}
-        />
+      <div className="scrollbar-touch -mx-3 px-3 pb-3 md:mx-0 md:px-5 md:pb-5 overflow-x-auto md:overflow-visible">
+        <div className="min-w-[560px] md:min-w-0 w-full">
+          <HourlyBreakdownChart
+            xAxisLabels={xAxisLabels}
+            salesData={salesData}
+            laborCostData={laborCostData}
+            height={height}
+          />
+        </div>
       </div>
     </div>
   );

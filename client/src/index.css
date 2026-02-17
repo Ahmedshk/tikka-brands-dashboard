@@ -141,6 +141,27 @@
   }
 }
 
+/* Touch-friendly thick scrollbars for chart cards (horizontal scroll on mobile) */
+.scrollbar-touch {
+  scrollbar-width: auto;
+}
+.scrollbar-touch::-webkit-scrollbar {
+  height: 14px;
+  width: 14px;
+}
+.scrollbar-touch::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 7px;
+}
+.scrollbar-touch::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 7px;
+  min-width: 44px;
+}
+.scrollbar-touch::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
 /* Hourly Sales chart: second series (Last Week) = dotted line */
 .hourly-sales-chart .MuiLineElement-root:nth-of-type(2),
 .hourly-sales-chart [data-series-id="lastWeek"],

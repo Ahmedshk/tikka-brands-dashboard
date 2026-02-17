@@ -37,6 +37,12 @@ export interface SalesLaborKPIsData {
   sourcesOfSales: SourcesOfSalesSegment[];
 }
 
+export interface HourlyBreakdownData {
+  labels: string[];
+  netSalesPerHour: number[];
+  laborCostPercentPerHour: (number | null)[];
+}
+
 export const commandCenterService = {
   async getKPIs(locationId: string): Promise<CommandCenterKPIsData> {
     const res = await api.get<ApiResponse<CommandCenterKPIsData>>(
@@ -67,6 +73,21 @@ export const commandCenterService = {
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch Sales & Labor KPIs");
+    }
+    return res.data.data;
+  },
+
+  async getHourlyBreakdown(
+    locationId: string
+  ): Promise<HourlyBreakdownData> {
+    const res = await api.get<ApiResponse<HourlyBreakdownData>>(
+      API_ENDPOINTS.SALES_LABOR.HOURLY_BREAKDOWN,
+      { params: { locationId } }
+    );
+    if (!res.data.success || res.data.data == null) {
+      throw new Error(
+        res.data.message ?? "Failed to fetch hourly breakdown"
+      );
     }
     return res.data.data;
   },

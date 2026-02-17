@@ -31,7 +31,7 @@ export const HourlySalesChartCard = ({
   loading = false,
   error = null,
 }: HourlySalesChartCardProps) => {
-  const colors = [TODAY_COLOR, LAST_WEEK_COLOR];
+  const colors = [LAST_WEEK_COLOR, TODAY_COLOR];
 
   return (
     <div className={`${cardClass} ${className}`}>
@@ -50,7 +50,7 @@ export const HourlySalesChartCard = ({
           Last Week
         </span>
       </div>
-      <div className="h-64 -mx-3 px-3 pb-3 md:mx-0 md:px-5 md:pb-5 relative">
+      <div className="scrollbar-touch min-h-[280px] h-72 md:h-64 -mx-3 px-3 pb-3 md:mx-0 md:px-5 md:pb-5 relative overflow-x-auto md:overflow-visible overflow-y-hidden">
         {error && (
           <p className="text-sm text-negative absolute top-2 left-4 right-4" role="alert">{error}</p>
         )}
@@ -59,13 +59,14 @@ export const HourlySalesChartCard = ({
             <Spinner size="lg" className="text-button-primary" />
           </div>
         ) : (
-          <div className="hourly-sales-chart w-full">
+          <div className="hourly-sales-chart min-w-[560px] md:min-w-0 w-full">
             <TimeSeriesLineChart
               xAxisData={xAxisData}
               series={series}
               height={height}
               colors={colors}
               yAxis={yAxis}
+              tooltipSeriesOrder={['today', 'lastWeek']}
             />
           </div>
         )}

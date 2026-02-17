@@ -87,6 +87,59 @@ export function getBusinessStartTimeRange(
   };
 }
 
+const MS_PER_HOUR = 60 * 60 * 1000;
+
+/**
+ * Get UTC start and end for a given business-hour slot (0-23) of the current business day.
+ * Slot 0 = [business start, business start + 1h), ..., Slot 23 = [business start + 23h, endAt].
+ * endAt for slot 23 is 1 second before next day's business start (same as getBusinessStartTimeRange).
+ */
+export function getBusinessHourSlotBounds(
+  timezone: string,
+  businessStartTime: string,
+  slotIndex: number,
+): { startAt: string; endAt: string } {
+  const { startAt, endAt } = getBusinessStartTimeRange(
+    timezone.trim(),
+    businessStartTime?.trim() ?? "00:00",
+  );
+  const startMs = new Date(startAt).getTime();
+  const endMs = new Date(endAt).getTime();
+  const slot = Math.max(0, Math.min(23, Math.floor(slotIndex)));
+  const slotStartMs = startMs + slot * MS_PER_HOUR;
+  const isLastSlot = slot === 23;
+  const slotEndMs = isLastSlot
+    ? endMs + 1
+    : slotStartMs + MS_PER_HOUR;
+  return {
+    startAt: new Date(slotStartMs).toISOString(),
+    endAt: new Date(slotEndMs - 1).toISOString(),
+  };
+}
+
+/**
+ * Given an ISO timestamp (e.g. order created_at), return the business-hour slot index (0-23)
+ * if the time falls inside the current business-day range; otherwise -1.
+ */
+export function getBusinessHourIndex(
+  isoDateString: string,
+  timezone: string,
+  businessStartTime: string,
+): number {
+  const orderDate = new Date(isoDateString);
+  if (Number.isNaN(orderDate.getTime())) return -1;
+  const { startAt, endAt } = getBusinessStartTimeRange(
+    timezone.trim(),
+    businessStartTime?.trim() ?? "00:00",
+  );
+  const startMs = new Date(startAt).getTime();
+  const endMs = new Date(endAt).getTime();
+  const orderMs = orderDate.getTime();
+  if (orderMs < startMs || orderMs > endMs) return -1;
+  const index = Math.floor((orderMs - startMs) / MS_PER_HOUR);
+  return Math.max(0, Math.min(23, index));
+}
+
 /**
  * Get start and end of "today" in RFC 3339 format.
  * If timezone is provided, "today" is the local calendar day in that IANA timezone.
