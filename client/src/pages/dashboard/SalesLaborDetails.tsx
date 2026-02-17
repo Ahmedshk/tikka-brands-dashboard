@@ -9,7 +9,7 @@ import {
   ClockedInStaffCard,
   DailyTargetsSectionCard,
 } from '../../components/SalesLabor';
-import type { SalesLaborKPIItem } from '../../components/SalesLabor';
+import type { SalesLaborKPIItem, TargetActualItem } from '../../components/SalesLabor';
 import SalesAndLaborIcon from '@assets/icons/sales_and_labor.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
 import ActualLaborCostIcon from '@assets/icons/actual_labor_cost.svg?react';
@@ -23,6 +23,8 @@ import {
   type SalesLaborKPIsData,
   type HourlyBreakdownData,
 } from '../../services/commandCenter.service';
+import { goalService } from '../../services/goal.service';
+import type { Goal } from '../../types';
 import type { RootState } from '../../store/store';
 
 function formatCurrency(value: number): string {
@@ -37,17 +39,11 @@ const clockedInStaffRows = [
   { name: 'Emma Davis', role: 'Prep Cook', clockIn: '7:00 am', currentHours: 8, status: 'On Break' as const },
 ];
 
-const dailyTargetsItems = [
-  { label: 'Sales Target', actual: 9425, target: 9000, higherIsBetter: true, formatValue: (n: number) => `$${n.toLocaleString()}` },
-  { label: 'Labor Cost %', actual: 22.3, target: 20, higherIsBetter: false, formatValue: (n: number) => `${n}%` },
-  { label: 'Hours Target', actual: 122, target: 135, higherIsBetter: false },
-  { label: 'SPMH Target', actual: 59.3, target: 66.67, higherIsBetter: true, formatValue: (n: number) => `$${n.toFixed(2)}` },
-];
-
 export const SalesLaborDetails = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [kpis, setKpis] = useState<SalesLaborKPIsData | null>(null);
   const [hourlyBreakdown, setHourlyBreakdown] = useState<HourlyBreakdownData | null>(null);
+  const [goals, setGoals] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +51,7 @@ export const SalesLaborDetails = () => {
     if (!currentLocation?._id) {
       setKpis(null);
       setHourlyBreakdown(null);
+      setGoals(null);
       setError(null);
       return;
     }
@@ -64,15 +61,18 @@ export const SalesLaborDetails = () => {
     Promise.all([
       commandCenterService.getSalesLaborKPIs(locationId),
       commandCenterService.getHourlyBreakdown(locationId),
+      goalService.getByLocationId(locationId).catch(() => null),
     ])
-      .then(([kpisData, hourlyData]) => {
+      .then(([kpisData, hourlyData, goalsData]) => {
         setKpis(kpisData);
         setHourlyBreakdown(hourlyData);
+        setGoals(goalsData ?? null);
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Failed to load Sales & Labor data');
         setKpis(null);
         setHourlyBreakdown(null);
+        setGoals(null);
       })
       .finally(() => setLoading(false));
   }, [currentLocation?._id]);
@@ -148,6 +148,49 @@ export const SalesLaborDetails = () => {
       },
     ];
   }, [kpis]);
+
+  const dailyTargetsItems = useMemo((): TargetActualItem[] => {
+    const salesActual = kpis?.actualTotalSales ?? 0;
+    const salesTarget = goals?.salesGoal ?? 0;
+    const laborActual = kpis?.actualLaborCostPercent ?? 0;
+    const laborTarget = goals?.laborCostGoal ?? 0;
+    const hoursActual = kpis?.totalHours ?? 0;
+    const hoursTarget = goals?.hoursGoal ?? 0;
+    const spmhActual = kpis?.salesPerManHour ?? 0;
+    const spmhTarget = goals?.spmhGoal ?? 0;
+    const to2 = (n: number) => Number(n.toFixed(2));
+    return [
+      {
+        label: 'Sales Target',
+        actual: salesActual,
+        target: salesTarget,
+        higherIsBetter: true,
+        formatValue: (n: number) =>
+          `$${to2(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      },
+      {
+        label: 'Labor Cost %',
+        actual: laborActual,
+        target: laborTarget,
+        higherIsBetter: false,
+        formatValue: (n: number) => `${to2(n)}%`,
+      },
+      {
+        label: 'Hours Target',
+        actual: hoursActual,
+        target: hoursTarget,
+        higherIsBetter: false,
+        formatValue: (n: number) => String(to2(n)),
+      },
+      {
+        label: 'SPMH Target',
+        actual: spmhActual,
+        target: spmhTarget,
+        higherIsBetter: true,
+        formatValue: (n: number) => `$${to2(n).toFixed(2)}`,
+      },
+    ];
+  }, [kpis, goals]);
 
   const showContentLoader = loading && currentLocation?._id;
 
