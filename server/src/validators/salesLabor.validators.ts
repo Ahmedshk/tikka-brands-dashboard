@@ -89,3 +89,45 @@ export const getSalesTrendQuerySchema = z.object({
       { message: "groupBy source requires metric netSales" },
     ),
 });
+
+/** Same as getSalesTrend but without metric/groupBy (for sales-trend-kpi). */
+export const getSalesTrendKpiQuerySchema = z.object({
+  query: z
+    .object({
+      locationId: z.string().min(1, "Location ID is required"),
+      periodType: periodTypeSchema.default("last30days"),
+      periodStart: z.string().optional(),
+      periodEnd: z.string().optional(),
+      comparisonType: comparisonTypeSchema.default("priorYear"),
+      comparisonDate: z.string().optional(),
+      comparisonStart: z.string().optional(),
+      comparisonEnd: z.string().optional(),
+    })
+    .refine(
+      (data) => {
+        if (data.periodType !== "custom") return true;
+        return (
+          typeof data.periodStart === "string" &&
+          data.periodStart.length > 0 &&
+          typeof data.periodEnd === "string" &&
+          data.periodEnd.length > 0
+        );
+      },
+      { message: "periodStart and periodEnd required when periodType is custom" },
+    )
+    .refine(
+      (data) => {
+        if (data.comparisonType !== "custom") return true;
+        return (
+          typeof data.comparisonStart === "string" &&
+          data.comparisonStart.length > 0 &&
+          typeof data.comparisonEnd === "string" &&
+          data.comparisonEnd.length > 0
+        );
+      },
+      {
+        message:
+          "comparisonStart and comparisonEnd required when comparisonType is custom",
+      },
+    ),
+});

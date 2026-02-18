@@ -136,8 +136,8 @@ export const Navbar = () => {
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
   return (
-    <nav className="relative z-20 bg-card-background border-b border-gray-200 h-[72px] flex flex-col justify-center" ref={mobileMenuRef}>
-      <div className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
+    <nav className="relative z-20 bg-card-background border-b border-gray-200 min-h-[72px] flex flex-col" ref={mobileMenuRef}>
+      <div className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-8 h-[72px] shrink-0">
         {/* Spacer when location selector is hidden (e.g. Location Management) so notifications/profile stay right */}
         {hideLocationSelector && <div className="min-w-0 flex-1" />}
         {/* Location Selector - hidden on Location Management so updates apply to the store being edited */}

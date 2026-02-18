@@ -1,6 +1,6 @@
 export { SalesTrendChartCard } from './SalesTrendChartCard';
 export type { SalesTrendChartCardProps } from './SalesTrendChartCard';
-export { PeriodPicker } from './PeriodPicker';
+export { PeriodPicker, PERIOD_OPTIONS } from './PeriodPicker';
 export type { PeriodPickerValue, PeriodPickerProps } from './PeriodPicker';
 export {
   ComparisonPeriodPicker,

@@ -86,6 +86,29 @@ export interface SalesTrendParams {
   groupBy: SalesTrendGroupBy;
 }
 
+/** Params for sales-trend-kpi (period + comparison only). */
+export interface SalesTrendKpiParams {
+  periodType: SalesTrendPeriodType;
+  periodStart?: string;
+  periodEnd?: string;
+  comparisonType: SalesTrendComparisonType;
+  comparisonDate?: string;
+  comparisonStart?: string;
+  comparisonEnd?: string;
+}
+
+export interface SalesTrendKpiPeriodTotals {
+  totalNetSales: number;
+  totalTransactions: number;
+  totalHours: number;
+  numDays: number;
+}
+
+export interface SalesTrendKpiData {
+  current: SalesTrendKpiPeriodTotals;
+  comparison: SalesTrendKpiPeriodTotals;
+}
+
 export type SalesTrendGranularity = "hourly" | "daily" | "weekly" | "monthly";
 
 export interface SalesTrendLineData {
@@ -194,6 +217,34 @@ export const commandCenterService = {
       throw new Error(
         res.data.message ?? "Failed to fetch sales trend"
       );
+    }
+    return res.data.data;
+  },
+
+  async getSalesTrendKpi(
+    locationId: string,
+    params: SalesTrendKpiParams
+  ): Promise<SalesTrendKpiData> {
+    const res = await api.get<ApiResponse<SalesTrendKpiData>>(
+      API_ENDPOINTS.SALES_LABOR.SALES_TREND_KPI,
+      {
+        params: {
+          locationId,
+          periodType: params.periodType,
+          ...(params.periodStart && { periodStart: params.periodStart }),
+          ...(params.periodEnd && { periodEnd: params.periodEnd }),
+          comparisonType: params.comparisonType,
+          ...(params.comparisonType === "custom" &&
+            params.comparisonStart &&
+            params.comparisonEnd && {
+              comparisonStart: params.comparisonStart,
+              comparisonEnd: params.comparisonEnd,
+            }),
+        },
+      }
+    );
+    if (!res.data.success || res.data.data == null) {
+      throw new Error(res.data.message ?? "Failed to fetch sales trend KPIs");
     }
     return res.data.data;
   },

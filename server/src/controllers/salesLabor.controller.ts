@@ -296,6 +296,10 @@ function toSeriesGranularity(g: Granularity): SalesTrendGranularity {
   return g as SalesTrendGranularity;
 }
 
+function sumNullable(arr: (number | null)[]): number {
+  return arr.reduce((s, v) => s + (v ?? 0), 0);
+}
+
 export const getSalesTrend = async (
   req: Request,
   res: Response,
@@ -712,6 +716,191 @@ export const getSalesTrend = async (
         granularity: period.granularity,
         currentPeriod,
         comparisonPeriod,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export interface SalesTrendKpiPeriod {
+  totalNetSales: number;
+  totalTransactions: number;
+  totalHours: number;
+  numDays: number;
+}
+
+export const getSalesTrendKpi = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const locationId =
+      typeof req.query.locationId === "string" ? req.query.locationId : "";
+    const periodType = (req.query.periodType as string) || "last30days";
+    const periodStart =
+      typeof req.query.periodStart === "string"
+        ? req.query.periodStart
+        : undefined;
+    const periodEnd =
+      typeof req.query.periodEnd === "string" ? req.query.periodEnd : undefined;
+    const comparisonType = (req.query.comparisonType as string) || "priorYear";
+    const comparisonDate =
+      typeof req.query.comparisonDate === "string"
+        ? req.query.comparisonDate
+        : undefined;
+    const comparisonStart =
+      typeof req.query.comparisonStart === "string"
+        ? req.query.comparisonStart
+        : undefined;
+    const comparisonEnd =
+      typeof req.query.comparisonEnd === "string"
+        ? req.query.comparisonEnd
+        : undefined;
+
+    const withCreds = await locationService.getByIdWithCredentials(locationId);
+    if (!withCreds) {
+      throw new NotFoundError("Location not found");
+    }
+    const { location, squareAccessToken, homebaseApiKey } = withCreds;
+    const timezone = location.timezone?.trim() ?? "UTC";
+    const businessStartTime = location.businessStartTime?.trim() ?? "00:00";
+
+    const period = getSalesTrendPeriodRange(
+      periodType as Parameters<typeof getSalesTrendPeriodRange>[0],
+      timezone,
+      periodStart,
+      periodEnd,
+      businessStartTime,
+    );
+    const displayEnd = period.displayEndAt ?? period.endAt;
+    const comparison = getSalesTrendComparisonRange(
+      comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
+      period.startAt,
+      displayEnd,
+      timezone,
+      comparisonDate,
+      comparisonStart,
+      comparisonEnd,
+      businessStartTime,
+    );
+
+    const seriesGranularity = toSeriesGranularity(period.granularity);
+    const dataRange = { startAt: period.startAt, endAt: period.endAt };
+    const comparisonRange = comparison
+      ? { startAt: comparison.startAt, endAt: comparison.endAt }
+      : null;
+
+    const currentBuckets = getOrderedBucketsAndLabels(
+      dataRange,
+      timezone,
+      seriesGranularity,
+    );
+    const numDaysCurrent = currentBuckets.keys.length;
+    const numDaysComparison = comparisonRange
+      ? getOrderedBucketsAndLabels(
+          comparisonRange,
+          timezone,
+          seriesGranularity,
+        ).keys.length
+      : 0;
+
+    let totalNetSalesCurrent = 0;
+    let totalTransactionsCurrent = 0;
+    let totalNetSalesComparison = 0;
+    let totalTransactionsComparison = 0;
+    let totalHoursCurrent = 0;
+    let totalHoursComparison = 0;
+
+    const squareLocationId = location.squareLocationId?.trim();
+    if (squareLocationId) {
+      const [current, comp] = await Promise.all([
+        getOrderTimeSeriesInRange(
+          squareLocationId,
+          dataRange,
+          timezone,
+          seriesGranularity,
+          { accessToken: squareAccessToken ?? undefined },
+        ),
+        comparisonRange
+          ? getOrderTimeSeriesInRange(
+              squareLocationId,
+              comparisonRange,
+              timezone,
+              seriesGranularity,
+              { accessToken: squareAccessToken ?? undefined },
+            )
+          : null,
+      ]);
+      totalNetSalesCurrent = sumNullable(current.netSales);
+      totalTransactionsCurrent = sumNullable(current.transactionCount);
+      totalNetSalesComparison = comp
+        ? sumNullable(comp.netSales)
+        : 0;
+      totalTransactionsComparison = comp
+        ? sumNullable(comp.transactionCount)
+        : 0;
+    }
+
+    const homebaseLocationId = location.homebaseLocationId?.trim();
+    if (homebaseLocationId) {
+      try {
+        const [current, comp] = await Promise.all([
+          getLaborAndHoursTimeSeriesInRange(
+            homebaseLocationId,
+            dataRange,
+            timezone,
+            seriesGranularity,
+            { apiKey: homebaseApiKey ?? undefined },
+          ),
+          comparisonRange
+            ? getLaborAndHoursTimeSeriesInRange(
+                homebaseLocationId,
+                comparisonRange,
+                timezone,
+                seriesGranularity,
+                { apiKey: homebaseApiKey ?? undefined },
+              )
+            : null,
+        ]);
+        totalHoursCurrent = current.hours.reduce((s, v) => s + (v ?? 0), 0);
+        totalHoursComparison = comp
+          ? comp.hours.reduce((s, v) => s + (v ?? 0), 0)
+          : 0;
+      } catch (laborErr) {
+        const msg =
+          laborErr instanceof Error ? laborErr.message : String(laborErr);
+        if (
+          msg.includes("invalid_date_range") ||
+          msg.includes("cannot exceed a month")
+        ) {
+          res.status(422).json({
+            success: false,
+            message:
+              "Your date range cannot exceed a month. Try a smaller range.",
+          });
+          return;
+        }
+        throw laborErr;
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        current: {
+          totalNetSales: totalNetSalesCurrent,
+          totalTransactions: totalTransactionsCurrent,
+          totalHours: totalHoursCurrent,
+          numDays: numDaysCurrent,
+        },
+        comparison: {
+          totalNetSales: totalNetSalesComparison,
+          totalTransactions: totalTransactionsComparison,
+          totalHours: totalHoursComparison,
+          numDays: numDaysComparison,
+        },
       },
     });
   } catch (error) {

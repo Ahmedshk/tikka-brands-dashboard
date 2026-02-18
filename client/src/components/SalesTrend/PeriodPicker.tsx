@@ -11,7 +11,7 @@ import TextField from '@mui/material/TextField';
 import { createRangeDay, parseISODateToLocal } from './rangeDaySlot';
 import type { SalesTrendPeriodType } from '../../services/commandCenter.service';
 
-const PERIOD_OPTIONS: { value: SalesTrendPeriodType; label: string }[] = [
+export const PERIOD_OPTIONS: { value: SalesTrendPeriodType; label: string }[] = [
   { value: 'today', label: 'Today' },
   { value: 'last7days', label: 'Last 7 days' },
   { value: 'last30days', label: 'Last 30 days' },
@@ -67,9 +67,10 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
   const [localStart, setLocalStart] = useState<string>('');
   const [localEnd, setLocalEnd] = useState<string>('');
   const calendarDateRef = useRef<Date>(new Date());
+  const pickingRef = useRef<'start' | 'end'>('start');
 
   useEffect(() => {
-    if (value.periodType === 'custom') {
+    if (value.periodType === 'custom' && pickingRef.current !== 'end') {
       setLocalStart(value.periodStart ? toDisplay(value.periodStart) : '');
       setLocalEnd(value.periodEnd ? toDisplay(value.periodEnd) : '');
     }
@@ -78,19 +79,28 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
   const open = Boolean(anchorEl);
   const isCustom = value.periodType === 'custom';
 
-  const rangeStart = parseISODateToLocal(value.periodStart) ?? parseDateSafe(localStart);
-  const rangeEnd = parseISODateToLocal(value.periodEnd) ?? parseDateSafe(localEnd);
-  const slots = useMemo(
-    () =>
-      rangeStart != null && rangeEnd != null
-        ? { day: createRangeDay(rangeStart, rangeEnd) }
-        : undefined,
-    [rangeStart?.getTime(), rangeEnd?.getTime()],
-  );
+  const localStartDate = parseDateSafe(localStart);
+  const localEndDate = parseDateSafe(localEnd);
+  const isPicking = pickingRef.current === 'end';
+  const rangeStart = localStartDate ?? (isPicking ? null : parseISODateToLocal(value.periodStart));
+  const rangeEnd = localEndDate ?? (isPicking ? null : parseISODateToLocal(value.periodEnd));
+  const slots = useMemo(() => {
+    if (rangeStart != null && rangeEnd != null) {
+      return { day: createRangeDay(rangeStart, rangeEnd) };
+    }
+    if (rangeStart != null) {
+      return { day: createRangeDay(rangeStart, rangeStart) };
+    }
+    return undefined;
+  }, [rangeStart?.getTime(), rangeEnd?.getTime()]);
 
-  const handleOpen = (e: React.MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget);
+  const handleOpen = (e: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(e.currentTarget);
+    pickingRef.current = 'start';
+  };
   const handleClose = () => {
     setAnchorEl(null);
+    pickingRef.current = 'start';
     if (isCustom && localStart && localEnd) {
       const start = parseDateSafe(localStart);
       const end = parseDateSafe(localEnd);
@@ -101,6 +111,9 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
           periodEnd: formatDateToISO(end),
         });
       }
+    } else if (isCustom && localStart && !localEnd) {
+      setLocalStart(value.periodStart ? toDisplay(value.periodStart) : '');
+      setLocalEnd(value.periodEnd ? toDisplay(value.periodEnd) : '');
     }
   };
 
@@ -125,26 +138,22 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
     const dateIso = formatDateToISO(date);
     const currentStart = parseDateSafe(localStart);
 
-    if (!currentStart) {
+    if (pickingRef.current === 'start' || !currentStart) {
       setLocalStart(str);
       setLocalEnd('');
-      onChange({ periodType: 'custom', periodStart: dateIso, periodEnd: dateIso });
+      pickingRef.current = 'end';
       return;
     }
 
     if (!isSameOrAfter(date, currentStart)) {
       setLocalStart(str);
       setLocalEnd('');
-      onChange({ periodType: 'custom', periodStart: dateIso, periodEnd: dateIso });
     } else {
       setLocalEnd(str);
-      const startIso =
-        value.periodType === 'custom' && value.periodStart
-          ? value.periodStart
-          : formatDateToISO(currentStart);
+      pickingRef.current = 'start';
       onChange({
         periodType: 'custom',
-        periodStart: startIso,
+        periodStart: formatDateToISO(currentStart),
         periodEnd: dateIso,
       });
     }

@@ -1,15 +1,18 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { Layout } from '../../components/common/Layout';
+import { format, parse } from 'date-fns';
 import {
   SalesTrendChartCard,
   PeriodPicker,
   ComparisonPeriodPicker,
   getComparisonOptionsForPeriod,
   KPIsTableCard,
+  PERIOD_OPTIONS,
   SalesByCategoryCard,
-  type PeriodPickerValue,
   type ComparisonPeriodPickerValue,
+  type KPIsTableRow,
+  type PeriodPickerValue,
 } from '../../components/SalesTrend';
 import SalesAndLaborIcon from '@assets/icons/sales_and_labor.svg?react';
 import {
@@ -18,6 +21,7 @@ import {
   type SalesTrendData,
   type SalesTrendMetric,
   type SalesTrendGroupBy,
+  type SalesTrendKpiData,
 } from '../../services/commandCenter.service';
 import type { TimeSeriesSeries } from '../../components/charts/TimeSeriesLineChart';
 import type { RootState } from '../../store/store';
@@ -47,7 +51,9 @@ function getComparisonLabel(comparison: ComparisonPeriodPickerValue): string {
     case 'year2Before':
     case 'year3Before':
     case 'year4Before': {
-      const n = comparison.comparisonType === 'year2Before' ? 2 : comparison.comparisonType === 'year3Before' ? 3 : 4;
+      let n = 4;
+      if (comparison.comparisonType === 'year2Before') n = 2;
+      else if (comparison.comparisonType === 'year3Before') n = 3;
       return `Year ${new Date().getFullYear() - n}`;
     }
     case 'custom':
@@ -79,24 +85,88 @@ function getYAxisFormatter(metric: SalesTrendMetric): (value: number) => string 
   }
 }
 
-type KpiRow = { label: string; current: string | number; previous: string | number; percent: number };
+const currencyFmt = (v: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
-function getKpiRows(timeRange: string, comparison: string, _metric: string): KpiRow[] {
-  if (timeRange === 'Last 30 Days' && comparison === 'vs. Last Year') {
-    return [
-      { label: 'Total Net Sales', current: '$224,095', previous: '$186,710', percent: 20 },
-      { label: 'Total Transactions', current: '8,238', previous: '7,056', percent: 16.7 },
-      { label: 'Average Check Size', current: '$26.10', previous: '$26.46', percent: -1.4 },
-      { label: 'Average Daily Sales', current: '$7,470', previous: '$6,224', percent: 20.1 },
-      { label: 'Sales Per Hour SPH', current: '$548', previous: '$569', percent: -3.7 },
-    ];
+function percentDiff(current: number, comparison: number): number {
+  if (comparison === 0) return 0;
+  return Number((((current - comparison) / comparison) * 100).toFixed(1));
+}
+
+function getKpiPeriodLabel(value: PeriodPickerValue): string {
+  if (value.periodType === 'custom' && value.periodStart && value.periodEnd) {
+    try {
+      const s = format(parse(value.periodStart, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
+      const e = format(parse(value.periodEnd, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
+      return s === e ? s : `${s} – ${e}`;
+    } catch {
+      return 'Custom';
+    }
   }
+  return PERIOD_OPTIONS.find((o) => o.value === value.periodType)?.label ?? 'Period';
+}
+
+function getKpiComparisonLabel(periodType: PeriodPickerValue['periodType'], value: ComparisonPeriodPickerValue): string {
+  if (value.comparisonType === 'custom' && value.comparisonStart && value.comparisonEnd) {
+    try {
+      const s = format(parse(value.comparisonStart, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
+      const e = format(parse(value.comparisonEnd, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
+      return s === e ? s : `${s} – ${e}`;
+    } catch {
+      return 'Comparison';
+    }
+  }
+  const opts = getComparisonOptionsForPeriod(periodType);
+  return opts.find((o) => o.value === value.comparisonType)?.label ?? 'Comparison';
+}
+
+function buildKpiRows(data: SalesTrendKpiData | null): KPIsTableRow[] {
+  if (!data) return [];
+  const { current, comparison } = data;
+
+  const avgCheckCur = current.totalTransactions > 0 ? current.totalNetSales / current.totalTransactions : 0;
+  const avgCheckComp = comparison.totalTransactions > 0 ? comparison.totalNetSales / comparison.totalTransactions : 0;
+  const avgDailyCur = current.numDays > 0 ? current.totalNetSales / current.numDays : 0;
+  const avgDailyComp = comparison.numDays > 0 ? comparison.totalNetSales / comparison.numDays : 0;
+  const sphCur = current.totalHours > 0 ? current.totalNetSales / current.totalHours : 0;
+  const sphComp = comparison.totalHours > 0 ? comparison.totalNetSales / comparison.totalHours : 0;
+
   return [
-    { label: 'Total Net Sales', current: '$52,100', previous: '$48,200', percent: 8.1 },
-    { label: 'Total Transactions', current: '1,892', previous: '1,756', percent: 7.8 },
-    { label: 'Average Check Size', current: '$27.52', previous: '$27.44', percent: 0.3 },
-    { label: 'Average Daily Sales', current: '$7,443', previous: '$6,886', percent: 8.1 },
-    { label: 'Sales Per Hour SPH', current: '$542', previous: '$518', percent: 4.6 },
+    {
+      label: 'Total Net Sales',
+      current: currencyFmt(current.totalNetSales),
+      previous: currencyFmt(comparison.totalNetSales),
+      percent: percentDiff(current.totalNetSales, comparison.totalNetSales),
+      tooltip: 'Sum of net sales in the period',
+    },
+    {
+      label: 'Total Transactions',
+      current: Math.round(current.totalTransactions).toLocaleString(),
+      previous: Math.round(comparison.totalTransactions).toLocaleString(),
+      percent: percentDiff(current.totalTransactions, comparison.totalTransactions),
+      tooltip: 'Sum of transactions in the period',
+    },
+    {
+      label: 'Average Check Size',
+      current: avgCheckCur > 0 ? currencyFmt(avgCheckCur) : '—',
+      previous: avgCheckComp > 0 ? currencyFmt(avgCheckComp) : '—',
+      percent: percentDiff(avgCheckCur, avgCheckComp),
+      tooltip: 'Total Net Sales / Total Transactions',
+    },
+    {
+      label: 'Average Daily Sales',
+      current: avgDailyCur > 0 ? currencyFmt(avgDailyCur) : '—',
+      previous: avgDailyComp > 0 ? currencyFmt(avgDailyComp) : '—',
+      percent: percentDiff(avgDailyCur, avgDailyComp),
+      tooltip: 'Total Net Sales / Number of days in period',
+    },
+    {
+      label: 'Average Sales Per Hour (SPH)',
+      current: sphCur > 0 ? currencyFmt(sphCur) : '—',
+      previous: sphComp > 0 ? currencyFmt(sphComp) : '—',
+      percent: percentDiff(sphCur, sphComp),
+      tooltip: 'Total Net Sales / Total hours in period',
+    },
   ];
 }
 
@@ -142,12 +212,28 @@ export const SalesTrendReports = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [kpiPeriod, setKpiPeriod] = useState('Last 30 Days');
-  const [kpiComparison, setKpiComparison] = useState('vs. Last Year');
+  const [kpiPeriod, setKpiPeriod] = useState<PeriodPickerValue>({ periodType: 'last30days' });
+  const [kpiComparison, setKpiComparison] = useState<ComparisonPeriodPickerValue>({ comparisonType: 'priorYear' });
+  const [kpiData, setKpiData] = useState<SalesTrendKpiData | null>(null);
+  const [kpiLoading, setKpiLoading] = useState(false);
+  const [kpiError, setKpiError] = useState<string | null>(null);
   const [categoryPeriod, setCategoryPeriod] = useState('Last 30 Days');
   const [categoryComparison, setCategoryComparison] = useState('vs. Last Year');
 
   const locationId = currentLocation?._id ?? null;
+
+  useEffect(() => {
+    const options = getComparisonOptionsForPeriod(kpiPeriod.periodType).filter((o) => o.value !== 'none');
+    const exists = options.some((o) => o.value === kpiComparison.comparisonType);
+    if (!exists && options.length > 0) {
+      const fallback = kpiPeriod.periodType === 'thisYear' ? 'priorYear' : options[0].value;
+      setKpiComparison((prev) =>
+        fallback === 'custom'
+          ? { comparisonType: 'custom' }
+          : { ...prev, comparisonType: fallback as ComparisonPeriodPickerValue['comparisonType'] }
+      );
+    }
+  }, [kpiPeriod.periodType]);
 
   useEffect(() => {
     const options = getComparisonOptionsForPeriod(period.periodType);
@@ -215,6 +301,52 @@ export const SalesTrendReports = () => {
     comparison.comparisonEnd,
     metric,
     groupBy,
+  ]);
+
+  useEffect(() => {
+    if (!locationId) {
+      setKpiData(null);
+      setKpiError(null);
+      return;
+    }
+    setKpiLoading(true);
+    setKpiError(null);
+    const kpiParams = {
+      periodType: kpiPeriod.periodType,
+      ...(kpiPeriod.periodType === 'custom' &&
+        kpiPeriod.periodStart &&
+        kpiPeriod.periodEnd && {
+          periodStart: kpiPeriod.periodStart,
+          periodEnd: kpiPeriod.periodEnd,
+        }),
+      comparisonType: kpiComparison.comparisonType,
+      ...(kpiComparison.comparisonType === 'custom' &&
+        kpiComparison.comparisonStart &&
+        kpiComparison.comparisonEnd && {
+          comparisonStart: kpiComparison.comparisonStart,
+          comparisonEnd: kpiComparison.comparisonEnd,
+        }),
+    };
+    commandCenterService
+      .getSalesTrendKpi(locationId, kpiParams)
+      .then(setKpiData)
+      .catch((err: unknown) => {
+        const res = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+        let message = 'Failed to load KPIs';
+        if (typeof res === 'string' && res.trim()) message = res;
+        else if (err instanceof Error) message = err.message;
+        setKpiError(message);
+        setKpiData(null);
+      })
+      .finally(() => setKpiLoading(false));
+  }, [
+    locationId,
+    kpiPeriod.periodType,
+    kpiPeriod.periodStart,
+    kpiPeriod.periodEnd,
+    kpiComparison.comparisonType,
+    kpiComparison.comparisonStart,
+    kpiComparison.comparisonEnd,
   ]);
 
   const chartProps = useMemo(() => {
@@ -344,17 +476,22 @@ export const SalesTrendReports = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className={cardClass}>
+            {kpiError && (
+              <div className="p-3 rounded-t-xl bg-red-50 text-red-800 text-sm border-b border-gray-200">
+                {kpiError}
+              </div>
+            )}
             <KPIsTableCard
-              rows={getKpiRows(kpiPeriod, kpiComparison, metric)}
+              rows={buildKpiRows(kpiData)}
+              loading={kpiLoading}
               title="KPIs"
-              currentPeriodLabel={kpiPeriod}
-              comparisonPeriodLabel={
-                kpiComparison === 'vs. Last Year' ? 'Last Year' : kpiComparison
-              }
-              period={kpiPeriod}
-              comparison={kpiComparison}
+              currentPeriodLabel={getKpiPeriodLabel(kpiPeriod)}
+              comparisonPeriodLabel={getKpiComparisonLabel(kpiPeriod.periodType, kpiComparison)}
+              periodValue={kpiPeriod}
+              comparisonValue={kpiComparison}
               onPeriodChange={setKpiPeriod}
               onComparisonChange={setKpiComparison}
+              excludeNoneFromComparison
             />
           </div>
           <div className={cardClass}>

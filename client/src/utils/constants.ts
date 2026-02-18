@@ -27,5 +27,6 @@ export const API_ENDPOINTS = {
     KPIS: "/sales-labor/kpis",
     HOURLY_BREAKDOWN: "/sales-labor/hourly-breakdown",
     SALES_TREND: "/sales-labor/sales-trend",
+    SALES_TREND_KPI: "/sales-labor/sales-trend-kpi",
   },
 } as const;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { format, parse, addDays, addYears, differenceInCalendarDays } from 'date-fns';
 import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
@@ -132,6 +132,8 @@ export interface ComparisonPeriodPickerProps {
   value: ComparisonPeriodPickerValue;
   onChange: (value: ComparisonPeriodPickerValue) => void;
   period: PeriodPickerValue;
+  /** Exclude these comparison types from the options list (e.g. ['none'] for KPI table) */
+  excludeComparisonTypes?: SalesTrendComparisonType[];
   id?: string;
   className?: string;
 }
@@ -157,6 +159,7 @@ export function ComparisonPeriodPicker({
   value,
   onChange,
   period,
+  excludeComparisonTypes,
   id,
   className = '',
 }: ComparisonPeriodPickerProps) {
@@ -170,9 +173,15 @@ export function ComparisonPeriodPicker({
   };
   const [localStart, setLocalStart] = useState<string>('');
   const [localEnd, setLocalEnd] = useState<string>('');
+  const pickingRef = useRef<'start' | 'end'>('start');
 
   const periodType = period.periodType;
-  const comparisonOptions = getComparisonOptionsForPeriod(periodType);
+  const comparisonOptions = useMemo(() => {
+    const opts = getComparisonOptionsForPeriod(periodType);
+    if (!excludeComparisonTypes?.length) return opts;
+    const set = new Set(excludeComparisonTypes);
+    return opts.filter((o) => !set.has(o.value));
+  }, [periodType, excludeComparisonTypes]);
 
   const customRangeDays = useMemo(() => {
     if (periodType !== 'custom' || !period.periodStart || !period.periodEnd) return undefined;
@@ -185,7 +194,7 @@ export function ComparisonPeriodPicker({
   const autoEndDate = periodType !== 'custom' || customRangeDays != null;
 
   useEffect(() => {
-    if (value.comparisonType === 'custom') {
+    if (value.comparisonType === 'custom' && pickingRef.current !== 'end') {
       setLocalStart(value.comparisonStart ? toDisplay(value.comparisonStart) : '');
       setLocalEnd(value.comparisonEnd ? toDisplay(value.comparisonEnd) : '');
     }
@@ -207,39 +216,41 @@ export function ComparisonPeriodPicker({
   const open = Boolean(anchorEl);
   const isCustom = value.comparisonType === 'custom';
 
-  const rangeStart =
-    parseISODateToLocal(value.comparisonStart) ?? parseDateSafe(localStart);
-  const rangeEnd =
-    parseISODateToLocal(value.comparisonEnd) ?? parseDateSafe(localEnd);
-  const slots = useMemo(
-    () =>
-      rangeStart != null && rangeEnd != null
-        ? { day: createRangeDay(rangeStart, rangeEnd) }
-        : undefined,
-    [rangeStart?.getTime(), rangeEnd?.getTime()],
-  );
+  const localStartDate = parseDateSafe(localStart);
+  const localEndDate = parseDateSafe(localEnd);
+  const isPicking = pickingRef.current === 'end';
+  const rangeStart = localStartDate ?? (isPicking ? null : parseISODateToLocal(value.comparisonStart));
+  const rangeEnd = localEndDate ?? (isPicking ? null : parseISODateToLocal(value.comparisonEnd));
+  const slots = useMemo(() => {
+    if (rangeStart != null && rangeEnd != null) {
+      return { day: createRangeDay(rangeStart, rangeEnd) };
+    }
+    if (rangeStart != null) {
+      return { day: createRangeDay(rangeStart, rangeStart) };
+    }
+    return undefined;
+  }, [rangeStart?.getTime(), rangeEnd?.getTime()]);
 
-  const handleOpen = (e: React.MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget);
+  const handleOpen = (e: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(e.currentTarget);
+    pickingRef.current = 'start';
+  };
   const handleClose = () => {
     setAnchorEl(null);
-    if (isCustom && localStart) {
+    pickingRef.current = 'start';
+    if (isCustom && localStart && localEnd) {
       const startD = parseDateSafe(localStart);
-      if (startD) {
-        const startIso = formatDateToISO(startD);
-        const endIso = autoEndDate
-          ? getComparisonEndFromStart(startIso, periodType, customRangeDays)
-          : (() => {
-            const endD = parseDateSafe(localEnd);
-            return endD && isSameOrAfter(endD, startD)
-              ? formatDateToISO(endD)
-              : getComparisonEndFromStart(startIso, periodType, customRangeDays);
-          })();
+      const endD = parseDateSafe(localEnd);
+      if (startD && endD) {
         onChange({
           comparisonType: 'custom',
-          comparisonStart: startIso,
-          comparisonEnd: endIso,
+          comparisonStart: formatDateToISO(startD),
+          comparisonEnd: formatDateToISO(endD),
         });
       }
+    } else if (isCustom && localStart && !localEnd) {
+      setLocalStart(value.comparisonStart ? toDisplay(value.comparisonStart) : '');
+      setLocalEnd(value.comparisonEnd ? toDisplay(value.comparisonEnd) : '');
     }
   };
 
@@ -287,34 +298,23 @@ export function ComparisonPeriodPicker({
     }
 
     const currentStart = parseDateSafe(localStart);
-    if (!currentStart) {
+
+    if (pickingRef.current === 'start' || !currentStart) {
       setLocalStart(str);
       setLocalEnd('');
-      onChange({
-        comparisonType: 'custom',
-        comparisonStart: dateIso,
-        comparisonEnd: dateIso,
-      });
+      pickingRef.current = 'end';
       return;
     }
 
     if (!isSameOrAfter(date, currentStart)) {
       setLocalStart(str);
       setLocalEnd('');
-      onChange({
-        comparisonType: 'custom',
-        comparisonStart: dateIso,
-        comparisonEnd: dateIso,
-      });
     } else {
       setLocalEnd(str);
-      const startIso =
-        value.comparisonType === 'custom' && value.comparisonStart
-          ? value.comparisonStart
-          : formatDateToISO(currentStart);
+      pickingRef.current = 'start';
       onChange({
         comparisonType: 'custom',
-        comparisonStart: startIso,
+        comparisonStart: formatDateToISO(currentStart),
         comparisonEnd: dateIso,
       });
     }

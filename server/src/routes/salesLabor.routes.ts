@@ -3,12 +3,14 @@ import {
   getSalesLaborKPIs,
   getHourlyBreakdown,
   getSalesTrend,
+  getSalesTrendKpi,
 } from "../controllers/salesLabor.controller.js";
 import { validate } from "../utils/zod.util.js";
 import {
   getSalesLaborKPIsQuerySchema,
   getHourlyBreakdownQuerySchema,
   getSalesTrendQuerySchema,
+  getSalesTrendKpiQuerySchema,
 } from "../validators/salesLabor.validators.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/rbac.middleware.js";
@@ -41,6 +43,12 @@ router.get(
   "/sales-trend",
   validate(getSalesTrendQuerySchema),
   getSalesTrend,
+);
+
+router.get(
+  "/sales-trend-kpi",
+  validate(getSalesTrendKpiQuerySchema),
+  getSalesTrendKpi,
 );
 
 export default router;
