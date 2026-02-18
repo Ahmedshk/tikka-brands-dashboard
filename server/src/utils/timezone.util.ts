@@ -87,6 +87,36 @@ export function getBusinessStartTimeRange(
   };
 }
 
+/**
+ * Get business-day window for a specific calendar date (y, m, d) in timezone.
+ * startAt = business start time on that day; endAt = 1 second before next day's business start.
+ * Use for custom date ranges so each day is from business start to end of business day.
+ */
+export function getBusinessDayRangeForDate(
+  timezone: string,
+  businessStartTime: string,
+  y: number,
+  m: number,
+  d: number,
+): { startAt: string; endAt: string } {
+  const tz = timezone.trim();
+  const startMs = parseBusinessStartTime(businessStartTime);
+  const startOfDay = getStartOfDayUtc(y, m, d, tz);
+  const startAt = new Date(startOfDay.getTime() + startMs);
+  const nextDay = new Date(y, m, d + 1);
+  const startOfNextDay = getStartOfDayUtc(
+    nextDay.getFullYear(),
+    nextDay.getMonth(),
+    nextDay.getDate(),
+    tz,
+  );
+  const endAt = new Date(startOfNextDay.getTime() + startMs - 1000);
+  return {
+    startAt: startAt.toISOString(),
+    endAt: endAt.toISOString(),
+  };
+}
+
 const MS_PER_HOUR = 60 * 60 * 1000;
 
 /**

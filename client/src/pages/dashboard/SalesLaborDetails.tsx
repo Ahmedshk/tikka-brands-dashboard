@@ -86,7 +86,7 @@ export const SalesLaborDetails = () => {
     const fmtHours = (n: number | null) => (n == null ? unavail : Number(n).toFixed(2));
     return [
       {
-        title: 'Actual Total Sales',
+        title: 'Actual Total Net Sales',
         timePeriod: 'Today',
         value: fmt(kpis?.actualTotalSales ?? null, true),
         accentColor: 'green',

@@ -43,6 +43,80 @@ export interface HourlyBreakdownData {
   laborCostPercentPerHour: (number | null)[];
 }
 
+export type SalesTrendPeriodType =
+  | "today"
+  | "last7days"
+  | "last30days"
+  | "last52weeks"
+  | "thisWeek"
+  | "thisMonth"
+  | "thisYear"
+  | "custom";
+
+export type SalesTrendComparisonType =
+  | "none"
+  | "1DayPrior"
+  | "samePeriodPreviousWeek"
+  | "samePeriodPreviousMonth"
+  | "priorYear"
+  | "52WeeksPrior"
+  | "year2Before"
+  | "year3Before"
+  | "year4Before"
+  | "custom";
+
+export type SalesTrendMetric =
+  | "netSales"
+  | "transactions"
+  | "averageCheck"
+  | "laborCost"
+  | "hours";
+
+export type SalesTrendGroupBy = "none" | "source";
+
+export interface SalesTrendParams {
+  periodType: SalesTrendPeriodType;
+  periodStart?: string;
+  periodEnd?: string;
+  comparisonType: SalesTrendComparisonType;
+  comparisonDate?: string;
+  comparisonStart?: string;
+  comparisonEnd?: string;
+  metric: SalesTrendMetric;
+  groupBy: SalesTrendGroupBy;
+}
+
+export type SalesTrendGranularity = "hourly" | "daily" | "weekly" | "monthly";
+
+export interface SalesTrendLineData {
+  xAxisLabels: string[];
+  granularity: SalesTrendGranularity;
+  /** Nulls indicate future/no-data buckets so the chart line breaks. */
+  currentPeriod: (number | null)[];
+  comparisonPeriod: (number | null)[];
+}
+
+export interface SalesTrendStackedSeriesItem {
+  id: string;
+  label: string;
+  data: number[];
+  color: string;
+}
+
+export interface SalesTrendStackedData {
+  xAxisLabels: string[];
+  granularity: SalesTrendGranularity;
+  series: SalesTrendStackedSeriesItem[];
+}
+
+export type SalesTrendData = SalesTrendLineData | SalesTrendStackedData;
+
+export function isSalesTrendStacked(
+  data: SalesTrendData,
+): data is SalesTrendStackedData {
+  return "series" in data && Array.isArray(data.series);
+}
+
 export const commandCenterService = {
   async getKPIs(locationId: string): Promise<CommandCenterKPIsData> {
     const res = await api.get<ApiResponse<CommandCenterKPIsData>>(
@@ -87,6 +161,38 @@ export const commandCenterService = {
     if (!res.data.success || res.data.data == null) {
       throw new Error(
         res.data.message ?? "Failed to fetch hourly breakdown"
+      );
+    }
+    return res.data.data;
+  },
+
+  async getSalesTrend(
+    locationId: string,
+    params: SalesTrendParams
+  ): Promise<SalesTrendData> {
+    const res = await api.get<ApiResponse<SalesTrendData>>(
+      API_ENDPOINTS.SALES_LABOR.SALES_TREND,
+      {
+        params: {
+          locationId,
+          periodType: params.periodType,
+          ...(params.periodStart && { periodStart: params.periodStart }),
+          ...(params.periodEnd && { periodEnd: params.periodEnd }),
+          comparisonType: params.comparisonType,
+          ...(params.comparisonType === 'custom' &&
+            params.comparisonStart &&
+            params.comparisonEnd && {
+              comparisonStart: params.comparisonStart,
+              comparisonEnd: params.comparisonEnd,
+            }),
+          metric: params.metric,
+          groupBy: params.groupBy,
+        },
+      }
+    );
+    if (!res.data.success || res.data.data == null) {
+      throw new Error(
+        res.data.message ?? "Failed to fetch sales trend"
       );
     }
     return res.data.data;

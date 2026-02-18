@@ -1,36 +1,87 @@
-import { useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import { useSelector } from 'react-redux';
 import { Layout } from '../../components/common/Layout';
-import { SalesTrendChartCard, KPIsTableCard, SalesByCategoryCard } from '../../components/SalesTrend';
+import {
+  SalesTrendChartCard,
+  PeriodPicker,
+  ComparisonPeriodPicker,
+  getComparisonOptionsForPeriod,
+  KPIsTableCard,
+  SalesByCategoryCard,
+  type PeriodPickerValue,
+  type ComparisonPeriodPickerValue,
+} from '../../components/SalesTrend';
 import SalesAndLaborIcon from '@assets/icons/sales_and_labor.svg?react';
+import {
+  commandCenterService,
+  isSalesTrendStacked,
+  type SalesTrendData,
+  type SalesTrendMetric,
+  type SalesTrendGroupBy,
+} from '../../services/commandCenter.service';
+import type { TimeSeriesSeries } from '../../components/charts/TimeSeriesLineChart';
+import type { RootState } from '../../store/store';
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
 
-// Date labels Mar 25 - Apr 20 (27 points)
-const salesTrendDateLabels = [
-  'Mar 25', 'Mar 26', 'Mar 27', 'Mar 28', 'Mar 29', 'Mar 30', 'Mar 31',
-  'Apr 01', 'Apr 02', 'Apr 03', 'Apr 04', 'Apr 05', 'Apr 06', 'Apr 07', 'Apr 08', 'Apr 09', 'Apr 10',
-  'Apr 11', 'Apr 12', 'Apr 13', 'Apr 14', 'Apr 15', 'Apr 16', 'Apr 17', 'Apr 18', 'Apr 19', 'Apr 20',
+const METRIC_OPTIONS: { value: SalesTrendMetric; label: string }[] = [
+  { value: 'netSales', label: 'Net Sales' },
+  { value: 'transactions', label: 'Transactions' },
+  { value: 'averageCheck', label: 'Average Check' },
+  { value: 'laborCost', label: 'Labor Cost' },
+  { value: 'hours', label: 'Hours' },
 ];
 
-const salesTrendSeries = [
-  {
-    id: 'today',
-    label: 'Today',
-    data: [4200, 5800, 7200, 6500, 8100, 9200, 8800, 10200, 11500, 12100, 11800, 13200, 14500, 15200, 14800, 16200, 17800, 18500, 19200, 20500, 21800, 22500, 22200, 23800, 24200, 23500, 22800],
-    color: '#FBC52A',
-  },
-  {
-    id: 'lastWeek',
-    label: 'Last Week',
-    data: [3800, 5200, 6500, 6000, 7500, 8400, 8000, 9500, 10800, 11200, 11000, 12200, 13200, 13800, 13500, 14800, 16200, 16800, 17500, 18600, 19800, 20500, 20200, 21500, 21800, 21200, 20600],
-    color: '#22C55E',
-  },
-];
+function getComparisonLabel(comparison: ComparisonPeriodPickerValue): string {
+  switch (comparison.comparisonType) {
+    case 'priorYear':
+      return 'Last year';
+    case '1DayPrior':
+      return 'Yesterday';
+    case 'samePeriodPreviousWeek':
+      return 'Previous week';
+    case 'samePeriodPreviousMonth':
+      return 'Previous month';
+    case '52WeeksPrior':
+      return '52 weeks prior';
+    case 'year2Before':
+    case 'year3Before':
+    case 'year4Before': {
+      const n = comparison.comparisonType === 'year2Before' ? 2 : comparison.comparisonType === 'year3Before' ? 3 : 4;
+      return `Year ${new Date().getFullYear() - n}`;
+    }
+    case 'custom':
+      return 'Comparison';
+    case 'none':
+    default:
+      return 'Comparison';
+  }
+}
+
+function getYAxisFormatter(metric: SalesTrendMetric): (value: number) => string {
+  switch (metric) {
+    case 'netSales':
+    case 'averageCheck':
+    case 'laborCost':
+      return (v) =>
+        new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(v);
+    case 'transactions':
+      return (v) => Math.round(v).toLocaleString();
+    case 'hours':
+      return (v) => Number(v).toFixed(2);
+    default:
+      return String;
+  }
+}
 
 type KpiRow = { label: string; current: string | number; previous: string | number; percent: number };
 
 function getKpiRows(timeRange: string, comparison: string, _metric: string): KpiRow[] {
-  // Mock: same structure; values could vary by timeRange/comparison/metric in a real API
   if (timeRange === 'Last 30 Days' && comparison === 'vs. Last Year') {
     return [
       { label: 'Total Net Sales', current: '$224,095', previous: '$186,710', percent: 20 },
@@ -40,7 +91,6 @@ function getKpiRows(timeRange: string, comparison: string, _metric: string): Kpi
       { label: 'Sales Per Hour SPH', current: '$548', previous: '$569', percent: -3.7 },
     ];
   }
-  // Alternate mock for other selections
   return [
     { label: 'Total Net Sales', current: '$52,100', previous: '$48,200', percent: 8.1 },
     { label: 'Total Transactions', current: '1,892', previous: '1,756', percent: 7.8 },
@@ -50,8 +100,10 @@ function getKpiRows(timeRange: string, comparison: string, _metric: string): Kpi
   ];
 }
 
-function getSalesByCategoryItems(timeRange: string, comparison: string): { label: string; currentValue: number; comparisonValue: number }[] {
-  // Mock: could vary by timeRange/comparison when wired to API
+function getSalesByCategoryItems(
+  timeRange: string,
+  comparison: string
+): { label: string; currentValue: number; comparisonValue: number }[] {
   if (timeRange === 'Last 30 Days' && comparison === 'vs. Last Year') {
     return [
       { label: 'Food', currentValue: 187424, comparisonValue: 157424 },
@@ -59,7 +111,7 @@ function getSalesByCategoryItems(timeRange: string, comparison: string): { label
       { label: 'Merchandise', currentValue: 17691, comparisonValue: 14890 },
       { label: 'Catering', currentValue: 12500, comparisonValue: 9800 },
       { label: 'Retail', currentValue: 8450, comparisonValue: 7200 },
-      { label: 'Other', currentValue: 4100, comparisonValue: 3500 }
+      { label: 'Other', currentValue: 4100, comparisonValue: 3500 },
     ];
   }
   return [
@@ -72,84 +124,233 @@ function getSalesByCategoryItems(timeRange: string, comparison: string): { label
   ];
 }
 
+const defaultPeriod: PeriodPickerValue = {
+  periodType: 'last30days',
+};
+
+const defaultComparison: ComparisonPeriodPickerValue = {
+  comparisonType: 'priorYear',
+};
+
 export const SalesTrendReports = () => {
-  const [metric, setMetric] = useState('Sales');
-  const [timeRange, setTimeRange] = useState('Last 30 Days');
-  const [comparison, setComparison] = useState('vs. Last Year');
-  const [groupBy, setGroupBy] = useState('None');
+  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const [period, setPeriod] = useState<PeriodPickerValue>(defaultPeriod);
+  const [comparison, setComparison] = useState<ComparisonPeriodPickerValue>(defaultComparison);
+  const [metric, setMetric] = useState<SalesTrendMetric>('netSales');
+  const [groupBy, setGroupBy] = useState<SalesTrendGroupBy>('none');
+  const [trendData, setTrendData] = useState<SalesTrendData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [kpiPeriod, setKpiPeriod] = useState('Last 30 Days');
   const [kpiComparison, setKpiComparison] = useState('vs. Last Year');
   const [categoryPeriod, setCategoryPeriod] = useState('Last 30 Days');
   const [categoryComparison, setCategoryComparison] = useState('vs. Last Year');
 
-  const selectClass = 'border border-gray-300 rounded-lg px-3 py-2 text-sm text-primary bg-white focus:outline-none focus:ring-2 focus:ring-quaternary/30';
+  const locationId = currentLocation?._id ?? null;
+
+  useEffect(() => {
+    const options = getComparisonOptionsForPeriod(period.periodType);
+    const exists = options.some((o) => o.value === comparison.comparisonType);
+    if (!exists && options.length > 0) {
+      const fallback =
+        period.periodType === 'thisYear'
+          ? 'priorYear'
+          : options[0].value;
+      const next: ComparisonPeriodPickerValue =
+        fallback === 'custom'
+          ? { comparisonType: fallback }
+          : { comparisonType: fallback, comparisonStart: undefined, comparisonEnd: undefined };
+      setComparison(next);
+    }
+  }, [period.periodType]);
+
+  useEffect(() => {
+    if (!locationId) {
+      setTrendData(null);
+      setError(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    const params = {
+      periodType: period.periodType,
+      ...(period.periodType === 'custom' && {
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+      }),
+      comparisonType: comparison.comparisonType,
+      ...(comparison.comparisonType === 'custom' &&
+        comparison.comparisonStart &&
+        comparison.comparisonEnd && {
+          comparisonStart: comparison.comparisonStart,
+          comparisonEnd: comparison.comparisonEnd,
+        }),
+      metric,
+      groupBy: metric === 'netSales' ? groupBy : ('none' as SalesTrendGroupBy),
+    };
+    commandCenterService
+      .getSalesTrend(locationId, params)
+      .then(setTrendData)
+      .catch((err: unknown) => {
+        const res = (err as { response?: { data?: { message?: string } } })
+          ?.response?.data?.message;
+        let message = 'Failed to load sales trend';
+        if (typeof res === 'string' && res.trim()) {
+          message = res;
+        } else if (err instanceof Error) {
+          message = err.message;
+        }
+        setError(message);
+        setTrendData(null);
+      })
+      .finally(() => setLoading(false));
+  }, [
+    locationId,
+    period.periodType,
+    period.periodStart,
+    period.periodEnd,
+    comparison.comparisonType,
+    comparison.comparisonStart,
+    comparison.comparisonEnd,
+    metric,
+    groupBy,
+  ]);
+
+  const chartProps = useMemo(() => {
+    if (!trendData) return null;
+    const xAxisData = trendData.xAxisLabels;
+    const valueFormatter = getYAxisFormatter(metric);
+    const yAxis = { valueFormatter, min: 0 };
+
+    if (isSalesTrendStacked(trendData)) {
+      return {
+        variant: 'stackedArea' as const,
+        xAxisData,
+        series: trendData.series.map((s) => ({
+          id: s.id,
+          label: s.label,
+          data: s.data,
+          color: s.color,
+        })) as TimeSeriesSeries[],
+        yAxis,
+      };
+    }
+    const currentSeries: TimeSeriesSeries = {
+      id: 'current',
+      label: 'This period',
+      data: trendData.currentPeriod,
+      color: '#FBC52A',
+    };
+    const comparisonSeries: TimeSeriesSeries = {
+      id: 'comparison',
+      label: getComparisonLabel(comparison),
+      data: trendData.comparisonPeriod,
+      color: '#9ca3af',
+    };
+    return {
+      variant: 'line' as const,
+      xAxisData,
+      series: [comparisonSeries, currentSeries],
+      yAxis,
+    };
+  }, [trendData, metric, comparison]);
+
+  const selectClass =
+    'border border-gray-300 rounded-lg px-3 py-2 text-sm text-primary bg-white focus:outline-none focus:ring-2 focus:ring-quaternary/30';
+
+  if (!currentLocation) {
+    return (
+      <Layout>
+        <div className="p-6">
+          <p className="text-secondary">Select a location to view Sales Trend Report.</p>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
       <div className="p-6">
         <div className="mb-6">
           <h2 className="flex items-center gap-2 text-base md:text-lg 2xl:text-xl font-semibold text-primary mb-4">
-            <SalesAndLaborIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
+            <SalesAndLaborIcon
+              className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary"
+              aria-hidden
+            />
             Sales Trend Report
           </h2>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3 items-center">
             <div className="flex items-center gap-2">
-              <label htmlFor="metric" className="text-xs md:text-sm text-secondary">Metric:</label>
+              <label htmlFor="metric" className="text-xs md:text-sm text-secondary">
+                Metric:
+              </label>
               <select
                 id="metric"
                 value={metric}
-                onChange={(e) => setMetric(e.target.value)}
+                onChange={(e) => setMetric(e.target.value as SalesTrendMetric)}
                 className={selectClass}
               >
-                <option value="Sales">Sales</option>
+                {METRIC_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <label htmlFor="period" className="text-xs md:text-sm text-secondary">Period:</label>
-              <select
+              <label htmlFor="period" className="text-xs md:text-sm text-secondary">
+                Period:
+              </label>
+              <PeriodPicker
                 id="period"
-                value={timeRange}
-                onChange={(e) => setTimeRange(e.target.value)}
+                value={period}
+                onChange={setPeriod}
                 className={selectClass}
-              >
-                <option value="Last 30 Days">Last 30 Days</option>
-              </select>
+              />
             </div>
             <div className="flex items-center gap-2">
-              <label htmlFor="comparison" className="text-xs md:text-sm text-secondary">Comparison:</label>
-              <select
+              <label htmlFor="comparison" className="text-xs md:text-sm text-secondary">
+                Comparison:
+              </label>
+              <ComparisonPeriodPicker
                 id="comparison"
                 value={comparison}
-                onChange={(e) => setComparison(e.target.value)}
+                onChange={setComparison}
+                period={period}
                 className={selectClass}
-              >
-                <option value="vs. Last Year">vs. Last Year</option>
-              </select>
+              />
             </div>
           </div>
         </div>
 
-        <SalesTrendChartCard
-          xAxisData={salesTrendDateLabels}
-          series={salesTrendSeries}
-          groupBy={groupBy}
-          onGroupByChange={setGroupBy}
-          height={280}
-          yAxis={{
-            min: 0,
-            max: 25000,
-            valueFormatter: (v) => `$${v / 1000}k`,
-          }}
-        />
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
+        )}
 
-        {/* Bottom: KPIs + Sales by Category (50/50) */}
+        {locationId && (
+          <SalesTrendChartCard
+            loading={loading}
+            xAxisData={chartProps?.xAxisData ?? []}
+            series={chartProps?.series ?? []}
+            variant={chartProps?.variant ?? 'line'}
+            showGroupBy={metric === 'netSales'}
+            groupBy={groupBy}
+            onGroupByChange={(v) => setGroupBy(v as SalesTrendGroupBy)}
+            yAxis={chartProps?.yAxis}
+            height={280}
+          />
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className={cardClass}>
             <KPIsTableCard
               rows={getKpiRows(kpiPeriod, kpiComparison, metric)}
               title="KPIs"
               currentPeriodLabel={kpiPeriod}
-              comparisonPeriodLabel={kpiComparison === 'vs. Last Year' ? 'Last Year' : kpiComparison}
+              comparisonPeriodLabel={
+                kpiComparison === 'vs. Last Year' ? 'Last Year' : kpiComparison
+              }
               period={kpiPeriod}
               comparison={kpiComparison}
               onPeriodChange={setKpiPeriod}
@@ -160,7 +361,9 @@ export const SalesTrendReports = () => {
             <SalesByCategoryCard
               items={getSalesByCategoryItems(categoryPeriod, categoryComparison)}
               currentPeriodLabel={categoryPeriod}
-              comparisonPeriodLabel={categoryComparison === 'vs. Last Year' ? 'Last Year' : categoryComparison}
+              comparisonPeriodLabel={
+                categoryComparison === 'vs. Last Year' ? 'Last Year' : categoryComparison
+              }
               period={categoryPeriod}
               comparison={categoryComparison}
               onPeriodChange={setCategoryPeriod}

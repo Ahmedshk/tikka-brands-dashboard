@@ -2,6 +2,10 @@ import type {
   SquareLocationForHours,
   TimeRange,
 } from "../utils/businessHours.util.js";
+import {
+  getStartOfDayUtc,
+  getDatePartsInTz,
+} from "../utils/salesTrendDateRange.util.js";
 
 const SQUARE_BASE = "https://connect.squareup.com";
 
@@ -380,7 +384,11 @@ export async function getSourcesOfSalesInRange(
   range: TimeRange,
   options?: SquareServiceOptions,
 ): Promise<SourcesOfSalesSegment[]> {
-  const orders = await fetchOrdersInRange(squareLocationId, range, options?.accessToken);
+  const orders = await fetchOrdersInRange(
+    squareLocationId,
+    range,
+    options?.accessToken,
+  );
   return getSourcesOfSalesFromOrders(orders);
 }
 
@@ -557,7 +565,11 @@ export async function getOrderStatsInRange(
   range: TimeRange,
   options?: SquareServiceOptions,
 ): Promise<OrderStatsInRange> {
-  const orders = await fetchOrdersInRange(squareLocationId, range, options?.accessToken);
+  const orders = await fetchOrdersInRange(
+    squareLocationId,
+    range,
+    options?.accessToken,
+  );
   return getOrderStatsFromOrders(orders);
 }
 
@@ -574,9 +586,380 @@ export async function getOrderStatsAndSourcesInRange(
   range: TimeRange,
   options?: SquareServiceOptions,
 ): Promise<OrderStatsAndSourcesResult> {
-  const orders = await fetchOrdersInRange(squareLocationId, range, options?.accessToken);
+  const orders = await fetchOrdersInRange(
+    squareLocationId,
+    range,
+    options?.accessToken,
+  );
   return {
     orderStats: getOrderStatsFromOrders(orders),
     sourcesOfSales: getSourcesOfSalesFromOrders(orders),
   };
+}
+
+/** Granularity for sales trend time-series. */
+export type SalesTrendGranularity = "hourly" | "daily" | "weekly" | "monthly";
+
+/** Get bucket key for a date in the given timezone and granularity. */
+function getBucketKeyForDate(
+  date: Date,
+  timezone: string,
+  granularity: SalesTrendGranularity,
+): string {
+  if (Number.isNaN(date.getTime())) return "";
+  const tz = timezone.trim();
+  if (granularity === "hourly") {
+    const f = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hour12: false,
+    });
+    const parts = f.formatToParts(date);
+    const get = (type: string) =>
+      parts.find((p) => p.type === type)?.value ?? "0";
+    const y = get("year");
+    const m = get("month");
+    const d = get("day");
+    const h = get("hour");
+    return `${y}-${m}-${d}T${h.padStart(2, "0")}`;
+  }
+  if (granularity === "daily") {
+    const f = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const parts = f.formatToParts(date);
+    const get = (type: string) =>
+      parts.find((p) => p.type === type)?.value ?? "0";
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  }
+  if (granularity === "weekly") {
+    const f = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const parts = f.formatToParts(date);
+    const get = (type: string) =>
+      parts.find((p) => p.type === type)?.value ?? "0";
+    const y = Number.parseInt(get("year"), 10);
+    const m = Number.parseInt(get("month"), 10) - 1;
+    const d = Number.parseInt(get("day"), 10);
+    const dt = new Date(y, m, d);
+    const dayOfWeek = dt.getDay();
+    const toMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const mon = new Date(dt);
+    mon.setDate(mon.getDate() - toMonday);
+    const ym = String(mon.getFullYear());
+    const mm = String(mon.getMonth() + 1).padStart(2, "0");
+    const dd = String(mon.getDate()).padStart(2, "0");
+    return `${ym}-${mm}-${dd}`;
+  }
+  if (granularity === "monthly") {
+    const f = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+    });
+    const parts = f.formatToParts(date);
+    const get = (type: string) =>
+      parts.find((p) => p.type === type)?.value ?? "0";
+    return `${get("year")}-${get("month")}`;
+  }
+  return "";
+}
+
+/** Generate ordered bucket keys and display labels for a range (keys in TZ for consistency with order bucketing). Exported for controller display-range label generation. */
+export function getOrderedBucketsAndLabels(
+  range: TimeRange,
+  timezone: string,
+  granularity: SalesTrendGranularity,
+): { keys: string[]; labels: string[] } {
+  const start = new Date(range.startAt);
+  const end = new Date(range.endAt);
+  const tz = timezone.trim();
+  const keys: string[] = [];
+  const labels: string[] = [];
+  const seen = new Set<string>();
+
+  if (granularity === "hourly") {
+    const labelF = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "numeric",
+      hour12: true,
+    });
+    const hourPartsF = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hour12: false,
+    });
+    const getHourParts = (date: Date) => {
+      const parts = hourPartsF.formatToParts(date);
+      const get = (type: string) =>
+        parts.find((p) => p.type === type)?.value ?? "0";
+      return {
+        y: Number.parseInt(get("year"), 10),
+        m: Number.parseInt(get("month"), 10) - 1,
+        d: Number.parseInt(get("day"), 10),
+        h: Number.parseInt(get("hour"), 10),
+      };
+    };
+    let cursor = (() => {
+      const { y, m, d, h } = getHourParts(start);
+      const dayStart = getStartOfDayUtc(y, m, d, tz);
+      return new Date(dayStart.getTime() + h * 60 * 60 * 1000);
+    })();
+    while (cursor <= end) {
+      const key = getBucketKeyForDate(cursor, tz, "hourly");
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        keys.push(key);
+        labels.push(labelF.format(cursor));
+      }
+      const next = new Date(cursor.getTime() + 60 * 60 * 1000);
+      const { y, m, d, h } = getHourParts(next);
+      const dayStart = getStartOfDayUtc(y, m, d, tz);
+      cursor = new Date(dayStart.getTime() + h * 60 * 60 * 1000);
+    }
+    return { keys, labels };
+  }
+
+  if (granularity === "daily") {
+    const labelF = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      month: "short",
+      day: "numeric",
+    });
+    const startParts = getDatePartsInTz(start, tz);
+    const endParts = getDatePartsInTz(end, tz);
+    let y = startParts.y;
+    let m = startParts.m;
+    let d = startParts.d;
+    while (
+      y < endParts.y ||
+      (y === endParts.y && m < endParts.m) ||
+      (y === endParts.y && m === endParts.m && d <= endParts.d)
+    ) {
+      const cursor = getStartOfDayUtc(y, m, d, tz);
+      const key = getBucketKeyForDate(cursor, tz, "daily");
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        keys.push(key);
+        labels.push(labelF.format(cursor));
+      }
+      const nextInstant = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+      const nextParts = getDatePartsInTz(nextInstant, tz);
+      y = nextParts.y;
+      m = nextParts.m;
+      d = nextParts.d;
+    }
+    return { keys, labels };
+  }
+
+  if (granularity === "weekly") {
+    const startParts = getDatePartsInTz(start, tz);
+    const dayOfWeekF = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      weekday: "short",
+    });
+    const startDayStart = getStartOfDayUtc(
+      startParts.y,
+      startParts.m,
+      startParts.d,
+      tz,
+    );
+    const startWeekday = dayOfWeekF.format(startDayStart);
+    const toMonday =
+      startWeekday === "Sun" ? 6 : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(startWeekday);
+    const mondayInstant = new Date(
+      startDayStart.getTime() - toMonday * 24 * 60 * 60 * 1000,
+    );
+    let y = getDatePartsInTz(mondayInstant, tz).y;
+    let m = getDatePartsInTz(mondayInstant, tz).m;
+    let d = getDatePartsInTz(mondayInstant, tz).d;
+    let weekNum = 1;
+    while (true) {
+      const cursor = getStartOfDayUtc(y, m, d, tz);
+      if (cursor > end) break;
+      const key = getBucketKeyForDate(cursor, tz, "weekly");
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        keys.push(key);
+        labels.push(`Week ${weekNum}`);
+        weekNum += 1;
+      }
+      const nextInstant = new Date(cursor.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const nextParts = getDatePartsInTz(nextInstant, tz);
+      y = nextParts.y;
+      m = nextParts.m;
+      d = nextParts.d;
+    }
+    return { keys, labels };
+  }
+
+  if (granularity === "monthly") {
+    const labelF = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      month: "short",
+    });
+    const labelFWithYear = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      month: "short",
+      year: "numeric",
+    });
+    const startParts = getDatePartsInTz(start, tz);
+    const endParts = getDatePartsInTz(end, tz);
+    let y = startParts.y;
+    let month0 = startParts.m;
+    let lastYear: number | null = null;
+    while (y < endParts.y || (y === endParts.y && month0 <= endParts.m)) {
+      const cursor = getStartOfDayUtc(y, month0, 1, tz);
+      const key = getBucketKeyForDate(cursor, tz, "monthly");
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        keys.push(key);
+        const label =
+          lastYear !== null && y !== lastYear
+            ? labelFWithYear.format(cursor)
+            : labelF.format(cursor);
+        lastYear = y;
+        labels.push(label);
+      }
+      month0 += 1;
+      if (month0 > 11) {
+        month0 = 0;
+        y += 1;
+      }
+    }
+    return { keys, labels };
+  }
+
+  return { keys, labels };
+}
+
+export interface OrderTimeSeriesResult {
+  labels: string[];
+  netSales: number[];
+  transactionCount: number[];
+}
+
+/**
+ * Fetch orders in range and aggregate by bucket (hour/day/week) in location TZ.
+ * Returns labels and arrays aligned for chart x-axis.
+ */
+export async function getOrderTimeSeriesInRange(
+  squareLocationId: string,
+  range: TimeRange,
+  timezone: string,
+  granularity: SalesTrendGranularity,
+  options?: SquareServiceOptions,
+): Promise<OrderTimeSeriesResult> {
+  const { keys, labels } = getOrderedBucketsAndLabels(
+    range,
+    timezone,
+    granularity,
+  );
+  const netSalesByKey: Record<string, number> = {};
+  const countByKey: Record<string, number> = {};
+  for (const k of keys) {
+    netSalesByKey[k] = 0;
+    countByKey[k] = 0;
+  }
+
+  const orders = await fetchOrdersInRange(
+    squareLocationId,
+    range,
+    options?.accessToken,
+  );
+  for (const order of orders) {
+    if (!isPaidOrder(order)) continue;
+    const key = getBucketKeyForDate(
+      new Date(order.created_at ?? ""),
+      timezone,
+      granularity,
+    );
+    if (!key || netSalesByKey[key] === undefined) continue;
+    netSalesByKey[key] =
+      (netSalesByKey[key] ?? 0) + orderNetSalesCents(order) / 100;
+    countByKey[key] = (countByKey[key] ?? 0) + 1;
+  }
+
+  const netSales = keys.map((k) => netSalesByKey[k] ?? 0);
+  const transactionCount = keys.map((k) => countByKey[k] ?? 0);
+  return { labels, netSales, transactionCount };
+}
+
+export interface OrderTimeSeriesBySourceSeries {
+  id: string;
+  label: string;
+  data: number[];
+  color: string;
+}
+
+export interface OrderTimeSeriesBySourceResult {
+  labels: string[];
+  series: OrderTimeSeriesBySourceSeries[];
+}
+
+/**
+ * Fetch orders in range and aggregate net sales by bucket and by source.
+ * Returns labels and one series per source (In-Store, DoorDash, etc.) for stacked area chart.
+ */
+export async function getOrderTimeSeriesBySourceInRange(
+  squareLocationId: string,
+  range: TimeRange,
+  timezone: string,
+  granularity: SalesTrendGranularity,
+  options?: SquareServiceOptions,
+): Promise<OrderTimeSeriesBySourceResult> {
+  const { keys, labels } = getOrderedBucketsAndLabels(
+    range,
+    timezone,
+    granularity,
+  );
+  const bySourceAndKey: Record<string, Record<string, number>> = {};
+
+  const orders = await fetchOrdersInRange(
+    squareLocationId,
+    range,
+    options?.accessToken,
+  );
+  for (const order of orders) {
+    if (!isPaidOrder(order)) continue;
+    const cents = orderNetSalesCents(order);
+    if (cents <= 0) continue;
+    const sourceKey = deriveSegmentKey(order);
+    const bucketKey = getBucketKeyForDate(
+      new Date(order.created_at ?? ""),
+      timezone,
+      granularity,
+    );
+    if (!bucketKey || !keys.includes(bucketKey)) continue;
+    if (!bySourceAndKey[sourceKey]) bySourceAndKey[sourceKey] = {};
+    const keyRecord = bySourceAndKey[sourceKey];
+    keyRecord[bucketKey] = (keyRecord[bucketKey] ?? 0) + cents / 100;
+  }
+
+  const sourceKeys = Object.keys(bySourceAndKey).sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const series: OrderTimeSeriesBySourceSeries[] = sourceKeys.map(
+    (sourceKey, index) => ({
+      id: sourceKey,
+      label: segmentKeyToLabel(sourceKey),
+      data: keys.map((k) => (bySourceAndKey[sourceKey] ?? {})[k] ?? 0),
+      color: segmentColorByIndex(index),
+    }),
+  );
+
+  return { labels, series };
 }

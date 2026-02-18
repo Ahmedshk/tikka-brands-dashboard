@@ -34,7 +34,7 @@ const defaultTheme = createTheme({
 
 const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
 
-const desktopMargin = { top: 20, right: 20, bottom: -20, left: 20 };
+const desktopMargin = { top: 20, right: 0, bottom: -20, left: 0 };
 const mobileMargin = { top: 4, right: 15, bottom: 0, left: 10 };
 
 function formatCurrency(value: number): string {
@@ -149,13 +149,19 @@ export const HourlyBreakdownChart = ({
     {
       type: 'line' as const,
       data: laborCostData,
-      label: 'Labor Cost Per hours',
+      label: 'Labor Cost % Per hours',
       id: 'labor',
       yAxisId: 'laborAxis',
       color: '#EF4444',
       showMark: true,
     },
   ];
+
+  const maxLabels = isDesktop ? 20 : 12;
+  const tickStep = Math.max(1, Math.ceil(xAxisLabels.length / maxLabels));
+  const tickLabelInterval = tickStep > 1
+    ? (_v: unknown, i: number) => i % tickStep === 0
+    : undefined;
 
   const xAxisConfig = isDesktop
     ? {
@@ -164,6 +170,7 @@ export const HourlyBreakdownChart = ({
       id: 'x-axis',
       height: 40,
       tickLabelStyle: LABEL_FONT,
+      ...(tickLabelInterval && { tickLabelInterval }),
     }
     : {
       data: xAxisLabels,
@@ -171,6 +178,7 @@ export const HourlyBreakdownChart = ({
       id: 'x-axis',
       height: 26,
       tickLabelStyle: { ...LABEL_FONT, fontSize: 9 },
+      ...(tickLabelInterval && { tickLabelInterval }),
     };
 
   const salesAxisConfig = isDesktop

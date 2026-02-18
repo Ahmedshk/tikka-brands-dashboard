@@ -26,11 +26,11 @@ export const HourlyBreakdownCard = ({
       <div className="px-5 pb-2 flex items-center gap-4">
         <span className="flex items-center gap-2 text-xs text-primary">
           <span className="w-3 h-3 rounded-full bg-quaternary" aria-hidden />
-          Sales Per hours
+          Net Sales Per hours
         </span>
         <span className="flex items-center gap-2 text-xs text-primary">
           <span className="w-3 h-3 rounded-full bg-red-500" aria-hidden />
-          Labor Cost Per hours
+          Labor Cost % Per hours
         </span>
       </div>
       <div className="scrollbar-touch -mx-3 px-3 pb-3 md:mx-0 md:px-5 md:pb-5 overflow-x-auto md:overflow-visible">

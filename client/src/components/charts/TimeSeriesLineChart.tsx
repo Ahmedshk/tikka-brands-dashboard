@@ -42,27 +42,27 @@ const desktopMargin = { top: 10, right: 25, bottom: 0, left: 0 };
 const mobileMargin = { top: 4, right: 14, bottom: 0, left: 0 };
 
 const TooltipSeriesOrderContext = createContext<string[] | undefined>(undefined);
+const TooltipValueFormatterContext = createContext<((value: number) => string) | undefined>(undefined);
 
-function formatTooltipValue(value: unknown, formattedValue: string): string {
+function formatTooltipValue(
+  value: unknown,
+  formattedValue: string,
+  valueFormatter?: (value: number) => string,
+): string {
   const n =
     typeof value === 'number' && Number.isFinite(value)
       ? value
       : Number.parseFloat(
-        String(formattedValue).replaceAll(',', '').replaceAll('$', '')
+        String(formattedValue).replaceAll(',', '').replaceAll('$', ''),
       );
-  if (!Number.isNaN(n)) {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(n);
-  }
+  if (Number.isNaN(n)) return formattedValue;
+  if (valueFormatter) return valueFormatter(n);
   return formattedValue;
 }
 
 function TimeSeriesAxisTooltipContent() {
   const seriesOrder = useContext(TooltipSeriesOrderContext);
+  const valueFormatter = useContext(TooltipValueFormatterContext);
   const axesTooltipData = useAxesTooltip();
   const firstAxis = axesTooltipData?.[0];
   if (!firstAxis || !axesTooltipData?.length) return null;
@@ -93,7 +93,7 @@ function TimeSeriesAxisTooltipContent() {
               {item.formattedLabel ?? item.seriesId}
             </span>
             <span className="text-xs font-medium text-primary tabular-nums">
-              {formatTooltipValue(item.value, item.formattedValue)}
+              {formatTooltipValue(item.value, item.formattedValue, valueFormatter)}
             </span>
           </div>
         ))}
@@ -130,16 +130,24 @@ export const TimeSeriesLineChart = ({
     color: colors?.[index] ?? s.color,
   }));
 
+  const maxVisibleLabels = isDesktop ? 20 : 12;
+  const tickStep = Math.max(1, Math.ceil(xAxisData.length / maxVisibleLabels));
+  const tickLabelInterval = tickStep > 1
+    ? (_value: unknown, index: number) => index % tickStep === 0
+    : undefined;
+
   const xAxisConfig = isDesktop
     ? {
       scaleType: 'point' as const,
       data: xAxisData,
       tickLabelStyle: LABEL_FONT,
+      ...(tickLabelInterval && { tickLabelInterval }),
     }
     : {
       scaleType: 'point' as const,
       data: xAxisData,
       tickLabelStyle: { ...LABEL_FONT, fontSize: 9 },
+      ...(tickLabelInterval && { tickLabelInterval }),
     };
 
   const baseYAxisConfig = isDesktop
@@ -152,7 +160,8 @@ export const TimeSeriesLineChart = ({
   return (
     <ThemeProvider theme={defaultTheme}>
       <TooltipSeriesOrderContext.Provider value={tooltipSeriesOrder}>
-        <LineChart
+        <TooltipValueFormatterContext.Provider value={yAxisOverrides?.valueFormatter}>
+          <LineChart
           xAxis={[xAxisConfig]}
           yAxis={[yAxisConfig]}
           series={chartSeries}
@@ -163,6 +172,7 @@ export const TimeSeriesLineChart = ({
           slots={{ tooltip: TimeSeriesAxisTooltip }}
           slotProps={{ tooltip: { trigger: 'axis' } }}
         />
+        </TooltipValueFormatterContext.Provider>
       </TooltipSeriesOrderContext.Provider>
     </ThemeProvider>
   );

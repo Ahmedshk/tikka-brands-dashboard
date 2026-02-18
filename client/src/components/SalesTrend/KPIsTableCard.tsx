@@ -30,7 +30,9 @@ export interface KPIsTableCardProps {
 }
 
 function formatCell(value: string | number): string {
-  return typeof value === 'number' ? value.toLocaleString() : value;
+  return typeof value === 'number'
+    ? value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : value;
 }
 
 const cardSelectClass = 'border-0 rounded-lg px-2 py-1 text-xs font-medium text-primary bg-white focus:outline-none focus:ring-2 focus:ring-white/50 cursor-pointer';

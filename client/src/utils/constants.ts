@@ -26,5 +26,6 @@ export const API_ENDPOINTS = {
   SALES_LABOR: {
     KPIS: "/sales-labor/kpis",
     HOURLY_BREAKDOWN: "/sales-labor/hourly-breakdown",
+    SALES_TREND: "/sales-labor/sales-trend",
   },
 } as const;
