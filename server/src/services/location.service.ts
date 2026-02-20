@@ -43,6 +43,7 @@ export class LocationService {
       squareAccessTokenEnc,
       homebaseApiKeyEnc,
       ...(data.logoId && { logoId: data.logoId }),
+      ...(data.marketManBuyerGuid != null && data.marketManBuyerGuid !== '' && { marketManBuyerGuid: data.marketManBuyerGuid.trim() }),
     } as Omit<ILocation, '_id' | 'createdAt' | 'updatedAt'>);
     return this.enrichWithLogo(this.toLocationResponse(doc), doc.logoId);
   }
@@ -135,6 +136,7 @@ export class LocationService {
     squareAccessTokenEnc?: string;
     homebaseApiKeyEnc?: string;
     logoId?: unknown;
+    marketManBuyerGuid?: string;
     createdAt: Date;
     updatedAt: Date;
   }): ILocationResponse {
@@ -149,6 +151,7 @@ export class LocationService {
       hasSquareAccessToken: Boolean(doc.squareAccessTokenEnc),
       hasHomebaseApiKey: Boolean(doc.homebaseApiKeyEnc),
       ...(doc.logoId != null && { logoId: String(doc.logoId) }),
+      ...(doc.marketManBuyerGuid != null && doc.marketManBuyerGuid !== '' && { marketManBuyerGuid: doc.marketManBuyerGuid }),
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     };

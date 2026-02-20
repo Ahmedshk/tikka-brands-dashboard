@@ -9,6 +9,7 @@ export interface ILocation {
   squareAccessTokenEnc?: string;
   homebaseApiKeyEnc?: string;
   logoId?: string | null;
+  marketManBuyerGuid?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }

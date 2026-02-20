@@ -30,4 +30,7 @@ export const API_ENDPOINTS = {
     SALES_TREND_KPI: "/sales-labor/sales-trend-kpi",
     SALES_BY_CATEGORY: "/sales-labor/sales-by-category",
   },
+  INVENTORY: {
+    KPIS: "/inventory/kpis",
+  },
 } as const;

@@ -58,6 +58,8 @@ export interface Location {
   logoId?: string;
   /** Data URL for the location logo (populated by API when logoId is set). */
   logoDataUrl?: string;
+  /** MarketMan Buyer GUID for this location. */
+  marketManBuyerGuid?: string;
   createdAt?: string;
   updatedAt?: string;
 }

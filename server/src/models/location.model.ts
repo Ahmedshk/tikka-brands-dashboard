@@ -55,6 +55,12 @@ const locationSchema = new Schema<LocationDocument>(
       required: false,
       default: undefined,
     },
+    marketManBuyerGuid: {
+      type: String,
+      required: false,
+      trim: true,
+      default: undefined,
+    },
   },
   {
     timestamps: true,

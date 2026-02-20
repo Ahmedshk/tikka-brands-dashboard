@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useSelector } from 'react-redux';
 import { Layout } from '../../components/common/Layout';
 import {
   InventoryKPICards,
@@ -6,45 +7,22 @@ import {
   VarianceChartCard,
   OrderTrackerCard,
 } from '../../components/InventoryFoodCost';
+import type { InventoryKPIItem } from '../../components/InventoryFoodCost/InventoryKPICards';
 import { OrderTrackerModal } from '../../components/modal/OrderTrackerModal';
 import { VarianceChartModal } from '../../components/modal/VarianceChartModal';
 import type { VarianceChartItem } from '../../components/InventoryFoodCost/VarianceChartCard';
+import { inventoryService } from '../../services/inventory.service';
 import InventoryAndFoodCostIcon from '@assets/icons/inventory_and_food_cost.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
 import PendingOrdersIcon from '@assets/icons/pending_orders.svg?react';
+import { Spinner } from '../../components/common/Spinner';
+import type { RootState } from '../../store/store';
 
 const ORDER_TRACKER_CARD_SIZE = 12;
 
-const inventoryKPIs = [
-  {
-    title: 'Current Food Cost',
-    timePeriod: 'Today',
-    value: '$8,520',
-    accentColor: 'green' as const,
-    rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-  },
-  {
-    title: 'Inventory value',
-    timePeriod: 'Today',
-    value: '$47,920',
-    accentColor: 'blue' as const,
-    rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-  },
-  {
-    title: 'Weekly Waste Cost',
-    timePeriod: 'Today',
-    value: '$1,230',
-    accentColor: 'orange' as const,
-    rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-  },
-  {
-    title: 'Pending Orders',
-    timePeriod: 'Today',
-    value: '06',
-    accentColor: 'purple' as const,
-    rightIcon: <PendingOrdersIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-  },
-];
+const currencyFmt = (v: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+const pendingFmt = (n: number) => String(n).padStart(2, '0');
 
 type OrderStatus = 'Received' | 'Pending';
 
@@ -94,8 +72,103 @@ const fullVarianceItems: VarianceChartItem[] = [
 ];
 
 export const InventoryFoodCost = () => {
+  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [orderTrackerModalOpen, setOrderTrackerModalOpen] = useState(false);
   const [varianceModalOpen, setVarianceModalOpen] = useState(false);
+  const [inventoryKpisData, setInventoryKpisData] = useState<Awaited<ReturnType<typeof inventoryService.getInventoryKPIs>> | null>(null);
+  const [kpisLoading, setKpisLoading] = useState(false);
+  const [kpisError, setKpisError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!currentLocation?._id) {
+      setInventoryKpisData(null);
+      setKpisError(null);
+      return;
+    }
+    setKpisLoading(true);
+    setKpisError(null);
+    inventoryService
+      .getInventoryKPIs(currentLocation._id)
+      .then(setInventoryKpisData)
+      .catch((err) => {
+        setKpisError(err instanceof Error ? err.message : 'Failed to load inventory KPIs');
+        setInventoryKpisData(null);
+      })
+      .finally(() => setKpisLoading(false));
+  }, [currentLocation?._id]);
+
+  const countPeriodLabel = useMemo(() => {
+    const start = inventoryKpisData?.countPeriodStart;
+    const end = inventoryKpisData?.countPeriodEnd;
+    if (!start || !end) return '—';
+    const parse = (s: string) => {
+      const [y, m, d] = s.split('/').map(Number);
+      return new Date(y, (m ?? 1) - 1, d ?? 1);
+    };
+    const fmt = (date: Date) =>
+      date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    try {
+      return `${fmt(parse(start))} – ${fmt(parse(end))}`;
+    } catch {
+      return '—';
+    }
+  }, [inventoryKpisData?.countPeriodStart, inventoryKpisData?.countPeriodEnd]);
+
+  const pendingOrdersPeriodLabel = useMemo(() => {
+    const start = inventoryKpisData?.pendingOrdersPeriodStart;
+    const end = inventoryKpisData?.pendingOrdersPeriodEnd;
+    if (!start || !end) return '—';
+    const parse = (s: string) => {
+      const [y, m, d] = s.split('/').map(Number);
+      return new Date(y, (m ?? 1) - 1, d ?? 1);
+    };
+    const fmt = (date: Date) =>
+      date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    try {
+      return `${fmt(parse(start))} – ${fmt(parse(end))}`;
+    } catch {
+      return '—';
+    }
+  }, [inventoryKpisData?.pendingOrdersPeriodStart, inventoryKpisData?.pendingOrdersPeriodEnd]);
+
+  const inventoryKPIs = useMemo((): InventoryKPIItem[] => {
+    const d = inventoryKpisData;
+    const foodCostValue = d?.currentFoodCost != null ? currencyFmt(d.currentFoodCost) : (kpisLoading ? '…' : '—');
+    const inventoryValue = d?.inventoryValue != null ? currencyFmt(d.inventoryValue) : (kpisLoading ? '…' : '—');
+    const wasteCostValue = d?.wasteCost != null ? currencyFmt(d.wasteCost) : (kpisLoading ? '…' : '—');
+    const pendingValue = d?.pendingOrdersCount != null ? pendingFmt(d.pendingOrdersCount) : (kpisLoading ? '…' : '—');
+    return [
+      {
+        title: 'Current Food Cost',
+        timePeriod: countPeriodLabel,
+        value: foodCostValue,
+        accentColor: 'green',
+        rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+      },
+      {
+        title: 'Inventory value',
+        timePeriod: countPeriodLabel,
+        value: inventoryValue,
+        accentColor: 'blue',
+        rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+      },
+      {
+        title: 'Waste Cost',
+        timePeriod: countPeriodLabel,
+        value: wasteCostValue,
+        accentColor: 'orange',
+        rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+      },
+      {
+        title: 'Pending Orders',
+        timePeriod: pendingOrdersPeriodLabel,
+        value: pendingValue,
+        accentColor: 'purple',
+        rightIcon: <PendingOrdersIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+      },
+    ];
+  }, [inventoryKpisData, kpisLoading, countPeriodLabel, pendingOrdersPeriodLabel]);
+
   const orderTrackerCardRows = orderTrackerRows.slice(0, ORDER_TRACKER_CARD_SIZE);
 
   return (
@@ -108,7 +181,21 @@ export const InventoryFoodCost = () => {
           </h2>
         </div>
 
-        <InventoryKPICards items={inventoryKPIs} />
+        {!currentLocation && (
+          <p className="text-sm text-secondary mb-6">Select a location to view inventory KPIs.</p>
+        )}
+        {currentLocation && kpisError && (
+          <p className="text-sm text-red-600 mb-6" role="alert">{kpisError}</p>
+        )}
+        {currentLocation && kpisLoading && (
+          <div className="flex items-center justify-center gap-2 py-8 mb-6">
+            <Spinner size="lg" className="text-button-primary" />
+            <span className="text-sm text-primary">Loading inventory KPIs…</span>
+          </div>
+        )}
+        {currentLocation && !kpisLoading && (
+          <InventoryKPICards items={inventoryKPIs} />
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <div className="flex flex-col gap-6 order-1 lg:order-1">

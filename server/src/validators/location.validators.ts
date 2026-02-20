@@ -15,6 +15,7 @@ const locationBodySchema = z.object({
   squareAccessToken: z.string().min(1, "Square access token is required").trim(),
   homebaseApiKey: z.string().min(1, "Homebase API key is required").trim(),
   logoId: z.string().trim().optional().nullable(),
+  marketManBuyerGuid: z.string().min(1, "MarketMan buyer GUID is required").trim(),
 });
 
 export const createLocationSchema = z.object({
@@ -29,6 +30,7 @@ export const updateLocationSchema = z.object({
     squareAccessToken: z.string().trim().optional(),
     homebaseApiKey: z.string().trim().optional(),
     logoId: z.string().trim().optional().nullable(),
+    marketManBuyerGuid: z.string().min(1, "MarketMan buyer GUID is required").trim().optional(),
   }),
 });
 

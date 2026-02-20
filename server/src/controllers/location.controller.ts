@@ -19,6 +19,7 @@ export const createLocation = async (
       squareAccessToken,
       homebaseApiKey,
       logoId,
+      marketManBuyerGuid,
     } = req.body;
     const location = await locationService.create({
       storeName,
@@ -30,6 +31,7 @@ export const createLocation = async (
       squareAccessToken,
       homebaseApiKey,
       ...(logoId != null && logoId !== '' && { logoId: String(logoId).trim() }),
+      marketManBuyerGuid: typeof marketManBuyerGuid === 'string' ? marketManBuyerGuid.trim() : '',
     });
     res.status(201).json({
       success: true,
@@ -114,6 +116,7 @@ export const updateLocation = async (
       squareAccessToken,
       homebaseApiKey,
       logoId,
+      marketManBuyerGuid,
     } = req.body;
     const squareTrim = typeof squareAccessToken === 'string' ? squareAccessToken.trim() : '';
     const homebaseTrim = typeof homebaseApiKey === 'string' ? homebaseApiKey.trim() : '';
@@ -127,6 +130,7 @@ export const updateLocation = async (
       ...(squareTrim && { squareAccessToken: squareTrim }),
       ...(homebaseTrim && { homebaseApiKey: homebaseTrim }),
       ...(logoId !== undefined && { logoId: logoId === null || logoId === '' ? null : String(logoId).trim() }),
+      ...(marketManBuyerGuid !== undefined && { marketManBuyerGuid: marketManBuyerGuid === null || marketManBuyerGuid === '' ? null : String(marketManBuyerGuid).trim() }),
     });
     res.status(200).json({
       success: true,

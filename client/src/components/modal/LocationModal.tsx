@@ -48,6 +48,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
   const [updateHomebaseCredentials, setUpdateHomebaseCredentials] = useState(false);
   const [logoId, setLogoId] = useState<string | null>(null);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
+  const [marketManBuyerGuid, setMarketManBuyerGuid] = useState('');
   const [logoList, setLogoList] = useState<Logo[]>([]);
   const [logoListOpen, setLogoListOpen] = useState(false);
   const [logoListLoading, setLogoListLoading] = useState(false);
@@ -88,6 +89,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
     homebaseLocationId.trim() !== '' &&
     timezone.trim() !== '' &&
     businessStartTime.trim() !== '' &&
+    marketManBuyerGuid.trim() !== '' &&
     squareCredsOk &&
     homebaseCredsOk;
 
@@ -110,6 +112,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
       setUpdateHomebaseCredentials(false);
       setLogoId(editLocation.logoId ?? null);
       setLogoDataUrl(editLocation.logoDataUrl ?? null);
+      setMarketManBuyerGuid(editLocation.marketManBuyerGuid ?? '');
     } else {
       setStoreName('');
       setAddress('');
@@ -123,6 +126,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
       setUpdateHomebaseCredentials(false);
       setLogoId(null);
       setLogoDataUrl(null);
+      setMarketManBuyerGuid('');
     }
     setLogoListOpen(false);
     setError('');
@@ -143,6 +147,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
           timezone: timezone.trim(),
           businessStartTime: businessStartTime.trim(),
           ...(logoId !== null && logoId !== '' ? { logoId } : { logoId: null }),
+          marketManBuyerGuid: marketManBuyerGuid.trim(),
           // Send credentials when user entered them: either replacing (Update clicked) or setting for first time (no stored creds)
           ...((updateSquareCredentials || !hasStoredSquare) && squareAccessToken.trim() && { squareAccessToken: squareAccessToken.trim() }),
           ...((updateHomebaseCredentials || !hasStoredHomebase) && homebaseApiKey.trim() && { homebaseApiKey: homebaseApiKey.trim() }),
@@ -159,6 +164,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
           businessStartTime: businessStartTime.trim(),
           squareAccessToken: squareAccessToken.trim(),
           homebaseApiKey: homebaseApiKey.trim(),
+          marketManBuyerGuid: marketManBuyerGuid.trim(),
           ...(logoId ? { logoId } : {}),
         });
         onSaved();
@@ -401,6 +407,25 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
 
           <section className="space-y-4 pt-6 border-t border-gray-200">
             <h4 className="text-base font-semibold text-primary border-l-4 border-button-primary pl-3 py-1">
+              MarketMan
+            </h4>
+            <div>
+              <label htmlFor="marketManBuyerGuid" className="block text-sm font-medium text-primary mb-1">
+                MarketMan Buyer GUID
+              </label>
+              <input
+                id="marketManBuyerGuid"
+                type="text"
+                value={marketManBuyerGuid}
+                onChange={(e) => setMarketManBuyerGuid(e.target.value)}
+                className="w-full px-4 py-3 bg-[#F9F9F9] border border-[#DBDBDB] rounded-xl text-sm md:text-base 2xl:text-lg placeholder:text-sm md:placeholder:text-base 2xl:placeholder:text-lg"
+                placeholder="MarketMan Buyer GUID (optional)"
+              />
+            </div>
+          </section>
+
+          <section className="space-y-4 pt-6 border-t border-gray-200">
+            <h4 className="text-base font-semibold text-primary border-l-4 border-button-primary pl-3 py-1">
               Square
             </h4>
             <div>
@@ -526,6 +551,26 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
                   </button>
                 </div>
               )}
+            </div>
+          </section>
+
+          <section className="space-y-4 pt-6 border-t border-gray-200">
+            <h4 className="text-base font-semibold text-primary border-l-4 border-button-primary pl-3 py-1">
+              MarketMan
+            </h4>
+            <div>
+              <label htmlFor="marketManBuyerGuid" className="block text-sm font-medium text-primary mb-1">
+                MarketMan buyer GUID
+              </label>
+              <input
+                id="marketManBuyerGuid"
+                type="text"
+                value={marketManBuyerGuid}
+                onChange={(e) => setMarketManBuyerGuid(e.target.value)}
+                required
+                className="w-full px-4 py-3 bg-[#F9F9F9] border border-[#DBDBDB] rounded-xl text-sm md:text-base 2xl:text-lg placeholder:text-sm md:placeholder:text-base 2xl:placeholder:text-lg"
+                placeholder="MarketMan buyer GUID"
+              />
             </div>
           </section>
 

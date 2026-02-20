@@ -78,6 +78,7 @@ export const locationService = {
     squareAccessToken: string;
     homebaseApiKey: string;
     logoId?: string | null;
+    marketManBuyerGuid?: string;
   }): Promise<Location> {
     const res = await api.post<ApiResponse<{ location: Location }>>(
       BASE,
@@ -102,6 +103,7 @@ export const locationService = {
       squareAccessToken?: string;
       homebaseApiKey?: string;
       logoId?: string | null;
+      marketManBuyerGuid?: string | null;
     }
   ): Promise<Location> {
     const res = await api.put<ApiResponse<{ location: Location }>>(
