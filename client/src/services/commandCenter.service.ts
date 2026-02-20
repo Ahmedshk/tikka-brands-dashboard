@@ -109,6 +109,33 @@ export interface SalesTrendKpiData {
   comparison: SalesTrendKpiPeriodTotals;
 }
 
+/** Params for sales-by-category (period + comparison only, same shape as KPI). */
+export interface SalesByCategoryParams {
+  periodType: SalesTrendPeriodType;
+  periodStart?: string;
+  periodEnd?: string;
+  comparisonType: SalesTrendComparisonType;
+  comparisonDate?: string;
+  comparisonStart?: string;
+  comparisonEnd?: string;
+}
+
+export interface SalesByCategoryCategoryItem {
+  label: string;
+  netSales: number;
+}
+
+export interface SalesByCategoryData {
+  current: {
+    categories: SalesByCategoryCategoryItem[];
+    totalNetSales: number;
+  };
+  comparison: {
+    categories: SalesByCategoryCategoryItem[];
+    totalNetSales: number;
+  };
+}
+
 export type SalesTrendGranularity = "hourly" | "daily" | "weekly" | "monthly";
 
 export interface SalesTrendLineData {
@@ -245,6 +272,36 @@ export const commandCenterService = {
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch sales trend KPIs");
+    }
+    return res.data.data;
+  },
+
+  async getSalesByCategory(
+    locationId: string,
+    params: SalesByCategoryParams
+  ): Promise<SalesByCategoryData> {
+    const res = await api.get<ApiResponse<SalesByCategoryData>>(
+      API_ENDPOINTS.SALES_LABOR.SALES_BY_CATEGORY,
+      {
+        params: {
+          locationId,
+          periodType: params.periodType,
+          ...(params.periodStart && { periodStart: params.periodStart }),
+          ...(params.periodEnd && { periodEnd: params.periodEnd }),
+          comparisonType: params.comparisonType,
+          ...(params.comparisonType === "custom" &&
+            params.comparisonStart &&
+            params.comparisonEnd && {
+              comparisonStart: params.comparisonStart,
+              comparisonEnd: params.comparisonEnd,
+            }),
+        },
+      }
+    );
+    if (!res.data.success || res.data.data == null) {
+      throw new Error(
+        res.data.message ?? "Failed to fetch sales by category"
+      );
     }
     return res.data.data;
   },

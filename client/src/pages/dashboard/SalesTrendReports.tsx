@@ -22,6 +22,7 @@ import {
   type SalesTrendMetric,
   type SalesTrendGroupBy,
   type SalesTrendKpiData,
+  type SalesByCategoryData,
 } from '../../services/commandCenter.service';
 import type { TimeSeriesSeries } from '../../components/charts/TimeSeriesLineChart';
 import type { RootState } from '../../store/store';
@@ -88,8 +89,9 @@ function getYAxisFormatter(metric: SalesTrendMetric): (value: number) => string 
 const currencyFmt = (v: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
-function percentDiff(current: number, comparison: number): number {
-  if (comparison === 0) return 0;
+/** Returns null when comparison is 0 and current > 0 (undefined % change); otherwise the percentage. */
+function percentDiff(current: number, comparison: number): number | null {
+  if (comparison === 0) return current > 0 ? null : 0;
   return Number((((current - comparison) / comparison) * 100).toFixed(1));
 }
 
@@ -170,36 +172,26 @@ function buildKpiRows(data: SalesTrendKpiData | null): KPIsTableRow[] {
   ];
 }
 
-function getSalesByCategoryItems(
-  timeRange: string,
-  comparison: string
-): { label: string; currentValue: number; comparisonValue: number }[] {
-  if (timeRange === 'Last 30 Days' && comparison === 'vs. Last Year') {
-    return [
-      { label: 'Food', currentValue: 187424, comparisonValue: 157424 },
-      { label: 'Beverages', currentValue: 48980, comparisonValue: 51700 },
-      { label: 'Merchandise', currentValue: 17691, comparisonValue: 14890 },
-      { label: 'Catering', currentValue: 12500, comparisonValue: 9800 },
-      { label: 'Retail', currentValue: 8450, comparisonValue: 7200 },
-      { label: 'Other', currentValue: 4100, comparisonValue: 3500 },
-    ];
-  }
-  return [
-    { label: 'Food', currentValue: 43200, comparisonValue: 40100 },
-    { label: 'Beverages', currentValue: 11200, comparisonValue: 10800 },
-    { label: 'Merchandise', currentValue: 4100, comparisonValue: 3900 },
-    { label: 'Catering', currentValue: 3200, comparisonValue: 2900 },
-    { label: 'Retail', currentValue: 2100, comparisonValue: 1900 },
-    { label: 'Other', currentValue: 600, comparisonValue: 500 },
-  ];
+function buildCategoryItems(data: SalesByCategoryData | null): { label: string; currentValue: number; comparisonValue: number }[] {
+  if (!data) return [];
+  const currentByName = new Map(data.current.categories.map((c) => [c.label, c.netSales]));
+  const comparisonByName = new Map(data.comparison.categories.map((c) => [c.label, c.netSales]));
+  const allLabels = new Set([...currentByName.keys(), ...comparisonByName.keys()]);
+  return Array.from(allLabels)
+    .map((label) => ({
+      label,
+      currentValue: currentByName.get(label) ?? 0,
+      comparisonValue: comparisonByName.get(label) ?? 0,
+    }))
+    .sort((a, b) => b.currentValue - a.currentValue);
 }
 
 const defaultPeriod: PeriodPickerValue = {
-  periodType: 'last30days',
+  periodType: 'today',
 };
 
 const defaultComparison: ComparisonPeriodPickerValue = {
-  comparisonType: 'priorYear',
+  comparisonType: '1DayPrior',
 };
 
 export const SalesTrendReports = () => {
@@ -212,13 +204,16 @@ export const SalesTrendReports = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [kpiPeriod, setKpiPeriod] = useState<PeriodPickerValue>({ periodType: 'last30days' });
-  const [kpiComparison, setKpiComparison] = useState<ComparisonPeriodPickerValue>({ comparisonType: 'priorYear' });
+  const [kpiPeriod, setKpiPeriod] = useState<PeriodPickerValue>({ periodType: 'today' });
+  const [kpiComparison, setKpiComparison] = useState<ComparisonPeriodPickerValue>({ comparisonType: '1DayPrior' });
   const [kpiData, setKpiData] = useState<SalesTrendKpiData | null>(null);
   const [kpiLoading, setKpiLoading] = useState(false);
   const [kpiError, setKpiError] = useState<string | null>(null);
-  const [categoryPeriod, setCategoryPeriod] = useState('Last 30 Days');
-  const [categoryComparison, setCategoryComparison] = useState('vs. Last Year');
+  const [categoryPeriod, setCategoryPeriod] = useState<PeriodPickerValue>(defaultPeriod);
+  const [categoryComparison, setCategoryComparison] = useState<ComparisonPeriodPickerValue>(defaultComparison);
+  const [categoryData, setCategoryData] = useState<SalesByCategoryData | null>(null);
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
   const locationId = currentLocation?._id ?? null;
 
@@ -234,6 +229,19 @@ export const SalesTrendReports = () => {
       );
     }
   }, [kpiPeriod.periodType]);
+
+  useEffect(() => {
+    const options = getComparisonOptionsForPeriod(categoryPeriod.periodType).filter((o) => o.value !== 'none');
+    const exists = options.some((o) => o.value === categoryComparison.comparisonType);
+    if (!exists && options.length > 0) {
+      const fallback = categoryPeriod.periodType === 'thisYear' ? 'priorYear' : options[0].value;
+      setCategoryComparison((prev) =>
+        fallback === 'custom'
+          ? { comparisonType: 'custom' }
+          : { ...prev, comparisonType: fallback as ComparisonPeriodPickerValue['comparisonType'] }
+      );
+    }
+  }, [categoryPeriod.periodType]);
 
   useEffect(() => {
     const options = getComparisonOptionsForPeriod(period.periodType);
@@ -349,6 +357,52 @@ export const SalesTrendReports = () => {
     kpiComparison.comparisonEnd,
   ]);
 
+  useEffect(() => {
+    if (!locationId) {
+      setCategoryData(null);
+      setCategoryError(null);
+      return;
+    }
+    setCategoryLoading(true);
+    setCategoryError(null);
+    const categoryParams = {
+      periodType: categoryPeriod.periodType,
+      ...(categoryPeriod.periodType === 'custom' &&
+        categoryPeriod.periodStart &&
+        categoryPeriod.periodEnd && {
+          periodStart: categoryPeriod.periodStart,
+          periodEnd: categoryPeriod.periodEnd,
+        }),
+      comparisonType: categoryComparison.comparisonType,
+      ...(categoryComparison.comparisonType === 'custom' &&
+        categoryComparison.comparisonStart &&
+        categoryComparison.comparisonEnd && {
+          comparisonStart: categoryComparison.comparisonStart,
+          comparisonEnd: categoryComparison.comparisonEnd,
+        }),
+    };
+    commandCenterService
+      .getSalesByCategory(locationId, categoryParams)
+      .then(setCategoryData)
+      .catch((err: unknown) => {
+        const res = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+        let message = 'Failed to load sales by category';
+        if (typeof res === 'string' && res.trim()) message = res;
+        else if (err instanceof Error) message = err.message;
+        setCategoryError(message);
+        setCategoryData(null);
+      })
+      .finally(() => setCategoryLoading(false));
+  }, [
+    locationId,
+    categoryPeriod.periodType,
+    categoryPeriod.periodStart,
+    categoryPeriod.periodEnd,
+    categoryComparison.comparisonType,
+    categoryComparison.comparisonStart,
+    categoryComparison.comparisonEnd,
+  ]);
+
   const chartProps = useMemo(() => {
     if (!trendData) return null;
     const xAxisData = trendData.xAxisLabels;
@@ -387,6 +441,9 @@ export const SalesTrendReports = () => {
       yAxis,
     };
   }, [trendData, metric, comparison]);
+
+  const categoryItems = useMemo(() => buildCategoryItems(categoryData), [categoryData]);
+  const categoryTop5 = useMemo(() => categoryItems.slice(0, 5), [categoryItems]);
 
   const selectClass =
     'border border-gray-300 rounded-lg px-3 py-2 text-sm text-primary bg-white focus:outline-none focus:ring-2 focus:ring-quaternary/30';
@@ -495,16 +552,22 @@ export const SalesTrendReports = () => {
             />
           </div>
           <div className={cardClass}>
+            {categoryError && (
+              <div className="p-3 rounded-t-xl bg-red-50 text-red-800 text-sm border-b border-gray-200">
+                {categoryError}
+              </div>
+            )}
             <SalesByCategoryCard
-              items={getSalesByCategoryItems(categoryPeriod, categoryComparison)}
-              currentPeriodLabel={categoryPeriod}
-              comparisonPeriodLabel={
-                categoryComparison === 'vs. Last Year' ? 'Last Year' : categoryComparison
-              }
-              period={categoryPeriod}
-              comparison={categoryComparison}
+              items={categoryTop5}
+              allItems={categoryItems}
+              loading={categoryLoading}
+              currentPeriodLabel={getKpiPeriodLabel(categoryPeriod)}
+              comparisonPeriodLabel={getKpiComparisonLabel(categoryPeriod.periodType, categoryComparison)}
+              periodValue={categoryPeriod}
+              comparisonValue={categoryComparison}
               onPeriodChange={setCategoryPeriod}
               onComparisonChange={setCategoryComparison}
+              excludeNoneFromComparison
             />
           </div>
         </div>

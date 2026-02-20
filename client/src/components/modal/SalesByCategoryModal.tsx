@@ -4,19 +4,6 @@ import type { SalesByCategoryItem } from '../SalesTrend/SalesByCategoryCard';
 
 const COMPARISON_BAR_COLOR = '#9CA3AF';
 
-const DEFAULT_PERIOD_OPTIONS = [
-  { value: 'Last 7 Days', label: 'Last 7 Days' },
-  { value: 'Last 30 Days', label: 'Last 30 Days' },
-  { value: 'Last 90 Days', label: 'Last 90 Days' },
-];
-
-const DEFAULT_COMPARISON_OPTIONS = [
-  { value: 'vs. Last Year', label: 'Last Year' },
-  { value: 'vs. Previous Period', label: 'Previous Period' },
-];
-
-const modalSelectClass = 'border-0 rounded-lg px-2 py-1 text-xs font-medium text-primary bg-white focus:outline-none focus:ring-2 focus:ring-white/50 cursor-pointer';
-
 type ViewMode = 'table' | 'visual';
 
 export interface SalesByCategoryModalProps {
@@ -27,12 +14,6 @@ export interface SalesByCategoryModalProps {
   comparisonPeriodLabel: string;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
-  period?: string;
-  comparison?: string;
-  onPeriodChange?: (value: string) => void;
-  onComparisonChange?: (value: string) => void;
-  periodOptions?: { value: string; label: string }[];
-  comparisonOptions?: { value: string; label: string }[];
 }
 
 function getTrendColor(currentValue: number, comparisonValue: number) {
@@ -41,12 +22,24 @@ function getTrendColor(currentValue: number, comparisonValue: number) {
 }
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
 
-function getPercentChange(currentValue: number, comparisonValue: number): number {
-  if (comparisonValue === 0) return 0;
+/** Returns null when comparison is 0 and current > 0 (undefined % change); otherwise the percentage. */
+function getPercentChange(currentValue: number, comparisonValue: number): number | null {
+  if (comparisonValue === 0) return currentValue > 0 ? null : 0;
   return ((currentValue - comparisonValue) / comparisonValue) * 100;
+}
+
+function formatPercentDisplay(percent: number | null): string {
+  if (percent === null) return 'N/A';
+  return `${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`;
+}
+
+/** For visual view only: show nothing when undefined (no N/A or —). */
+function formatPercentDisplayVisual(percent: number | null): string {
+  if (percent === null) return '';
+  return `${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`;
 }
 
 export const SalesByCategoryModal = ({
@@ -57,12 +50,6 @@ export const SalesByCategoryModal = ({
   comparisonPeriodLabel,
   viewMode,
   onViewModeChange,
-  period = 'Last 30 Days',
-  comparison = 'vs. Last Year',
-  onPeriodChange,
-  onComparisonChange,
-  periodOptions = DEFAULT_PERIOD_OPTIONS,
-  comparisonOptions = DEFAULT_COMPARISON_OPTIONS,
 }: SalesByCategoryModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -113,33 +100,8 @@ export const SalesByCategoryModal = ({
         </button>
         <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
           <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex flex-col md:flex-row items-center justify-center md:justify-between flex-shrink-0 flex-wrap gap-2 z-0">
-            <h2 id="sales-by-category-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white shrink-0">Sales by Category</h2>
+            <h2 id="sales-by-category-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white shrink-0">Net Sales by Category</h2>
             <div className="flex items-center gap-2 flex-wrap justify-center">
-              {onPeriodChange != null && onComparisonChange != null && (
-                <>
-                  <select
-                    value={period}
-                    onChange={(e) => onPeriodChange(e.target.value)}
-                    className={modalSelectClass}
-                    aria-label="Period"
-                  >
-                    {periodOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                  <span className="text-white text-xs font-medium shrink-0">vs</span>
-                  <select
-                    value={comparison}
-                    onChange={(e) => onComparisonChange(e.target.value)}
-                    className={modalSelectClass}
-                    aria-label="Comparison"
-                  >
-                    {comparisonOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </>
-              )}
               <div className="flex rounded-lg overflow-hidden bg-white/20">
                 <button
                   type="button"
@@ -201,15 +163,19 @@ export const SalesByCategoryModal = ({
                   <tbody className="text-primary text-[10px] md:text-xs 2xl:text-sm">
                     {items.map((item, index) => {
                       const percentChange = getPercentChange(item.currentValue, item.comparisonValue);
-                      const isPositive = percentChange >= 0;
+                      const isPositive = percentChange !== null && percentChange >= 0;
                       return (
                         <tr key={item.label} className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}>
                           <td className="py-3 pr-4 pl-2 font-medium text-secondary text-xs md:text-sm 2xl:text-base truncate" title={item.label}>{item.label}</td>
                           <td className="py-3 pr-4 text-right font-semibold">{formatCurrency(item.currentValue)}</td>
                           <td className="py-3 pr-4 text-right font-semibold">{formatCurrency(item.comparisonValue)}</td>
                           <td className="py-3 pr-2 text-right">
-                            <span className={`font-semibold ${isPositive ? 'text-positive' : 'text-negative'}`}>
-                              {isPositive ? '+' : ''}{percentChange.toFixed(1)}%
+                            <span
+                              className={`font-semibold ${
+                                percentChange === null ? 'text-secondary' : isPositive ? 'text-positive' : 'text-negative'
+                              }`}
+                            >
+                              {formatPercentDisplay(percentChange)}
                             </span>
                           </td>
                         </tr>
@@ -218,19 +184,26 @@ export const SalesByCategoryModal = ({
                   </tbody>
                 </table>
               ) : (
-                <div className="space-y-4 pb-2">
+                <div className="space-y-3 pb-2">
                   {items.map((item) => {
                     const currentPercent = maxValue > 0 ? (item.currentValue / maxValue) * 100 : 0;
                     const comparisonPercent = maxValue > 0 ? (item.comparisonValue / maxValue) * 100 : 0;
                     const currentBarColor = getTrendColor(item.currentValue, item.comparisonValue);
                     const percentChange = getPercentChange(item.currentValue, item.comparisonValue);
-                    const isPositive = percentChange >= 0;
+                    const isPositive = percentChange !== null && percentChange >= 0;
                     return (
-                      <div key={item.label}>
+                      <div
+                        key={item.label}
+                        className="rounded-lg border border-gray-200 bg-gray-50/50 p-3"
+                      >
                         <div className="mb-1 text-[10px] md:text-xs 2xl:text-sm font-medium text-secondary flex items-center gap-1.5">
                           <span>{item.label}</span>
-                          <span className={`shrink-0 font-semibold ${isPositive ? 'text-positive' : 'text-negative'}`}>
-                            {isPositive ? '+' : ''}{percentChange.toFixed(1)}%
+                          <span
+                            className={`shrink-0 font-semibold ${
+                              percentChange === null ? 'text-secondary' : isPositive ? 'text-positive' : 'text-negative'
+                            }`}
+                          >
+                            {formatPercentDisplayVisual(percentChange)}
                           </span>
                         </div>
                         <div className="flex flex-col gap-1.5">
@@ -290,8 +263,12 @@ export const SalesByCategoryModal = ({
                       <td className="py-2 pr-4 text-right font-semibold">{formatCurrency(totalCurrent)}</td>
                       <td className="py-2 pr-4 text-right font-semibold">{formatCurrency(totalComparison)}</td>
                       <td className="py-2 pr-2 text-right">
-                        <span className={`font-semibold ${totalPercentChange >= 0 ? 'text-positive' : 'text-negative'}`}>
-                          {totalPercentChange >= 0 ? '+' : ''}{totalPercentChange.toFixed(1)}%
+                        <span
+                          className={`font-semibold ${
+                            totalPercentChange === null ? 'text-secondary' : totalPercentChange >= 0 ? 'text-positive' : 'text-negative'
+                          }`}
+                        >
+                          {formatPercentDisplay(totalPercentChange)}
                         </span>
                       </td>
                     </tr>
@@ -301,8 +278,12 @@ export const SalesByCategoryModal = ({
                 <>
                   <div className="mb-1 text-[10px] md:text-xs 2xl:text-sm font-semibold text-secondary flex items-center gap-1.5">
                     <span>Total</span>
-                    <span className={`shrink-0 font-semibold ${totalPercentChange >= 0 ? 'text-positive' : 'text-negative'}`}>
-                      {totalPercentChange >= 0 ? '+' : ''}{totalPercentChange.toFixed(1)}%
+                    <span
+                      className={`shrink-0 font-semibold ${
+                        totalPercentChange === null ? 'text-secondary' : totalPercentChange >= 0 ? 'text-positive' : 'text-negative'
+                      }`}
+                    >
+                      {formatPercentDisplayVisual(totalPercentChange)}
                     </span>
                   </div>
                   <div className="flex flex-col gap-1.5">

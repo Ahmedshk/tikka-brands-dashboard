@@ -32,6 +32,13 @@ interface OrderMoneyAmounts {
   [key: string]: unknown;
 }
 
+/** Line item for sales-by-category (Square OrderLineItem). */
+interface SquareOrderLineItem {
+  catalog_object_id?: string;
+  total_money?: Money;
+  quantity?: string;
+}
+
 interface SquareOrder {
   created_at?: string;
   total_money?: Money;
@@ -48,6 +55,8 @@ interface SquareOrder {
   source?: { name?: string };
   /** Fulfillment details (Square Order.fulfillments). */
   fulfillments?: Array<{ type?: string }>;
+  /** Line items (included in SearchOrders response). */
+  line_items?: SquareOrderLineItem[];
 }
 
 interface SearchOrdersResponse {
@@ -595,6 +604,179 @@ export async function getOrderStatsAndSourcesInRange(
     orderStats: getOrderStatsFromOrders(orders),
     sourcesOfSales: getSourcesOfSalesFromOrders(orders),
   };
+}
+
+const BATCH_RETRIEVE_CATALOG_LIMIT = 100;
+
+/** Square CatalogObject shape for batch retrieve (minimal fields we need). */
+interface CatalogObjectShape {
+  type?: string;
+  id?: string;
+  item_variation_data?: { item_id?: string };
+  item_data?: { category_id?: string };
+  category_data?: { name?: string };
+}
+
+interface BatchRetrieveCatalogResponse {
+  objects?: CatalogObjectShape[];
+  related_objects?: CatalogObjectShape[];
+  errors?: Array<{ code: string; detail?: string }>;
+}
+
+async function batchRetrieveCatalog(
+  objectIds: string[],
+  accessToken: string,
+  includeRelated = false,
+): Promise<BatchRetrieveCatalogResponse> {
+  const res = await fetch(`${SQUARE_BASE}/v2/catalog/batch-retrieve`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      object_ids: objectIds,
+      include_related_objects: includeRelated,
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Square Catalog API error ${res.status}: ${errText}`);
+  }
+  const data = (await res.json()) as BatchRetrieveCatalogResponse;
+  if (data.errors?.length) {
+    throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+  }
+  return data;
+}
+
+export interface NetSalesByCategoryResult {
+  categories: Array<{ name: string; netSalesCents: number }>;
+  totalNetSalesCents: number;
+}
+
+/**
+ * Aggregate net sales by category for a time range using Square Orders (line items) and Catalog API.
+ * Allocates order-level net sales to line items proportionally; resolves variation -> item -> category via BatchRetrieveCatalog.
+ */
+export async function getNetSalesByCategoryInRange(
+  squareLocationId: string,
+  range: TimeRange,
+  options?: SquareServiceOptions,
+): Promise<NetSalesByCategoryResult> {
+  const token = resolveAccessToken(options?.accessToken);
+  const orders = await fetchOrdersInRange(
+    squareLocationId,
+    range,
+    options?.accessToken,
+  );
+
+  const variationToCents: Record<string, number> = {};
+  let totalNetSalesCents = 0;
+
+  for (const order of orders) {
+    if (!isPaidOrder(order)) continue;
+    const orderNetCents = orderNetSalesCents(order);
+    totalNetSalesCents += orderNetCents;
+    const lineItems = order.line_items ?? [];
+    const orderTotalCents = lineItems.reduce(
+      (sum, line) => sum + moneyToCents(line.total_money),
+      0,
+    );
+    if (orderTotalCents <= 0) continue;
+    for (const line of lineItems) {
+      const catalogObjectId = line.catalog_object_id?.trim();
+      if (!catalogObjectId) continue;
+      const lineCents =
+        orderNetCents *
+        (moneyToCents(line.total_money) / orderTotalCents);
+      variationToCents[catalogObjectId] =
+        (variationToCents[catalogObjectId] ?? 0) + lineCents;
+    }
+  }
+
+  const variationIds = Object.keys(variationToCents);
+  if (variationIds.length === 0) {
+    return { categories: [], totalNetSalesCents };
+  }
+
+  const variationToItemId: Record<string, string> = {};
+  const itemIdToCategoryId: Record<string, string> = {};
+
+  function categoryIdFromItem(obj: { item_data?: { category_id?: string; categories?: Array<{ id?: string }> } }): string | undefined {
+    const data = obj.item_data;
+    if (!data) return undefined;
+    if (data.category_id) return data.category_id;
+    const first = data.categories?.[0];
+    return first?.id;
+  }
+
+  for (let i = 0; i < variationIds.length; i += BATCH_RETRIEVE_CATALOG_LIMIT) {
+    const chunk = variationIds.slice(
+      i,
+      i + BATCH_RETRIEVE_CATALOG_LIMIT,
+    );
+    const resp = await batchRetrieveCatalog(chunk, token, true);
+    const objects = resp.objects ?? [];
+    const related = resp.related_objects ?? [];
+    for (const obj of objects) {
+      if (obj.type === "ITEM_VARIATION" && obj.id && obj.item_variation_data?.item_id) {
+        variationToItemId[obj.id] = obj.item_variation_data.item_id;
+      } else if (obj.type === "ITEM" && obj.id) {
+        variationToItemId[obj.id] = obj.id;
+        const catId = categoryIdFromItem(obj);
+        if (catId) itemIdToCategoryId[obj.id] = catId;
+      }
+    }
+    for (const obj of related) {
+      if (obj.type === "ITEM" && obj.id) {
+        const catId = categoryIdFromItem(obj);
+        if (catId) itemIdToCategoryId[obj.id] = catId;
+      }
+    }
+  }
+
+  const categoryIds = [
+    ...new Set(
+      Object.values(variationToItemId)
+        .map((itemId) => itemIdToCategoryId[itemId])
+        .filter(Boolean),
+    ),
+  ] as string[];
+
+  const categoryIdToName: Record<string, string> = {};
+  if (categoryIds.length > 0) {
+    for (let i = 0; i < categoryIds.length; i += BATCH_RETRIEVE_CATALOG_LIMIT) {
+      const chunk = categoryIds.slice(
+        i,
+        i + BATCH_RETRIEVE_CATALOG_LIMIT,
+      );
+      const resp = await batchRetrieveCatalog(chunk, token, false);
+      const objects = resp.objects ?? [];
+      for (const obj of objects) {
+        if (obj.type === "CATEGORY" && obj.id && obj.category_data?.name) {
+          categoryIdToName[obj.id] = obj.category_data.name;
+        }
+      }
+    }
+  }
+
+  const byCategory: Record<string, number> = {};
+  for (const variationId of variationIds) {
+    const itemId = variationToItemId[variationId];
+    const categoryId = itemId ? itemIdToCategoryId[itemId] : undefined;
+    const name = categoryId
+      ? (categoryIdToName[categoryId] ?? "Uncategorized")
+      : "Uncategorized";
+    const cents = variationToCents[variationId] ?? 0;
+    byCategory[name] = (byCategory[name] ?? 0) + cents;
+  }
+
+  const categories = Object.entries(byCategory)
+    .map(([name, netSalesCents]) => ({ name, netSalesCents }))
+    .sort((a, b) => b.netSalesCents - a.netSalesCents);
+
+  return { categories, totalNetSalesCents };
 }
 
 /** Granularity for sales trend time-series. */

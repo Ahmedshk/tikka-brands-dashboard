@@ -1,11 +1,19 @@
 import { useState } from 'react';
 import { TREND_POSITIVE, TREND_NEGATIVE } from '../../constants/trendColors';
 import { SalesByCategoryModal } from '../modal/SalesByCategoryModal';
+import { PeriodPicker } from './PeriodPicker';
+import { ComparisonPeriodPicker } from './ComparisonPeriodPicker';
+import { Spinner } from '../common/Spinner';
+import type { PeriodPickerValue } from './PeriodPicker';
+import type { ComparisonPeriodPickerValue } from './ComparisonPeriodPicker';
 
 const COMPARISON_BAR_COLOR = '#9CA3AF';
-const CARD_ITEM_LIMIT = 4;
+const CARD_TOP_N = 3;
 
 type ViewMode = 'table' | 'visual';
+
+const pickerClass =
+  'border-0 rounded-lg px-2 py-1 text-xs font-medium text-primary bg-white focus:outline-none focus:ring-2 focus:ring-white/50 cursor-pointer';
 
 export interface SalesByCategoryItem {
   label: string;
@@ -13,27 +21,19 @@ export interface SalesByCategoryItem {
   comparisonValue: number;
 }
 
-const DEFAULT_PERIOD_OPTIONS = [
-  { value: 'Last 7 Days', label: 'Last 7 Days' },
-  { value: 'Last 30 Days', label: 'Last 30 Days' },
-  { value: 'Last 90 Days', label: 'Last 90 Days' },
-];
-
-const DEFAULT_COMPARISON_OPTIONS = [
-  { value: 'vs. Last Year', label: 'Last Year' },
-  { value: 'vs. Previous Period', label: 'Previous Period' },
-];
-
 export interface SalesByCategoryCardProps {
   items: SalesByCategoryItem[];
   currentPeriodLabel: string;
   comparisonPeriodLabel: string;
-  period?: string;
-  comparison?: string;
-  onPeriodChange?: (value: string) => void;
-  onComparisonChange?: (value: string) => void;
-  periodOptions?: { value: string; label: string }[];
-  comparisonOptions?: { value: string; label: string }[];
+  /** Full list for totals row and View All modal; if not provided, items are used */
+  allItems?: SalesByCategoryItem[];
+  /** When true, show spinner in card body */
+  loading?: boolean;
+  periodValue?: PeriodPickerValue;
+  comparisonValue?: ComparisonPeriodPickerValue;
+  onPeriodChange?: (value: PeriodPickerValue) => void;
+  onComparisonChange?: (value: ComparisonPeriodPickerValue) => void;
+  excludeNoneFromComparison?: boolean;
 }
 
 function getTrendColor(currentValue: number, comparisonValue: number) {
@@ -42,32 +42,44 @@ function getTrendColor(currentValue: number, comparisonValue: number) {
 }
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
 
-function getPercentChange(currentValue: number, comparisonValue: number): number {
-  if (comparisonValue === 0) return 0;
+/** Returns null when comparison is 0 and current > 0 (undefined % change); otherwise the percentage. */
+function getPercentChange(currentValue: number, comparisonValue: number): number | null {
+  if (comparisonValue === 0) return currentValue > 0 ? null : 0;
   return ((currentValue - comparisonValue) / comparisonValue) * 100;
 }
 
-const cardSelectClass = 'border-0 rounded-lg px-2 py-1 text-xs font-medium text-primary bg-white focus:outline-none focus:ring-2 focus:ring-white/50 cursor-pointer';
+function formatPercentDisplay(percent: number | null): string {
+  if (percent === null) return 'N/A';
+  return `${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`;
+}
+
+/** For visual view only: show nothing when undefined (no N/A or —). */
+function formatPercentDisplayVisual(percent: number | null): string {
+  if (percent === null) return '';
+  return `${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`;
+}
 
 export const SalesByCategoryCard = ({
   items,
+  allItems,
+  loading = false,
   currentPeriodLabel,
   comparisonPeriodLabel,
-  period = 'Last 30 Days',
-  comparison = 'vs. Last Year',
+  periodValue,
+  comparisonValue,
   onPeriodChange,
   onComparisonChange,
-  periodOptions = DEFAULT_PERIOD_OPTIONS,
-  comparisonOptions = DEFAULT_COMPARISON_OPTIONS,
+  excludeNoneFromComparison = false,
 }: SalesByCategoryCardProps) => {
   const [viewMode, setViewMode] = useState<ViewMode>('visual');
   const [modalOpen, setModalOpen] = useState(false);
-  const displayItems = items.slice(0, CARD_ITEM_LIMIT);
-  const totalCurrent = items.reduce((s, i) => s + i.currentValue, 0);
-  const totalComparison = items.reduce((s, i) => s + i.comparisonValue, 0);
+  const displayItems = items.slice(0, CARD_TOP_N);
+  const totalsSource = allItems ?? items;
+  const totalCurrent = totalsSource.reduce((s, i) => s + i.currentValue, 0);
+  const totalComparison = totalsSource.reduce((s, i) => s + i.comparisonValue, 0);
   const totalPercentChange = getPercentChange(totalCurrent, totalComparison);
   const cardMaxValue = Math.max(
     ...displayItems.flatMap((i) => [i.currentValue, i.comparisonValue]),
@@ -75,35 +87,28 @@ export const SalesByCategoryCard = ({
     totalComparison,
     1
   );
+  const usePickers =
+    periodValue != null &&
+    comparisonValue != null &&
+    onPeriodChange != null &&
+    onComparisonChange != null;
 
   return (
     <div className="flex flex-col h-full">
       <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2 flex flex-col md:flex-row items-center justify-center md:justify-between flex-wrap gap-2">
-        <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white shrink-0">Sales by Category</h3>
+        <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white shrink-0">Net Sales by Category</h3>
         <div className="flex items-center gap-2 flex-wrap justify-center">
-          {onPeriodChange != null && onComparisonChange != null && (
+          {usePickers && (
             <>
-              <select
-                value={period}
-                onChange={(e) => onPeriodChange(e.target.value)}
-                className={cardSelectClass}
-                aria-label="Period"
-              >
-                {periodOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+              <PeriodPicker value={periodValue} onChange={onPeriodChange} className={pickerClass} />
               <span className="text-white text-xs font-medium shrink-0">vs</span>
-              <select
-                value={comparison}
-                onChange={(e) => onComparisonChange(e.target.value)}
-                className={cardSelectClass}
-                aria-label="Comparison"
-              >
-                {comparisonOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+              <ComparisonPeriodPicker
+                value={comparisonValue}
+                onChange={onComparisonChange}
+                period={periodValue}
+                excludeComparisonTypes={excludeNoneFromComparison ? ['none'] : undefined}
+                className={pickerClass}
+              />
             </>
           )}
           <div className="flex rounded-lg overflow-hidden bg-white/20">
@@ -126,7 +131,13 @@ export const SalesByCategoryCard = ({
           </div>
         </div>
       </div>
-      <div className="px-5 pb-4 flex-1 pt-5 space-y-4">
+      <div className="px-5 pb-4 flex-1 pt-5 space-y-4 flex flex-col min-h-0">
+        {loading ? (
+          <div className="flex-1 flex justify-center items-center w-full min-w-0">
+            <Spinner size="lg" className="text-button-primary" />
+          </div>
+        ) : (
+        <>
         {viewMode === 'visual' && (
           <div className="flex flex-wrap items-center gap-4 text-xs text-primary">
             <span className="flex items-center gap-2">
@@ -173,7 +184,7 @@ export const SalesByCategoryCard = ({
               <tbody className="text-primary text-[10px] md:text-xs 2xl:text-sm">
                 {displayItems.map((item, index) => {
                   const percentChange = getPercentChange(item.currentValue, item.comparisonValue);
-                  const isPositive = percentChange >= 0;
+                  const isPositive = percentChange !== null && percentChange >= 0;
                   return (
                     <tr
                       key={item.label}
@@ -183,8 +194,12 @@ export const SalesByCategoryCard = ({
                       <td className="py-3 pr-4 text-right font-semibold">{formatCurrency(item.currentValue)}</td>
                       <td className="py-3 pr-4 text-right font-semibold">{formatCurrency(item.comparisonValue)}</td>
                       <td className="py-3 pr-2 text-right">
-                        <span className={`font-semibold ${isPositive ? 'text-positive' : 'text-negative'}`}>
-                          {isPositive ? '+' : ''}{percentChange.toFixed(1)}%
+                        <span
+                          className={`font-semibold ${
+                            percentChange === null ? 'text-secondary' : isPositive ? 'text-positive' : 'text-negative'
+                          }`}
+                        >
+                          {formatPercentDisplay(percentChange)}
                         </span>
                       </td>
                     </tr>
@@ -195,8 +210,12 @@ export const SalesByCategoryCard = ({
                   <td className="py-3 pr-4 text-right font-semibold">{formatCurrency(totalCurrent)}</td>
                   <td className="py-3 pr-4 text-right font-semibold">{formatCurrency(totalComparison)}</td>
                   <td className="py-3 pr-2 text-right">
-                    <span className={`font-semibold ${totalPercentChange >= 0 ? 'text-positive' : 'text-negative'}`}>
-                      {totalPercentChange >= 0 ? '+' : ''}{totalPercentChange.toFixed(1)}%
+                    <span
+                      className={`font-semibold ${
+                        totalPercentChange === null ? 'text-secondary' : totalPercentChange >= 0 ? 'text-positive' : 'text-negative'
+                      }`}
+                    >
+                      {formatPercentDisplay(totalPercentChange)}
                     </span>
                   </td>
                 </tr>
@@ -205,18 +224,26 @@ export const SalesByCategoryCard = ({
           </div>
         ) : (
           <>
+            <div className="space-y-3">
             {displayItems.map((item) => {
               const currentPercent = cardMaxValue > 0 ? (item.currentValue / cardMaxValue) * 100 : 0;
               const comparisonPercent = cardMaxValue > 0 ? (item.comparisonValue / cardMaxValue) * 100 : 0;
               const currentBarColor = getTrendColor(item.currentValue, item.comparisonValue);
               const percentChange = getPercentChange(item.currentValue, item.comparisonValue);
-              const isPositive = percentChange >= 0;
+              const isPositive = percentChange !== null && percentChange >= 0;
               return (
-                <div key={item.label}>
+                <div
+                  key={item.label}
+                  className="rounded-lg border border-gray-200 bg-gray-50/50 p-3"
+                >
                   <div className="mb-1 text-[10px] md:text-xs 2xl:text-sm font-medium text-secondary flex items-center gap-1.5">
                     <span>{item.label}</span>
-                    <span className={`shrink-0 font-semibold ${isPositive ? 'text-positive' : 'text-negative'}`}>
-                      {isPositive ? '+' : ''}{percentChange.toFixed(1)}%
+                    <span
+                      className={`shrink-0 font-semibold ${
+                        percentChange === null ? 'text-secondary' : isPositive ? 'text-positive' : 'text-negative'
+                      }`}
+                    >
+                      {formatPercentDisplayVisual(percentChange)}
                     </span>
                   </div>
                   <div className="flex flex-col gap-1.5">
@@ -254,11 +281,16 @@ export const SalesByCategoryCard = ({
                 </div>
               );
             })}
-            <div className="border-t-2 border-gray-200 pt-4 mt-1">
+            </div>
+            <div className="border-t-2 border-gray-200 pt-4 mt-4">
               <div className="mb-1 text-[10px] md:text-xs 2xl:text-sm font-semibold text-secondary flex items-center gap-1.5">
                 <span>Total</span>
-                <span className={`shrink-0 font-semibold ${totalPercentChange >= 0 ? 'text-positive' : 'text-negative'}`}>
-                  {totalPercentChange >= 0 ? '+' : ''}{totalPercentChange.toFixed(1)}%
+                <span
+                  className={`shrink-0 font-semibold ${
+                    totalPercentChange === null ? 'text-secondary' : totalPercentChange >= 0 ? 'text-positive' : 'text-negative'
+                  }`}
+                >
+                  {formatPercentDisplayVisual(totalPercentChange)}
                 </span>
               </div>
               <div className="flex flex-col gap-1.5">
@@ -304,6 +336,8 @@ export const SalesByCategoryCard = ({
             </div>
           </>
         )}
+        </>
+        )}
       </div>
       <div className="px-5 pb-5 flex justify-end">
         <button
@@ -318,17 +352,11 @@ export const SalesByCategoryCard = ({
       <SalesByCategoryModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        items={items}
+        items={allItems ?? items}
         currentPeriodLabel={currentPeriodLabel}
         comparisonPeriodLabel={comparisonPeriodLabel}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        period={period}
-        comparison={comparison}
-        onPeriodChange={onPeriodChange}
-        onComparisonChange={onComparisonChange}
-        periodOptions={periodOptions}
-        comparisonOptions={comparisonOptions}
       />
     </div>
   );

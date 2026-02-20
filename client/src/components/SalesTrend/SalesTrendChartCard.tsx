@@ -115,7 +115,7 @@ export const SalesTrendChartCard = ({
     if (loading) {
       return (
         <div className="flex justify-center items-center w-full" style={{ minHeight: height }}>
-          <Spinner />
+          <Spinner size="lg" className="text-button-primary" />
         </div>
       );
     }

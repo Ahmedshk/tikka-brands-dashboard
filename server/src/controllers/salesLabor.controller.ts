@@ -11,6 +11,7 @@ import {
   getOrderTimeSeriesInRange,
   getOrderTimeSeriesBySourceInRange,
   getOrderedBucketsAndLabels,
+  getNetSalesByCategoryInRange,
   searchOrdersInRange,
   type SourcesOfSalesSegment,
   type SalesTrendGranularity,
@@ -900,6 +901,133 @@ export const getSalesTrendKpi = async (
           totalTransactions: totalTransactionsComparison,
           totalHours: totalHoursComparison,
           numDays: numDaysComparison,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSalesByCategory = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const locationId =
+      typeof req.query.locationId === "string" ? req.query.locationId : "";
+    const periodType = (req.query.periodType as string) || "last30days";
+    const periodStart =
+      typeof req.query.periodStart === "string"
+        ? req.query.periodStart
+        : undefined;
+    const periodEnd =
+      typeof req.query.periodEnd === "string" ? req.query.periodEnd : undefined;
+    const comparisonType = (req.query.comparisonType as string) || "priorYear";
+    const comparisonDate =
+      typeof req.query.comparisonDate === "string"
+        ? req.query.comparisonDate
+        : undefined;
+    const comparisonStart =
+      typeof req.query.comparisonStart === "string"
+        ? req.query.comparisonStart
+        : undefined;
+    const comparisonEnd =
+      typeof req.query.comparisonEnd === "string"
+        ? req.query.comparisonEnd
+        : undefined;
+
+    const withCreds = await locationService.getByIdWithCredentials(locationId);
+    if (!withCreds) {
+      throw new NotFoundError("Location not found");
+    }
+    const { location, squareAccessToken } = withCreds;
+    const timezone = location.timezone?.trim() ?? "UTC";
+    const businessStartTime = location.businessStartTime?.trim() ?? "00:00";
+
+    const period = getSalesTrendPeriodRange(
+      periodType as Parameters<typeof getSalesTrendPeriodRange>[0],
+      timezone,
+      periodStart,
+      periodEnd,
+      businessStartTime,
+    );
+    const displayEnd = period.displayEndAt ?? period.endAt;
+    const comparison = getSalesTrendComparisonRange(
+      comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
+      period.startAt,
+      displayEnd,
+      timezone,
+      comparisonDate,
+      comparisonStart,
+      comparisonEnd,
+      businessStartTime,
+    );
+
+    const dataRange = { startAt: period.startAt, endAt: period.endAt };
+    const comparisonRange = comparison
+      ? { startAt: comparison.startAt, endAt: comparison.endAt }
+      : null;
+
+    const squareLocationId = location.squareLocationId?.trim();
+    const squareOptions = { accessToken: squareAccessToken ?? undefined };
+
+    let currentResult = { categories: [] as Array<{ name: string; netSalesCents: number }>, totalNetSalesCents: 0 };
+    let comparisonResult = { categories: [] as Array<{ name: string; netSalesCents: number }>, totalNetSalesCents: 0 };
+
+    if (squareLocationId) {
+      const [current, comp] = await Promise.all([
+        getNetSalesByCategoryInRange(
+          squareLocationId,
+          dataRange,
+          squareOptions,
+        ),
+        comparisonRange
+          ? getNetSalesByCategoryInRange(
+              squareLocationId,
+              comparisonRange,
+              squareOptions,
+            )
+          : Promise.resolve({ categories: [], totalNetSalesCents: 0 }),
+      ]);
+      currentResult = current;
+      comparisonResult = comp;
+    }
+
+    const allNames = new Set<string>();
+    for (const c of currentResult.categories) allNames.add(c.name);
+    for (const c of comparisonResult.categories) allNames.add(c.name);
+    const currentByName = new Map(
+      currentResult.categories.map((c) => [c.name, c.netSalesCents]),
+    );
+    const comparisonByName = new Map(
+      comparisonResult.categories.map((c) => [c.name, c.netSalesCents]),
+    );
+
+    const merged = Array.from(allNames)
+      .map((name) => ({
+        label: name,
+        netSales:
+          (currentByName.get(name) ?? 0) / 100,
+        comparisonNetSales:
+          (comparisonByName.get(name) ?? 0) / 100,
+      }))
+      .sort((a, b) => b.netSales - a.netSales);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        current: {
+          categories: merged.map(({ label, netSales }) => ({ label, netSales })),
+          totalNetSales: currentResult.totalNetSalesCents / 100,
+        },
+        comparison: {
+          categories: merged.map(({ label, comparisonNetSales }) => ({
+            label,
+            netSales: comparisonNetSales,
+          })),
+          totalNetSales: comparisonResult.totalNetSalesCents / 100,
         },
       },
     });

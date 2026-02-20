@@ -2,7 +2,8 @@ export interface KPIsTableRow {
   label: string;
   current: string | number;
   previous: string | number;
-  percent: number;
+  /** Percent change; null when comparison is 0 and current > 0 (show N/A). */
+  percent: number | null;
   /** Formula description for tooltip (e.g. "Total Net Sales / Total Transactions") */
   tooltip?: string;
 }
@@ -166,9 +167,11 @@ export const KPIsTableCard = ({
                       <p className="flex justify-between items-baseline gap-2 pt-0.5">
                         <span>Change</span>
                         <span
-                          className={`font-semibold shrink-0 ${row.percent >= 0 ? 'text-positive' : 'text-negative'}`}
+                          className={`font-semibold shrink-0 ${
+                            row.percent === null ? 'text-secondary' : row.percent >= 0 ? 'text-positive' : 'text-negative'
+                          }`}
                         >
-                          {row.percent >= 0 ? '+' : ''}{row.percent}%
+                          {row.percent === null ? 'N/A' : `${row.percent >= 0 ? '+' : ''}${row.percent}%`}
                         </span>
                       </p>
                     </div>
@@ -198,8 +201,12 @@ export const KPIsTableCard = ({
                       <td className="py-3 pr-4 text-right font-semibold">{formatCell(row.current)}</td>
                       <td className="py-3 pr-4 text-right font-semibold">{formatCell(row.previous)}</td>
                       <td className="py-3 pr-2 text-right">
-                        <span className={`font-semibold ${row.percent >= 0 ? 'text-positive' : 'text-negative'}`}>
-                          {row.percent >= 0 ? '+' : ''}{row.percent}%
+                        <span
+                          className={`font-semibold ${
+                            row.percent === null ? 'text-secondary' : row.percent >= 0 ? 'text-positive' : 'text-negative'
+                          }`}
+                        >
+                          {row.percent === null ? 'N/A' : `${row.percent >= 0 ? '+' : ''}${row.percent}%`}
                         </span>
                       </td>
                     </tr>
