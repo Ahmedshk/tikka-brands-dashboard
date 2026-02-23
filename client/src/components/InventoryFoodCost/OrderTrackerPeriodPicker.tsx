@@ -4,36 +4,41 @@ import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
+import TextField from '@mui/material/TextField';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DateCalendar } from '@mui/x-date-pickers/DateCalendar';
-import TextField from '@mui/material/TextField';
-import { createRangeDay, parseISODateToLocal } from './rangeDaySlot';
-import type { SalesTrendPeriodType } from '../../services/commandCenter.service';
+import { createRangeDay, parseISODateToLocal } from '../SalesTrend/rangeDaySlot';
+import type { OrderTrackerPeriodType } from '../../services/inventory.service';
 
-export const PERIOD_OPTIONS: { value: SalesTrendPeriodType; label: string }[] = [
+export const ORDER_TRACKER_PERIOD_OPTIONS: {
+  value: OrderTrackerPeriodType;
+  label: string;
+}[] = [
+  { value: 'currentWeek', label: 'Current week' },
+  { value: 'lastWeek', label: 'Last week' },
+  { value: 'currentMonth', label: 'Current month' },
+  { value: 'lastMonth', label: 'Last month' },
+  { value: 'currentYear', label: 'Current year' },
+  { value: 'lastYear', label: 'Last year' },
   { value: 'today', label: 'Today' },
-  { value: 'last7days', label: 'Last 7 days' },
-  { value: 'last30days', label: 'Last 30 days' },
-  { value: 'last52weeks', label: 'Last 52 weeks' },
-  { value: 'thisWeek', label: 'This week' },
-  { value: 'thisMonth', label: 'This month' },
-  { value: 'thisYear', label: 'This year' },
+  { value: 'tomorrow', label: 'Tomorrow' },
+  { value: 'since3DaysAgo', label: 'Since 3 days ago' },
+  { value: 'lastNext30Days', label: 'Last/Next 30 days' },
   { value: 'custom', label: 'Custom' },
 ];
 
 const DATE_DISPLAY_FORMAT = 'MM/dd/yyyy';
 
-export interface PeriodPickerValue {
-  periodType: SalesTrendPeriodType;
+export interface OrderTrackerPeriodValue {
+  periodType: OrderTrackerPeriodType;
   periodStart?: string;
   periodEnd?: string;
 }
 
-export interface PeriodPickerProps {
-  value: PeriodPickerValue;
-  onChange: (value: PeriodPickerValue) => void;
-  /** Optional id for the trigger button */
+export interface OrderTrackerPeriodPickerProps {
+  value: OrderTrackerPeriodValue;
+  onChange: (value: OrderTrackerPeriodValue) => void;
   id?: string;
   className?: string;
 }
@@ -55,7 +60,12 @@ function isSameOrAfter(date: Date, start: Date): boolean {
   return d >= s;
 }
 
-export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPickerProps) {
+export function OrderTrackerPeriodPicker({
+  value,
+  onChange,
+  id,
+  className = '',
+}: OrderTrackerPeriodPickerProps) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const toDisplay = (iso: string) => {
     try {
@@ -64,8 +74,8 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
       return '';
     }
   };
-  const [localStart, setLocalStart] = useState<string>('');
-  const [localEnd, setLocalEnd] = useState<string>('');
+  const [localStart, setLocalStart] = useState('');
+  const [localEnd, setLocalEnd] = useState('');
   const calendarDateRef = useRef<Date>(new Date());
   const pickingRef = useRef<'start' | 'end'>('start');
 
@@ -98,6 +108,7 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
     setAnchorEl(e.currentTarget);
     pickingRef.current = 'start';
   };
+
   const handleClose = () => {
     setAnchorEl(null);
     pickingRef.current = 'start';
@@ -117,7 +128,7 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
     }
   };
 
-  const handleSelectPeriod = (periodType: SalesTrendPeriodType) => {
+  const handleSelectPeriod = (periodType: OrderTrackerPeriodType) => {
     if (periodType === 'custom') {
       const start = parseDateSafe(localStart);
       const end = parseDateSafe(localEnd);
@@ -166,6 +177,7 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
     const d = parseDateSafe(localStart);
     if (d) onChange({ ...value, periodStart: formatDateToISO(d) });
   };
+
   const handleEndBlur = () => {
     const d = parseDateSafe(localEnd);
     if (d) onChange({ ...value, periodEnd: formatDateToISO(d) });
@@ -174,15 +186,27 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
   const displayLabel = (() => {
     if (value.periodType === 'custom' && value.periodStart && value.periodEnd) {
       try {
-        const s = format(parse(value.periodStart, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
-        const e = format(parse(value.periodEnd, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
+        const s = format(
+          parse(value.periodStart, 'yyyy-MM-dd', new Date()),
+          'MMM d, yyyy'
+        );
+        const e = format(
+          parse(value.periodEnd, 'yyyy-MM-dd', new Date()),
+          'MMM d, yyyy'
+        );
         return `${s} – ${e}`;
       } catch {
         return 'Custom';
       }
     }
-    return PERIOD_OPTIONS.find((o) => o.value === value.periodType)?.label ?? 'Period';
+    return (
+      ORDER_TRACKER_PERIOD_OPTIONS.find((o) => o.value === value.periodType)
+        ?.label ?? 'Period'
+    );
   })();
+
+  const maxCalendarDate = new Date();
+  maxCalendarDate.setFullYear(maxCalendarDate.getFullYear() + 2);
 
   return (
     <>
@@ -190,7 +214,7 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
         type="button"
         id={id}
         onClick={handleOpen}
-        className={`border border-gray-300 rounded-lg px-3 py-2 text-sm text-primary bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-quaternary/30 ${className}`}
+        className={`bg-white text-primary border border-gray-200 rounded-lg px-2 py-1 text-xs hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/30 ${className}`}
         aria-haspopup="true"
         aria-expanded={open}
       >
@@ -200,8 +224,8 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
         open={open}
         anchorEl={anchorEl}
         onClose={handleClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         slotProps={{
           paper: {
             sx: (theme) => ({
@@ -231,7 +255,7 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
                 },
               })}
             >
-              {PERIOD_OPTIONS.map((opt) => (
+              {ORDER_TRACKER_PERIOD_OPTIONS.map((opt) => (
                 <ListItemButton
                   key={opt.value}
                   selected={value.periodType === opt.value}
@@ -257,7 +281,7 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
                     }
                     onChange={handleCalendarChange}
                     minDate={new Date(2020, 0, 1)}
-                    maxDate={new Date()}
+                    maxDate={maxCalendarDate}
                     slots={slots}
                     sx={(theme) => ({
                       [theme.breakpoints.down('sm')]: {

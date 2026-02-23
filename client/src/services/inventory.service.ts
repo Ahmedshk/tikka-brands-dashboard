@@ -25,6 +25,59 @@ export interface InventoryKPIsData {
   pendingOrdersPeriodEnd?: string | null;
 }
 
+export type OrderTrackerPeriodType =
+  | "currentWeek"
+  | "lastWeek"
+  | "currentMonth"
+  | "lastMonth"
+  | "currentYear"
+  | "lastYear"
+  | "today"
+  | "tomorrow"
+  | "since3DaysAgo"
+  | "lastNext30Days"
+  | "custom";
+
+export interface OrderTrackerOrderItem {
+  ItemName?: string;
+  SKU?: string;
+  Quantity?: number;
+  Price?: number;
+  PriceTotal?: number;
+  ItemMeasureTypeName?: string;
+  PackQuantity?: number;
+  PacksPerCase?: number;
+}
+
+export interface OrderTrackerOrderDetails {
+  OrderNumber?: string;
+  BuyerName?: string;
+  VendorName?: string;
+  OrderStatus?: string;
+  OrderStatusUIName?: string;
+  DeliveryDateUTC?: string;
+  SentDateUTC?: string;
+  PriceTotalWithVAT?: number;
+  PriceTotalWithoutVAT?: number;
+  Comments?: string;
+  Items?: OrderTrackerOrderItem[];
+}
+
+export interface OrderTrackerOrder {
+  poNumber: string;
+  supplier: string;
+  deliveryDate: string;
+  sentDate: string;
+  status: string;
+  orderDetails: OrderTrackerOrderDetails;
+}
+
+export interface GetOrdersParams {
+  periodType: OrderTrackerPeriodType;
+  periodStart?: string;
+  periodEnd?: string;
+}
+
 export const inventoryService = {
   async getInventoryKPIs(locationId: string): Promise<InventoryKPIsData> {
     const res = await api.get<ApiResponse<InventoryKPIsData>>(
@@ -35,5 +88,26 @@ export const inventoryService = {
       throw new Error(res.data.message ?? "Failed to load inventory KPIs");
     }
     return res.data.data;
+  },
+
+  async getOrders(
+    locationId: string,
+    params: GetOrdersParams
+  ): Promise<OrderTrackerOrder[]> {
+    const res = await api.get<ApiResponse<{ orders: OrderTrackerOrder[] }>>(
+      API_ENDPOINTS.INVENTORY.ORDERS,
+      {
+        params: {
+          locationId,
+          periodType: params.periodType,
+          ...(params.periodStart && { periodStart: params.periodStart }),
+          ...(params.periodEnd && { periodEnd: params.periodEnd }),
+        },
+      }
+    );
+    if (!res.data.success || res.data.data == null) {
+      throw new Error(res.data.message ?? "Failed to load orders");
+    }
+    return res.data.data.orders;
   },
 };

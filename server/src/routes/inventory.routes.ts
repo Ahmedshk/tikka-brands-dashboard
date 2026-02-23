@@ -1,7 +1,13 @@
 import { Router } from 'express';
-import { getInventoryKPIsHandler } from '../controllers/inventory.controller.js';
+import {
+  getInventoryKPIsHandler,
+  getOrdersHandler,
+} from '../controllers/inventory.controller.js';
 import { validate } from '../utils/zod.util.js';
-import { getInventoryKPIsQuerySchema } from '../validators/inventory.validators.js';
+import {
+  getInventoryKPIsQuerySchema,
+  getOrdersQuerySchema,
+} from '../validators/inventory.validators.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requireRole } from '../middleware/rbac.middleware.js';
 import { UserRole } from '../types/user.types.js';
@@ -22,5 +28,7 @@ router.get(
   validate(getInventoryKPIsQuerySchema),
   getInventoryKPIsHandler
 );
+
+router.get('/orders', validate(getOrdersQuerySchema), getOrdersHandler);
 
 export default router;

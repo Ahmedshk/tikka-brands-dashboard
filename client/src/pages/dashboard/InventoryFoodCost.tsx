@@ -9,8 +9,10 @@ import {
 } from '../../components/InventoryFoodCost';
 import type { InventoryKPIItem } from '../../components/InventoryFoodCost/InventoryKPICards';
 import { OrderTrackerModal } from '../../components/modal/OrderTrackerModal';
+import { OrderDetailModal } from '../../components/modal/OrderDetailModal';
 import { VarianceChartModal } from '../../components/modal/VarianceChartModal';
-import { inventoryService } from '../../services/inventory.service';
+import { inventoryService, type OrderTrackerOrder } from '../../services/inventory.service';
+import type { OrderTrackerPeriodValue } from '../../components/InventoryFoodCost/OrderTrackerPeriodPicker';
 import { goalService } from '../../services/goal.service';
 import type { Goal } from '../../types';
 import InventoryAndFoodCostIcon from '@assets/icons/inventory_and_food_cost.svg?react';
@@ -25,32 +27,19 @@ const currencyFmt = (v: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 const pendingFmt = (n: number) => String(n).padStart(2, '0');
 
-type OrderStatus = 'Received' | 'Pending';
-
-const orderTrackerRows: { poNumber: string; supplier: string; date: string; status: OrderStatus }[] = [
-  { poNumber: '12345', supplier: 'Fresh Produce', date: 'Mar 25', status: 'Received' },
-  { poNumber: '12345', supplier: 'Dairy Supplier', date: 'Mar 26', status: 'Pending' },
-  { poNumber: '12345', supplier: 'Meat Distributors', date: 'Mar 27', status: 'Received' },
-  { poNumber: '12345', supplier: 'Fresh Produce', date: 'Mar 28', status: 'Received' },
-  { poNumber: '12345', supplier: 'Dairy Supplier', date: 'Mar 29', status: 'Received' },
-  { poNumber: '12345', supplier: 'Meat Distributors', date: 'Mar 30', status: 'Received' },
-  { poNumber: '12345', supplier: 'Fresh Produce', date: 'Apr 15', status: 'Received' },
-  { poNumber: '12345', supplier: 'Dairy Supplier', date: 'Apr 16', status: 'Received' },
-  { poNumber: '12345', supplier: 'Meat Distributors', date: 'Apr 17', status: 'Pending' },
-  { poNumber: '12345', supplier: 'Fresh Produce', date: 'Apr 18', status: 'Pending' },
-  { poNumber: '12345', supplier: 'Dairy Supplier', date: 'Apr 19', status: 'Received' },
-  { poNumber: '12345', supplier: 'Meat Distributors', date: 'Apr 20', status: 'Received' },
-  { poNumber: '12345', supplier: 'Fresh Produce', date: 'Apr 21', status: 'Received' },
-  { poNumber: '12345', supplier: 'Dairy Supplier', date: 'Apr 22', status: 'Received' },
-  { poNumber: '12345', supplier: 'Meat Distributors', date: 'Apr 23', status: 'Received' },
-  { poNumber: '12345', supplier: 'Fresh Produce', date: 'Apr 24', status: 'Pending' },
-  { poNumber: '12345', supplier: 'Dairy Supplier', date: 'Apr 25', status: 'Received' },
-  { poNumber: '12345', supplier: 'Meat Distributors', date: 'Apr 26', status: 'Received' },
-];
+const defaultOrderTrackerPeriod: OrderTrackerPeriodValue = {
+  periodType: 'currentMonth',
+};
 
 export const InventoryFoodCost = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [orderTrackerModalOpen, setOrderTrackerModalOpen] = useState(false);
+  const [orderDetailModalOpen, setOrderDetailModalOpen] = useState(false);
+  const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<OrderTrackerOrder | null>(null);
+  const [orderTrackerPeriod, setOrderTrackerPeriod] = useState<OrderTrackerPeriodValue>(defaultOrderTrackerPeriod);
+  const [orderTrackerOrders, setOrderTrackerOrders] = useState<OrderTrackerOrder[]>([]);
+  const [orderTrackerLoading, setOrderTrackerLoading] = useState(false);
+  const [orderTrackerError, setOrderTrackerError] = useState<string | null>(null);
   const [varianceModalOpen, setVarianceModalOpen] = useState(false);
   const [varianceBarBandWidth, setVarianceBarBandWidth] = useState<number | null>(null);
   const [inventoryKpisData, setInventoryKpisData] = useState<Awaited<ReturnType<typeof inventoryService.getInventoryKPIs>> | null>(null);
@@ -159,7 +148,34 @@ export const InventoryFoodCost = () => {
     ];
   }, [inventoryKpisData, kpisLoading, countPeriodLabel, pendingOrdersPeriodLabel]);
 
-  const orderTrackerCardRows = orderTrackerRows.slice(0, ORDER_TRACKER_CARD_SIZE);
+  useEffect(() => {
+    if (!currentLocation?._id) {
+      setOrderTrackerOrders([]);
+      setOrderTrackerError(null);
+      return;
+    }
+    const isCustom = orderTrackerPeriod.periodType === 'custom';
+    const hasCustomDates =
+      Boolean(orderTrackerPeriod.periodStart) && Boolean(orderTrackerPeriod.periodEnd);
+    if (isCustom && !hasCustomDates) {
+      setOrderTrackerOrders([]);
+      setOrderTrackerError(null);
+      setOrderTrackerLoading(false);
+      return;
+    }
+    setOrderTrackerLoading(true);
+    setOrderTrackerError(null);
+    inventoryService
+      .getOrders(currentLocation._id, orderTrackerPeriod)
+      .then(setOrderTrackerOrders)
+      .catch((err) => {
+        setOrderTrackerError(err instanceof Error ? err.message : 'Failed to load orders');
+        setOrderTrackerOrders([]);
+      })
+      .finally(() => setOrderTrackerLoading(false));
+  }, [currentLocation?._id, orderTrackerPeriod.periodType, orderTrackerPeriod.periodStart, orderTrackerPeriod.periodEnd]);
+
+  const orderTrackerCardRows = orderTrackerOrders.slice(0, ORDER_TRACKER_CARD_SIZE);
 
   return (
     <Layout>
@@ -187,6 +203,11 @@ export const InventoryFoodCost = () => {
           <InventoryKPICards items={inventoryKPIs} />
         )}
 
+        {currentLocation && orderTrackerError && (
+          <p className="text-sm text-red-600 mb-2" role="alert">
+            Order Tracker: {orderTrackerError}
+          </p>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <div className="flex flex-col gap-6 order-1 lg:order-1">
             <CostOfGoodsSoldCard
@@ -216,8 +237,15 @@ export const InventoryFoodCost = () => {
           </div>
 
           <OrderTrackerCard
+            timePeriod={orderTrackerPeriod}
+            onPeriodChange={setOrderTrackerPeriod}
             rows={orderTrackerCardRows}
+            loading={orderTrackerLoading}
             onViewAll={() => setOrderTrackerModalOpen(true)}
+            onView={(order) => {
+              setSelectedOrderForDetail(order);
+              setOrderDetailModalOpen(true);
+            }}
             className="order-3 lg:order-2 min-h-0 lg:h-full"
           />
         </div>
@@ -226,7 +254,19 @@ export const InventoryFoodCost = () => {
       <OrderTrackerModal
         isOpen={orderTrackerModalOpen}
         onClose={() => setOrderTrackerModalOpen(false)}
-        rows={orderTrackerRows}
+        rows={orderTrackerOrders}
+        onView={(order) => {
+          setSelectedOrderForDetail(order);
+          setOrderDetailModalOpen(true);
+        }}
+      />
+      <OrderDetailModal
+        isOpen={orderDetailModalOpen}
+        onClose={() => {
+          setOrderDetailModalOpen(false);
+          setSelectedOrderForDetail(null);
+        }}
+        order={selectedOrderForDetail}
       />
       <VarianceChartModal
         isOpen={varianceModalOpen}

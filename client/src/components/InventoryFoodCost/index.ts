@@ -6,3 +6,8 @@ export { VarianceChartCard } from './VarianceChartCard';
 export type { VarianceChartItem, VarianceChartCardProps } from './VarianceChartCard';
 export { OrderTrackerCard } from './OrderTrackerCard';
 export type { OrderTrackerCardProps } from './OrderTrackerCard';
+export { OrderTrackerPeriodPicker } from './OrderTrackerPeriodPicker';
+export type {
+  OrderTrackerPeriodValue,
+  OrderTrackerPeriodPickerProps,
+} from './OrderTrackerPeriodPicker';

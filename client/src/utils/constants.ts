@@ -32,5 +32,6 @@ export const API_ENDPOINTS = {
   },
   INVENTORY: {
     KPIS: "/inventory/kpis",
+    ORDERS: "/inventory/orders",
   },
 } as const;

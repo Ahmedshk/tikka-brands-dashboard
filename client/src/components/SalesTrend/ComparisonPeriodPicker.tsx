@@ -276,6 +276,9 @@ export function ComparisonPeriodPicker({
         onChange({ comparisonType: 'custom' });
       }
     } else {
+      setLocalStart('');
+      setLocalEnd('');
+      pickingRef.current = 'start';
       onChange({ comparisonType });
     }
   };

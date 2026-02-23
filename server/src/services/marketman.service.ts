@@ -23,6 +23,50 @@ export interface VarianceItem {
   uom?: string;
 }
 
+/** MarketMan order line item (from Orders[].Items). */
+export interface MarketManOrderItem {
+  ItemName?: string;
+  SKU?: string;
+  Quantity?: number;
+  Price?: number;
+  PriceTotal?: number;
+  ItemMeasureTypeName?: string;
+  PackQuantity?: number;
+  PacksPerCase?: number;
+}
+
+/** MarketMan order (from GetOrdersByDeliveryDate / GetOrdersBySentDate). */
+export interface MarketManOrder {
+  OrderNumber?: string;
+  BuyerName?: string;
+  BuyerGuid?: string;
+  VendorName?: string;
+  OrderStatusID?: number;
+  OrderStatus?: string;
+  OrderStatusUIName?: string;
+  DeliveryDateUTC?: string;
+  SentDateUTC?: string;
+  PriceTotalWithVAT?: number;
+  PriceTotalWithoutVAT?: number;
+  Comments?: string;
+  VendorGuid?: string;
+  Items?: MarketManOrderItem[];
+}
+
+export interface GetOrdersByDeliveryDateResponse {
+  Orders?: MarketManOrder[];
+  IsSuccess?: boolean;
+  ErrorMessage?: string | null;
+  ErrorCode?: string | null;
+}
+
+export interface GetOrdersBySentDateResponse {
+  Orders?: MarketManOrder[];
+  IsSuccess?: boolean;
+  ErrorMessage?: string | null;
+  ErrorCode?: string | null;
+}
+
 export interface InventoryKPIsResult {
   currentFoodCost: number | null;
   inventoryValue: number | null;
@@ -53,7 +97,8 @@ function addDays(
 }
 
 /**
- * End of day (23:59:59.999) in timezone as UTC Date.
+ * End of day in timezone as UTC Date: 23:59:59.999 in store TZ.
+ * E.g. Mountain 2026-02-22 23:59:59.999 → 2026-02-23 06:59:59.999 UTC.
  */
 function getEndOfDayUtc(
   y: number,
@@ -88,6 +133,23 @@ function getCurrentWeekUtcRange(timezone: string): { from: Date; to: Date } {
   const from = getStartOfDayUtc(sun.y, sun.m, sun.d, timezone);
   const to = getEndOfDayUtc(sat.y, sat.m, sat.d, timezone);
   return { from, to };
+}
+
+/** Previous week (Sun–Sat) in timezone as UTC Dates. */
+function getLastWeekUtcRange(timezone: string): { from: Date; to: Date } {
+  const { from } = getCurrentWeekUtcRange(timezone);
+  const fromDate = new Date(from);
+  const sunLast = addDays(
+    fromDate.getFullYear(),
+    fromDate.getMonth(),
+    fromDate.getDate(),
+    -7,
+  );
+  const satLast = addDays(sunLast.y, sunLast.m, sunLast.d, 6);
+  return {
+    from: getStartOfDayUtc(sunLast.y, sunLast.m, sunLast.d, timezone),
+    to: getEndOfDayUtc(satLast.y, satLast.m, satLast.d, timezone),
+  };
 }
 
 export async function getInventoryKPIs(
@@ -392,11 +454,9 @@ function formatDateOnly(y: number, m: number, d: number): string {
   return `${y}/${String(m + 1).padStart(2, "0")}/${String(d).padStart(2, "0")}`;
 }
 
-function isReceivedOrCancelled(order: {
-  OrderStatus?: string;
-  OrderStatusUIName?: string;
-}): boolean {
-  const s = String(order.OrderStatus ?? order.OrderStatusUIName ?? "").toLowerCase();
+/** Orders with OrderStatusUIName "Received" or containing "cancelled" are not pending. */
+function isReceivedOrCancelled(order: { OrderStatusUIName?: string }): boolean {
+  const s = String(order.OrderStatusUIName ?? "").toLowerCase();
   if (s === "received") return true;
   if (s.includes("cancelled")) return true;
   return false;
@@ -425,7 +485,7 @@ async function fetchPendingOrdersByDeliveryDate(
     const dateTimeToUTC = formatMarketManDateUtc(todayEnd);
 
     const data = await marketManRequest<{
-      Orders?: Array<{ OrderStatus?: string; OrderStatusUIName?: string }>;
+      Orders?: Array<{ OrderStatusUIName?: string }>;
     }>(
       "/buyers/orders/GetOrdersByDeliveryDate",
       {
@@ -447,4 +507,274 @@ async function fetchPendingOrdersByDeliveryDate(
     console.error("[MarketMan] GetOrdersByDeliveryDate error:", err);
   }
   return null;
+}
+
+export type OrderTrackerPeriodType =
+  | "currentWeek"
+  | "lastWeek"
+  | "currentMonth"
+  | "lastMonth"
+  | "currentYear"
+  | "lastYear"
+  | "today"
+  | "tomorrow"
+  | "since3DaysAgo"
+  | "lastNext30Days"
+  | "custom";
+
+export interface OrderTrackerRange {
+  dateTimeFromUTC: string;
+  dateTimeToUTC: string;
+}
+
+export interface OrderTrackerRangesResult {
+  api: "delivery" | "sent" | "both";
+  ranges: OrderTrackerRange[];
+}
+
+/**
+ * Resolve order-tracker period type to UTC date ranges in MarketMan format.
+ * All dates are interpreted in the store's timezone, then converted to UTC for the API:
+ * - Start of range = 00:00:00 in store TZ (e.g. Mountain → 07:00:00 UTC).
+ * - End of range = 23:59:59 in store TZ (e.g. Mountain → 06:59:59 UTC next day).
+ * For since3DaysAgo uses api "both" (GetOrdersByDeliveryDate and GetOrdersBySentDate with same range, then merge/dedupe).
+ * For lastNext30Days returns two ranges (last 30 days, next 30 days).
+ */
+export function getOrderTrackerRanges(
+  periodType: OrderTrackerPeriodType,
+  timezone: string,
+  periodStart?: string,
+  periodEnd?: string,
+): OrderTrackerRangesResult {
+  const tz = timezone.trim();
+  const now = new Date();
+  const { y, m, d } = getDatePartsInTz(now, tz);
+
+  if (periodType === "custom" && periodStart && periodEnd) {
+    const startMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(periodStart.trim());
+    const endMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(periodEnd.trim());
+    if (startMatch && endMatch) {
+      const sy = Number.parseInt(startMatch[1]!, 10);
+      const sm = Number.parseInt(startMatch[2]!, 10) - 1;
+      const sd = Number.parseInt(startMatch[3]!, 10);
+      const ey = Number.parseInt(endMatch[1]!, 10);
+      const em = Number.parseInt(endMatch[2]!, 10) - 1;
+      const ed = Number.parseInt(endMatch[3]!, 10);
+      // Interpret selected dates in store TZ: start = 00:00:00 local, end = 23:59:59 local → convert to UTC
+      const from = getStartOfDayUtc(sy, sm, sd, tz);
+      const to = getEndOfDayUtc(ey, em, ed, tz);
+      return {
+        api: "delivery",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(from),
+            dateTimeToUTC: formatMarketManDateUtc(to),
+          },
+        ],
+      };
+    }
+  }
+
+  switch (periodType) {
+    case "today": {
+      const { from, to } = getTodayUtcRange(tz);
+      return {
+        api: "delivery",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(from),
+            dateTimeToUTC: formatMarketManDateUtc(to),
+          },
+        ],
+      };
+    }
+    case "tomorrow": {
+      const tomorrow = addDays(y, m, d, 1);
+      const from = getStartOfDayUtc(tomorrow.y, tomorrow.m, tomorrow.d, tz);
+      const to = getEndOfDayUtc(tomorrow.y, tomorrow.m, tomorrow.d, tz);
+      return {
+        api: "delivery",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(from),
+            dateTimeToUTC: formatMarketManDateUtc(to),
+          },
+        ],
+      };
+    }
+    case "currentWeek": {
+      const { from, to } = getCurrentWeekUtcRange(tz);
+      return {
+        api: "delivery",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(from),
+            dateTimeToUTC: formatMarketManDateUtc(to),
+          },
+        ],
+      };
+    }
+    case "lastWeek": {
+      const { from, to } = getLastWeekUtcRange(tz);
+      return {
+        api: "delivery",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(from),
+            dateTimeToUTC: formatMarketManDateUtc(to),
+          },
+        ],
+      };
+    }
+    case "currentMonth": {
+      const lastDayOfMonth = new Date(y, m + 1, 0).getDate();
+      const from = getStartOfDayUtc(y, m, 1, tz);
+      const to = getEndOfDayUtc(y, m, lastDayOfMonth, tz);
+      return {
+        api: "delivery",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(from),
+            dateTimeToUTC: formatMarketManDateUtc(to),
+          },
+        ],
+      };
+    }
+    case "lastMonth": {
+      const lastMonth = new Date(y, m - 1, 1);
+      const ly = lastMonth.getFullYear();
+      const lm = lastMonth.getMonth();
+      const lastDay = new Date(ly, lm + 1, 0).getDate();
+      const from = getStartOfDayUtc(ly, lm, 1, tz);
+      const to = getEndOfDayUtc(ly, lm, lastDay, tz);
+      return {
+        api: "delivery",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(from),
+            dateTimeToUTC: formatMarketManDateUtc(to),
+          },
+        ],
+      };
+    }
+    case "currentYear": {
+      const from = getStartOfDayUtc(y, 0, 1, tz);
+      const to = getEndOfDayUtc(y, 11, 31, tz);
+      return {
+        api: "delivery",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(from),
+            dateTimeToUTC: formatMarketManDateUtc(to),
+          },
+        ],
+      };
+    }
+    case "lastYear": {
+      const from = getStartOfDayUtc(y - 1, 0, 1, tz);
+      const to = getEndOfDayUtc(y - 1, 11, 31, tz);
+      return {
+        api: "delivery",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(from),
+            dateTimeToUTC: formatMarketManDateUtc(to),
+          },
+        ],
+      };
+    }
+    case "since3DaysAgo": {
+      const threeDaysAgo = addDays(y, m, d, -3);
+      const from = getStartOfDayUtc(threeDaysAgo.y, threeDaysAgo.m, threeDaysAgo.d, tz);
+      const to = getEndOfDayUtc(y, m, d, tz);
+      return {
+        api: "both",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(from),
+            dateTimeToUTC: formatMarketManDateUtc(to),
+          },
+        ],
+      };
+    }
+    case "lastNext30Days": {
+      const todayStart = getStartOfDayUtc(y, m, d, tz);
+      const last30Start = addDays(y, m, d, -30);
+      const next30End = addDays(y, m, d, 30);
+      return {
+        api: "delivery",
+        ranges: [
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(
+              getStartOfDayUtc(last30Start.y, last30Start.m, last30Start.d, tz),
+            ),
+            dateTimeToUTC: formatMarketManDateUtc(
+              new Date(todayStart.getTime() - 1),
+            ),
+          },
+          {
+            dateTimeFromUTC: formatMarketManDateUtc(todayStart),
+            dateTimeToUTC: formatMarketManDateUtc(
+              getEndOfDayUtc(next30End.y, next30End.m, next30End.d, tz),
+            ),
+          },
+        ],
+      };
+    }
+    default:
+      // currentMonth as default
+      return getOrderTrackerRanges("currentMonth", tz);
+  }
+}
+
+/** Merge order arrays and deduplicate by OrderNumber. */
+export function mergeOrdersByOrderNumber(ordersArrays: MarketManOrder[][]): MarketManOrder[] {
+  const byNumber = new Map<string, MarketManOrder>();
+  for (const arr of ordersArrays) {
+    for (const order of arr) {
+      const num = String(order.OrderNumber ?? "").trim();
+      if (num && !byNumber.has(num)) byNumber.set(num, order);
+    }
+  }
+  return Array.from(byNumber.values());
+}
+
+/**
+ * Fetch orders by delivery date range. Dates in MarketMan format yyyy/MM/dd HH:mm:ss UTC.
+ */
+export async function getOrdersByDeliveryDate(
+  buyerGuid: string,
+  dateTimeFromUTC: string,
+  dateTimeToUTC: string,
+): Promise<MarketManOrder[]> {
+  const data = await marketManRequest<GetOrdersByDeliveryDateResponse>(
+    "/buyers/orders/GetOrdersByDeliveryDate",
+    {
+      DateTimeFromUTC: dateTimeFromUTC,
+      DateTimeToUTC: dateTimeToUTC,
+    },
+    buyerGuid,
+  );
+  return Array.isArray(data.Orders) ? data.Orders : [];
+}
+
+/**
+ * Fetch orders by sent date range. Dates in MarketMan format yyyy/MM/dd HH:mm:ss UTC.
+ * Sends IncludeReceivedOrders: true so the API returns received orders as well as pending.
+ */
+export async function getOrdersBySentDate(
+  buyerGuid: string,
+  dateTimeFromUTC: string,
+  dateTimeToUTC: string,
+): Promise<MarketManOrder[]> {
+  const data = await marketManRequest<GetOrdersBySentDateResponse>(
+    "/buyers/orders/GetOrdersBySentDate",
+    {
+      DateTimeFromUTC: dateTimeFromUTC,
+      DateTimeToUTC: dateTimeToUTC,
+      IncludeReceivedOrders: true,
+    },
+    buyerGuid,
+  );
+  return Array.isArray(data.Orders) ? data.Orders : [];
 }
