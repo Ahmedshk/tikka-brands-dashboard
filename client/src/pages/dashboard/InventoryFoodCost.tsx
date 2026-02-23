@@ -10,7 +10,6 @@ import {
 import type { InventoryKPIItem } from '../../components/InventoryFoodCost/InventoryKPICards';
 import { OrderTrackerModal } from '../../components/modal/OrderTrackerModal';
 import { VarianceChartModal } from '../../components/modal/VarianceChartModal';
-import type { VarianceChartItem } from '../../components/InventoryFoodCost/VarianceChartCard';
 import { inventoryService } from '../../services/inventory.service';
 import { goalService } from '../../services/goal.service';
 import type { Goal } from '../../types';
@@ -49,34 +48,11 @@ const orderTrackerRows: { poNumber: string; supplier: string; date: string; stat
   { poNumber: '12345', supplier: 'Meat Distributors', date: 'Apr 26', status: 'Received' },
 ];
 
-const fullVarianceItems: VarianceChartItem[] = [
-  { label: 'Meat', varianceCost: 350, actualCost: 1850, theoreticalCost: 1500, actualQuantity: 120, theoreticalQuantity: 100 },
-  { label: 'Seafood', varianceCost: -150, actualCost: 850, theoreticalCost: 1000, actualQuantity: 45, theoreticalQuantity: 50 },
-  { label: 'Produce', varianceCost: 350, actualCost: 1350, theoreticalCost: 1000, actualQuantity: 220, theoreticalQuantity: 180 },
-  { label: 'Dairy', varianceCost: 150, actualCost: 650, theoreticalCost: 500, actualQuantity: 80, theoreticalQuantity: 70 },
-  { label: 'Bakery', varianceCost: -50, actualCost: 200, theoreticalCost: 250, actualQuantity: 30, theoreticalQuantity: 35 },
-  { label: 'Pantry', varianceCost: 150, actualCost: 450, theoreticalCost: 300, actualQuantity: 95, theoreticalQuantity: 80 },
-  { label: 'Chicken Wings', varianceCost: -125, actualCost: 375, theoreticalCost: 500, actualQuantity: 55, theoreticalQuantity: 70 },
-  { label: 'Mozzarella Cheese', varianceCost: -98, actualCost: 202, theoreticalCost: 300, actualQuantity: 22, theoreticalQuantity: 28 },
-  { label: 'Tomato Sauce', varianceCost: -85, actualCost: 165, theoreticalCost: 250, actualQuantity: 33, theoreticalQuantity: 42 },
-  { label: 'Ground Beef', varianceCost: -72, actualCost: 328, theoreticalCost: 400, actualQuantity: 41, theoreticalQuantity: 48 },
-  { label: 'French Fries 1', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-  { label: 'French Fries 2', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-  { label: 'French Fries 3', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-  { label: 'French Fries 4', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-  { label: 'French Fries 5', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-  { label: 'French Fries 6', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-  { label: 'French Fries 7', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-  { label: 'French Fries 8', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-  { label: 'French Fries 9', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-  { label: 'French Fries 10', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-  { label: 'French Fries 11', varianceCost: -62, actualCost: 188, theoreticalCost: 250, actualQuantity: 94, theoreticalQuantity: 110 },
-];
-
 export const InventoryFoodCost = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [orderTrackerModalOpen, setOrderTrackerModalOpen] = useState(false);
   const [varianceModalOpen, setVarianceModalOpen] = useState(false);
+  const [varianceBarBandWidth, setVarianceBarBandWidth] = useState<number | null>(null);
   const [inventoryKpisData, setInventoryKpisData] = useState<Awaited<ReturnType<typeof inventoryService.getInventoryKPIs>> | null>(null);
   const [kpisLoading, setKpisLoading] = useState(false);
   const [kpisError, setKpisError] = useState<string | null>(null);
@@ -216,7 +192,7 @@ export const InventoryFoodCost = () => {
             <CostOfGoodsSoldCard
               value={inventoryKpisData?.foodCostPercent ?? 0}
               goal={goals?.foodCostGoal ?? null}
-              timePeriod={countPeriodLabel}
+              timePeriod={kpisLoading ? null : countPeriodLabel}
               overTarget={
                 inventoryKpisData?.foodCostPercent != null && goals?.foodCostGoal != null
                   ? inventoryKpisData.foodCostPercent - goals.foodCostGoal
@@ -226,8 +202,17 @@ export const InventoryFoodCost = () => {
               theoreticalUsagePercent={inventoryKpisData?.theoreticalUsagePercent ?? null}
               actualUsage={inventoryKpisData?.currentFoodCost ?? null}
               actualUsagePercent={inventoryKpisData?.foodCostPercent ?? null}
+              loading={kpisLoading}
             />
-            <VarianceChartCard items={fullVarianceItems} onViewAll={() => setVarianceModalOpen(true)} />
+            <VarianceChartCard
+              items={inventoryKpisData?.varianceItems ?? []}
+              timePeriod={kpisLoading ? null : countPeriodLabel}
+              loading={kpisLoading}
+              onViewAll={(barBandWidth) => {
+                setVarianceBarBandWidth(barBandWidth);
+                setVarianceModalOpen(true);
+              }}
+            />
           </div>
 
           <OrderTrackerCard
@@ -246,7 +231,8 @@ export const InventoryFoodCost = () => {
       <VarianceChartModal
         isOpen={varianceModalOpen}
         onClose={() => setVarianceModalOpen(false)}
-        items={[...fullVarianceItems].sort((a, b) => b.varianceCost - a.varianceCost)}
+        items={inventoryKpisData?.varianceItems ?? []}
+        barBandWidth={varianceBarBandWidth}
       />
     </Layout>
   );

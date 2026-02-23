@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { PercentageGauge } from '../gauges/PercentageGauge';
+import { Spinner } from '../common/Spinner';
 
 const POSITIVE_COLOR = '#5DC54F';
 const NEGATIVE_COLOR = '#F04B5B';
@@ -26,6 +27,8 @@ export interface CostOfGoodsSoldCardProps {
   actualUsage?: number | null;
   /** Actual usage % (same as value; 0–100) */
   actualUsagePercent?: number | null;
+  /** Show centered spinner while waiting for API */
+  loading?: boolean;
   subtitle?: string;
   size?: number;
   className?: string;
@@ -40,6 +43,7 @@ export const CostOfGoodsSoldCard = ({
   theoreticalUsagePercent = null,
   actualUsage = null,
   actualUsagePercent = null,
+  loading = false,
   subtitle = 'Food Cost as % of Net Sales',
   size = 320,
   className = '',
@@ -72,6 +76,11 @@ export const CostOfGoodsSoldCard = ({
         <p className="text-[10px] md:text-xs 2xl:text-sm text-primary mt-0.5">
           Current Food Cost % vs. Target
         </p>
+        {loading ? (
+          <div className="flex flex-1 min-h-[200px] items-center justify-center">
+            <Spinner size="lg" className="text-button-primary" />
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-12 md:items-stretch gap-4 mt-4 flex-1 min-h-0">
           <div className="md:col-span-5 md:self-center border border-gray-200 rounded-lg bg-white px-3 py-2 flex flex-col">
             <div className="flex items-center justify-between gap-4">
@@ -114,6 +123,7 @@ export const CostOfGoodsSoldCard = ({
             />
           </div>
         </div>
+        )}
       </div>
     </div>
   );

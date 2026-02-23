@@ -2,13 +2,47 @@ import { createContext, useContext, useEffect, useRef, type ComponentProps } fro
 import { createTheme, ThemeProvider, useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { BarChart } from '@mui/x-charts/BarChart';
-import { ChartsTooltipContainer, useItemTooltip } from '@mui/x-charts/ChartsTooltip';
+import { ChartsTooltipContainer, useItemTooltip, useAxesTooltip } from '@mui/x-charts/ChartsTooltip';
 import type { VarianceChartItem } from '../InventoryFoodCost/VarianceChartCard';
 
 const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
 
-const desktopMargin = { top: 10, right: 0, bottom: 24, left: 0 };
-const mobileMargin = { top: 4, right: 0, bottom: 16, left: 0 };
+/** Right margin so the last bar’s 3-line label is not clipped */
+const desktopMargin = { top: 10, right: 10, bottom: 10, left: 0 };
+const mobileMargin = { top: 4, right: 10, bottom: 10, left: 0 };
+
+/** Shorter lines so labels stay within band and don’t overlap on laptop */
+const MAX_CHARS_PER_LINE = 12;
+
+function splitIntoLines(words: string[]): string[] {
+  const lines: string[] = [];
+  let current = '';
+  for (const w of words) {
+    const next = current ? `${current} ${w}` : w;
+    if (next.length <= MAX_CHARS_PER_LINE) {
+      current = next;
+    } else {
+      if (current) lines.push(current);
+      current = w.length > MAX_CHARS_PER_LINE ? w.slice(0, MAX_CHARS_PER_LINE) : w;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+/** Wraps a label to at most maxLines lines (splits on spaces). */
+function wrapLabelToMaxLines(label: string, maxLines: number): string {
+  if (!label || maxLines < 1) return label;
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return label;
+  const lines = splitIntoLines(words);
+  const capped = lines.slice(0, maxLines);
+  const lastIdx = maxLines - 1;
+  if (lines.length > maxLines && capped[lastIdx]) {
+    capped[lastIdx] = capped[lastIdx].slice(0, MAX_CHARS_PER_LINE - 3) + '...';
+  }
+  return capped.join('\n');
+}
 
 export const VarianceItemsContext = createContext<VarianceChartItem[]>([]);
 
@@ -16,12 +50,20 @@ function formatCurrency(v: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 }
 
+function formatTwoDecimals(v: number) {
+  return Number(v).toFixed(2);
+}
+
 function VarianceBarTooltipContent() {
-  const tooltipData = useItemTooltip();
+  const itemTooltipData = useItemTooltip();
+  const axesTooltipData = useAxesTooltip();
   const items = useContext(VarianceItemsContext);
 
-  const dataIndex = tooltipData?.identifier?.dataIndex;
-  if (tooltipData == null || tooltipData.identifier?.type !== 'bar' || dataIndex == null) {
+  const dataIndex =
+    axesTooltipData?.[0]?.dataIndex ?? itemTooltipData?.identifier?.dataIndex ?? null;
+  const hasData =
+    (axesTooltipData != null && axesTooltipData.length > 0) || itemTooltipData != null;
+  if (dataIndex == null || dataIndex < 0 || !hasData) {
     return null;
   }
 
@@ -34,7 +76,11 @@ function VarianceBarTooltipContent() {
       ? item.actualQuantity - item.theoreticalQuantity
       : null;
   const formatVarianceCost = (v: number) => (v >= 0 ? `+${formatCurrency(v)}` : formatCurrency(v));
-  const formatVarianceQty = (v: number) => (v >= 0 ? `+${v}` : `${v}`);
+  const unit = item.uom?.trim() ?? '';
+  const formatQtyWithUnit = (v: number) =>
+    unit ? `${formatTwoDecimals(v)} ${unit}` : formatTwoDecimals(v);
+  const formatVarianceQty = (v: number) =>
+    v >= 0 ? `+${formatQtyWithUnit(v)}` : `-${formatQtyWithUnit(Math.abs(v))}`;
   let quantityVarianceColor = '';
   if (quantityVariance !== null) {
     quantityVarianceColor = quantityVariance >= 0 ? 'text-red-600' : 'text-green-600';
@@ -66,11 +112,15 @@ function VarianceBarTooltipContent() {
         </div>
         <div className="flex justify-between gap-4">
           <dt>Actual quantity</dt>
-          <dd className="font-medium text-primary">{item.actualQuantity ?? '—'}</dd>
+          <dd className="font-medium text-primary">
+            {item.actualQuantity != null ? formatQtyWithUnit(item.actualQuantity) : '—'}
+          </dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt>Theoretical quantity</dt>
-          <dd className="font-medium text-primary">{item.theoreticalQuantity ?? '—'}</dd>
+          <dd className="font-medium text-primary">
+            {item.theoreticalQuantity != null ? formatQtyWithUnit(item.theoreticalQuantity) : '—'}
+          </dd>
         </div>
       </dl>
     </div>
@@ -79,7 +129,7 @@ function VarianceBarTooltipContent() {
 
 export function VarianceTooltipWithContainer(props: Readonly<ComponentProps<typeof ChartsTooltipContainer>>) {
   return (
-    <ChartsTooltipContainer {...props} trigger="item">
+    <ChartsTooltipContainer {...props} trigger="axis">
       <VarianceBarTooltipContent />
     </ChartsTooltipContainer>
   );
@@ -93,17 +143,20 @@ export interface VarianceChartModalProps {
   isOpen: boolean;
   onClose: () => void;
   items: VarianceChartItem[];
+  /** Bar band width (px) from the card so modal bars match card bar width; fallback used if not provided */
+  barBandWidth?: number | null;
 }
 
 const DESKTOP_CHART_HEIGHT = 420;
 const MOBILE_CHART_HEIGHT = 320;
-const DESKTOP_MIN_BAR_WIDTH = 56;
-const MOBILE_MIN_BAR_WIDTH = 40;
 const DESKTOP_MIN_CHART_WIDTH = 400;
 const MOBILE_MIN_CHART_WIDTH = 280;
+/** Bar band width (px) when not provided by card; matches card mobile width. */
+const FALLBACK_BAR_BAND_WIDTH = 120;
 
-export const VarianceChartModal = ({ isOpen, onClose, items }: VarianceChartModalProps) => {
+export const VarianceChartModal = ({ isOpen, onClose, items, barBandWidth: barBandWidthProp }: VarianceChartModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const tooltipContainerRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
 
@@ -129,9 +182,10 @@ export const VarianceChartModal = ({ isOpen, onClose, items }: VarianceChartModa
   const labels = items.map((i) => i.label);
   const values = items.map((i) => i.varianceCost);
   const chartHeight = isDesktop ? DESKTOP_CHART_HEIGHT : MOBILE_CHART_HEIGHT;
-  const minBarWidth = isDesktop ? DESKTOP_MIN_BAR_WIDTH : MOBILE_MIN_BAR_WIDTH;
+  const barBandWidth =
+    barBandWidthProp != null && barBandWidthProp > 0 ? barBandWidthProp : FALLBACK_BAR_BAND_WIDTH;
   const minChartWidth = isDesktop ? DESKTOP_MIN_CHART_WIDTH : MOBILE_MIN_CHART_WIDTH;
-  const chartWidth = Math.max(minChartWidth, items.length * minBarWidth);
+  const chartWidth = Math.max(minChartWidth, items.length * barBandWidth);
 
   return (
     <dialog
@@ -156,9 +210,14 @@ export const VarianceChartModal = ({ isOpen, onClose, items }: VarianceChartModa
             </h2>
           </div>
           <div
-            className="flex-1 min-h-0 min-w-0 w-full overflow-y-hidden overflow-x-scroll p-3 sm:p-5 border-x border-gray-200 touch-pan-x"
+            className="scrollbar-touch relative flex-1 min-h-0 min-w-0 w-full overflow-y-hidden overflow-x-scroll p-3 sm:p-5 border-x border-gray-200 touch-pan-x"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
+            <div
+              ref={tooltipContainerRef}
+              className="absolute inset-0 z-[9999] pointer-events-none"
+              aria-hidden
+            />
             <VarianceItemsContext.Provider value={items}>
               <ThemeProvider theme={defaultTheme}>
                 <div className="touch-pan-x" style={{ height: chartHeight, width: chartWidth }}>
@@ -171,6 +230,10 @@ export const VarianceChartModal = ({ isOpen, onClose, items }: VarianceChartModa
                         scaleType: 'band',
                         data: labels,
                         tickLabelStyle: { ...LABEL_FONT, fontSize: isDesktop ? 10 : 9 },
+                        valueFormatter: (value: string) => wrapLabelToMaxLines(value, 3),
+                        tickLabelInterval: () => true,
+                        tickLabelPlacement: 'middle',
+                        height: isDesktop ? 72 : 56,
                       },
                     ]}
                     yAxis={[
@@ -195,7 +258,14 @@ export const VarianceChartModal = ({ isOpen, onClose, items }: VarianceChartModa
                     ]}
                     grid={{ vertical: true, horizontal: true }}
                     hideLegend
-                    slotProps={{ tooltip: { trigger: 'item', disablePortal: true } }}
+                    slotProps={{
+                      tooltip: {
+                        trigger: 'axis',
+                        disablePortal: false,
+                        placement: 'left',
+                        container: () => tooltipContainerRef.current ?? document.body,
+                      },
+                    }}
                     slots={{ tooltip: VarianceTooltipWithContainer }}
                   />
                 </div>

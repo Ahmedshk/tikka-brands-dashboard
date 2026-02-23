@@ -39,6 +39,7 @@ export const getInventoryKPIsHandler = async (
         foodCostPercent: data.foodCostPercent ?? null,
         theoreticalUsage: data.theoreticalUsage ?? null,
         theoreticalUsagePercent: data.theoreticalUsagePercent ?? null,
+        varianceItems: data.varianceItems ?? [],
         pendingOrdersCount: data.pendingOrdersCount,
         countPeriodStart: data.countPeriodStart ?? null,
         countPeriodEnd: data.countPeriodEnd ?? null,

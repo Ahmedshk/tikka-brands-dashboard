@@ -9,6 +9,15 @@ export interface InventoryKPIsData {
   foodCostPercent?: number | null;
   theoreticalUsage?: number | null;
   theoreticalUsagePercent?: number | null;
+  varianceItems?: Array<{
+    label: string;
+    varianceCost: number;
+    actualCost?: number;
+    theoreticalCost?: number;
+    actualQuantity?: number;
+    theoreticalQuantity?: number;
+    uom?: string;
+  }>;
   pendingOrdersCount: number | null;
   countPeriodStart?: string | null;
   countPeriodEnd?: string | null;

@@ -13,6 +13,16 @@ import {
   getDatePartsInTz,
 } from "../utils/salesTrendDateRange.util.js";
 
+export interface VarianceItem {
+  label: string;
+  varianceCost: number;
+  actualCost?: number;
+  theoreticalCost?: number;
+  actualQuantity?: number;
+  theoreticalQuantity?: number;
+  uom?: string;
+}
+
 export interface InventoryKPIsResult {
   currentFoodCost: number | null;
   inventoryValue: number | null;
@@ -20,6 +30,7 @@ export interface InventoryKPIsResult {
   foodCostPercent: number | null;
   theoreticalUsage: number | null;
   theoreticalUsagePercent: number | null;
+  varianceItems: VarianceItem[];
   pendingOrdersCount: number | null;
   countPeriodStart?: string | null;
   countPeriodEnd?: string | null;
@@ -90,6 +101,7 @@ export async function getInventoryKPIs(
     foodCostPercent: null,
     theoreticalUsage: null,
     theoreticalUsagePercent: null,
+    varianceItems: [],
     pendingOrdersCount: null,
     countPeriodStart: null,
     countPeriodEnd: null,
@@ -123,6 +135,8 @@ export async function getInventoryKPIs(
       result.theoreticalUsagePercent = actualTheoResult.value.theoreticalUsagePercent;
     result.countPeriodStart = actualTheoResult.value.countPeriodStart ?? null;
     result.countPeriodEnd = actualTheoResult.value.countPeriodEnd ?? null;
+    if (Array.isArray(actualTheoResult.value.varianceItems))
+      result.varianceItems = actualTheoResult.value.varianceItems;
   }
   if (pendingOrdersResult.status === "fulfilled" && pendingOrdersResult.value) {
     result.pendingOrdersCount = pendingOrdersResult.value.count;
@@ -176,6 +190,7 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
   foodCostPercent: number | null;
   theoreticalUsage: number | null;
   theoreticalUsagePercent: number | null;
+  varianceItems: VarianceItem[];
   countPeriodStart: string | null;
   countPeriodEnd: string | null;
 }> {
@@ -189,6 +204,7 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
         foodCostPercent: null,
         theoreticalUsage: null,
         theoreticalUsagePercent: null,
+        varianceItems: [],
         countPeriodStart: null,
         countPeriodEnd: null,
       };
@@ -203,6 +219,7 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
         foodCostPercent: null,
         theoreticalUsage: null,
         theoreticalUsagePercent: null,
+        varianceItems: [],
         countPeriodStart: null,
         countPeriodEnd: null,
       };
@@ -222,6 +239,7 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
         foodCostPercent: null,
         theoreticalUsage: null,
         theoreticalUsagePercent: null,
+        varianceItems: [],
         countPeriodStart: null,
         countPeriodEnd: null,
       };
@@ -230,6 +248,12 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
       ActualTheoDataRows?: Array<{
         COGS?: number;
         ClosingValue?: number;
+        ItemName?: string;
+        VarianceValue?: number;
+        TheoreticalUsageCost?: number;
+        ActualUsage?: number;
+        TheoreticalUsage?: number;
+        UOM?: string;
       }>;
       ActualTheoCategoriesTotalsRows?: Array<{
         ActualUsage?: number;
@@ -254,6 +278,7 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
         foodCostPercent: null,
         theoreticalUsage: null,
         theoreticalUsagePercent: null,
+        varianceItems: [],
         countPeriodStart: countStart,
         countPeriodEnd: countEnd,
       };
@@ -289,6 +314,23 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
         0,
       ),
     );
+    const varianceItems: VarianceItem[] = data.ActualTheoDataRows.map(
+      (row) => {
+        const item: VarianceItem = {
+          label: row.ItemName ?? "—",
+          varianceCost: roundTo2(Number(row.VarianceValue) ?? 0),
+        };
+        if (row.COGS != null) item.actualCost = roundTo2(Number(row.COGS));
+        if (row.TheoreticalUsageCost != null)
+          item.theoreticalCost = roundTo2(Number(row.TheoreticalUsageCost));
+        if (row.ActualUsage != null) item.actualQuantity = Number(row.ActualUsage);
+        if (row.TheoreticalUsage != null)
+          item.theoreticalQuantity = Number(row.TheoreticalUsage);
+        if (row.UOM != null && String(row.UOM).trim() !== "")
+          item.uom = String(row.UOM).trim();
+        return item;
+      },
+    );
     return {
       currentFoodCost,
       inventoryValue,
@@ -296,6 +338,7 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
       foodCostPercent,
       theoreticalUsage,
       theoreticalUsagePercent,
+      varianceItems,
       countPeriodStart: countStart,
       countPeriodEnd: countEnd,
     };
@@ -308,6 +351,7 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
       foodCostPercent: null,
       theoreticalUsage: null,
       theoreticalUsagePercent: null,
+      varianceItems: [],
       countPeriodStart: null,
       countPeriodEnd: null,
     };
