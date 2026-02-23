@@ -6,6 +6,9 @@ export interface InventoryKPIsData {
   currentFoodCost: number | null;
   inventoryValue: number | null;
   wasteCost: number | null;
+  foodCostPercent?: number | null;
+  theoreticalUsage?: number | null;
+  theoreticalUsagePercent?: number | null;
   pendingOrdersCount: number | null;
   countPeriodStart?: string | null;
   countPeriodEnd?: string | null;

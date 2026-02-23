@@ -1,70 +1,116 @@
+import { useMemo } from 'react';
 import { PercentageGauge } from '../gauges/PercentageGauge';
+
+const POSITIVE_COLOR = '#5DC54F';
+const NEGATIVE_COLOR = '#F04B5B';
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
 
+const formatCurrency = (v: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+
 export interface CostOfGoodsSoldCardProps {
-  targetPercent?: number;
-  gaugeValue?: number;
-  /** Positive = over target (red ▲), negative = under target (green ▼). Shown in the info box as "Current Food Cost". */
-  overTarget?: number;
+  /** Current food cost % (from ActualUsagePercent) */
+  value?: number;
+  /** Target food cost % (from store goals) */
+  goal?: number | null;
+  /** Date range label, shown like KPI cards */
+  timePeriod?: string | null;
+  /** value − goal; positive = over target (red), negative = under target (green) */
+  overTarget?: number | null;
+  /** Theoretical usage $ (from ActualTheoCategoriesTotalsRows) */
+  theoreticalUsage?: number | null;
+  /** Theoretical usage % (from ActualTheoCategoriesTotalsRows, 0–100) */
+  theoreticalUsagePercent?: number | null;
+  /** Actual usage $ (from ActualTheoCategoriesTotalsRows) */
+  actualUsage?: number | null;
+  /** Actual usage % (same as value; 0–100) */
+  actualUsagePercent?: number | null;
+  subtitle?: string;
+  size?: number;
+  className?: string;
 }
 
 export const CostOfGoodsSoldCard = ({
-  targetPercent = 28,
-  gaugeValue = 24.3,
-  overTarget = 3.7,
+  value = 0,
+  goal = null,
+  timePeriod = null,
+  overTarget = null,
+  theoreticalUsage = null,
+  theoreticalUsagePercent = null,
+  actualUsage = null,
+  actualUsagePercent = null,
+  subtitle = 'Food Cost as % of Net Sales',
+  size = 320,
+  className = '',
 }: CostOfGoodsSoldCardProps) => {
-  const isOverTarget = overTarget != null && overTarget > 0;
-  const trendDisplay = overTarget != null && overTarget !== 0
-    ? `${Math.abs(overTarget).toFixed(1)}%`
-    : '0%';
+  const { segmentStops, segmentColors } = useMemo(() => {
+    const g = goal ?? 0;
+    if (g <= 0) {
+      return { segmentStops: [100] as number[], segmentColors: [NEGATIVE_COLOR] };
+    }
+    if (g >= 100) {
+      return { segmentStops: [100] as number[], segmentColors: [POSITIVE_COLOR] };
+    }
+    return {
+      segmentStops: [g, 100],
+      segmentColors: [POSITIVE_COLOR, NEGATIVE_COLOR],
+    };
+  }, [goal]);
 
   return (
-    <div className={cardClass}>
+    <div className={`${cardClass} ${className}`}>
       <div className="p-5 flex flex-col h-full min-h-[280px]">
-        <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-secondary">Cost of Goods Sold (Gauge)</h3>
-        <p className="text-[10px] md:text-xs 2xl:text-sm text-primary mt-0.5">Current Food Cost % vs. Target</p>
+        <p className="text-sm md:text-base 2xl:text-lg font-semibold text-secondary mb-0.5 flex items-center gap-2 flex-wrap">
+          <span>Cost of Goods Sold (Gauge)</span>
+          {timePeriod != null && timePeriod !== '' && (
+            <span className="text-[10px] md:text-xs 2xl:text-sm font-normal text-primary">
+              ({timePeriod})
+            </span>
+          )}
+        </p>
+        <p className="text-[10px] md:text-xs 2xl:text-sm text-primary mt-0.5">
+          Current Food Cost % vs. Target
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-12 md:items-stretch gap-4 mt-4 flex-1 min-h-0">
           <div className="md:col-span-5 md:self-center border border-gray-200 rounded-lg bg-white px-3 py-2 flex flex-col">
             <div className="flex items-center justify-between gap-4">
-              <span className="text-xs md:text-sm text-primary">Target</span>
-              <span className="font-semibold text-secondary text-sm md:text-base">{targetPercent}%</span>
+              <span className="text-xs md:text-sm text-primary">Theoretical Usage</span>
+              <span className="font-semibold text-secondary text-sm md:text-base">
+                {theoreticalUsage != null ? formatCurrency(theoreticalUsage) : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4 mt-1">
+              <span className="text-xs md:text-sm text-primary">Theoretical Usage %</span>
+              <span className="font-semibold text-secondary text-sm md:text-base">
+                {theoreticalUsagePercent != null ? `${theoreticalUsagePercent.toFixed(2)}%` : '—'}
+              </span>
             </div>
             <div className="flex items-center justify-between gap-4 mt-2 pt-2 border-t border-gray-100">
-              <span className="text-xs md:text-sm text-primary">Current Food Cost</span>
-              <span
-                className={`font-semibold text-sm md:text-base inline-flex items-center gap-0.5 ${isOverTarget ? 'text-red-600' : 'text-green-600'
-                  }`}
-              >
-                {overTarget != null && overTarget !== 0 && (
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden
-                    className="shrink-0"
-                  >
-                    {isOverTarget ? (
-                      <path d="M7 14l5-5 5 5H7z" />
-                    ) : (
-                      <path d="M7 10l5 5 5-5H7z" />
-                    )}
-                  </svg>
-                )}
-                {trendDisplay}
+              <span className="text-xs md:text-sm text-primary">Actual Usage</span>
+              <span className="font-semibold text-secondary text-sm md:text-base">
+                {actualUsage != null ? formatCurrency(actualUsage) : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4 mt-1">
+              <span className="text-xs md:text-sm text-primary">Actual Usage %</span>
+              <span className="font-semibold text-secondary text-sm md:text-base">
+                {actualUsagePercent != null ? `${actualUsagePercent.toFixed(2)}%` : '—'}
               </span>
             </div>
           </div>
           <div className="md:col-span-5 md:col-start-8 flex items-center justify-center min-h-[200px] md:min-h-0 w-full max-w-full">
             <PercentageGauge
-              value={gaugeValue}
+              value={value}
               min={0}
-              max={40}
+              max={100}
               unit=" %"
-              segmentStops={[28, 35, 40]}
-              segmentColors={['#22C55E', '#EAB308', '#EF4444']}
-              size={320}
+              subtitle={subtitle}
+              overTarget={overTarget ?? null}
+              segmentStops={segmentStops}
+              segmentColors={segmentColors}
+              goalTick={goal ?? null}
+              size={size}
             />
           </div>
         </div>

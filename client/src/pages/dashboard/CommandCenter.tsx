@@ -180,7 +180,7 @@ export const CommandCenter = () => {
               <LaborCostGaugeCard
                 value={kpis?.laborCostPercentToday ?? 0}
                 goal={kpis?.laborCostGoal ?? null}
-                subtitle="Labor Cost as % of Sales"
+                subtitle="Labor Cost as % of Net Sales"
                 overTarget={
                   kpis?.laborCostPercentToday != null && kpis?.laborCostGoal != null
                     ? kpis.laborCostPercentToday - kpis.laborCostGoal

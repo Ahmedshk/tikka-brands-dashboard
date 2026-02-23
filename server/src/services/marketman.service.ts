@@ -17,6 +17,9 @@ export interface InventoryKPIsResult {
   currentFoodCost: number | null;
   inventoryValue: number | null;
   wasteCost: number | null;
+  foodCostPercent: number | null;
+  theoreticalUsage: number | null;
+  theoreticalUsagePercent: number | null;
   pendingOrdersCount: number | null;
   countPeriodStart?: string | null;
   countPeriodEnd?: string | null;
@@ -84,6 +87,9 @@ export async function getInventoryKPIs(
     currentFoodCost: null,
     inventoryValue: null,
     wasteCost: null,
+    foodCostPercent: null,
+    theoreticalUsage: null,
+    theoreticalUsagePercent: null,
     pendingOrdersCount: null,
     countPeriodStart: null,
     countPeriodEnd: null,
@@ -109,6 +115,12 @@ export async function getInventoryKPIs(
       result.inventoryValue = actualTheoResult.value.inventoryValue;
     if (actualTheoResult.value.wasteCost != null)
       result.wasteCost = actualTheoResult.value.wasteCost;
+    if (actualTheoResult.value.foodCostPercent != null)
+      result.foodCostPercent = actualTheoResult.value.foodCostPercent;
+    if (actualTheoResult.value.theoreticalUsage != null)
+      result.theoreticalUsage = actualTheoResult.value.theoreticalUsage;
+    if (actualTheoResult.value.theoreticalUsagePercent != null)
+      result.theoreticalUsagePercent = actualTheoResult.value.theoreticalUsagePercent;
     result.countPeriodStart = actualTheoResult.value.countPeriodStart ?? null;
     result.countPeriodEnd = actualTheoResult.value.countPeriodEnd ?? null;
   }
@@ -161,6 +173,9 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
   currentFoodCost: number | null;
   inventoryValue: number | null;
   wasteCost: number | null;
+  foodCostPercent: number | null;
+  theoreticalUsage: number | null;
+  theoreticalUsagePercent: number | null;
   countPeriodStart: string | null;
   countPeriodEnd: string | null;
 }> {
@@ -171,6 +186,9 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
         currentFoodCost: null,
         inventoryValue: null,
         wasteCost: null,
+        foodCostPercent: null,
+        theoreticalUsage: null,
+        theoreticalUsagePercent: null,
         countPeriodStart: null,
         countPeriodEnd: null,
       };
@@ -182,6 +200,9 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
         currentFoodCost: null,
         inventoryValue: null,
         wasteCost: null,
+        foodCostPercent: null,
+        theoreticalUsage: null,
+        theoreticalUsagePercent: null,
         countPeriodStart: null,
         countPeriodEnd: null,
       };
@@ -198,6 +219,9 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
         currentFoodCost: null,
         inventoryValue: null,
         wasteCost: null,
+        foodCostPercent: null,
+        theoreticalUsage: null,
+        theoreticalUsagePercent: null,
         countPeriodStart: null,
         countPeriodEnd: null,
       };
@@ -209,6 +233,9 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
       }>;
       ActualTheoCategoriesTotalsRows?: Array<{
         ActualUsage?: number;
+        ActualUsagePercent?: number;
+        TheoreticalUsage?: number;
+        TheoreticalUsagePercent?: number;
         WasteValue?: number;
       }>;
     }>(
@@ -224,6 +251,9 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
         currentFoodCost: null,
         inventoryValue: null,
         wasteCost: null,
+        foodCostPercent: null,
+        theoreticalUsage: null,
+        theoreticalUsagePercent: null,
         countPeriodStart: countStart,
         countPeriodEnd: countEnd,
       };
@@ -243,6 +273,16 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
       firstCategory?.WasteValue != null
         ? roundTo2(Number(firstCategory.WasteValue))
         : null;
+    const rawPercent = firstCategory?.ActualUsagePercent;
+    const foodCostPercent =
+      rawPercent != null ? roundTo2(Number(rawPercent) * 100) : null;
+    const theoreticalUsage =
+      firstCategory?.TheoreticalUsage != null
+        ? roundTo2(Number(firstCategory.TheoreticalUsage))
+        : null;
+    const rawTheoPercent = firstCategory?.TheoreticalUsagePercent;
+    const theoreticalUsagePercent =
+      rawTheoPercent != null ? roundTo2(Number(rawTheoPercent) * 100) : null;
     const inventoryValue = roundTo2(
       data.ActualTheoDataRows.reduce(
         (s, row) => s + (Number(row.ClosingValue) || 0),
@@ -253,6 +293,9 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
       currentFoodCost,
       inventoryValue,
       wasteCost,
+      foodCostPercent,
+      theoreticalUsage,
+      theoreticalUsagePercent,
       countPeriodStart: countStart,
       countPeriodEnd: countEnd,
     };
@@ -262,6 +305,9 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
       currentFoodCost: null,
       inventoryValue: null,
       wasteCost: null,
+      foodCostPercent: null,
+      theoreticalUsage: null,
+      theoreticalUsagePercent: null,
       countPeriodStart: null,
       countPeriodEnd: null,
     };

@@ -77,7 +77,7 @@ export const PercentageGauge = ({
   const formatTickLabel = (val: number): string =>
     goalTick != null && Math.abs(val - goalTick) < 0.5 ? `${val}% (Goal)` : `${val}%`;
 
-  const formatValue = (val: number) => `${val.toFixed(1)}${unit}`;
+  const formatValue = (val: number) => `${val.toFixed(2)}${unit}`;
 
   return (
     <div className="flex flex-col items-center" style={{ maxWidth: size }}>
@@ -131,7 +131,7 @@ export const PercentageGauge = ({
                 <path d="M7 10l5 5 5-5H7z" />
               )}
             </svg>
-            {overTarget > 0 ? `${overTarget.toFixed(1)}% Over Target` : `${Math.abs(overTarget).toFixed(1)}% Under Target`}
+            {overTarget > 0 ? `${overTarget.toFixed(2)}% Over Target` : `${Math.abs(overTarget).toFixed(2)}% Under Target`}
           </p>
         </>
       )}

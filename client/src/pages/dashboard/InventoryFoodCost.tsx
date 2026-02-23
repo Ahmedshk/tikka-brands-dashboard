@@ -12,6 +12,8 @@ import { OrderTrackerModal } from '../../components/modal/OrderTrackerModal';
 import { VarianceChartModal } from '../../components/modal/VarianceChartModal';
 import type { VarianceChartItem } from '../../components/InventoryFoodCost/VarianceChartCard';
 import { inventoryService } from '../../services/inventory.service';
+import { goalService } from '../../services/goal.service';
+import type { Goal } from '../../types';
 import InventoryAndFoodCostIcon from '@assets/icons/inventory_and_food_cost.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
 import PendingOrdersIcon from '@assets/icons/pending_orders.svg?react';
@@ -78,6 +80,7 @@ export const InventoryFoodCost = () => {
   const [inventoryKpisData, setInventoryKpisData] = useState<Awaited<ReturnType<typeof inventoryService.getInventoryKPIs>> | null>(null);
   const [kpisLoading, setKpisLoading] = useState(false);
   const [kpisError, setKpisError] = useState<string | null>(null);
+  const [goals, setGoals] = useState<Goal | null>(null);
 
   useEffect(() => {
     if (!currentLocation?._id) {
@@ -95,6 +98,17 @@ export const InventoryFoodCost = () => {
         setInventoryKpisData(null);
       })
       .finally(() => setKpisLoading(false));
+  }, [currentLocation?._id]);
+
+  useEffect(() => {
+    if (!currentLocation?._id) {
+      setGoals(null);
+      return;
+    }
+    goalService
+      .getByLocationId(currentLocation._id)
+      .then(setGoals)
+      .catch(() => setGoals(null));
   }, [currentLocation?._id]);
 
   const countPeriodLabel = useMemo(() => {
@@ -199,7 +213,20 @@ export const InventoryFoodCost = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <div className="flex flex-col gap-6 order-1 lg:order-1">
-            <CostOfGoodsSoldCard />
+            <CostOfGoodsSoldCard
+              value={inventoryKpisData?.foodCostPercent ?? 0}
+              goal={goals?.foodCostGoal ?? null}
+              timePeriod={countPeriodLabel}
+              overTarget={
+                inventoryKpisData?.foodCostPercent != null && goals?.foodCostGoal != null
+                  ? inventoryKpisData.foodCostPercent - goals.foodCostGoal
+                  : null
+              }
+              theoreticalUsage={inventoryKpisData?.theoreticalUsage ?? null}
+              theoreticalUsagePercent={inventoryKpisData?.theoreticalUsagePercent ?? null}
+              actualUsage={inventoryKpisData?.currentFoodCost ?? null}
+              actualUsagePercent={inventoryKpisData?.foodCostPercent ?? null}
+            />
             <VarianceChartCard items={fullVarianceItems} onViewAll={() => setVarianceModalOpen(true)} />
           </div>
 
