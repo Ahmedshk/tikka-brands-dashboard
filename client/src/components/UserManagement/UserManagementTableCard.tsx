@@ -81,6 +81,7 @@ export const UserManagementTableCard = ({
                         onClick={() => onEdit?.(row, index)}
                         className="p-1.5 text-secondary hover:text-primary rounded"
                         aria-label="Edit"
+                        title="Edit user"
                       >
                         <EditIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
                       </button>
@@ -89,6 +90,7 @@ export const UserManagementTableCard = ({
                         onClick={() => onDelete?.(row, index)}
                         className="p-1.5 text-secondary hover:text-primary rounded"
                         aria-label="Delete"
+                        title="Delete user"
                       >
                         <DeleteIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
                       </button>

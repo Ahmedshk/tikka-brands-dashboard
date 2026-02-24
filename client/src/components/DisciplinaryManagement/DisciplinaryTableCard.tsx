@@ -115,6 +115,7 @@ export const DisciplinaryTableCard = ({ rows, onView, pagination }: Disciplinary
                       onClick={() => onView?.(row, index)}
                       className="p-1.5 text-secondary hover:text-primary rounded inline-flex items-center justify-center"
                       aria-label="View"
+                      title="View details"
                     >
                       <ViewIcon className="w-4 h-4" />
                     </button>

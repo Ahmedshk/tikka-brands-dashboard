@@ -15,13 +15,13 @@ import {
   getLocationsQuerySchema,
 } from '../validators/location.validators.js';
 import { authenticate } from '../middleware/auth.middleware.js';
-import { requireRole } from '../middleware/rbac.middleware.js';
-import { UserRole } from '../types/user.types.js';
+import { requirePermission, requireLocationAccess } from '../middleware/rbac.middleware.js';
 
 const router = Router();
 
 router.use(authenticate);
-router.use(requireRole([UserRole.OWNER, UserRole.DIRECTOR_OF_OPERATIONS, UserRole.DISTRICT_MANAGER]));
+router.use(requirePermission('location-management'));
+router.use(requireLocationAccess);
 
 router.get('/', validate(getLocationsQuerySchema), getLocations);
 router.get('/:id', validate(getLocationSchema), getLocationById);

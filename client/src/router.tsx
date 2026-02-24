@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
 import { Login } from './pages/auth/Login';
 import { ForgotPassword } from './pages/auth/ForgotPassword';
 import { CommandCenter } from './pages/dashboard/CommandCenter';
@@ -19,13 +19,19 @@ import { RootRedirect } from './components/auth/RootRedirect';
 import { useSelector } from 'react-redux';
 import { RootState } from './store/store';
 import { ReactNode } from 'react';
+import { getPageIdFromPath, canAccessPage } from './config/permissions.config';
 
-// Protected route wrapper
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
-  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+  const { pathname } = useLocation();
+  const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  const pageId = getPageIdFromPath(pathname);
+  if (pageId != null && !canAccessPage(user?.permissions, pageId)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

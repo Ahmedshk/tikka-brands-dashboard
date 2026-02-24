@@ -59,6 +59,7 @@ export const Pagination = ({
           disabled={currentPage <= 1}
           className="min-w-[1.75rem] sm:min-w-[2.25rem] h-7 sm:h-9 px-1.5 sm:px-3 rounded-lg sm:rounded-xl border border-gray-200 bg-white text-xs sm:text-sm font-medium text-primary hover:bg-button-secondary transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
           aria-label="Previous page"
+          title="Previous page"
         >
           Previous
         </button>
@@ -80,6 +81,7 @@ export const Pagination = ({
                   }`}
                 aria-label={page === currentPage ? `Page ${page} (current)` : `Page ${page}`}
                 aria-current={page === currentPage ? 'page' : undefined}
+                title={page === currentPage ? `Page ${page} (current)` : `Go to page ${page}`}
               >
                 {page}
               </button>
@@ -92,6 +94,7 @@ export const Pagination = ({
           disabled={currentPage >= totalPages}
           className="min-w-[1.75rem] sm:min-w-[2.25rem] h-7 sm:h-9 px-1.5 sm:px-3 rounded-lg sm:rounded-xl border border-gray-200 bg-white text-xs sm:text-sm font-medium text-primary hover:bg-button-secondary transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
           aria-label="Next page"
+          title="Next page"
         >
           Next
         </button>

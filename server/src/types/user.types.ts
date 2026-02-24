@@ -14,6 +14,8 @@ export interface IUser {
   firstName: string;
   lastName: string;
   role: UserRole;
+  /** Reference to Role document; when set, permissions are resolved from Role. */
+  roleId?: string;
   isActive: boolean;
   createdAt?: Date;
   updatedAt?: Date;

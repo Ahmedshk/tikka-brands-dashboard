@@ -6,6 +6,7 @@ import goalRoutes from "./goal.routes.js";
 import commandCenterRoutes from "./commandCenter.routes.js";
 import salesLaborRoutes from "./salesLabor.routes.js";
 import inventoryRoutes from "./inventory.routes.js";
+import roleRoutes from "./role.routes.js";
 import { healthCheck } from "../controllers/health.controller.js";
 
 const router = Router();
@@ -15,6 +16,9 @@ router.get("/health", healthCheck);
 
 // Auth routes
 router.use("/auth", authRoutes);
+
+// Roles (auth + Owner required)
+router.use("/roles", roleRoutes);
 
 // Location management (auth + role required)
 router.use("/locations", locationRoutes);

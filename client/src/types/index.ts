@@ -7,12 +7,18 @@ export enum UserRole {
   TEAM_MEMBER = "Team Member",
 }
 
+import type { RolePermissions } from './rbac.types';
+
 export interface User {
   _id: string;
   email: string;
   firstName: string;
   lastName: string;
   role: UserRole;
+  /** Resolved from Role; used for nav and route guards. */
+  permissions?: RolePermissions;
+  /** Resolved from Role.locations: 'all' or list of location IDs the user can access. */
+  allowedLocationIds?: 'all' | string[];
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

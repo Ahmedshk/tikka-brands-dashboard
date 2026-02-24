@@ -40,6 +40,7 @@ export const DocumentVaultCard = ({
                 onClick={() => onDownload?.(item, index)}
                 className="p-1.5 text-secondary hover:text-primary rounded shrink-0"
                 aria-label={`Download ${item.fileName}`}
+                title={`Download ${item.fileName}`}
               >
                 <DownloadIcon className="w-4 h-4" />
               </button>
@@ -52,6 +53,7 @@ export const DocumentVaultCard = ({
               type="button"
               onClick={onViewAll}
               className="text-sm font-medium text-quaternary hover:underline bg-transparent border-0 cursor-pointer p-0"
+              title="View all"
             >
               View All
             </button>

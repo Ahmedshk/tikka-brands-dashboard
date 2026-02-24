@@ -84,6 +84,7 @@ export const ConfirmDialog = ({
           onClick={onClose}
           disabled={isLoading}
           className="px-4 py-3 border border-gray-200 rounded-xl text-sm font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-60"
+          title={cancelLabel}
         >
           {cancelLabel}
         </button>
@@ -92,6 +93,7 @@ export const ConfirmDialog = ({
           onClick={handleConfirm}
           disabled={isLoading}
           className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-colors cursor-pointer disabled:opacity-60 ${confirmButtonClass}`}
+          title={confirmLabel}
         >
           {isLoading ? (
             <>

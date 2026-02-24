@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import http from 'node:http';
 import app from './app.js';
 import { connectDatabase } from './config/database.js';
+import { RoleService } from './services/role.service.js';
 import { logger } from './utils/logger.util.js';
 
 // Load environment variables
@@ -13,6 +14,9 @@ const startServer = async (): Promise<void> => {
   try {
     // Connect to database
     await connectDatabase();
+    // Ensure Owner (system) role exists
+    const roleService = new RoleService();
+    await roleService.ensureOwnerRoleExists();
 
     // Create HTTP server
     const httpServer = http.createServer(app);

@@ -14,8 +14,25 @@ export type RolePermissions =
   | { type: 'all' }
   | { type: 'custom'; pages: PagePermission[] };
 
+/** Role can access all locations or a specific list of location IDs (input). */
+export type RoleLocations = 'all' | string[];
+
+/** Populated location from API (for display). */
+export interface RoleLocationItem {
+  _id: string;
+  storeName: string;
+}
+
+/** Locations in API response: 'all' or IDs or populated list with storeName. */
+export type RoleLocationsResponse = 'all' | string[] | RoleLocationItem[];
+
 export interface RoleRow {
   id?: string;
   roleName: string;
   permissions: RolePermissions;
+  description?: string;
+  /** 'all', array of IDs, or populated array with storeName (from API). */
+  locations?: RoleLocationsResponse;
+  isSystem?: boolean;
+  isActive?: boolean;
 }

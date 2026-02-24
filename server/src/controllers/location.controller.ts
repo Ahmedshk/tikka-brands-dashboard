@@ -51,7 +51,25 @@ export const getLocations = async (
   try {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 10;
-    const result = await locationService.getPaginated(page, limit);
+    const allowedIds = req.user?.allowedLocationIds;
+    let result = await locationService.getPaginated(
+      Array.isArray(allowedIds) ? 1 : page,
+      Array.isArray(allowedIds) ? 10000 : limit
+    );
+    if (Array.isArray(allowedIds)) {
+      const allowedSet = new Set(allowedIds);
+      const filtered = result.locations.filter((loc) => allowedSet.has(loc._id));
+      const total = filtered.length;
+      const totalPages = Math.max(1, Math.ceil(total / limit));
+      const start = (page - 1) * limit;
+      result = {
+        locations: filtered.slice(start, start + limit),
+        total,
+        page,
+        limit,
+        totalPages,
+      };
+    }
     res.status(200).json({
       success: true,
       data: {

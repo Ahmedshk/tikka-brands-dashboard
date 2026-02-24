@@ -39,6 +39,11 @@ const userSchema = new Schema<UserDocument>(
       required: true,
       default: UserRole.TEAM_MEMBER,
     },
+    roleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Role',
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,

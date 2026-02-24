@@ -34,4 +34,5 @@ export const API_ENDPOINTS = {
     KPIS: "/inventory/kpis",
     ORDERS: "/inventory/orders",
   },
+  ROLES: "/roles",
 } as const;

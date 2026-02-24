@@ -2,8 +2,8 @@ import { useState, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store/store';
-import { RoleGuard } from './RoleGuard';
-import { navigationConfig } from '../../utils/navigation.config';
+import { useFilteredNavigation } from '../../hooks/useFilteredNavigation';
+import type { NavigationItem } from '../../types/navigation.types';
 import MainLogo from '@assets/logos/main_logo.svg?react';
 import ArrowUpIcon from '@assets/icons/arrow_up.svg?react';
 import ArrowDownIcon from '@assets/icons/arrow_down.svg?react';
@@ -19,6 +19,7 @@ interface SidebarProps {
 
 const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, onClose, onToggle }: SidebarProps) => {
   const navigate = useNavigate();
+  const filteredNav = useFilteredNavigation();
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [isMobile, setIsMobile] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
@@ -99,8 +100,7 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
     };
   }, [isDragging, mouseStartX, isOpen, isMobile, onClose, onToggle]);
 
-  // Check if parent is active: either its path matches or any child path matches
-  const isParentActive = (item: (typeof navigationConfig)[0]) => {
+  const isParentActive = (item: NavigationItem) => {
     if (item.path !== undefined && activePath === item.path) return true;
     return !!item.children?.some((child) => child.path === activePath);
   };
@@ -349,111 +349,87 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
             )}
           </div>
 
-          {/* Navigation Items */}
+          {/* Navigation Items (filtered by permissions) */}
           <nav className="flex-1 overflow-y-auto py-4 px-2">
-            {navigationConfig.map((item, index) => (
-              <RoleGuard
-                key={item.label}
-                allowedRoles={item.allowedRoles}
-                fallback={null}
-              >
-                <div>
-                  {/* Separator before Admin & Settings */}
-                  {item.hasSeparator && index > 0 && (
-                    <div className="border-t border-gray-200 my-2" />
-                  )}
+            {filteredNav.map((item, index) => (
+              <div key={item.label}>
+                {item.hasSeparator && index > 0 && (
+                  <div className="border-t border-gray-200 my-2" />
+                )}
 
-                  {/* Menu Item */}
-                  {item.children ? (
-                    // Expandable parent item
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleParentClick(item)}
-                        className={`
-                          w-full flex items-center justify-between px-4 py-3 cursor-pointer transition-all text-left border-0 rounded-xl
-                          ${isParentActive(item)
-                            ? 'bg-button-secondary'
-                            : 'bg-transparent hover:bg-gray-50'
-                          }
-                        `}
-                      >
-                        <div className="flex items-center">
-                          <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
-                          <span className="text-[10px] md:text-xs 2xl:text-sm text-primary font-medium">
-                            {item.label}
-                          </span>
-                        </div>
-                        {(() => {
-                          const isExpanded = expandedItems.has(item.label);
-                          return isExpanded ? (
-                            <ArrowUpIcon className="w-3 h-3 flex-shrink-0" />
-                          ) : (
-                            <ArrowDownIcon className="w-3 h-3 flex-shrink-0" />
-                          );
-                        })()}
-                      </button>
-
-                      {/* Child Items */}
-                      {expandedItems.has(item.label) && (
-                        <div className="pl-8 pr-2">
-                          {item.children.map((child) => (
-                            <RoleGuard
-                              key={child.path}
-                              allowedRoles={child.allowedRoles}
-                              fallback={null}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => handleChildClick(child.path)}
-                                className={`
-                                  w-full px-4 py-2 cursor-pointer transition-all text-[10px] md:text-xs 2xl:text-sm text-left border-0 rounded-xl
-                                  ${activePath === child.path
-                                    ? 'bg-button-secondary text-primary font-bold'
-                                    : 'bg-transparent hover:bg-gray-50 text-primary'
-                                  }
-                                `}
-                              >
-                                {child.label}
-                              </button>
-                            </RoleGuard>
-                          ))}
-                        </div>
+                {item.children ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleParentClick(item)}
+                      className={`
+                        w-full flex items-center justify-between px-4 py-3 cursor-pointer transition-all text-left border-0 rounded-xl
+                        ${isParentActive(item)
+                          ? 'bg-button-secondary'
+                          : 'bg-transparent hover:bg-gray-50'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center">
+                        <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
+                        <span className="text-[10px] md:text-xs 2xl:text-sm text-primary font-medium">
+                          {item.label}
+                        </span>
+                      </div>
+                      {expandedItems.has(item.label) ? (
+                        <ArrowUpIcon className="w-3 h-3 flex-shrink-0" />
+                      ) : (
+                        <ArrowDownIcon className="w-3 h-3 flex-shrink-0" />
                       )}
-                    </>
-                  ) : (
-                    // Direct navigation item
-                    (() => {
-                      const itemPath = item.path;
-                      if (!itemPath) return null;
+                    </button>
 
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => handleChildClick(itemPath)}
-                          className={`
-                            w-full flex items-center px-4 py-3 cursor-pointer transition-all text-left border-0 rounded-xl
-                            ${activePath === itemPath
-                              ? 'bg-button-secondary'
-                              : 'bg-transparent hover:bg-gray-50'
-                            }
-                          `}
-                        >
-                          <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
-                          <span
-                            className={`flex-1 text-[10px] md:text-xs 2xl:text-sm ${activePath === itemPath
-                              ? 'quaternary font-bold'
-                              : 'text-primary font-medium'
-                              }`}
+                    {expandedItems.has(item.label) && (
+                      <div className="pl-8 pr-2">
+                        {item.children.map((child) => (
+                          <button
+                            key={child.path}
+                            type="button"
+                            onClick={() => handleChildClick(child.path)}
+                            className={`
+                              w-full px-4 py-2 cursor-pointer transition-all text-[10px] md:text-xs 2xl:text-sm text-left border-0 rounded-xl
+                              ${activePath === child.path
+                                ? 'bg-button-secondary text-primary font-bold'
+                                : 'bg-transparent hover:bg-gray-50 text-primary'
+                              }
+                            `}
                           >
-                            {item.label}
-                          </span>
-                        </button>
-                      );
-                    })()
-                  )}
-                </div>
-              </RoleGuard>
+                            {child.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  item.path && (
+                    <button
+                      type="button"
+                      onClick={() => handleChildClick(item.path!)}
+                      className={`
+                        w-full flex items-center px-4 py-3 cursor-pointer transition-all text-left border-0 rounded-xl
+                        ${activePath === item.path
+                          ? 'bg-button-secondary'
+                          : 'bg-transparent hover:bg-gray-50'
+                        }
+                      `}
+                    >
+                      <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
+                      <span
+                        className={`flex-1 text-[10px] md:text-xs 2xl:text-sm ${activePath === item.path
+                          ? 'quaternary font-bold'
+                          : 'text-primary font-medium'
+                          }`}
+                      >
+                        {item.label}
+                      </span>
+                    </button>
+                  )
+                )}
+              </div>
             ))}
           </nav>
         </aside>
@@ -464,7 +440,7 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
   // Desktop Sidebar (collapsible)
   const isDesktopExpanded = isOpen;
 
-  const handleDesktopParentClick = (item: (typeof navigationConfig)[0]) => {
+  const handleDesktopParentClick = (item: NavigationItem) => {
     if (item.children && item.children.length > 0) {
       if (!isDesktopExpanded) {
         onToggle(); // Expand sidebar so user can pick a child
@@ -495,13 +471,8 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
 
       {/* Navigation Items */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-4 px-2">
-        {navigationConfig.map((item, index) => (
-          <RoleGuard
-            key={item.label}
-            allowedRoles={item.allowedRoles}
-            fallback={null}
-          >
-            <div>
+        {filteredNav.map((item, index) => (
+          <div key={item.label}>
               {item.hasSeparator && index > 0 && (
                 <div className="border-t border-gray-200 my-2" />
               )}
@@ -539,25 +510,20 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
                   {isDesktopExpanded && expandedItems.has(item.label) && (
                     <div className="pl-8 pr-2">
                       {item.children.map((child) => (
-                        <RoleGuard
+                        <button
                           key={child.path}
-                          allowedRoles={child.allowedRoles}
-                          fallback={null}
+                          type="button"
+                          onClick={() => handleChildClick(child.path)}
+                          className={`
+                            w-full px-4 py-2 cursor-pointer transition-all text-[10px] md:text-xs 2xl:text-sm text-left border-0 rounded-xl
+                            ${activePath === child.path
+                              ? 'bg-button-secondary text-primary font-bold'
+                              : 'bg-transparent hover:bg-gray-50 text-primary'
+                            }
+                          `}
                         >
-                          <button
-                            type="button"
-                            onClick={() => handleChildClick(child.path)}
-                            className={`
-                              w-full px-4 py-2 cursor-pointer transition-all text-[10px] md:text-xs 2xl:text-sm text-left border-0 rounded-xl
-                              ${activePath === child.path
-                                ? 'bg-button-secondary text-primary font-bold'
-                                : 'bg-transparent hover:bg-gray-50 text-primary'
-                              }
-                            `}
-                          >
-                            {child.label}
-                          </button>
-                        </RoleGuard>
+                          {child.label}
+                        </button>
                       ))}
                     </div>
                   )}
@@ -594,8 +560,7 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
                   );
                 })()
               )}
-            </div>
-          </RoleGuard>
+          </div>
         ))}
       </nav>
 

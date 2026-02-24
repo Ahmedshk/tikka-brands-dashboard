@@ -69,6 +69,7 @@ export const IncidentHistoryCard = ({
                         onClick={() => onDownload?.(item, index)}
                         className="p-1.5 text-secondary hover:text-primary rounded"
                         aria-label="Download"
+                        title="Download"
                       >
                         <DownloadIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
                       </button>
@@ -77,6 +78,7 @@ export const IncidentHistoryCard = ({
                         onClick={() => onView?.(item, index)}
                         className="p-1.5 text-secondary hover:text-primary rounded"
                         aria-label="View"
+                        title="View"
                       >
                         <ViewIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
                       </button>
@@ -93,6 +95,7 @@ export const IncidentHistoryCard = ({
               type="button"
               onClick={onViewAll}
               className="text-sm font-medium text-quaternary hover:underline bg-transparent border-0 cursor-pointer p-0"
+              title="View all"
             >
               View All
             </button>

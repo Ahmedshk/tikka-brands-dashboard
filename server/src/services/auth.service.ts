@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { UserRepository } from "../repositories/user.repository.js";
+import { RoleRepository } from "../repositories/role.repository.js";
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -8,12 +9,29 @@ import {
 } from "../utils/jwt.util.js";
 import { IUser } from "../types/user.types.js";
 import { UnauthorizedError } from "../utils/errors.util.js";
+import type { RolePermissions } from "../types/rbac.types.js";
 
 export class AuthService {
   private readonly userRepository: UserRepository;
+  private readonly roleRepository: RoleRepository;
 
   constructor() {
     this.userRepository = new UserRepository();
+    this.roleRepository = new RoleRepository();
+  }
+
+  /** Resolve permissions for a role name (from Role collection). Defaults to full access if no role found. */
+  async getPermissionsForRole(roleName: string): Promise<RolePermissions> {
+    const role = await this.roleRepository.findByName(roleName);
+    return role?.permissions ?? { type: "all" };
+  }
+
+  /** Resolve allowed location IDs for a role. Returns 'all' or array of location IDs. */
+  async getAllowedLocationIds(roleName: string): Promise<"all" | string[]> {
+    const role = await this.roleRepository.findByName(roleName);
+    if (!role?.locations) return "all";
+    if (role.locations === "all") return "all";
+    return Array.isArray(role.locations) ? role.locations : "all";
   }
 
   async login(
@@ -44,7 +62,11 @@ export class AuthService {
       );
     }
 
-    // Generate tokens
+    const [permissions, allowedLocationIds] = await Promise.all([
+      this.getPermissionsForRole(user.role),
+      this.getAllowedLocationIds(user.role),
+    ]);
+
     const tokenPayload: TokenPayload = {
       userId: user._id.toString(),
       email: user.email,
@@ -54,8 +76,12 @@ export class AuthService {
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
 
-    // Return user without password (toObject() already omits password per model)
-    const userWithoutPassword = user.toObject();
+    const userWithoutPassword = user.toObject() as Omit<IUser, "password"> & {
+      permissions?: RolePermissions;
+      allowedLocationIds?: "all" | string[];
+    };
+    userWithoutPassword.permissions = permissions;
+    userWithoutPassword.allowedLocationIds = allowedLocationIds;
 
     return {
       user: userWithoutPassword,
@@ -77,6 +103,10 @@ export class AuthService {
     if (!user.isActive) {
       throw new UnauthorizedError("Your account has been deactivated.");
     }
+    const [permissions, allowedLocationIds] = await Promise.all([
+      this.getPermissionsForRole(user.role),
+      this.getAllowedLocationIds(user.role),
+    ]);
     const tokenPayload: TokenPayload = {
       userId: user._id.toString(),
       email: user.email,
@@ -84,7 +114,12 @@ export class AuthService {
     };
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
-    const userWithoutPassword = user.toObject();
+    const userWithoutPassword = user.toObject() as Omit<IUser, "password"> & {
+      permissions?: RolePermissions;
+      allowedLocationIds?: "all" | string[];
+    };
+    userWithoutPassword.permissions = permissions;
+    userWithoutPassword.allowedLocationIds = allowedLocationIds;
     return {
       user: userWithoutPassword,
       accessToken,

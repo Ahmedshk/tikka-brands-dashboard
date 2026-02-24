@@ -1,9 +1,11 @@
 import jwt from 'jsonwebtoken';
+import type { RolePermissions } from '../types/rbac.types.js';
 
 export interface TokenPayload {
   userId: string;
   email: string;
   role: string;
+  permissions?: RolePermissions;
 }
 
 export const generateAccessToken = (payload: TokenPayload): string => {

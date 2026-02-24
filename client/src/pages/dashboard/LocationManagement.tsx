@@ -94,6 +94,7 @@ export const LocationManagement = () => {
             type="button"
             onClick={openAddModal}
             className="flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity cursor-pointer"
+            title="Add new location"
           >
             <AddIcon className="w-4 h-4" />
             Add Location
@@ -149,6 +150,7 @@ export const LocationManagement = () => {
                           onClick={() => openEditModal(loc)}
                           className="p-2.5 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer touch-manipulation"
                           aria-label={`Edit ${loc.storeName}`}
+                          title={`Edit ${loc.storeName}`}
                         >
                           <EditIcon className="w-4 h-4 text-primary" />
                         </button>
@@ -157,6 +159,7 @@ export const LocationManagement = () => {
                           onClick={() => openDeleteConfirm(loc)}
                           className="p-2.5 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer touch-manipulation"
                           aria-label={`Delete ${loc.storeName}`}
+                          title={`Delete ${loc.storeName}`}
                         >
                           <DeleteIcon className="w-4 h-4 text-primary" />
                         </button>
@@ -205,6 +208,7 @@ export const LocationManagement = () => {
                                 onClick={() => openEditModal(loc)}
                                 className="p-2 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer"
                                 aria-label={`Edit ${loc.storeName}`}
+                                title={`Edit ${loc.storeName}`}
                               >
                                 <EditIcon className="w-4 h-4 text-primary" />
                               </button>
@@ -213,6 +217,7 @@ export const LocationManagement = () => {
                                 onClick={() => openDeleteConfirm(loc)}
                                 className="p-2 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer"
                                 aria-label={`Delete ${loc.storeName}`}
+                                title={`Delete ${loc.storeName}`}
                               >
                                 <DeleteIcon className="w-4 h-4 text-primary" />
                               </button>

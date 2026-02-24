@@ -1,45 +1,96 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Layout } from '../../components/common/Layout';
-import { RBACTableCard } from '../../components/RBAC';
+import { RBACTableCard, AddEditRoleModal } from '../../components/RBAC';
 import type { RoleRow } from '../../types/rbac.types';
+import { roleService } from '../../services/role.service';
 import AdminSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
+import toast from 'react-hot-toast';
+import { Spinner } from '../../components/common/Spinner';
 
 const PAGE_SIZE = 10;
 
-const mockRows: RoleRow[] = [
-  { id: '1', roleName: 'Owner', permissions: { type: 'all' } },
-  { id: '2', roleName: 'Director of Operations', permissions: { type: 'all' } },
-  { id: '3', roleName: 'District Manager', permissions: { type: 'custom', pages: [
-    { pageId: 'command-center', pageLabel: 'Command Center' },
-    { pageId: 'sales-labor', pageLabel: 'Sales & Labor' },
-    { pageId: 'inventory-food-cost', pageLabel: 'Inventory & Food Cost' },
-    { pageId: 'team-hr', pageLabel: 'Team & HR' },
-    { pageId: 'calendar-events', pageLabel: 'Calendar & Events' },
-  ] } },
-  { id: '4', roleName: 'General Manager', permissions: { type: 'custom', pages: [
-    { pageId: 'command-center', pageLabel: 'Command Center' },
-    { pageId: 'sales-labor', pageLabel: 'Sales & Labor' },
-    { pageId: 'team-hr', pageLabel: 'Team & HR' },
-  ] } },
-  { id: '5', roleName: 'Shift Supervisor', permissions: { type: 'custom', pages: [
-    { pageId: 'command-center', pageLabel: 'Command Center' },
-    { pageId: 'sales-labor', pageLabel: 'Sales & Labor' },
-  ] } },
-  { id: '6', roleName: 'Team Member', permissions: { type: 'custom', pages: [
-    { pageId: 'command-center', pageLabel: 'Command Center' },
-  ] } },
-  { id: '7', roleName: 'Viewer', permissions: { type: 'custom', pages: [] } },
-];
-
 export const RBACManagement = () => {
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalInitialRole, setModalInitialRole] = useState<RoleRow | null>(null);
+  const [modalIsDuplicate, setModalIsDuplicate] = useState(false);
 
-  const totalPages = Math.ceil(mockRows.length / PAGE_SIZE) || 1;
+  const fetchRoles = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await roleService.list(false);
+      setRoles(list);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load roles';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRoles();
+  }, [fetchRoles]);
+
+  const totalPages = Math.ceil(roles.length / PAGE_SIZE) || 1;
   const paginatedRows = useMemo(
-    () => mockRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [page]
+    () => roles.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [roles, page]
   );
+
+  const openAdd = () => {
+    setModalInitialRole(null);
+    setModalIsDuplicate(false);
+    setModalOpen(true);
+  };
+
+  const openEdit = (row: RoleRow) => {
+    setModalInitialRole(row);
+    setModalIsDuplicate(false);
+    setModalOpen(true);
+  };
+
+  const openDuplicate = (row: RoleRow) => {
+    setModalInitialRole(row);
+    setModalIsDuplicate(true);
+    setModalOpen(true);
+  };
+
+  const handleSaved = () => {
+    fetchRoles();
+    setModalOpen(false);
+    toast.success('Role saved successfully.');
+  };
+
+  const handleModalError = (message: string) => {
+    toast.error(message);
+  };
+
+  const handleDelete = async (row: RoleRow, _index: number) => {
+    if (!row.id) return;
+    if (row.isSystem) {
+      toast.error('Cannot delete system role.');
+      return;
+    }
+    try {
+      const result = await roleService.delete(row.id);
+      await fetchRoles();
+      if (result.deactivated) {
+        toast.success('Role deactivated (in use by one or more users).');
+      } else {
+        toast.success('Role deleted successfully.');
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete role';
+      toast.error(msg);
+    }
+  };
 
   return (
     <Layout>
@@ -51,25 +102,49 @@ export const RBACManagement = () => {
           </h2>
           <button
             type="button"
-            onClick={() => {}}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+            onClick={openAdd}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity cursor-pointer"
+            title="Add new role"
           >
             <AddIcon className="w-4 h-4 shrink-0" aria-hidden />
             Add Role
           </button>
         </div>
 
-        <RBACTableCard
-          rows={paginatedRows}
-          onEdit={() => {}}
-          onDelete={() => {}}
-          pagination={{
-            currentPage: page,
-            totalPages,
-            totalItems: mockRows.length,
-            pageSize: PAGE_SIZE,
-            onPageChange: setPage,
-          }}
+        {error && (
+          <p className="mb-4 text-sm text-negative" role="alert">
+            {error}
+          </p>
+        )}
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-4 text-primary">
+            <Spinner size="xl" className="text-button-primary" />
+            <span className="text-sm">Loading roles…</span>
+          </div>
+        ) : (
+          <RBACTableCard
+            rows={paginatedRows}
+            onEdit={openEdit}
+            onDelete={handleDelete}
+            onDuplicate={openDuplicate}
+            pagination={{
+              currentPage: page,
+              totalPages,
+              totalItems: roles.length,
+              pageSize: PAGE_SIZE,
+              onPageChange: setPage,
+            }}
+          />
+        )}
+
+        <AddEditRoleModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          initialRole={modalInitialRole}
+          isDuplicate={modalIsDuplicate}
+          onSaved={handleSaved}
+          onError={handleModalError}
         />
       </div>
     </Layout>

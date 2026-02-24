@@ -128,6 +128,7 @@ export const VarianceChartCard = ({ items, timePeriod = null, loading = false, o
             type="button"
             onClick={handleViewAll}
             className="text-[10px] md:text-xs 2xl:text-sm font-bold text-quaternary hover:underline cursor-pointer self-start sm:self-center"
+            title="View all items"
           >
             View All &gt;
           </button>

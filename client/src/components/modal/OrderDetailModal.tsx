@@ -61,6 +61,7 @@ export const OrderDetailModal = ({
           }}
           className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-primary"
           aria-label="Close"
+          title="Close"
         >
           <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
         </button>

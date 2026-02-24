@@ -64,6 +64,7 @@ export const StaffListModal = ({ isOpen, onClose, rows, onView, onEdit }: StaffL
           }}
           className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-primary"
           aria-label="Close"
+          title="Close"
         >
           <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
         </button>
@@ -106,6 +107,7 @@ export const StaffListModal = ({ isOpen, onClose, rows, onView, onEdit }: StaffL
                             onClick={() => onView?.(row, start + index)}
                             className="p-1 text-secondary hover:text-primary rounded"
                             aria-label="View"
+                            title="View"
                           >
                             <ViewIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
                           </button>
@@ -114,6 +116,7 @@ export const StaffListModal = ({ isOpen, onClose, rows, onView, onEdit }: StaffL
                             onClick={() => onEdit?.(row, start + index)}
                             className="p-1 text-secondary hover:text-primary rounded"
                             aria-label="Edit"
+                            title="Edit"
                           >
                             <EditIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
                           </button>

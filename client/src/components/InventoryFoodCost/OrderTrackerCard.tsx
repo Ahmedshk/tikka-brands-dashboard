@@ -100,6 +100,7 @@ export const OrderTrackerCard = ({
                           onClick={() => onView(row)}
                           className="p-2.5 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer touch-manipulation text-secondary hover:text-primary"
                           aria-label="View order"
+                          title="View order"
                         >
                           <ViewIcon className="w-4 h-4" />
                         </button>
@@ -157,6 +158,7 @@ export const OrderTrackerCard = ({
                               onClick={() => onView(row)}
                               className="p-1 text-secondary hover:text-primary rounded"
                               aria-label="View"
+                              title="View order"
                             >
                               <ViewIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
                             </button>
@@ -173,6 +175,7 @@ export const OrderTrackerCard = ({
                 type="button"
                 onClick={onViewAll}
                 className="text-[10px] md:text-xs 2xl:text-sm font-bold text-quaternary hover:underline cursor-pointer"
+                title="View all orders"
               >
                 View All
               </button>

@@ -103,6 +103,7 @@ export const EmployeeTrainingCard = ({
                         onClick={() => onView?.(row, index)}
                         className="p-1 text-secondary hover:text-primary rounded"
                         aria-label="View"
+                        title="View"
                       >
                         <ViewIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
                       </button>
@@ -111,6 +112,7 @@ export const EmployeeTrainingCard = ({
                         onClick={() => onEdit?.(row, index)}
                         className="p-1 text-secondary hover:text-primary rounded"
                         aria-label="Edit"
+                        title="Edit"
                       >
                         <EditIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
                       </button>
@@ -119,6 +121,7 @@ export const EmployeeTrainingCard = ({
                         onClick={() => onDelete?.(row, index)}
                         className="p-1 text-secondary hover:text-primary rounded"
                         aria-label="Delete"
+                        title="Delete"
                       >
                         <DeleteIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
                       </button>
@@ -135,6 +138,7 @@ export const EmployeeTrainingCard = ({
               type="button"
               onClick={onUploadTrainingFile}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-gray-50 transition-colors"
+              title="Upload training file"
             >
               <UploadIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" aria-hidden />
               Upload Training File
@@ -143,6 +147,7 @@ export const EmployeeTrainingCard = ({
               type="button"
               onClick={onAssignTraining}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+              title="Assign training"
             >
               <AddIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" aria-hidden />
               Assign Training
@@ -153,6 +158,7 @@ export const EmployeeTrainingCard = ({
               type="button"
               onClick={onViewAll}
               className="text-sm font-medium text-quaternary hover:underline bg-transparent border-0 cursor-pointer p-0"
+              title="View all"
             >
               View All
             </button>

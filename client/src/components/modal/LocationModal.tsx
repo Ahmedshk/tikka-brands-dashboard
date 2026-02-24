@@ -481,6 +481,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
                     onClick={() => setShowSquareToken((s) => !s)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-700 ml-1"
                     aria-label={showSquareToken ? 'Hide token' : 'Show token'}
+                    title={showSquareToken ? 'Hide token' : 'Show token'}
                   >
                     {showSquareToken ? 'Hide' : 'Show'}
                   </button>
@@ -525,6 +526,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
                     type="button"
                     onClick={() => setUpdateHomebaseCredentials(true)}
                     className="shrink-0 px-3 py-2 text-sm font-medium text-button-primary border border-button-primary rounded-xl hover:bg-button-primary/5 transition-colors"
+                    title="Update Homebase API key"
                   >
                     Update
                   </button>
@@ -546,6 +548,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
                     onClick={() => setShowHomebaseKey((s) => !s)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-700 ml-1"
                     aria-label={showHomebaseKey ? 'Hide API key' : 'Show API key'}
+                    title={showHomebaseKey ? 'Hide API key' : 'Show API key'}
                   >
                     {showHomebaseKey ? 'Hide' : 'Show'}
                   </button>
@@ -579,6 +582,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
               type="button"
               onClick={onClose}
               className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer"
+              title="Cancel"
             >
               Cancel
             </button>
@@ -586,6 +590,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
               type="submit"
               disabled={submitting || !canSubmit}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60 cursor-pointer"
+              title={isEdit ? 'Update location' : 'Save location'}
             >
               {submitting ? (
                 <>
