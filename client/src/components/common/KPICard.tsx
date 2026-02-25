@@ -46,6 +46,8 @@ export interface KPICardProps {
   extraClassName?: string;
   /** When true, show a spinner in the value area instead of the value text */
   loading?: boolean;
+  /** Optional node rendered in the title row (e.g. period selector) */
+  titleRight?: ReactNode;
 }
 
 const defaultBadgeClassName = 'bg-green-100 text-green-800';
@@ -66,6 +68,7 @@ export const KPICard = ({
   extra,
   extraClassName = defaultExtraClassName,
   loading = false,
+  titleRight,
 }: KPICardProps) => {
   const hasRightContent = !loading && (rightIcon != null || badge != null || subtitle != null || extra != null);
 
@@ -104,13 +107,31 @@ export const KPICard = ({
     <div
       className={`bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden border-l-8 ${accentBorderClass[accentColor]} p-5 flex flex-col`}
     >
-      <p className="text-sm font-medium text-primary mb-2 flex items-center gap-2 flex-wrap">
-        {titleIcon}
-        <span className='text-xs md:text-sm 2xl:text-base font-semibold text-secondary'>{title}</span>
-        {timePeriod != null && (
-          <span className="text-[10px] md:text-xs 2xl:text-sm font-normal text-primary">({timePeriod})</span>
+      <div className="text-sm font-medium text-primary mb-2">
+        {/* When titleRight (e.g. period dropdown) exists: title + dropdown on one line, period label on next line so dropdown doesn't wrap */}
+        {titleRight == null ? (
+          <p className="flex items-center gap-2 flex-wrap">
+            {titleIcon}
+            <span className='text-xs md:text-sm 2xl:text-base font-semibold text-secondary'>{title}</span>
+            {!loading && timePeriod != null && (
+              <span className="text-[10px] md:text-xs 2xl:text-sm font-normal text-primary">({timePeriod})</span>
+            )}
+          </p>
+        ) : (
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Left: title + period (can wrap when needed) */}
+            <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
+              {titleIcon}
+              <span className="text-xs md:text-sm 2xl:text-base font-semibold text-secondary">{title}</span>
+              {!loading && timePeriod != null && (
+                <span className="text-[10px] md:text-xs 2xl:text-sm font-normal text-primary">({timePeriod})</span>
+              )}
+            </div>
+            {/* Right: dropdown at end of card */}
+            <div className="flex-shrink-0">{titleRight}</div>
+          </div>
         )}
-      </p>
+      </div>
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#DBE0E5] bg-[#F8F9FA] px-3 py-2 min-h-[3.5rem]">
         {loading ? (
           <div className="flex items-center justify-center flex-1 py-2">

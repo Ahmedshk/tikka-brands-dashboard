@@ -1,5 +1,5 @@
 export { CommandCenterKPICards } from './CommandCenterKPICards';
-export type { CommandCenterKPIItem, CommandCenterKPICardsProps } from './CommandCenterKPICards';
+export type { CommandCenterKPIItem, CommandCenterKPICardsProps, CommandCenterKPIPeriod } from './CommandCenterKPICards';
 export { HourlySalesChartCard } from './HourlySalesChartCard';
 export type { HourlySalesChartCardProps } from './HourlySalesChartCard';
 export { LaborCostGaugeCard } from './LaborCostGaugeCard';

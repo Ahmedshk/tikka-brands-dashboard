@@ -6,12 +6,15 @@ import { ChartsTooltipContainer, useAxesTooltip } from '@mui/x-charts/ChartsTool
 import { TimeSeriesLineChart } from '../charts/TimeSeriesLineChart';
 import type { TimeSeriesSeries, TimeSeriesLineChartYAxisOverrides } from '../charts/TimeSeriesLineChart';
 import { Spinner } from '../common/Spinner';
+import { Dropdown } from '../common/Dropdown';
 
 export interface SalesTrendChartCardProps {
   xAxisData: (string | number)[];
   series: TimeSeriesSeries[];
   /** 'line' = current vs comparison (2 series); 'stackedArea' = by source (multiple series) */
   variant: 'line' | 'stackedArea';
+  /** Chart card title (e.g. "Net Sales Trend", "Transactions Trend") */
+  title?: string;
   /** Show Group by dropdown (only when metric is Net Sales) */
   showGroupBy?: boolean;
   groupBy: string;
@@ -28,7 +31,7 @@ const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
 const desktopMargin = { top: 10, right: 25, bottom: 0, left: 0 };
 const mobileMargin = { top: 4, right: 14, bottom: 0, left: 0 };
 
-const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
+const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200';
 
 function StackedTooltipContent({ valueFormatter }: { valueFormatter?: (v: number) => string }) {
   const axesTooltipData = useAxesTooltip();
@@ -88,6 +91,7 @@ export const SalesTrendChartCard = ({
   xAxisData,
   series,
   variant,
+  title = 'Sales Trend',
   showGroupBy = false,
   groupBy,
   onGroupByChange,
@@ -146,7 +150,10 @@ export const SalesTrendChartCard = ({
             yAxis={[
               {
                 ...yAxis,
-                tickLabelStyle: isDesktop ? LABEL_FONT : { ...LABEL_FONT, fontSize: 10 },
+                width: isDesktop ? 88 : 76,
+                tickLabelStyle: isDesktop
+                  ? { ...LABEL_FONT, overflow: 'visible' }
+                  : { ...LABEL_FONT, fontSize: 10, overflow: 'visible' },
               },
             ]}
             series={chartSeries}
@@ -167,7 +174,9 @@ export const SalesTrendChartCard = ({
     if (series.length >= 2 && series.some((s) => s.id === 'current')) {
       tooltipOrder = ['current', 'comparison'];
     } else if (series.length >= 2) {
-      tooltipOrder = [series[0].id, series[1].id];
+      const a = series[0];
+      const b = series[1];
+      tooltipOrder = a != null && b != null ? [a.id, b.id] : undefined;
     } else {
       tooltipOrder = undefined;
     }
@@ -185,18 +194,22 @@ export const SalesTrendChartCard = ({
   return (
     <div className={`${cardClass} mb-6 ${className}`}>
       <div className="p-5 pb-4 flex items-center justify-between flex-wrap gap-2">
-        <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-secondary">Sales Trend</h3>
+        <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-secondary">{title}</h3>
         {showGroupBy && (
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-secondary">Group by:</span>
-            <select
+            <Dropdown
+              options={[
+                { value: 'none', label: 'None' },
+                { value: 'source', label: 'Source' },
+              ]}
               value={groupBy}
-              onChange={(e) => onGroupByChange(e.target.value)}
-              className="border border-gray-300 rounded-lg px-2 py-1 text-xs text-primary bg-white focus:outline-none focus:ring-2 focus:ring-quaternary/30"
-            >
-              <option value="none">None</option>
-              <option value="source">Source</option>
-            </select>
+              onChange={onGroupByChange}
+              placeholder="None"
+              aria-label="Group by"
+              className="min-w-0"
+              allowEmpty={false}
+            />
           </div>
         )}
       </div>

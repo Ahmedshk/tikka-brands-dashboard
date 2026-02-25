@@ -316,6 +316,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: A
               options={roles.map((r) => ({ value: r.id ?? '', label: r.roleName }))}
               placeholder="Role unassigned"
               aria-label="Role"
+              openAbove={true}
             />
           </div>
         </div>

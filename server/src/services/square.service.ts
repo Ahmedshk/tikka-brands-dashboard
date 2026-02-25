@@ -114,13 +114,17 @@ interface SearchTeamMembersResponse {
  */
 export async function searchTeamMembers(
   squareLocationId: string,
-  options?: SquareServiceOptions
+  options?: SquareServiceOptions,
 ): Promise<SquareTeamMember[]> {
   const token = resolveAccessToken(options?.accessToken);
   const all: SquareTeamMember[] = [];
   let cursor: string | undefined;
   do {
-    const body: { query: { filter: { location_ids: string[]; status: string } }; limit: number; cursor?: string } = {
+    const body: {
+      query: { filter: { location_ids: string[]; status: string } };
+      limit: number;
+      cursor?: string;
+    } = {
       query: {
         filter: {
           location_ids: [squareLocationId],
@@ -144,7 +148,9 @@ export async function searchTeamMembers(
     }
     const data = JSON.parse(text) as SearchTeamMembersResponse;
     if (data.errors?.length) {
-      throw new Error(`Square Team API errors: ${data.errors.map((e) => e.detail ?? e.code).join(", ")}`);
+      throw new Error(
+        `Square Team API errors: ${data.errors.map((e) => e.detail ?? e.code).join(", ")}`,
+      );
     }
     if (data.team_members?.length) all.push(...data.team_members);
     cursor = data.cursor;
@@ -354,23 +360,23 @@ const SOURCES_CHART_PALETTE: string[] = [
   "#5DC54F", // green
   "#FDB90E", // gold
   "#009BBE", // blue
-  "#3F51B5", // indigo
+  "#FF8DC7", // pink
   "#BE68FF", // purple
-  "#FF1C28", // red
-  "#00BCD4", // cyan
+  "#F59E0B", // orange
+  "#A82323", // brownish
+  "#215E61", // sea greenish
   "#79AFFF", // azure
   "#6D6D6D", // gray
-  "#F59E0B", // orange
   "#FFFF00", // yellow
   "#22C55E", // positive (green)
   "#EF4444", // negative (red)
-  "#E91E63", // pink
   "#9C27B0", // deep purple
   "#009688", // teal
   "#8BC34A", // light green
   "#FF9800", // amber
   "#795548", // brown
   "#607D8B", // blue grey
+  "#FF1C28", // red
 ];
 
 function deriveSegmentKey(order: SquareOrder): string {
@@ -518,6 +524,7 @@ export async function getNetSalesInRange(
     }
 
     const data = (await res.json()) as SearchOrdersResponse;
+    console.log("🚀 ~ getNetSalesInRange ~ data:", data);
     if (data.errors && data.errors.length > 0) {
       throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
     }
@@ -748,8 +755,7 @@ export async function getNetSalesByCategoryInRange(
       const catalogObjectId = line.catalog_object_id?.trim();
       if (!catalogObjectId) continue;
       const lineCents =
-        orderNetCents *
-        (moneyToCents(line.total_money) / orderTotalCents);
+        orderNetCents * (moneyToCents(line.total_money) / orderTotalCents);
       variationToCents[catalogObjectId] =
         (variationToCents[catalogObjectId] ?? 0) + lineCents;
     }
@@ -763,7 +769,9 @@ export async function getNetSalesByCategoryInRange(
   const variationToItemId: Record<string, string> = {};
   const itemIdToCategoryId: Record<string, string> = {};
 
-  function categoryIdFromItem(obj: { item_data?: { category_id?: string; categories?: Array<{ id?: string }> } }): string | undefined {
+  function categoryIdFromItem(obj: {
+    item_data?: { category_id?: string; categories?: Array<{ id?: string }> };
+  }): string | undefined {
     const data = obj.item_data;
     if (!data) return undefined;
     if (data.category_id) return data.category_id;
@@ -772,15 +780,16 @@ export async function getNetSalesByCategoryInRange(
   }
 
   for (let i = 0; i < variationIds.length; i += BATCH_RETRIEVE_CATALOG_LIMIT) {
-    const chunk = variationIds.slice(
-      i,
-      i + BATCH_RETRIEVE_CATALOG_LIMIT,
-    );
+    const chunk = variationIds.slice(i, i + BATCH_RETRIEVE_CATALOG_LIMIT);
     const resp = await batchRetrieveCatalog(chunk, token, true);
     const objects = resp.objects ?? [];
     const related = resp.related_objects ?? [];
     for (const obj of objects) {
-      if (obj.type === "ITEM_VARIATION" && obj.id && obj.item_variation_data?.item_id) {
+      if (
+        obj.type === "ITEM_VARIATION" &&
+        obj.id &&
+        obj.item_variation_data?.item_id
+      ) {
         variationToItemId[obj.id] = obj.item_variation_data.item_id;
       } else if (obj.type === "ITEM" && obj.id) {
         variationToItemId[obj.id] = obj.id;
@@ -807,10 +816,7 @@ export async function getNetSalesByCategoryInRange(
   const categoryIdToName: Record<string, string> = {};
   if (categoryIds.length > 0) {
     for (let i = 0; i < categoryIds.length; i += BATCH_RETRIEVE_CATALOG_LIMIT) {
-      const chunk = categoryIds.slice(
-        i,
-        i + BATCH_RETRIEVE_CATALOG_LIMIT,
-      );
+      const chunk = categoryIds.slice(i, i + BATCH_RETRIEVE_CATALOG_LIMIT);
       const resp = await batchRetrieveCatalog(chunk, token, false);
       const objects = resp.objects ?? [];
       for (const obj of objects) {
@@ -1021,7 +1027,9 @@ export function getOrderedBucketsAndLabels(
     );
     const startWeekday = dayOfWeekF.format(startDayStart);
     const toMonday =
-      startWeekday === "Sun" ? 6 : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(startWeekday);
+      startWeekday === "Sun"
+        ? 6
+        : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(startWeekday);
     const mondayInstant = new Date(
       startDayStart.getTime() - toMonday * 24 * 60 * 60 * 1000,
     );

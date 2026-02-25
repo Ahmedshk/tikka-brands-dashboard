@@ -12,6 +12,39 @@ export interface CommandCenterKPIsData {
   reviewCount?: number;
 }
 
+/** Today slice when backend returns dual-period (today + weekToDate). */
+export interface CommandCenterKPIsTodaySlice {
+  netSalesToday?: number | null;
+  laborCostToday?: number | null;
+  laborCostPercentToday?: number | null;
+  laborCostGoal?: number;
+  laborCostStatus?: "green" | "red" | null;
+  reviewRating?: number;
+  reviewCount?: number;
+}
+
+/** Week-to-date slice when backend returns dual-period. */
+export interface CommandCenterKPIsWeekToDateSlice {
+  netSalesWeekToDate?: number | null;
+  laborCostWeekToDate?: number | null;
+  laborCostPercentWeekToDate?: number | null;
+  laborCostGoal?: number;
+  laborCostStatusWeekToDate?: "green" | "red" | null;
+  reviewRating?: number;
+  reviewCount?: number;
+}
+
+export interface CommandCenterKPIsDataDual {
+  today: CommandCenterKPIsTodaySlice;
+  weekToDate: CommandCenterKPIsWeekToDateSlice;
+}
+
+export function isCommandCenterKPIsDual(
+  data: CommandCenterKPIsData | CommandCenterKPIsDataDual,
+): data is CommandCenterKPIsDataDual {
+  return typeof data === "object" && data !== null && "today" in data && "weekToDate" in data;
+}
+
 export interface HourlySalesRow {
   hour: string;
   today: number | null;
@@ -172,16 +205,18 @@ export function isSalesTrendStacked(
 export const commandCenterService = {
   async getKPIs(
     locationId: string,
-    options?: { metrics?: string[] }
-  ): Promise<CommandCenterKPIsData> {
-    const params: { locationId: string; metrics?: string } = { locationId };
+    options?: { metrics?: string[]; periods?: ("today" | "weekToDate")[] }
+  ): Promise<CommandCenterKPIsData | CommandCenterKPIsDataDual> {
+    const params: { locationId: string; metrics?: string; periods?: string } = { locationId };
     if (options?.metrics?.length) {
       params.metrics = options.metrics.join(",");
     }
-    const res = await api.get<ApiResponse<CommandCenterKPIsData>>(
-      API_ENDPOINTS.COMMAND_CENTER.KPIS,
-      { params }
-    );
+    if (options?.periods?.length) {
+      params.periods = options.periods.join(",");
+    }
+    const res = await api.get<
+      ApiResponse<CommandCenterKPIsData | CommandCenterKPIsDataDual>
+    >(API_ENDPOINTS.COMMAND_CENTER.KPIS, { params });
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch Command Center KPIs");
     }

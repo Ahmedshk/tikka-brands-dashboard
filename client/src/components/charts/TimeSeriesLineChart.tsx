@@ -162,16 +162,16 @@ export const TimeSeriesLineChart = ({
       <TooltipSeriesOrderContext.Provider value={tooltipSeriesOrder}>
         <TooltipValueFormatterContext.Provider value={yAxisOverrides?.valueFormatter}>
           <LineChart
-          xAxis={[xAxisConfig]}
-          yAxis={[yAxisConfig]}
-          series={chartSeries}
-          height={height}
-          margin={isDesktop ? desktopMargin : mobileMargin}
-          grid={{ vertical: true, horizontal: true }}
-          hideLegend
-          slots={{ tooltip: TimeSeriesAxisTooltip }}
-          slotProps={{ tooltip: { trigger: 'axis' } }}
-        />
+            xAxis={[xAxisConfig]}
+            yAxis={[yAxisConfig]}
+            series={chartSeries}
+            height={height}
+            margin={isDesktop ? desktopMargin : mobileMargin}
+            grid={{ vertical: true, horizontal: true }}
+            hideLegend
+            slots={{ tooltip: TimeSeriesAxisTooltip }}
+            slotProps={{ tooltip: { trigger: 'axis' } }}
+          />
         </TooltipValueFormatterContext.Provider>
       </TooltipSeriesOrderContext.Provider>
     </ThemeProvider>

@@ -7,6 +7,7 @@ import { locationService } from '../../services/location.service';
 import { useAuth } from '../../hooks/useAuth';
 import type { Location } from '../../types';
 import { Spinner } from './Spinner';
+import { Dropdown } from './Dropdown';
 import LocationIcon from '@assets/icons/location.svg?react';
 import NotificationIcon from '@assets/icons/notification.svg?react';
 import ArrowDownIcon from '@assets/icons/arrow_down.svg?react';
@@ -41,7 +42,6 @@ export const Navbar = () => {
   const [locations, setLocations] = useState<Location[]>([]);
   const hideLocationSelector = pathname === LOCATION_MANAGEMENT_PATH || pathname === USER_MANAGEMENT_PATH;
   const [locationsLoading, setLocationsLoading] = useState(true);
-  const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -80,7 +80,6 @@ export const Navbar = () => {
     if (!stillExists) dispatch(setCurrentLocation(locations[0] ?? null));
   }, [locations, currentLocation, dispatch]);
 
-  const locationRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
   const notificationMobileRef = useRef<HTMLDivElement>(null);
@@ -90,9 +89,6 @@ export const Navbar = () => {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
-      if (locationRef.current && !locationRef.current.contains(target)) {
-        setLocationDropdownOpen(false);
-      }
       const inNotification = notificationRef.current?.contains(target) || notificationMobileRef.current?.contains(target);
       if (!inNotification) setNotificationDropdownOpen(false);
       const inUser = userRef.current?.contains(target);
@@ -143,62 +139,48 @@ export const Navbar = () => {
         {hideLocationSelector && <div className="min-w-0 flex-1" />}
         {/* Location Selector - hidden on Location Management so updates apply to the store being edited */}
         {!hideLocationSelector && (
-          <div className="relative min-w-0 flex-1 w-full lg:flex-initial lg:max-w-md xl:max-w-xl" ref={locationRef}>
-            <button
-              type="button"
-              onClick={async () => {
-                if (!locationDropdownOpen) {
-                  try {
-                    const data = await locationService.getAll();
+          <div className="min-w-0 flex-1 w-full lg:flex-initial lg:max-w-md xl:max-w-xl">
+            <Dropdown
+              options={locations.map((loc) => ({ value: loc._id, label: loc.storeName, secondaryLabel: loc.address }))}
+              value={currentLocation?._id ?? ''}
+              onChange={(id) => {
+                const loc = locations.find((l) => l._id === id);
+                if (loc) dispatch(setCurrentLocation(loc));
+              }}
+              placeholder={locationsLoading ? 'Loading...' : locations.length === 0 ? 'No locations' : 'Select location'}
+              aria-label="Select location"
+              className="w-full"
+              allowEmpty={true}
+              disabled={locationsLoading}
+              triggerLabel={
+                <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
+                  <LocationIcon className="w-4 h-4 md:w-4.5 md:h-4.5 2xl:w-5 2xl:h-5 flex-shrink-0" />
+                  {locationsLoading ? (
+                    <>
+                      <Spinner size="sm" className="flex-shrink-0 text-button-primary" />
+                      <span className="text-xs md:text-sm 2xl:text-base text-primary">Loading...</span>
+                    </>
+                  ) : currentLocation ? (
+                    <span className="text-xs md:text-sm 2xl:text-base text-primary truncate" title={`${currentLocation.storeName} – ${currentLocation.address}`}>
+                      {currentLocation.storeName}
+                    </span>
+                  ) : locations.length === 0 ? (
+                    <span className="text-xs md:text-sm 2xl:text-base text-primary">No locations</span>
+                  ) : (
+                    <span className="text-xs md:text-sm 2xl:text-base text-secondary">Select location</span>
+                  )}
+                </span>
+              }
+              onOpenChange={(open) => {
+                if (open) {
+                  locationService.getAll().then((data) => {
                     setLocations(data);
                     const stillExists = currentLocation && data.some((loc) => loc._id === currentLocation._id);
                     if (currentLocation && !stillExists && data.length > 0) dispatch(setCurrentLocation(data[0] ?? null));
-                  } catch {
-                    // keep existing locations
-                  }
+                  }).catch(() => {});
                 }
-                setLocationDropdownOpen(!locationDropdownOpen);
               }}
-              disabled={locationsLoading}
-              className="flex items-center gap-2 w-full px-3 sm:px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-70"
-            >
-              <LocationIcon className="w-4 h-4 md:w-4.5 md:h-4.5 2xl:w-5 2xl:h-5 flex-shrink-0" />
-              <span className="flex-1 min-w-0 flex items-center gap-2 text-xs md:text-sm 2xl:text-base text-primary whitespace-nowrap truncate text-left" title={currentLocation ? `${currentLocation.storeName} – ${currentLocation.address}` : undefined}>
-                {locationsLoading && <Spinner size="sm" className="flex-shrink-0 text-button-primary" />}
-                {(() => {
-                  if (locationsLoading) return 'Loading...';
-                  if (currentLocation) return currentLocation.storeName;
-                  if (locations.length === 0) return 'No locations';
-                  return 'Select location';
-                })()}
-              </span>
-              <ArrowDownIcon className="w-3 h-3 flex-shrink-0" />
-            </button>
-
-            {locationDropdownOpen && (
-              <div className="absolute top-full left-0 mt-2 w-full min-w-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                <div className="py-2 max-h-64 overflow-y-auto">
-                  {locations.length === 0 ? (
-                    <p className="px-4 py-2 text-sm text-gray-500">No locations. Add one in Location Management.</p>
-                  ) : (
-                    locations.map((loc) => (
-                      <button
-                        key={loc._id}
-                        type="button"
-                        onClick={() => {
-                          dispatch(setCurrentLocation(loc));
-                          setLocationDropdownOpen(false);
-                        }}
-                        className={`w-full text-left px-4 py-2 text-xs md:text-sm 2xl:text-base text-primary hover:bg-gray-50 transition-colors ${currentLocation?._id === loc._id ? 'bg-button-secondary' : ''}`}
-                      >
-                        <span className="font-medium block truncate">{loc.storeName}</span>
-                        <span className="text-[10px] md:text-xs 2xl:text-sm text-gray-500 truncate block">{loc.address}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
+            />
           </div>
         )}
 

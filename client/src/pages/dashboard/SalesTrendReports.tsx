@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { Layout } from '../../components/common/Layout';
+import { Dropdown } from '../../components/common/Dropdown';
 import { format, parse } from 'date-fns';
 import {
   SalesTrendChartCard,
@@ -227,7 +228,7 @@ export const SalesTrendReports = () => {
     const options = getComparisonOptionsForPeriod(kpiPeriod.periodType).filter((o) => o.value !== 'none');
     const exists = options.some((o) => o.value === kpiComparison.comparisonType);
     if (!exists && options.length > 0) {
-      const fallback = kpiPeriod.periodType === 'thisYear' ? 'priorYear' : options[0].value;
+      const fallback = kpiPeriod.periodType === 'thisYear' ? 'priorYear' : (options[0]?.value ?? 'priorYear');
       setKpiComparison((prev) =>
         fallback === 'custom'
           ? { comparisonType: 'custom' }
@@ -240,7 +241,7 @@ export const SalesTrendReports = () => {
     const options = getComparisonOptionsForPeriod(categoryPeriod.periodType).filter((o) => o.value !== 'none');
     const exists = options.some((o) => o.value === categoryComparison.comparisonType);
     if (!exists && options.length > 0) {
-      const fallback = categoryPeriod.periodType === 'thisYear' ? 'priorYear' : options[0].value;
+      const fallback = categoryPeriod.periodType === 'thisYear' ? 'priorYear' : (options[0]?.value ?? 'priorYear');
       setCategoryComparison((prev) =>
         fallback === 'custom'
           ? { comparisonType: 'custom' }
@@ -249,21 +250,23 @@ export const SalesTrendReports = () => {
     }
   }, [categoryPeriod.periodType]);
 
-  useEffect(() => {
-    const options = getComparisonOptionsForPeriod(period.periodType);
+  /** When period changes, sync comparison to a valid option in the same tick so the trend effect runs once. */
+  const handleTrendPeriodChange = (newPeriod: PeriodPickerValue) => {
+    setPeriod(newPeriod);
+    const options = getComparisonOptionsForPeriod(newPeriod.periodType);
     const exists = options.some((o) => o.value === comparison.comparisonType);
     if (!exists && options.length > 0) {
       const fallback =
-        period.periodType === 'thisYear'
+        newPeriod.periodType === 'thisYear'
           ? 'priorYear'
-          : options[0].value;
+          : (options[0]?.value ?? 'priorYear');
       const next: ComparisonPeriodPickerValue =
         fallback === 'custom'
-          ? { comparisonType: fallback }
+          ? { comparisonType: 'custom' }
           : { comparisonType: fallback, comparisonStart: undefined, comparisonEnd: undefined };
       setComparison(next);
     }
-  }, [period.periodType]);
+  };
 
   useEffect(() => {
     if (!locationId || !canTrendsChart) {
@@ -283,9 +286,9 @@ export const SalesTrendReports = () => {
       ...(comparison.comparisonType === 'custom' &&
         comparison.comparisonStart &&
         comparison.comparisonEnd && {
-          comparisonStart: comparison.comparisonStart,
-          comparisonEnd: comparison.comparisonEnd,
-        }),
+        comparisonStart: comparison.comparisonStart,
+        comparisonEnd: comparison.comparisonEnd,
+      }),
       metric,
       groupBy: metric === 'netSales' ? groupBy : ('none' as SalesTrendGroupBy),
     };
@@ -331,16 +334,16 @@ export const SalesTrendReports = () => {
       ...(kpiPeriod.periodType === 'custom' &&
         kpiPeriod.periodStart &&
         kpiPeriod.periodEnd && {
-          periodStart: kpiPeriod.periodStart,
-          periodEnd: kpiPeriod.periodEnd,
-        }),
+        periodStart: kpiPeriod.periodStart,
+        periodEnd: kpiPeriod.periodEnd,
+      }),
       comparisonType: kpiComparison.comparisonType,
       ...(kpiComparison.comparisonType === 'custom' &&
         kpiComparison.comparisonStart &&
         kpiComparison.comparisonEnd && {
-          comparisonStart: kpiComparison.comparisonStart,
-          comparisonEnd: kpiComparison.comparisonEnd,
-        }),
+        comparisonStart: kpiComparison.comparisonStart,
+        comparisonEnd: kpiComparison.comparisonEnd,
+      }),
     };
     commandCenterService
       .getSalesTrendKpi(locationId, kpiParams)
@@ -378,16 +381,16 @@ export const SalesTrendReports = () => {
       ...(categoryPeriod.periodType === 'custom' &&
         categoryPeriod.periodStart &&
         categoryPeriod.periodEnd && {
-          periodStart: categoryPeriod.periodStart,
-          periodEnd: categoryPeriod.periodEnd,
-        }),
+        periodStart: categoryPeriod.periodStart,
+        periodEnd: categoryPeriod.periodEnd,
+      }),
       comparisonType: categoryComparison.comparisonType,
       ...(categoryComparison.comparisonType === 'custom' &&
         categoryComparison.comparisonStart &&
         categoryComparison.comparisonEnd && {
-          comparisonStart: categoryComparison.comparisonStart,
-          comparisonEnd: categoryComparison.comparisonEnd,
-        }),
+        comparisonStart: categoryComparison.comparisonStart,
+        comparisonEnd: categoryComparison.comparisonEnd,
+      }),
     };
     commandCenterService
       .getSalesByCategory(locationId, categoryParams)
@@ -437,6 +440,7 @@ export const SalesTrendReports = () => {
       data: trendData.currentPeriod,
       color: '#FBC52A',
     };
+    const showComparison = comparison.comparisonType !== 'none';
     const comparisonSeries: TimeSeriesSeries = {
       id: 'comparison',
       label: getComparisonLabel(comparison),
@@ -446,7 +450,9 @@ export const SalesTrendReports = () => {
     return {
       variant: 'line' as const,
       xAxisData,
-      series: [comparisonSeries, currentSeries],
+      series: showComparison
+        ? [comparisonSeries, currentSeries]
+        : [currentSeries],
       yAxis,
     };
   }, [trendData, metric, comparison]);
@@ -484,18 +490,15 @@ export const SalesTrendReports = () => {
                 <label htmlFor="metric" className="text-xs md:text-sm text-secondary">
                   Metric:
                 </label>
-                <select
-                  id="metric"
+                <Dropdown
+                  options={METRIC_OPTIONS}
                   value={metric}
-                  onChange={(e) => setMetric(e.target.value as SalesTrendMetric)}
-                  className={selectClass}
-                >
-                  {METRIC_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setMetric(v as SalesTrendMetric)}
+                  placeholder="Metric"
+                  aria-label="Metric"
+                  allowEmpty={false}
+                  className="min-w-[9.5rem]"
+                />
               </div>
               <div className="flex items-center gap-2">
                 <label htmlFor="period" className="text-xs md:text-sm text-secondary">
@@ -504,7 +507,7 @@ export const SalesTrendReports = () => {
                 <PeriodPicker
                   id="period"
                   value={period}
-                  onChange={setPeriod}
+                  onChange={handleTrendPeriodChange}
                   className={selectClass}
                 />
               </div>
@@ -531,6 +534,7 @@ export const SalesTrendReports = () => {
         {canTrendsChart && locationId && (
           <SalesTrendChartCard
             loading={loading}
+            title={`${METRIC_OPTIONS.find((o) => o.value === metric)?.label ?? 'Sales'} Trend`}
             xAxisData={chartProps?.xAxisData ?? []}
             series={chartProps?.series ?? []}
             variant={chartProps?.variant ?? 'line'}

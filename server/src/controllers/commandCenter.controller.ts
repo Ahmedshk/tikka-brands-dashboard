@@ -9,14 +9,39 @@ import {
 import type { TimeRange } from "../utils/businessHours.util.js";
 import {
   getBusinessStartTimeRange,
+  getWeekToDateRange,
   getTodayRangeFullDay,
   getSameDayLastWeekRange,
   getHourInTimezone,
 } from "../utils/timezone.util.js";
 import { NotFoundError } from "../utils/errors.util.js";
-import { assertCanAccessMetrics, parseMetricsQuery } from "../config/kpi-metrics.config.js";
+import {
+  assertCanAccessMetrics,
+  parseMetricsQuery,
+} from "../config/kpi-metrics.config.js";
 
-const COMMAND_CENTER_METRICS = ["netSales", "laborCost", "reviewRating"] as const;
+const COMMAND_CENTER_METRICS = [
+  "netSales",
+  "laborCost",
+  "reviewRating",
+] as const;
+
+const PERIODS = ["today", "weekToDate"] as const;
+type Period = (typeof PERIODS)[number];
+
+function parsePeriodsQuery(periods: unknown): Period[] | undefined {
+  if (periods == null) return undefined;
+  const raw =
+    typeof periods === "string"
+      ? periods.split(",").map((x) => x.trim())
+      : Array.isArray(periods)
+        ? periods.map(String).map((x) => x.trim())
+        : [];
+  const filtered = raw.filter((p): p is Period =>
+    PERIODS.includes(p as Period),
+  );
+  return filtered.length > 0 ? filtered : undefined;
+}
 
 const goalService = new GoalService();
 const locationService = new LocationService();
@@ -30,8 +55,14 @@ export const getCommandCenterKPIs = async (
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
     const metrics = parseMetricsQuery(req.query.metrics);
+    const periods = parsePeriodsQuery(req.query.periods);
     if (metrics?.length) {
-      const invalid = metrics.filter((m) => !COMMAND_CENTER_METRICS.includes(m as typeof COMMAND_CENTER_METRICS[number]));
+      const invalid = metrics.filter(
+        (m) =>
+          !COMMAND_CENTER_METRICS.includes(
+            m as (typeof COMMAND_CENTER_METRICS)[number],
+          ),
+      );
       if (invalid.length > 0) {
         res.status(400).json({ success: false, message: "Invalid metric" });
         return;
@@ -47,7 +78,8 @@ export const getCommandCenterKPIs = async (
 
     const wantNetSales = !metrics?.length || metrics.includes("netSales");
     const wantLaborCost = !metrics?.length || metrics.includes("laborCost");
-    const wantReviewRating = !metrics?.length || metrics.includes("reviewRating");
+    const wantReviewRating =
+      !metrics?.length || metrics.includes("reviewRating");
 
     let laborCostGoal = 0;
     if (wantLaborCost) {
@@ -55,17 +87,147 @@ export const getCommandCenterKPIs = async (
       laborCostGoal = goals.laborCostGoal ?? 0;
     }
 
-    const range: TimeRange = getBusinessStartTimeRange(
+    const rangeToday: TimeRange = getBusinessStartTimeRange(
       location.timezone,
-      location.businessStartTime,
+      location.businessStartTime ?? "00:00",
     );
+
+    const wantWeekToDate =
+      Array.isArray(periods) && periods.includes("weekToDate");
+
+    if (wantWeekToDate) {
+      const rangeWeekToDate: TimeRange = getWeekToDateRange(
+        location.timezone,
+        location.businessStartTime ?? "00:00",
+      );
+      console.log(
+        "🚀 ~ getCommandCenterKPIs ~ rangeWeekToDate:",
+        rangeWeekToDate,
+      );
+
+      const netSalesPromises: Promise<number | null>[] = [];
+      const laborCostPromises: Promise<number | null>[] = [];
+      if (wantNetSales && location.squareLocationId?.trim()) {
+        netSalesPromises.push(
+          getNetSalesInRange(location.squareLocationId, rangeToday, {
+            accessToken: squareAccessToken ?? undefined,
+          }).catch((err) => {
+            console.error(
+              "[Command Center] Square net sales (today) error:",
+              err,
+            );
+            return null;
+          }),
+          getNetSalesInRange(location.squareLocationId, rangeWeekToDate, {
+            accessToken: squareAccessToken ?? undefined,
+          }).catch((err) => {
+            console.error(
+              "[Command Center] Square net sales (WTD) error:",
+              err,
+            );
+            return null;
+          }),
+        );
+      } else {
+        netSalesPromises.push(Promise.resolve(null), Promise.resolve(null));
+      }
+      if (wantLaborCost && location.homebaseLocationId?.trim()) {
+        laborCostPromises.push(
+          getLaborCostInRange(location.homebaseLocationId, rangeToday, {
+            apiKey: homebaseApiKey ?? undefined,
+          }).catch((err) => {
+            console.error(
+              "[Command Center] Homebase labor cost (today) error:",
+              err,
+            );
+            return null;
+          }),
+          getLaborCostInRange(location.homebaseLocationId, rangeWeekToDate, {
+            apiKey: homebaseApiKey ?? undefined,
+          }).catch((err) => {
+            console.error(
+              "[Command Center] Homebase labor cost (WTD) error:",
+              err,
+            );
+            return null;
+          }),
+        );
+      } else {
+        laborCostPromises.push(Promise.resolve(null), Promise.resolve(null));
+      }
+
+      const [netSalesToday, netSalesWeekToDate] =
+        netSalesPromises.length >= 2
+          ? await Promise.all(netSalesPromises)
+          : [null, null];
+      const [laborCostToday, laborCostWeekToDate] =
+        laborCostPromises.length >= 2
+          ? await Promise.all(laborCostPromises)
+          : [null, null];
+
+      let laborCostPercentToday: number | null = null;
+      let laborCostStatusToday: "green" | "red" | null = null;
+      if (
+        wantLaborCost &&
+        netSalesToday != null &&
+        laborCostToday != null &&
+        netSalesToday > 0
+      ) {
+        laborCostPercentToday = (laborCostToday / netSalesToday) * 100;
+        laborCostStatusToday =
+          laborCostPercentToday < laborCostGoal ? "green" : "red";
+      }
+
+      let laborCostPercentWeekToDate: number | null = null;
+      let laborCostStatusWeekToDate: "green" | "red" | null = null;
+      if (
+        wantLaborCost &&
+        netSalesWeekToDate != null &&
+        laborCostWeekToDate != null &&
+        netSalesWeekToDate > 0
+      ) {
+        laborCostPercentWeekToDate =
+          (laborCostWeekToDate / netSalesWeekToDate) * 100;
+        laborCostStatusWeekToDate =
+          laborCostPercentWeekToDate < laborCostGoal ? "green" : "red";
+      }
+
+      const todayData: Record<string, unknown> = {};
+      const weekToDateData: Record<string, unknown> = {};
+      if (!metrics?.length || metrics.includes("netSales")) {
+        todayData.netSalesToday = netSalesToday;
+        weekToDateData.netSalesWeekToDate = netSalesWeekToDate;
+      }
+      if (!metrics?.length || metrics.includes("laborCost")) {
+        todayData.laborCostToday = laborCostToday;
+        todayData.laborCostPercentToday = laborCostPercentToday;
+        todayData.laborCostGoal = laborCostGoal;
+        todayData.laborCostStatus = laborCostStatusToday;
+        weekToDateData.laborCostWeekToDate = laborCostWeekToDate;
+        weekToDateData.laborCostPercentWeekToDate = laborCostPercentWeekToDate;
+        weekToDateData.laborCostGoal = laborCostGoal;
+        weekToDateData.laborCostStatusWeekToDate = laborCostStatusWeekToDate;
+      }
+      if (wantReviewRating) {
+        todayData.reviewRating = 4.3;
+        todayData.reviewCount = 272;
+        weekToDateData.reviewRating = 4.3;
+        weekToDateData.reviewCount = 272;
+      }
+
+      res.status(200).json({
+        success: true,
+        data: { today: todayData, weekToDate: weekToDateData },
+      });
+      return;
+    }
 
     let netSalesToday: number | null = null;
     if (wantNetSales && location.squareLocationId?.trim()) {
       try {
         netSalesToday = await getNetSalesInRange(
           location.squareLocationId,
-          range,
+          rangeToday,
           { accessToken: squareAccessToken ?? undefined },
         );
       } catch (err) {
@@ -79,7 +241,7 @@ export const getCommandCenterKPIs = async (
       try {
         laborCostToday = await getLaborCostInRange(
           location.homebaseLocationId,
-          range,
+          rangeToday,
           { apiKey: homebaseApiKey ?? undefined },
         );
       } catch (err) {

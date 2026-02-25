@@ -77,6 +77,31 @@ function getTodayInTz(timezone: string): { y: number; m: number; d: number } {
   return { y, m, d };
 }
 
+/** Day of week (0 = Sunday, 6 = Saturday) for calendar date (y, m, d) in the given timezone. */
+function getDayOfWeekInTz(
+  y: number,
+  m: number,
+  d: number,
+  timezone: string,
+): number {
+  const startOfDay = getStartOfDayUtc(y, m, d, timezone);
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    weekday: "short",
+  });
+  const weekday = formatter.format(startOfDay);
+  const map: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  return map[weekday] ?? 0;
+}
+
 /** Add days to a calendar date (y, m, d), return new (y, m, d). */
 function addDays(y: number, m: number, d: number, delta: number): { y: number; m: number; d: number } {
   const date = new Date(y, m, d + delta);
@@ -233,8 +258,8 @@ export function getSalesTrendPeriodRange(
       };
     }
     case "thisWeek": {
-      const date = new Date(y, m, d);
-      const dayOfWeek = date.getDay();
+      // Week runs Sunday 00:00 to today 23:59:59 in location timezone
+      const dayOfWeek = getDayOfWeekInTz(y, m, d, tz);
       const toSunday = dayOfWeek;
       const start = addDays(y, m, d, -toSunday);
       const saturday = addDays(start.y, start.m, start.d, 6);

@@ -12,8 +12,15 @@ import LaborCostIcon from '@assets/icons/actual_labor_cost.svg?react';
 import StarIcon from '@assets/icons/star.svg?react';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../../store/store';
-import { commandCenterService, type HourlySalesRow } from '../../services/commandCenter.service';
-import type { CommandCenterKPIItem } from '../../components/CommandCenter';
+import {
+  commandCenterService,
+  type HourlySalesRow,
+  isCommandCenterKPIsDual,
+} from '../../services/commandCenter.service';
+import type {
+  CommandCenterKPIItem,
+  CommandCenterKPIPeriod,
+} from '../../components/CommandCenter';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 
 const PAGE_ID = 'command-center';
@@ -62,6 +69,9 @@ export const CommandCenter = () => {
   const [kpis, setKpis] = useState<Awaited<ReturnType<typeof commandCenterService.getKPIs>> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [netSalesPeriod, setNetSalesPeriod] = useState<CommandCenterKPIPeriod>('today');
+  const [laborCostPeriod, setLaborCostPeriod] = useState<CommandCenterKPIPeriod>('today');
+  const [reviewRatingPeriod, setReviewRatingPeriod] = useState<CommandCenterKPIPeriod>('today');
   const [hourlySales, setHourlySales] = useState<HourlySalesRow[] | null>(null);
   const [hourlySalesLoading, setHourlySalesLoading] = useState(false);
   const [hourlySalesError, setHourlySalesError] = useState<string | null>(null);
@@ -75,7 +85,10 @@ export const CommandCenter = () => {
     setLoading(true);
     setError(null);
     commandCenterService
-      .getKPIs(currentLocation._id, { metrics: kpiMetrics })
+      .getKPIs(currentLocation._id, {
+        metrics: kpiMetrics,
+        periods: ['today', 'weekToDate'],
+      })
       .then(setKpis)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load KPIs"))
       .finally(() => setLoading(false));
@@ -100,62 +113,98 @@ export const CommandCenter = () => {
   }, [currentLocation?._id, shouldFetchHourly]);
 
   const commandCenterKPIs = useMemo((): CommandCenterKPIItem[] => {
-    const netSalesValue =
-      kpis?.netSalesToday != null
-        ? formatCurrency(kpis.netSalesToday)
-        : loading
-          ? "…"
-          : "Unavailable";
-    const laborCostValue =
-      kpis?.laborCostToday != null
-        ? formatCurrency(kpis.laborCostToday)
-        : loading
-          ? "…"
-          : "Unavailable";
-    const reviewRatingValue =
-      kpis?.reviewRating != null ? String(kpis.reviewRating) : "—";
-    const reviewCountStr =
-      kpis?.reviewCount != null ? `${kpis.reviewCount} Reviews` : "— Reviews";
+    const isDual = kpis != null && isCommandCenterKPIsDual(kpis);
+    const todaySlice = isDual ? kpis.today : kpis ?? undefined;
+    const wtdSlice = isDual ? kpis.weekToDate : undefined;
+
+    const getNetSalesValue = (period: CommandCenterKPIPeriod) => {
+      const src = period === 'weekToDate' ? wtdSlice : todaySlice;
+      const raw = period === 'weekToDate' ? src?.netSalesWeekToDate : src?.netSalesToday;
+      return raw != null ? formatCurrency(raw) : loading ? "…" : "Unavailable";
+    };
+    const getLaborCostValue = (period: CommandCenterKPIPeriod) => {
+      const src = period === 'weekToDate' ? wtdSlice : todaySlice;
+      const raw = period === 'weekToDate' ? src?.laborCostWeekToDate : src?.laborCostToday;
+      return raw != null ? formatCurrency(raw) : loading ? "…" : "Unavailable";
+    };
+    const getReviewRatingValue = (period: CommandCenterKPIPeriod) => {
+      const src = period === 'weekToDate' ? wtdSlice : todaySlice;
+      return src?.reviewRating != null ? String(src.reviewRating) : "—";
+    };
+    const getReviewCountStr = (period: CommandCenterKPIPeriod) => {
+      const src = period === 'weekToDate' ? wtdSlice : todaySlice;
+      return src?.reviewCount != null ? `${src.reviewCount} Reviews` : "— Reviews";
+    };
+    const timePeriodLabel = (period: CommandCenterKPIPeriod) =>
+      period === 'weekToDate' ? "Week to date" : "Today";
 
     const items: CommandCenterKPIItem[] = [];
     if (canNetSales) {
+      const period = netSalesPeriod;
+      const value = getNetSalesValue(period);
+      const raw = period === 'weekToDate' ? wtdSlice?.netSalesWeekToDate : todaySlice?.netSalesToday;
       items.push({
         title: "Net Sales",
-        timePeriod: "Today",
-        value: netSalesValue,
+        timePeriod: loading ? undefined : timePeriodLabel(period),
+        value,
         accentColor: "green",
-        valueClassName: kpis?.netSalesToday != null ? "text-secondary" : undefined,
+        valueClassName: raw != null ? "text-secondary" : undefined,
         rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
         loading,
+        ...(isDual && {
+          period: netSalesPeriod,
+          onPeriodChange: setNetSalesPeriod,
+        }),
       });
     }
     if (canLaborCost) {
+      const period = laborCostPeriod;
+      const value = getLaborCostValue(period);
+      const raw = period === 'weekToDate' ? wtdSlice?.laborCostWeekToDate : todaySlice?.laborCostToday;
       items.push({
         title: "Labor Cost",
-        timePeriod: "Today",
-        value: laborCostValue,
+        timePeriod: loading ? undefined : timePeriodLabel(period),
+        value,
         accentColor: "blue",
-        valueClassName: kpis?.laborCostToday != null ? "text-secondary" : undefined,
+        valueClassName: raw != null ? "text-secondary" : undefined,
         rightIcon: <LaborCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
         loading,
+        ...(isDual && {
+          period: laborCostPeriod,
+          onPeriodChange: setLaborCostPeriod,
+        }),
       });
     }
     if (canReviewRating) {
+      const period = reviewRatingPeriod;
       items.push({
         title: "Review Rating",
-        timePeriod: "Today",
-        value: reviewRatingValue,
+        timePeriod: loading ? undefined : timePeriodLabel(period),
+        value: getReviewRatingValue(period),
         accentColor: "gold" as const,
         titleIcon: <StarIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-quaternary" aria-hidden />,
         subtitle: "Good",
         subtitleIcon: <StarIcon className="w-4 h-4 md:w-4 md:h-4 2xl:w-5 2xl:h-5 text-quaternary" aria-hidden />,
-        extra: reviewCountStr,
+        extra: getReviewCountStr(period),
         extraClassName: "bg-[rgba(253,185,14,0.2)] px-4",
         loading,
+        ...(isDual && {
+          period: reviewRatingPeriod,
+          onPeriodChange: setReviewRatingPeriod,
+        }),
       });
     }
     return items;
-  }, [kpis, loading, canNetSales, canLaborCost, canReviewRating]);
+  }, [
+    kpis,
+    loading,
+    canNetSales,
+    canLaborCost,
+    canReviewRating,
+    netSalesPeriod,
+    laborCostPeriod,
+    reviewRatingPeriod,
+  ]);
 
   const hourlyChartData = useMemo(() => {
     if (hourlySales && hourlySales.length > 0) {
@@ -221,13 +270,29 @@ export const CommandCenter = () => {
             )}
             {canLaborGauge && (
               <LaborCostGaugeCard
-                value={kpis?.laborCostPercentToday ?? 0}
-                goal={kpis?.laborCostGoal ?? null}
+                value={
+                  (kpis != null && isCommandCenterKPIsDual(kpis)
+                    ? kpis.today.laborCostPercentToday
+                    : kpis?.laborCostPercentToday) ?? 0
+                }
+                goal={
+                  (kpis != null && isCommandCenterKPIsDual(kpis)
+                    ? kpis.today.laborCostGoal
+                    : kpis?.laborCostGoal) ?? null
+                }
                 subtitle="Labor Cost as % of Net Sales"
                 overTarget={
-                  kpis?.laborCostPercentToday != null && kpis?.laborCostGoal != null
-                    ? kpis.laborCostPercentToday - kpis.laborCostGoal
-                    : null
+                  (() => {
+                    const pct =
+                      kpis != null && isCommandCenterKPIsDual(kpis)
+                        ? kpis.today.laborCostPercentToday
+                        : kpis?.laborCostPercentToday;
+                    const goal =
+                      kpis != null && isCommandCenterKPIsDual(kpis)
+                        ? kpis.today.laborCostGoal
+                        : kpis?.laborCostGoal;
+                    return pct != null && goal != null ? pct - goal : null;
+                  })()
                 }
                 size={340}
               />

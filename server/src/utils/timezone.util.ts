@@ -87,6 +87,66 @@ export function getBusinessStartTimeRange(
   };
 }
 
+const WEEKDAY_ORDER = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+/**
+ * Week-to-date range: Sunday 00:00:00 of the current week in location TZ through end of current business day.
+ * End reuses getBusinessStartTimeRange(...).endAt so WTD is Sunday through end of today's business day.
+ */
+export function getWeekToDateRange(
+  timezone: string,
+  businessStartTime: string,
+): { startAt: string; endAt: string } {
+  const tz = timezone.trim();
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  });
+  const parts = formatter.formatToParts(now);
+  const get = (type: string) =>
+    parts.find((p) => p.type === type)?.value ?? "0";
+  const y = Number.parseInt(get("year"), 10);
+  const m = Number.parseInt(get("month"), 10) - 1;
+  const d = Number.parseInt(get("day"), 10);
+  const weekday = get("weekday");
+  const dayOfWeek = WEEKDAY_ORDER.indexOf(
+    weekday as (typeof WEEKDAY_ORDER)[number],
+  );
+  const dayOfWeekSafe = Math.max(0, Math.min(6, dayOfWeek));
+
+  let startOfSunday = getStartOfDayUtc(y, m, d, tz);
+  for (let i = 0; i < dayOfWeekSafe; i++) {
+    const prevDay = new Date(
+      startOfSunday.getTime() - 24 * 60 * 60 * 1000,
+    );
+    const prevParts = formatter.formatToParts(prevDay);
+    const py = Number.parseInt(
+      prevParts.find((p) => p.type === "year")?.value ?? "0",
+      10,
+    );
+    const pm =
+      Number.parseInt(
+        prevParts.find((p) => p.type === "month")?.value ?? "0",
+        10,
+      ) - 1;
+    const pd = Number.parseInt(
+      prevParts.find((p) => p.type === "day")?.value ?? "0",
+      10,
+    );
+    startOfSunday = getStartOfDayUtc(py, pm, pd, tz);
+  }
+
+  const { endAt } = getBusinessStartTimeRange(tz, businessStartTime);
+  return {
+    startAt: startOfSunday.toISOString(),
+    endAt,
+  };
+}
+
 /**
  * Get business-day window for a specific calendar date (y, m, d) in timezone.
  * startAt = business start time on that day; endAt = 1 second before next day's business start.
