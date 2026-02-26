@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
 import { Login } from './pages/auth/Login';
 import { ForgotPassword } from './pages/auth/ForgotPassword';
+import { SetPassword } from './pages/auth/SetPassword';
 import { CommandCenter } from './pages/dashboard/CommandCenter';
 import { SalesLaborDetails } from './pages/dashboard/SalesLaborDetails';
 import { SalesTrendReports } from './pages/dashboard/SalesTrendReports';
@@ -13,13 +14,14 @@ import { UserManagement } from './pages/dashboard/UserManagement';
 import { RBACManagement } from './pages/dashboard/RBACManagement';
 import { GoalSetting } from './pages/dashboard/GoalSetting';
 import { LocationManagement } from './pages/dashboard/LocationManagement';
+import { NoAccess } from './pages/dashboard/NoAccess';
 import { ErrorPage } from './pages/ErrorPage';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { RootRedirect } from './components/auth/RootRedirect';
 import { useSelector } from 'react-redux';
 import { RootState } from './store/store';
 import { ReactNode } from 'react';
-import { getPageIdFromPath, canAccessPage } from './config/permissions.config';
+import { getPageIdFromPath, canAccessPage, hasAccessToAnyPage } from './config/permissions.config';
 
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   const { pathname } = useLocation();
@@ -31,10 +33,19 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
 
   const pageId = getPageIdFromPath(pathname);
   if (pageId != null && !canAccessPage(user?.permissions, pageId)) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/dashboard/no-access" replace />;
   }
 
   return <>{children}</>;
+};
+
+/** Redirects to command-center or no-access depending on whether the user has any page access. */
+const DashboardRedirect = () => {
+  const user = useSelector((state: RootState) => state.auth.user);
+  const to = hasAccessToAnyPage(user?.permissions)
+    ? '/dashboard/command-center'
+    : '/dashboard/no-access';
+  return <Navigate to={to} replace />;
 };
 
 export const router = createBrowserRouter([
@@ -46,6 +57,11 @@ export const router = createBrowserRouter([
   {
     path: '/forgot-password',
     element: <ForgotPassword />,
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/set-password',
+    element: <SetPassword />,
     errorElement: <ErrorPage />,
   },
   {
@@ -186,8 +202,23 @@ export const router = createBrowserRouter([
     errorElement: <ErrorPage />,
   },
   {
+    path: '/dashboard/no-access',
+    element: (
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <NoAccess />
+        </ProtectedRoute>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
     path: '/dashboard',
-    element: <Navigate to="/dashboard/command-center" replace />,
+    element: (
+      <ProtectedRoute>
+        <DashboardRedirect />
+      </ProtectedRoute>
+    ),
     errorElement: <ErrorPage />,
   },
   {

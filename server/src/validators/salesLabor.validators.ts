@@ -1,8 +1,27 @@
 import { z } from "zod";
 
+const salesLaborMetricEnum = z.enum([
+  "actualTotalSales",
+  "actualLaborCostPercent",
+  "totalHours",
+  "salesPerManHour",
+  "transactionCount",
+  "averageCheck",
+  "totalDiscounts",
+  "totalRefunds",
+  "sourcesOfSales",
+]);
+
 export const getSalesLaborKPIsQuerySchema = z.object({
   query: z.object({
     locationId: z.string().min(1, "Location ID is required"),
+    metrics: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((x) => x.trim()).filter(Boolean) : undefined
+      )
+      .pipe(z.array(salesLaborMetricEnum).optional()),
   }),
 });
 

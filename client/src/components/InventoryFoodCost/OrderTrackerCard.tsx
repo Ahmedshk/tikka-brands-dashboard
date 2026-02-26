@@ -98,7 +98,7 @@ export const OrderTrackerCard = ({
                         <button
                           type="button"
                           onClick={() => onView(row)}
-                          className="p-2.5 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer touch-manipulation text-secondary hover:text-primary"
+                          className="p-2.5 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer touch-manipulation text-primary"
                           aria-label="View order"
                           title="View order"
                         >
@@ -156,7 +156,7 @@ export const OrderTrackerCard = ({
                             <button
                               type="button"
                               onClick={() => onView(row)}
-                              className="p-1 text-secondary hover:text-primary rounded"
+                              className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
                               aria-label="View"
                               title="View order"
                             >

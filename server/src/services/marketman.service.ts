@@ -152,9 +152,20 @@ function getLastWeekUtcRange(timezone: string): { from: Date; to: Date } {
   };
 }
 
+const ACTUAL_THEO_METRICS = [
+  "currentFoodCost",
+  "inventoryValue",
+  "wasteCost",
+  "foodCostPercent",
+  "theoreticalUsage",
+  "theoreticalUsagePercent",
+  "varianceItems",
+] as const;
+
 export async function getInventoryKPIs(
   buyerGuid: string,
   timezone: string,
+  requestedMetrics?: string[],
 ): Promise<InventoryKPIsResult> {
   const result: InventoryKPIsResult = {
     currentFoodCost: null,
@@ -175,35 +186,86 @@ export async function getInventoryKPIs(
     return result;
   }
 
+  const needActualTheo =
+    !requestedMetrics?.length ||
+    requestedMetrics.some((m) =>
+      (ACTUAL_THEO_METRICS as readonly string[]).includes(m),
+    );
+  const needPendingOrders =
+    !requestedMetrics?.length ||
+    requestedMetrics.includes("pendingOrdersCount");
+
   await getMarketManToken();
 
-  const [actualTheoResult, pendingOrdersResult] = await Promise.allSettled([
-    fetchActualTheoDataForCountDate(buyerGuid),
-    fetchPendingOrdersByDeliveryDate(buyerGuid, timezone),
-  ]);
-
-  if (actualTheoResult.status === "fulfilled" && actualTheoResult.value) {
-    if (actualTheoResult.value.currentFoodCost != null)
-      result.currentFoodCost = actualTheoResult.value.currentFoodCost;
-    if (actualTheoResult.value.inventoryValue != null)
-      result.inventoryValue = actualTheoResult.value.inventoryValue;
-    if (actualTheoResult.value.wasteCost != null)
-      result.wasteCost = actualTheoResult.value.wasteCost;
-    if (actualTheoResult.value.foodCostPercent != null)
-      result.foodCostPercent = actualTheoResult.value.foodCostPercent;
-    if (actualTheoResult.value.theoreticalUsage != null)
-      result.theoreticalUsage = actualTheoResult.value.theoreticalUsage;
-    if (actualTheoResult.value.theoreticalUsagePercent != null)
-      result.theoreticalUsagePercent = actualTheoResult.value.theoreticalUsagePercent;
-    result.countPeriodStart = actualTheoResult.value.countPeriodStart ?? null;
-    result.countPeriodEnd = actualTheoResult.value.countPeriodEnd ?? null;
-    if (Array.isArray(actualTheoResult.value.varianceItems))
-      result.varianceItems = actualTheoResult.value.varianceItems;
+  const promises: Promise<unknown>[] = [];
+  if (needActualTheo) {
+    promises.push(fetchActualTheoDataForCountDate(buyerGuid));
+  } else {
+    promises.push(Promise.resolve(null));
   }
-  if (pendingOrdersResult.status === "fulfilled" && pendingOrdersResult.value) {
-    result.pendingOrdersCount = pendingOrdersResult.value.count;
-    result.pendingOrdersPeriodStart = pendingOrdersResult.value.periodStart;
-    result.pendingOrdersPeriodEnd = pendingOrdersResult.value.periodEnd;
+  if (needPendingOrders) {
+    promises.push(fetchPendingOrdersByDeliveryDate(buyerGuid, timezone));
+  } else {
+    promises.push(Promise.resolve(null));
+  }
+
+  const [actualTheoResult, pendingOrdersResult] = await Promise.allSettled(
+    promises,
+  );
+
+  if (needActualTheo && actualTheoResult.status === "fulfilled" && actualTheoResult.value) {
+    const v = actualTheoResult.value as {
+      currentFoodCost: number | null;
+      inventoryValue: number | null;
+      wasteCost: number | null;
+      foodCostPercent: number | null;
+      theoreticalUsage: number | null;
+      theoreticalUsagePercent: number | null;
+      varianceItems: VarianceItem[];
+      countPeriodStart: string | null;
+      countPeriodEnd: string | null;
+    };
+    if (v.currentFoodCost != null) result.currentFoodCost = v.currentFoodCost;
+    if (v.inventoryValue != null) result.inventoryValue = v.inventoryValue;
+    if (v.wasteCost != null) result.wasteCost = v.wasteCost;
+    if (v.foodCostPercent != null) result.foodCostPercent = v.foodCostPercent;
+    if (v.theoreticalUsage != null)
+      result.theoreticalUsage = v.theoreticalUsage;
+    if (v.theoreticalUsagePercent != null)
+      result.theoreticalUsagePercent = v.theoreticalUsagePercent;
+    result.countPeriodStart = v.countPeriodStart ?? null;
+    result.countPeriodEnd = v.countPeriodEnd ?? null;
+    if (Array.isArray(v.varianceItems)) result.varianceItems = v.varianceItems;
+  }
+  if (needPendingOrders && pendingOrdersResult.status === "fulfilled" && pendingOrdersResult.value) {
+    const v = pendingOrdersResult.value as {
+      count: number | null;
+      periodStart: string | null;
+      periodEnd: string | null;
+    };
+    result.pendingOrdersCount = v.count;
+    result.pendingOrdersPeriodStart = v.periodStart ?? null;
+    result.pendingOrdersPeriodEnd = v.periodEnd ?? null;
+  }
+
+  if (requestedMetrics?.length) {
+    const filtered: Record<string, unknown> = {};
+    const includeCountPeriod = requestedMetrics.some((m) =>
+      ["currentFoodCost", "inventoryValue", "wasteCost", "varianceItems"].includes(m),
+    );
+    const includePendingPeriod = requestedMetrics.includes("pendingOrdersCount");
+    for (const k of requestedMetrics) {
+      if (k in result) filtered[k] = (result as Record<string, unknown>)[k];
+    }
+    if (includeCountPeriod) {
+      filtered.countPeriodStart = result.countPeriodStart ?? null;
+      filtered.countPeriodEnd = result.countPeriodEnd ?? null;
+    }
+    if (includePendingPeriod) {
+      filtered.pendingOrdersPeriodStart = result.pendingOrdersPeriodStart ?? null;
+      filtered.pendingOrdersPeriodEnd = result.pendingOrdersPeriodEnd ?? null;
+    }
+    return filtered as InventoryKPIsResult;
   }
 
   return result;

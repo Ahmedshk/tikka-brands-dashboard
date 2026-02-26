@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { RootState, AppDispatch } from "../store/store";
 import { setUser, clearUser, setLoading } from "../store/slices/auth.slice";
+import { setCurrentLocation } from "../store/slices/location.slice";
 import api from "../services/api.service";
 import { ApiResponse, User } from "../types";
 import { API_ENDPOINTS } from "../utils/constants";
@@ -61,6 +62,7 @@ export const useAuth = () => {
       console.error("Logout error:", error);
     } finally {
       dispatch(clearUser());
+      dispatch(setCurrentLocation(null));
       toast.success("Logged out successfully");
       navigate("/login");
     }

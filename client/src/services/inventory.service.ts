@@ -79,10 +79,17 @@ export interface GetOrdersParams {
 }
 
 export const inventoryService = {
-  async getInventoryKPIs(locationId: string): Promise<InventoryKPIsData> {
+  async getInventoryKPIs(
+    locationId: string,
+    options?: { metrics?: string[] }
+  ): Promise<InventoryKPIsData> {
+    const params: { locationId: string; metrics?: string } = { locationId };
+    if (options?.metrics?.length) {
+      params.metrics = options.metrics.join(",");
+    }
     const res = await api.get<ApiResponse<InventoryKPIsData>>(
       API_ENDPOINTS.INVENTORY.KPIS,
-      { params: { locationId } },
+      { params },
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to load inventory KPIs");

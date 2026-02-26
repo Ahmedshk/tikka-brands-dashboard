@@ -28,8 +28,21 @@ import {
   getBusinessHourIndex,
 } from "../utils/timezone.util.js";
 import { NotFoundError } from "../utils/errors.util.js";
+import { assertCanAccessMetrics, parseMetricsQuery } from "../config/kpi-metrics.config.js";
 
 const locationService = new LocationService();
+
+const SALES_LABOR_KPI_METRICS = [
+  "actualTotalSales",
+  "actualLaborCostPercent",
+  "totalHours",
+  "salesPerManHour",
+  "transactionCount",
+  "averageCheck",
+  "totalDiscounts",
+  "totalRefunds",
+  "sourcesOfSales",
+] as const;
 
 export interface SalesLaborKPIsData {
   actualTotalSales: number | null;
@@ -52,6 +65,17 @@ export const getSalesLaborKPIs = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
+    const metrics = parseMetricsQuery(req.query.metrics);
+    if (metrics?.length) {
+      const invalid = metrics.filter(
+        (m) => !SALES_LABOR_KPI_METRICS.includes(m as (typeof SALES_LABOR_KPI_METRICS)[number])
+      );
+      if (invalid.length > 0) {
+        res.status(400).json({ success: false, message: "Invalid metric" });
+        return;
+      }
+      assertCanAccessMetrics(req.user?.permissions, "sales-labor-detail", metrics);
+    }
     const withCreds = await locationService.getByIdWithCredentials(locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");
@@ -139,20 +163,33 @@ export const getSalesLaborKPIs = async (
       averageCheck = actualTotalSales / transactionCount;
     }
 
+    const fullData = {
+      actualTotalSales,
+      actualLaborCostPercent,
+      totalHours,
+      salesPerManHour,
+      transactionCount,
+      averageCheck,
+      totalDiscounts,
+      totalRefunds,
+      totalRefundCount,
+      sourcesOfSales,
+    };
+    let data: Partial<SalesLaborKPIsData> | SalesLaborKPIsData = fullData;
+    if (metrics?.length) {
+      data = Object.fromEntries(
+        metrics
+          .filter((k) => k in fullData)
+          .map((k) => [k, (fullData as Record<string, unknown>)[k]])
+      ) as Partial<SalesLaborKPIsData>;
+      if (metrics.includes("totalRefunds") && "totalRefundCount" in fullData) {
+        (data as Record<string, unknown>).totalRefundCount = fullData.totalRefundCount;
+      }
+    }
+
     res.status(200).json({
       success: true,
-      data: {
-        actualTotalSales,
-        actualLaborCostPercent,
-        totalHours,
-        salesPerManHour,
-        transactionCount,
-        averageCheck,
-        totalDiscounts,
-        totalRefunds,
-        totalRefundCount,
-        sourcesOfSales,
-      },
+      data,
     });
   } catch (error) {
     next(error);

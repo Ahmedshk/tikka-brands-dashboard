@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Layout } from '../../components/common/Layout';
 import { CommandCenterKPICards } from '../../components/CommandCenter';
 import {
@@ -15,26 +15,14 @@ import TeamHrIcon from '@assets/icons/team_and_hr.svg?react';
 import OfficeStaffIcon from '@assets/icons/office_staff.svg?react';
 import ReviewsDueIcon from '@assets/icons/reviews_due.svg?react';
 import TrainingCompletionIcon from '@assets/icons/training_completion.svg?react';
+import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 
-const trainingReviewsKPIs = [
-  {
-    title: 'Office Staff',
-    value: '36',
-    accentColor: 'green' as const,
-    rightIcon: <OfficeStaffIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-  },
-  {
-    title: 'Reviews Due',
-    value: '5',
-    accentColor: 'gold' as const,
-    rightIcon: <ReviewsDueIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-  },
-  {
-    title: 'Training Completion',
-    value: '84%',
-    accentColor: 'blue' as const,
-    rightIcon: <TrainingCompletionIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-  },
+const PAGE_ID = 'training-reviews';
+
+const trainingReviewsKPIItems = [
+  { id: 'kpi-office-staff' as const, title: 'Office Staff', value: '36', accentColor: 'green' as const, rightIcon: <OfficeStaffIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" /> },
+  { id: 'kpi-reviews-due' as const, title: 'Reviews Due', value: '5', accentColor: 'gold' as const, rightIcon: <ReviewsDueIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" /> },
+  { id: 'kpi-training-completion' as const, title: 'Training Completion', value: '84%', accentColor: 'blue' as const, rightIcon: <TrainingCompletionIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" /> },
 ];
 
 const mockStaffListRows: StaffListRow[] = [
@@ -66,6 +54,21 @@ export const TrainingReviews = () => {
   const [recentlyCompletedModalOpen, setRecentlyCompletedModalOpen] = useState(false);
   const [employeeTrainingModalOpen, setEmployeeTrainingModalOpen] = useState(false);
 
+  const canOfficeStaff = useCanAccessComponent(PAGE_ID, 'kpi-office-staff');
+  const canReviewsDue = useCanAccessComponent(PAGE_ID, 'kpi-reviews-due');
+  const canTrainingCompletion = useCanAccessComponent(PAGE_ID, 'kpi-training-completion');
+  const canStaffList = useCanAccessComponent(PAGE_ID, 'staff-list');
+  const canReviewTracker = useCanAccessComponent(PAGE_ID, 'review-tracker-chart');
+  const canRecentlyCompleted = useCanAccessComponent(PAGE_ID, 'recently-completed-reviews');
+  const canEmployeeTraining = useCanAccessComponent(PAGE_ID, 'employee-training');
+
+  const trainingReviewsKPIs = useMemo(
+    () => trainingReviewsKPIItems
+      .filter((item) => (item.id === 'kpi-office-staff' && canOfficeStaff) || (item.id === 'kpi-reviews-due' && canReviewsDue) || (item.id === 'kpi-training-completion' && canTrainingCompletion))
+      .map(({ id, ...rest }) => rest),
+    [canOfficeStaff, canReviewsDue, canTrainingCompletion]
+  );
+
   return (
     <Layout>
       <div className="p-6">
@@ -76,34 +79,58 @@ export const TrainingReviews = () => {
           </h2>
         </div>
 
-        <CommandCenterKPICards items={trainingReviewsKPIs} />
+        {trainingReviewsKPIs.length > 0 && <CommandCenterKPICards items={trainingReviewsKPIs} />}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 items-stretch">
-          <div className="lg:col-span-2 min-h-0 flex flex-col">
-            <StaffListCard rows={mockStaffListRows} onViewAll={() => setStaffListModalOpen(true)} />
+        {(canStaffList || canReviewTracker) && (
+          <div
+            className={
+              canStaffList && canReviewTracker
+                ? 'grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 items-stretch'
+                : 'grid grid-cols-1 gap-6 mb-6 items-stretch'
+            }
+          >
+            {canStaffList && (
+              <div className={canReviewTracker ? 'lg:col-span-2 min-h-0 flex flex-col' : 'min-h-0 flex flex-col'}>
+                <StaffListCard rows={mockStaffListRows} onViewAll={() => setStaffListModalOpen(true)} />
+              </div>
+            )}
+            {canReviewTracker && (
+              <div className={canStaffList ? 'lg:col-span-1 min-h-0 flex flex-col' : 'min-h-0 flex flex-col'}>
+                <ReviewTrackerCard completePercent={84} completeCount={15} dueCount={5} />
+              </div>
+            )}
           </div>
-          <div className="lg:col-span-1 min-h-0 flex flex-col">
-            <ReviewTrackerCard completePercent={84} completeCount={15} dueCount={5} />
-          </div>
-        </div>
+        )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-          <div className="lg:col-span-1 min-h-0 flex flex-col">
-            <RecentlyCompletedReviewsCard
-              items={mockRecentlyCompletedReviews}
-              onView={() => { }}
-              onViewAll={() => setRecentlyCompletedModalOpen(true)}
-            />
+        {(canRecentlyCompleted || canEmployeeTraining) && (
+          <div
+            className={
+              canRecentlyCompleted && canEmployeeTraining
+                ? 'grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch'
+                : 'grid grid-cols-1 gap-6 items-stretch'
+            }
+          >
+            {canRecentlyCompleted && (
+              <div className={canEmployeeTraining ? 'lg:col-span-1 min-h-0 flex flex-col' : 'min-h-0 flex flex-col'}>
+                <RecentlyCompletedReviewsCard
+                  items={mockRecentlyCompletedReviews}
+                  onView={() => { }}
+                  onViewAll={() => setRecentlyCompletedModalOpen(true)}
+                />
+              </div>
+            )}
+            {canEmployeeTraining && (
+              <div className={canRecentlyCompleted ? 'lg:col-span-2 min-h-0 flex flex-col' : 'min-h-0 flex flex-col'}>
+                <EmployeeTrainingCard
+                  rows={mockEmployeeTrainingRows}
+                  onUploadTrainingFile={() => { }}
+                  onAssignTraining={() => { }}
+                  onViewAll={() => setEmployeeTrainingModalOpen(true)}
+                />
+              </div>
+            )}
           </div>
-          <div className="lg:col-span-2 min-h-0 flex flex-col">
-            <EmployeeTrainingCard
-              rows={mockEmployeeTrainingRows}
-              onUploadTrainingFile={() => { }}
-              onAssignTraining={() => { }}
-              onViewAll={() => setEmployeeTrainingModalOpen(true)}
-            />
-          </div>
-        </div>
+        )}
       </div>
 
       <StaffListModal

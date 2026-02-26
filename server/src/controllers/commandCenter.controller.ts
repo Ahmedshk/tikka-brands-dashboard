@@ -14,6 +14,9 @@ import {
   getHourInTimezone,
 } from "../utils/timezone.util.js";
 import { NotFoundError } from "../utils/errors.util.js";
+import { assertCanAccessMetrics, parseMetricsQuery } from "../config/kpi-metrics.config.js";
+
+const COMMAND_CENTER_METRICS = ["netSales", "laborCost", "reviewRating"] as const;
 
 const goalService = new GoalService();
 const locationService = new LocationService();
@@ -26,14 +29,31 @@ export const getCommandCenterKPIs = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
+    const metrics = parseMetricsQuery(req.query.metrics);
+    if (metrics?.length) {
+      const invalid = metrics.filter((m) => !COMMAND_CENTER_METRICS.includes(m as typeof COMMAND_CENTER_METRICS[number]));
+      if (invalid.length > 0) {
+        res.status(400).json({ success: false, message: "Invalid metric" });
+        return;
+      }
+      assertCanAccessMetrics(req.user?.permissions, "command-center", metrics);
+    }
+
     const withCreds = await locationService.getByIdWithCredentials(locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");
     }
     const { location, squareAccessToken, homebaseApiKey } = withCreds;
 
-    const goals = await goalService.getByLocationId(locationId);
-    const laborCostGoal = goals.laborCostGoal ?? 0;
+    const wantNetSales = !metrics?.length || metrics.includes("netSales");
+    const wantLaborCost = !metrics?.length || metrics.includes("laborCost");
+    const wantReviewRating = !metrics?.length || metrics.includes("reviewRating");
+
+    let laborCostGoal = 0;
+    if (wantLaborCost) {
+      const goals = await goalService.getByLocationId(locationId);
+      laborCostGoal = goals.laborCostGoal ?? 0;
+    }
 
     const range: TimeRange = getBusinessStartTimeRange(
       location.timezone,
@@ -41,7 +61,7 @@ export const getCommandCenterKPIs = async (
     );
 
     let netSalesToday: number | null = null;
-    if (location.squareLocationId?.trim()) {
+    if (wantNetSales && location.squareLocationId?.trim()) {
       try {
         netSalesToday = await getNetSalesInRange(
           location.squareLocationId,
@@ -55,7 +75,7 @@ export const getCommandCenterKPIs = async (
     }
 
     let laborCostToday: number | null = null;
-    if (location.homebaseLocationId?.trim()) {
+    if (wantLaborCost && location.homebaseLocationId?.trim()) {
       try {
         laborCostToday = await getLaborCostInRange(
           location.homebaseLocationId,
@@ -71,6 +91,7 @@ export const getCommandCenterKPIs = async (
     let laborCostPercentToday: number | null = null;
     let laborCostStatus: "green" | "red" | null = null;
     if (
+      wantLaborCost &&
       netSalesToday !== null &&
       laborCostToday !== null &&
       netSalesToday > 0
@@ -79,15 +100,24 @@ export const getCommandCenterKPIs = async (
       laborCostStatus = laborCostPercentToday < laborCostGoal ? "green" : "red";
     }
 
+    const data: Record<string, unknown> = {};
+    if (!metrics?.length || metrics.includes("netSales")) {
+      data.netSalesToday = netSalesToday;
+    }
+    if (!metrics?.length || metrics.includes("laborCost")) {
+      data.laborCostToday = laborCostToday;
+      data.laborCostPercentToday = laborCostPercentToday;
+      data.laborCostGoal = laborCostGoal;
+      data.laborCostStatus = laborCostStatus;
+    }
+    if (wantReviewRating) {
+      data.reviewRating = 4.3;
+      data.reviewCount = 272;
+    }
+
     res.status(200).json({
       success: true,
-      data: {
-        netSalesToday,
-        laborCostToday,
-        laborCostPercentToday,
-        laborCostGoal,
-        laborCostStatus,
-      },
+      data,
     });
   } catch (error) {
     next(error);

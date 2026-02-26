@@ -14,9 +14,25 @@ const orderTrackerPeriodTypeEnum = z.enum([
   'custom',
 ]);
 
+const inventoryMetricEnum = z.enum([
+  "currentFoodCost",
+  "inventoryValue",
+  "wasteCost",
+  "pendingOrdersCount",
+  "foodCostPercent",
+  "theoreticalUsage",
+  "theoreticalUsagePercent",
+  "varianceItems",
+]);
+
 export const getInventoryKPIsQuerySchema = z.object({
   query: z.object({
     locationId: z.string().min(1, 'Location ID is required'),
+    metrics: z
+      .string()
+      .optional()
+      .transform((s) => (s ? s.split(',').map((x) => x.trim()).filter(Boolean) : undefined))
+      .pipe(z.array(inventoryMetricEnum).optional()),
   }),
 });
 

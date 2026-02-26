@@ -150,7 +150,7 @@ export const EmployeeTrainingModal = ({
                             <button
                               type="button"
                               onClick={() => onView?.(row, globalIndex)}
-                              className="p-1 text-secondary hover:text-primary rounded"
+                              className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
                               aria-label="View"
                               title="View"
                             >
@@ -159,7 +159,7 @@ export const EmployeeTrainingModal = ({
                             <button
                               type="button"
                               onClick={() => onEdit?.(row, globalIndex)}
-                              className="p-1 text-secondary hover:text-primary rounded"
+                              className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
                               aria-label="Edit"
                               title="Edit"
                             >
@@ -168,7 +168,7 @@ export const EmployeeTrainingModal = ({
                             <button
                               type="button"
                               onClick={() => onDelete?.(row, globalIndex)}
-                              className="p-1 text-secondary hover:text-primary rounded"
+                              className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
                               aria-label="Delete"
                               title="Delete"
                             >

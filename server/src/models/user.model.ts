@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
-import { IUser, UserRole } from '../types/user.types.js';
+import { IUser } from '../types/user.types.js';
 
 export interface UserDocument extends Omit<IUser, '_id' | 'createdAt' | 'updatedAt'>, Document {
   _id: Types.ObjectId;
@@ -35,9 +35,7 @@ const userSchema = new Schema<UserDocument>(
     },
     role: {
       type: String,
-      enum: Object.values(UserRole),
-      required: true,
-      default: UserRole.TEAM_MEMBER,
+      default: null,
     },
     roleId: {
       type: Schema.Types.ObjectId,
@@ -48,6 +46,18 @@ const userSchema = new Schema<UserDocument>(
       type: Boolean,
       default: true,
     },
+    status: {
+      type: String,
+      enum: ['pending', 'active'],
+      default: 'active',
+    },
+    invitationSentAt: { type: Date, default: undefined },
+    invitationToken: { type: String, trim: true, default: undefined },
+    invitationTokenExpiresAt: { type: Date, default: undefined },
+    phone: { type: String, trim: true, default: undefined },
+    squareId: { type: String, trim: true, default: undefined },
+    homebaseId: { type: String, trim: true, default: undefined },
+    profileImagePublicId: { type: String, trim: true, default: undefined },
   },
   {
     timestamps: true,

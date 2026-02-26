@@ -1,5 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useAuth } from '../../hooks/useAuth';
 import { RootState } from '../../store/store';
@@ -10,12 +10,21 @@ import MainLogo from '@assets/logos/main_logo.svg?react';
 
 export const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [hideSuccessMessage, setHideSuccessMessage] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { login, isLoading } = useAuth();
+
+  const successMessageFromRoute =
+    (location.state as { message?: string } | null)?.message ??
+    searchParams.get('message') ??
+    '';
+  const successMessage = hideSuccessMessage ? '' : successMessageFromRoute;
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -30,11 +39,10 @@ export const Login = () => {
     try {
       await login({ email, password });
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An error occurred during login');
-      }
+      const message =
+        err instanceof Error ? err.message : 'An error occurred during login';
+      setError(message);
+      setHideSuccessMessage(true);
     }
   };
 
@@ -65,6 +73,12 @@ export const Login = () => {
           <div className="w-full lg:w-1/2 bg-card-background flex items-center justify-center p-8 h-1/2 lg:h-full">
             <div className="w-full max-w-md">
               <h2 className="text-[30px] md:text-[40px] 2xl:text-[50px] font-bold text-tertiary mb-8 lg:mb-8">Login</h2>
+
+              {successMessage && (
+                <div className="mb-6 p-3 bg-green-100 text-green-800 rounded-md text-sm">
+                  {successMessage}
+                </div>
+              )}
 
               <form onSubmit={handleSubmit} className="space-y-6">
                 {error && (

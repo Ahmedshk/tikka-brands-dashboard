@@ -38,7 +38,7 @@ export const DocumentVaultCard = ({
               <button
                 type="button"
                 onClick={() => onDownload?.(item, index)}
-                className="p-1.5 text-secondary hover:text-primary rounded shrink-0"
+                className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors shrink-0"
                 aria-label={`Download ${item.fileName}`}
                 title={`Download ${item.fileName}`}
               >

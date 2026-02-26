@@ -10,8 +10,20 @@ import {
   type OrderTrackerPeriodType,
 } from '../services/marketman.service.js';
 import { NotFoundError } from '../utils/errors.util.js';
+import { assertCanAccessMetrics, parseMetricsQuery } from '../config/kpi-metrics.config.js';
 
 const locationService = new LocationService();
+
+const INVENTORY_KPI_METRICS = [
+  'currentFoodCost',
+  'inventoryValue',
+  'wasteCost',
+  'pendingOrdersCount',
+  'foodCostPercent',
+  'theoreticalUsage',
+  'theoreticalUsagePercent',
+  'varianceItems',
+] as const;
 
 /** Parse MarketMan UTC date string (yyyy/MM/dd HH:mm:ss) to Date for sorting. */
 function parseMarketManUtc(s: string | undefined): Date | null {
@@ -54,6 +66,18 @@ export const getInventoryKPIsHandler = async (
   try {
     const locationId =
       typeof req.query.locationId === 'string' ? req.query.locationId : '';
+    const metrics = parseMetricsQuery(req.query.metrics);
+    if (metrics?.length) {
+      const invalid = metrics.filter(
+        (m) => !INVENTORY_KPI_METRICS.includes(m as (typeof INVENTORY_KPI_METRICS)[number])
+      );
+      if (invalid.length > 0) {
+        res.status(400).json({ success: false, message: 'Invalid metric' });
+        return;
+      }
+      assertCanAccessMetrics(req.user?.permissions, 'inventory-food-cost', metrics);
+    }
+
     const location = await locationService.getById(locationId);
     if (!location) {
       throw new NotFoundError('Location not found');
@@ -69,24 +93,26 @@ export const getInventoryKPIsHandler = async (
     }
 
     const timezone = location.timezone?.trim() || 'America/Denver';
-    const data = await getInventoryKPIs(buyerGuid, timezone);
+    const data = await getInventoryKPIs(buyerGuid, timezone, metrics);
 
     res.status(200).json({
       success: true,
-      data: {
-        currentFoodCost: data.currentFoodCost,
-        inventoryValue: data.inventoryValue,
-        wasteCost: data.wasteCost,
-        foodCostPercent: data.foodCostPercent ?? null,
-        theoreticalUsage: data.theoreticalUsage ?? null,
-        theoreticalUsagePercent: data.theoreticalUsagePercent ?? null,
-        varianceItems: data.varianceItems ?? [],
-        pendingOrdersCount: data.pendingOrdersCount,
-        countPeriodStart: data.countPeriodStart ?? null,
-        countPeriodEnd: data.countPeriodEnd ?? null,
-        pendingOrdersPeriodStart: data.pendingOrdersPeriodStart ?? null,
-        pendingOrdersPeriodEnd: data.pendingOrdersPeriodEnd ?? null,
-      },
+      data: metrics?.length
+        ? data
+        : {
+            currentFoodCost: data.currentFoodCost ?? null,
+            inventoryValue: data.inventoryValue ?? null,
+            wasteCost: data.wasteCost ?? null,
+            foodCostPercent: data.foodCostPercent ?? null,
+            theoreticalUsage: data.theoreticalUsage ?? null,
+            theoreticalUsagePercent: data.theoreticalUsagePercent ?? null,
+            varianceItems: data.varianceItems ?? [],
+            pendingOrdersCount: data.pendingOrdersCount ?? null,
+            countPeriodStart: data.countPeriodStart ?? null,
+            countPeriodEnd: data.countPeriodEnd ?? null,
+            pendingOrdersPeriodStart: data.pendingOrdersPeriodStart ?? null,
+            pendingOrdersPeriodEnd: data.pendingOrdersPeriodEnd ?? null,
+          },
     });
   } catch (error) {
     next(error);

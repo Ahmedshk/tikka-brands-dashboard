@@ -209,7 +209,7 @@ export const RBACTableCard = ({
                           type="button"
                           onClick={() => onEdit?.(row, index)}
                           disabled={isSystem}
-                          className="p-1.5 text-secondary hover:text-primary rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           aria-label="Edit role"
                           title="Edit role"
                         >
@@ -219,7 +219,7 @@ export const RBACTableCard = ({
                           type="button"
                           onClick={() => onDuplicate?.(row, index)}
                           disabled={isInactive}
-                          className="p-1.5 text-secondary hover:text-primary rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           aria-label="Duplicate role"
                           title="Duplicate role"
                         >
@@ -229,7 +229,7 @@ export const RBACTableCard = ({
                           type="button"
                           onClick={() => onDelete?.(row, index)}
                           disabled={isSystem}
-                          className="p-1.5 text-secondary hover:text-primary rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           aria-label="Delete role"
                           title="Delete role"
                         >

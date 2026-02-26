@@ -96,7 +96,7 @@ export const RecentlyCompletedReviewsModal = ({
                           <button
                             type="button"
                             onClick={() => onView?.(item, start + index)}
-                            className="p-1 text-secondary hover:text-primary rounded"
+                            className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
                             aria-label="View"
                             title="View"
                           >

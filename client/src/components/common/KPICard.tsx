@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { Spinner } from './Spinner';
 
 export type KPICardAccentColor = 'green' | 'gray' | 'gold' | 'blue' | 'orange' | 'purple' | 'red' | 'yellow' | 'azure' | 'positive' | 'negative';
 
@@ -43,6 +44,8 @@ export interface KPICardProps {
   extra?: string;
   /** Optional class for the extra chip (e.g. bg-yellow-100 text-gray-700) */
   extraClassName?: string;
+  /** When true, show a spinner in the value area instead of the value text */
+  loading?: boolean;
 }
 
 const defaultBadgeClassName = 'bg-green-100 text-green-800';
@@ -62,8 +65,9 @@ export const KPICard = ({
   subtitleIcon,
   extra,
   extraClassName = defaultExtraClassName,
+  loading = false,
 }: KPICardProps) => {
-  const hasRightContent = rightIcon != null || badge != null || subtitle != null || extra != null;
+  const hasRightContent = !loading && (rightIcon != null || badge != null || subtitle != null || extra != null);
 
   const renderRightContent = () => {
     if (rightIcon != null) {
@@ -107,9 +111,17 @@ export const KPICard = ({
           <span className="text-[10px] md:text-xs 2xl:text-sm font-normal text-primary">({timePeriod})</span>
         )}
       </p>
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#DBE0E5] bg-[#F8F9FA] px-3 py-2">
-        <p className={`text-xl md:text-2xl 2xl:text-[26px] font-semibold min-w-0 flex-shrink-0 ${valueClassName}`}>{value}</p>
-        {hasRightContent && <div className="flex-shrink-0 min-w-0">{renderRightContent()}</div>}
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#DBE0E5] bg-[#F8F9FA] px-3 py-2 min-h-[3.5rem]">
+        {loading ? (
+          <div className="flex items-center justify-center flex-1 py-2">
+            <Spinner size="md" className="text-button-primary" />
+          </div>
+        ) : (
+          <>
+            <p className={`text-xl md:text-2xl 2xl:text-[26px] font-semibold min-w-0 flex-shrink-0 ${valueClassName}`}>{value}</p>
+            {hasRightContent && <div className="flex-shrink-0 min-w-0">{renderRightContent()}</div>}
+          </>
+        )}
       </div>
     </div>
   );

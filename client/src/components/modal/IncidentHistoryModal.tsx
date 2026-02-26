@@ -119,7 +119,7 @@ export const IncidentHistoryModal = ({
                             <button
                               type="button"
                               onClick={() => onDownload?.(item, globalIndex)}
-                              className="p-1.5 text-secondary hover:text-primary rounded"
+                              className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors"
                               aria-label="Download"
                               title="Download"
                             >
@@ -128,7 +128,7 @@ export const IncidentHistoryModal = ({
                             <button
                               type="button"
                               onClick={() => onView?.(item, globalIndex)}
-                              className="p-1.5 text-secondary hover:text-primary rounded"
+                              className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors"
                               aria-label="View"
                               title="View"
                             >

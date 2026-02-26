@@ -92,6 +92,66 @@ function resolveAccessToken(override?: string): string {
   return getAccessToken();
 }
 
+/** Minimal TeamMember shape for sync (Square POST /v2/team-members/search). */
+export interface SquareTeamMember {
+  id: string;
+  given_name?: string;
+  family_name?: string;
+  email_address?: string;
+  phone_number?: string;
+  status?: string;
+}
+
+interface SearchTeamMembersResponse {
+  team_members?: SquareTeamMember[];
+  cursor?: string;
+  errors?: Array<{ code: string; detail?: string }>;
+}
+
+/**
+ * Search active team members for a Square location (POST /v2/team-members/search).
+ * Requires EMPLOYEES_READ. Paginates and returns all ACTIVE members for the location.
+ */
+export async function searchTeamMembers(
+  squareLocationId: string,
+  options?: SquareServiceOptions
+): Promise<SquareTeamMember[]> {
+  const token = resolveAccessToken(options?.accessToken);
+  const all: SquareTeamMember[] = [];
+  let cursor: string | undefined;
+  do {
+    const body: { query: { filter: { location_ids: string[]; status: string } }; limit: number; cursor?: string } = {
+      query: {
+        filter: {
+          location_ids: [squareLocationId],
+          status: "ACTIVE",
+        },
+      },
+      limit: 200,
+    };
+    if (cursor) body.cursor = cursor;
+    const res = await fetch(`${SQUARE_BASE}/v2/team-members/search`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`Square Team API error ${res.status}: ${text}`);
+    }
+    const data = JSON.parse(text) as SearchTeamMembersResponse;
+    if (data.errors?.length) {
+      throw new Error(`Square Team API errors: ${data.errors.map((e) => e.detail ?? e.code).join(", ")}`);
+    }
+    if (data.team_members?.length) all.push(...data.team_members);
+    cursor = data.cursor;
+  } while (cursor);
+  return all;
+}
+
 /**
  * Fetch a single Square location by ID (GET /v2/locations/{location_id}).
  * Used to get business_hours and timezone for the selected store.

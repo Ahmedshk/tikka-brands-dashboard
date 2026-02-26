@@ -8,6 +8,7 @@ export interface InventoryKPIItem {
   value: string;
   accentColor: KPICardAccentColor;
   rightIcon?: ReactNode;
+  loading?: boolean;
 }
 
 export interface InventoryKPICardsProps {

@@ -3,11 +3,13 @@ import { API_ENDPOINTS } from "../utils/constants";
 import { ApiResponse } from "../types";
 
 export interface CommandCenterKPIsData {
-  netSalesToday: number | null;
-  laborCostToday: number | null;
-  laborCostPercentToday: number | null;
-  laborCostGoal: number;
-  laborCostStatus: "green" | "red" | null;
+  netSalesToday?: number | null;
+  laborCostToday?: number | null;
+  laborCostPercentToday?: number | null;
+  laborCostGoal?: number;
+  laborCostStatus?: "green" | "red" | null;
+  reviewRating?: number;
+  reviewCount?: number;
 }
 
 export interface HourlySalesRow {
@@ -168,10 +170,17 @@ export function isSalesTrendStacked(
 }
 
 export const commandCenterService = {
-  async getKPIs(locationId: string): Promise<CommandCenterKPIsData> {
+  async getKPIs(
+    locationId: string,
+    options?: { metrics?: string[] }
+  ): Promise<CommandCenterKPIsData> {
+    const params: { locationId: string; metrics?: string } = { locationId };
+    if (options?.metrics?.length) {
+      params.metrics = options.metrics.join(",");
+    }
     const res = await api.get<ApiResponse<CommandCenterKPIsData>>(
       API_ENDPOINTS.COMMAND_CENTER.KPIS,
-      { params: { locationId } }
+      { params }
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch Command Center KPIs");
@@ -190,10 +199,17 @@ export const commandCenterService = {
     return res.data.data;
   },
 
-  async getSalesLaborKPIs(locationId: string): Promise<SalesLaborKPIsData> {
+  async getSalesLaborKPIs(
+    locationId: string,
+    options?: { metrics?: string[] }
+  ): Promise<SalesLaborKPIsData> {
+    const params: { locationId: string; metrics?: string } = { locationId };
+    if (options?.metrics?.length) {
+      params.metrics = options.metrics.join(",");
+    }
     const res = await api.get<ApiResponse<SalesLaborKPIsData>>(
       API_ENDPOINTS.SALES_LABOR.KPIS,
-      { params: { locationId } }
+      { params }
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch Sales & Labor KPIs");

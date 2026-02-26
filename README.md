@@ -1,4 +1,4 @@
-# Tikka Spice Dashboard
+# Tikka Brands Dashboard
 
 A read-only MERN-based dashboard application that aggregates operational data from Square (POS), Homebase (scheduling), and MarketMan (inventory) into a unified view for restaurant owners and their teams.
 
@@ -12,7 +12,7 @@ A read-only MERN-based dashboard application that aggregates operational data fr
 ## Project Structure
 
 ```
-tikka-spice-dashboard/
+tikka-brands-dashboard/
 ├── server/          # Backend Express application
 ├── client/          # Frontend React application
 ├── design/          # Design assets and tokens
@@ -38,6 +38,7 @@ tikka-spice-dashboard/
 
 1. Clone the repository
 2. Install dependencies:
+
    ```bash
    cd server && npm install
    cd ../client && npm install
@@ -48,10 +49,11 @@ tikka-spice-dashboard/
    - Copy `client/.env.example` to `client/.env` and configure
 
 4. Start development servers:
+
    ```bash
    # Terminal 1: Start backend
    cd server && npm run dev
-   
+
    # Terminal 2: Start frontend
    cd client && npm run dev
    ```
@@ -61,6 +63,7 @@ The frontend will proxy API requests to the backend automatically.
 ### Production Build
 
 1. Build the frontend:
+
    ```bash
    cd client && npm run build
    ```

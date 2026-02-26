@@ -26,7 +26,9 @@ import {
 } from '../../services/commandCenter.service';
 import type { TimeSeriesSeries } from '../../components/charts/TimeSeriesLineChart';
 import type { RootState } from '../../store/store';
+import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 
+const PAGE_ID = 'sales-trend-reports';
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
 
 const METRIC_OPTIONS: { value: SalesTrendMetric; label: string }[] = [
@@ -196,6 +198,10 @@ const defaultComparison: ComparisonPeriodPickerValue = {
 
 export const SalesTrendReports = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const canTrendsChart = useCanAccessComponent(PAGE_ID, 'trends-chart');
+  const canKpis = useCanAccessComponent(PAGE_ID, 'kpis');
+  const canNetSalesByCategory = useCanAccessComponent(PAGE_ID, 'net-sales-by-category');
+
   const [period, setPeriod] = useState<PeriodPickerValue>(defaultPeriod);
   const [comparison, setComparison] = useState<ComparisonPeriodPickerValue>(defaultComparison);
   const [metric, setMetric] = useState<SalesTrendMetric>('netSales');
@@ -260,7 +266,7 @@ export const SalesTrendReports = () => {
   }, [period.periodType]);
 
   useEffect(() => {
-    if (!locationId) {
+    if (!locationId || !canTrendsChart) {
       setTrendData(null);
       setError(null);
       return;
@@ -301,6 +307,7 @@ export const SalesTrendReports = () => {
       .finally(() => setLoading(false));
   }, [
     locationId,
+    canTrendsChart,
     period.periodType,
     period.periodStart,
     period.periodEnd,
@@ -312,7 +319,7 @@ export const SalesTrendReports = () => {
   ]);
 
   useEffect(() => {
-    if (!locationId) {
+    if (!locationId || !canKpis) {
       setKpiData(null);
       setKpiError(null);
       return;
@@ -349,6 +356,7 @@ export const SalesTrendReports = () => {
       .finally(() => setKpiLoading(false));
   }, [
     locationId,
+    canKpis,
     kpiPeriod.periodType,
     kpiPeriod.periodStart,
     kpiPeriod.periodEnd,
@@ -358,7 +366,7 @@ export const SalesTrendReports = () => {
   ]);
 
   useEffect(() => {
-    if (!locationId) {
+    if (!locationId || !canNetSalesByCategory) {
       setCategoryData(null);
       setCategoryError(null);
       return;
@@ -395,6 +403,7 @@ export const SalesTrendReports = () => {
       .finally(() => setCategoryLoading(false));
   }, [
     locationId,
+    canNetSalesByCategory,
     categoryPeriod.periodType,
     categoryPeriod.periodStart,
     categoryPeriod.periodEnd,
@@ -469,55 +478,57 @@ export const SalesTrendReports = () => {
             />
             Sales Trend Report
           </h2>
-          <div className="flex flex-wrap gap-3 items-center">
-            <div className="flex items-center gap-2">
-              <label htmlFor="metric" className="text-xs md:text-sm text-secondary">
-                Metric:
-              </label>
-              <select
-                id="metric"
-                value={metric}
-                onChange={(e) => setMetric(e.target.value as SalesTrendMetric)}
-                className={selectClass}
-              >
-                {METRIC_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+          {canTrendsChart && (
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="flex items-center gap-2">
+                <label htmlFor="metric" className="text-xs md:text-sm text-secondary">
+                  Metric:
+                </label>
+                <select
+                  id="metric"
+                  value={metric}
+                  onChange={(e) => setMetric(e.target.value as SalesTrendMetric)}
+                  className={selectClass}
+                >
+                  {METRIC_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label htmlFor="period" className="text-xs md:text-sm text-secondary">
+                  Period:
+                </label>
+                <PeriodPicker
+                  id="period"
+                  value={period}
+                  onChange={setPeriod}
+                  className={selectClass}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label htmlFor="comparison" className="text-xs md:text-sm text-secondary">
+                  Comparison:
+                </label>
+                <ComparisonPeriodPicker
+                  id="comparison"
+                  value={comparison}
+                  onChange={setComparison}
+                  period={period}
+                  className={selectClass}
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <label htmlFor="period" className="text-xs md:text-sm text-secondary">
-                Period:
-              </label>
-              <PeriodPicker
-                id="period"
-                value={period}
-                onChange={setPeriod}
-                className={selectClass}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <label htmlFor="comparison" className="text-xs md:text-sm text-secondary">
-                Comparison:
-              </label>
-              <ComparisonPeriodPicker
-                id="comparison"
-                value={comparison}
-                onChange={setComparison}
-                period={period}
-                className={selectClass}
-              />
-            </div>
-          </div>
+          )}
         </div>
 
-        {error && (
+        {canTrendsChart && error && (
           <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
         )}
 
-        {locationId && (
+        {canTrendsChart && locationId && (
           <SalesTrendChartCard
             loading={loading}
             xAxisData={chartProps?.xAxisData ?? []}
@@ -532,44 +543,48 @@ export const SalesTrendReports = () => {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className={cardClass}>
-            {kpiError && (
-              <div className="p-3 rounded-t-xl bg-red-50 text-red-800 text-sm border-b border-gray-200">
-                {kpiError}
-              </div>
-            )}
-            <KPIsTableCard
-              rows={buildKpiRows(kpiData)}
-              loading={kpiLoading}
-              title="KPIs"
-              currentPeriodLabel={getKpiPeriodLabel(kpiPeriod)}
-              comparisonPeriodLabel={getKpiComparisonLabel(kpiPeriod.periodType, kpiComparison)}
-              periodValue={kpiPeriod}
-              comparisonValue={kpiComparison}
-              onPeriodChange={setKpiPeriod}
-              onComparisonChange={setKpiComparison}
-              excludeNoneFromComparison
-            />
-          </div>
-          <div className={cardClass}>
-            {categoryError && (
-              <div className="p-3 rounded-t-xl bg-red-50 text-red-800 text-sm border-b border-gray-200">
-                {categoryError}
-              </div>
-            )}
-            <SalesByCategoryCard
-              items={categoryTop5}
-              allItems={categoryItems}
-              loading={categoryLoading}
-              currentPeriodLabel={getKpiPeriodLabel(categoryPeriod)}
-              comparisonPeriodLabel={getKpiComparisonLabel(categoryPeriod.periodType, categoryComparison)}
-              periodValue={categoryPeriod}
-              comparisonValue={categoryComparison}
-              onPeriodChange={setCategoryPeriod}
-              onComparisonChange={setCategoryComparison}
-              excludeNoneFromComparison
-            />
-          </div>
+          {canKpis && (
+            <div className={cardClass}>
+              {kpiError && (
+                <div className="p-3 rounded-t-xl bg-red-50 text-red-800 text-sm border-b border-gray-200">
+                  {kpiError}
+                </div>
+              )}
+              <KPIsTableCard
+                rows={buildKpiRows(kpiData)}
+                loading={kpiLoading}
+                title="KPIs"
+                currentPeriodLabel={getKpiPeriodLabel(kpiPeriod)}
+                comparisonPeriodLabel={getKpiComparisonLabel(kpiPeriod.periodType, kpiComparison)}
+                periodValue={kpiPeriod}
+                comparisonValue={kpiComparison}
+                onPeriodChange={setKpiPeriod}
+                onComparisonChange={setKpiComparison}
+                excludeNoneFromComparison
+              />
+            </div>
+          )}
+          {canNetSalesByCategory && (
+            <div className={cardClass}>
+              {categoryError && (
+                <div className="p-3 rounded-t-xl bg-red-50 text-red-800 text-sm border-b border-gray-200">
+                  {categoryError}
+                </div>
+              )}
+              <SalesByCategoryCard
+                items={categoryTop5}
+                allItems={categoryItems}
+                loading={categoryLoading}
+                currentPeriodLabel={getKpiPeriodLabel(categoryPeriod)}
+                comparisonPeriodLabel={getKpiComparisonLabel(categoryPeriod.periodType, categoryComparison)}
+                periodValue={categoryPeriod}
+                comparisonValue={categoryComparison}
+                onPeriodChange={setCategoryPeriod}
+                onComparisonChange={setCategoryComparison}
+                excludeNoneFromComparison
+              />
+            </div>
+          )}
         </div>
       </div>
     </Layout>

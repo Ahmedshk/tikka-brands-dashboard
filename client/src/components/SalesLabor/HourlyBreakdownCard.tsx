@@ -1,4 +1,5 @@
 import { HourlyBreakdownChart } from '../charts/HourlyBreakdownChart';
+import { Spinner } from '../common/Spinner';
 
 export interface HourlyBreakdownCardProps {
   xAxisLabels: string[];
@@ -7,6 +8,8 @@ export interface HourlyBreakdownCardProps {
   height?: number;
   /** Optional className for the card wrapper (e.g. for grid sizing) */
   className?: string;
+  /** When true, show a centered spinner in the card instead of the chart */
+  loading?: boolean;
 }
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
@@ -17,6 +20,7 @@ export const HourlyBreakdownCard = ({
   laborCostData,
   height = 280,
   className = '',
+  loading = false,
 }: HourlyBreakdownCardProps) => {
   return (
     <div className={`${cardClass} ${className}`}>
@@ -34,14 +38,20 @@ export const HourlyBreakdownCard = ({
         </span>
       </div>
       <div className="scrollbar-touch -mx-3 px-3 pb-3 md:mx-0 md:px-5 md:pb-5 overflow-x-auto md:overflow-visible">
-        <div className="min-w-[560px] md:min-w-0 w-full">
-          <HourlyBreakdownChart
-            xAxisLabels={xAxisLabels}
-            salesData={salesData}
-            laborCostData={laborCostData}
-            height={height}
-          />
-        </div>
+        {loading ? (
+          <div className="flex items-center justify-center min-h-[280px]" style={{ minHeight: height }}>
+            <Spinner size="lg" className="text-button-primary" />
+          </div>
+        ) : (
+          <div className="min-w-[560px] md:min-w-0 w-full">
+            <HourlyBreakdownChart
+              xAxisLabels={xAxisLabels}
+              salesData={salesData}
+              laborCostData={laborCostData}
+              height={height}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

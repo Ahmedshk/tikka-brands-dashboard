@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyAccessToken, TokenPayload } from '../utils/jwt.util.js';
+import { verifyAccessToken } from '../utils/jwt.util.js';
 import { logger } from '../utils/logger.util.js';
 import { RoleRepository } from '../repositories/role.repository.js';
 import type { RolePermissions } from '../types/rbac.types.js';
@@ -28,15 +28,23 @@ export const authenticate = async (
       return;
     }
 
-    const decoded = verifyAccessToken(token) as TokenPayload;
+    const decoded = verifyAccessToken(token);
     const role = await roleRepository.findByName(decoded.role);
     const permissions: RolePermissions = role?.permissions ?? { type: 'all' };
+    const access = (role as { locationAccess?: string })?.locationAccess;
+    const locationIds = (role as { locationIds?: unknown[] })?.locationIds ?? [];
     const allowedLocationIds: 'all' | string[] =
-      !role?.locations || role.locations === 'all'
-        ? 'all'
-        : Array.isArray(role.locations)
-          ? role.locations
-          : 'all';
+      access === 'specific' && locationIds.length > 0
+        ? locationIds.map((l) => {
+            if (l == null) return '';
+            if (typeof l === 'object' && l !== null && '_id' in l)
+              return String((l as { _id: unknown })._id);
+            if (typeof l === 'object' && l !== null && typeof (l as { toString?: () => string }).toString === 'function')
+              return (l as { toString(): string }).toString();
+            if (typeof l === 'string') return l;
+            return '';
+          }).filter(Boolean)
+        : 'all';
 
     req.user = {
       userId: decoded.userId,

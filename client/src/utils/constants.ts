@@ -14,6 +14,8 @@ export const API_ENDPOINTS = {
     LOGIN: "/auth/login",
     LOGOUT: "/auth/logout",
     REFRESH: "/auth/refresh",
+    SET_PASSWORD_VALIDATE: "/auth/set-password/validate",
+    SET_PASSWORD: "/auth/set-password",
   },
   HEALTH: "/health",
   LOCATIONS: "/locations",
@@ -35,4 +37,5 @@ export const API_ENDPOINTS = {
     ORDERS: "/inventory/orders",
   },
   ROLES: "/roles",
+  USERS: "/users",
 } as const;

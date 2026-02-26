@@ -1,5 +1,6 @@
 import { SourcesOfSalesChart } from '../charts/SourcesOfSalesChart';
 import type { SourcesOfSalesSegment } from '../charts/SourcesOfSalesChart';
+import { Spinner } from '../common/Spinner';
 
 export interface SourcesOfSalesCardProps {
   totalSales: string;
@@ -8,6 +9,8 @@ export interface SourcesOfSalesCardProps {
   subtitle?: string;
   /** Optional className for the card wrapper */
   className?: string;
+  /** When true, show a centered spinner in the card instead of the chart */
+  loading?: boolean;
 }
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
@@ -17,6 +20,7 @@ export const SourcesOfSalesCard = ({
   segments,
   subtitle,
   className = '',
+  loading = false,
 }: SourcesOfSalesCardProps) => {
   return (
     <div className={`${cardClass} ${className}`}>
@@ -28,8 +32,14 @@ export const SourcesOfSalesCard = ({
           )}
         </h3>
       </div>
-      <div className="px-5 pb-5">
-        <SourcesOfSalesChart totalSales={totalSales} segments={segments} />
+      <div className="px-5 pb-5 min-h-[280px] flex flex-col">
+        {loading ? (
+          <div className="flex flex-1 items-center justify-center">
+            <Spinner size="lg" className="text-button-primary" />
+          </div>
+        ) : (
+          <SourcesOfSalesChart totalSales={totalSales} segments={segments} />
+        )}
       </div>
     </div>
   );

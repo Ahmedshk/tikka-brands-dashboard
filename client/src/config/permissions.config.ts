@@ -165,5 +165,39 @@ export function canAccessPage(
 ): boolean {
   if (!permissions) return true;
   if (permissions.type === 'all') return true;
+  if (pageId === 'no-access') return true;
   return permissions.pages?.some((p) => p.pageId === pageId) ?? false;
+}
+
+/** True if the user has access to at least one dashboard page (so we can show no-access when false). */
+export function hasAccessToAnyPage(
+  permissions: import('../types/rbac.types').RolePermissions | undefined
+): boolean {
+  if (!permissions) return true;
+  if (permissions.type === 'all') return true;
+  const pages = permissions.pages;
+  return Array.isArray(pages) && pages.length > 0;
+}
+
+const FULL_PAGE_COMPONENT_ID = 'full-page';
+
+/**
+ * Check if permissions allow access to a specific component on a page.
+ * Use to conditionally render and fetch only for allowed components.
+ */
+export function canAccessComponent(
+  permissions: import('../types/rbac.types').RolePermissions | undefined,
+  pageId: string,
+  componentId: string
+): boolean {
+  if (!permissions) return true;
+  if (permissions.type === 'all') return true;
+  const pages = permissions.pages;
+  if (!Array.isArray(pages)) return false;
+  const entry = pages.find((p) => p.pageId === pageId);
+  if (!entry) return false;
+  if (entry.components == null) return true;
+  if (entry.components.length === 0) return false;
+  if (entry.components.includes(FULL_PAGE_COMPONENT_ID)) return true;
+  return entry.components.includes(componentId);
 }

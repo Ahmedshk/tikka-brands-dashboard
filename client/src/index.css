@@ -162,6 +162,26 @@
   background: #64748b;
 }
 
+/* Custom dropdown list – matches input style, stays in viewport */
+.dropdown-list-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+.dropdown-list-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.dropdown-list-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+.dropdown-list-scrollbar::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+.dropdown-list-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
 /* Hourly Sales chart: second series (Last Week) = dotted line */
 .hourly-sales-chart .MuiLineElement-root:nth-of-type(2),
 .hourly-sales-chart [data-series-id="lastWeek"],

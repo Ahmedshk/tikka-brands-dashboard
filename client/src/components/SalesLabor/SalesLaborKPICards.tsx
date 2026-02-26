@@ -16,6 +16,7 @@ export interface SalesLaborKPIItem {
   subtitleIcon?: ReactNode;
   extra?: string;
   extraClassName?: string;
+  loading?: boolean;
 }
 
 export interface SalesLaborKPICardsProps {

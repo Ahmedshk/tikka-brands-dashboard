@@ -1,0 +1,63 @@
+import { z } from 'zod';
+
+const paginationSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(10),
+});
+
+export const listUsersQuerySchema = z.object({
+  query: z.object({
+    search: z.string().trim().optional(),
+    roleId: z.string().min(1).optional(),
+    locationId: z.string().min(1).optional(),
+  }).merge(paginationSchema),
+});
+
+export const createUserSchema = z.object({
+  body: z.object({
+    firstName: z.string().min(1, 'First name is required').trim(),
+    lastName: z.string().min(1, 'Last name is required').trim(),
+    email: z.string().email('Invalid email').trim(),
+    phone: z.string().trim().optional(),
+    squareId: z.string().trim().optional(),
+    homebaseId: z.string().trim().optional(),
+    roleId: z.string().min(1).optional().nullable(),
+    invite: z.boolean().optional(),
+    profileImagePublicId: z.string().trim().optional().nullable(),
+  }),
+});
+
+export const updateUserSchema = z.object({
+  params: z.object({
+    id: z.string().min(1, 'User ID is required'),
+  }),
+  body: z.object({
+    firstName: z.string().min(1, 'First name is required').trim().optional(),
+    lastName: z.string().min(1, 'Last name is required').trim().optional(),
+    email: z.string().email('Invalid email').trim().optional(),
+    phone: z.string().trim().optional(),
+    squareId: z.string().trim().optional(),
+    homebaseId: z.string().trim().optional(),
+    roleId: z.string().min(1).optional().nullable(),
+    isActive: z.boolean().optional(),
+    profileImagePublicId: z.string().trim().optional().nullable(),
+  }),
+});
+
+export const deleteUserParamsSchema = z.object({
+  params: z.object({
+    id: z.string().min(1, 'User ID is required'),
+  }),
+});
+
+export const resendInviteParamsSchema = z.object({
+  params: z.object({
+    id: z.string().min(1, 'User ID is required'),
+  }),
+});
+
+export const syncFromSquareSchema = z.object({
+  body: z.object({
+    locationId: z.string().min(1, 'Location ID is required'),
+  }),
+});

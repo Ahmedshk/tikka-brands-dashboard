@@ -69,10 +69,11 @@ export interface VarianceChartCardProps {
   onViewAll?: (barBandWidth: number) => void;
 }
 
+/** Top 5 items by variance (descending); card shows these in descending order. */
 function getTop5VarianceItems(items: VarianceChartItem[]): VarianceChartItem[] {
-  const byAbs = [...items].sort((a, b) => Math.abs(b.varianceCost) - Math.abs(a.varianceCost));
-  const top5 = byAbs.slice(0, 5);
-  return top5.sort((a, b) => b.varianceCost - a.varianceCost);
+  return [...items]
+    .sort((a, b) => b.varianceCost - a.varianceCost)
+    .slice(0, 5);
 }
 
 const defaultTheme = createTheme({

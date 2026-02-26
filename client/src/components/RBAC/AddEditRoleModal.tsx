@@ -185,7 +185,7 @@ export function AddEditRoleModal({
 
     if (componentId === FULL_PAGE_COMPONENT_ID) {
       if (selected) {
-        rest.push({ pageId, pageLabel, components: undefined });
+        rest.push({ pageId, pageLabel, components: [FULL_PAGE_COMPONENT_ID] });
       } else {
         rest.push({ pageId, pageLabel, components: [] });
       }

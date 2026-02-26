@@ -20,7 +20,51 @@ export class UserRepository {
   }
 
   async findAll(): Promise<UserDocument[]> {
-    return await UserModel.find();
+    return await UserModel.find().lean().exec();
+  }
+
+  async findWithFilters(filters: {
+    search?: string;
+    roleId?: string;
+  }): Promise<UserDocument[]> {
+    const query = this.buildListQuery(filters);
+    return await UserModel.find(query).sort({ createdAt: -1 }).lean().exec();
+  }
+
+  /** Paginated list with same filters; returns docs and total count. */
+  async findWithFiltersPaginated(
+    filters: { search?: string; roleId?: string },
+    options: { page: number; pageSize: number }
+  ): Promise<{ docs: UserDocument[]; total: number }> {
+    const query = this.buildListQuery(filters);
+    const [docs, total] = await Promise.all([
+      UserModel.find(query)
+        .sort({ createdAt: -1 })
+        .skip((options.page - 1) * options.pageSize)
+        .limit(options.pageSize)
+        .lean()
+        .exec(),
+      UserModel.countDocuments(query),
+    ]);
+    return { docs, total };
+  }
+
+  private buildListQuery(filters: { search?: string; roleId?: string }): Record<string, unknown> {
+    const query: Record<string, unknown> = {};
+    if (filters.roleId) {
+      query.roleId = filters.roleId;
+    }
+    if (filters.search && filters.search.trim()) {
+      const term = filters.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(term, 'i');
+      query.$or = [
+        { firstName: regex },
+        { lastName: regex },
+        { email: regex },
+        { phone: regex },
+      ];
+    }
+    return query;
   }
 
   async updateById(id: string, updateData: Partial<IUser>): Promise<UserDocument | null> {
@@ -34,5 +78,28 @@ export class UserRepository {
 
   async findByRole(role: string): Promise<UserDocument[]> {
     return await UserModel.find({ role });
+  }
+
+  async findBySquareId(squareId: string): Promise<UserDocument | null> {
+    return await UserModel.findOne({ squareId: squareId.trim() });
+  }
+
+  async findByInvitationToken(token: string): Promise<UserDocument | null> {
+    if (!token || !token.trim()) return null;
+    return await UserModel.findOne({ invitationToken: token.trim() });
+  }
+
+  async setPasswordAndClearInvitationToken(
+    id: string,
+    hashedPassword: string
+  ): Promise<UserDocument | null> {
+    return await UserModel.findByIdAndUpdate(
+      id,
+      {
+        $set: { password: hashedPassword },
+        $unset: { invitationToken: 1, invitationTokenExpiresAt: 1 },
+      },
+      { new: true }
+    );
   }
 }

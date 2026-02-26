@@ -105,7 +105,7 @@ export const StaffListModal = ({ isOpen, onClose, rows, onView, onEdit }: StaffL
                           <button
                             type="button"
                             onClick={() => onView?.(row, start + index)}
-                            className="p-1 text-secondary hover:text-primary rounded"
+                            className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
                             aria-label="View"
                             title="View"
                           >
@@ -114,7 +114,7 @@ export const StaffListModal = ({ isOpen, onClose, rows, onView, onEdit }: StaffL
                           <button
                             type="button"
                             onClick={() => onEdit?.(row, start + index)}
-                            className="p-1 text-secondary hover:text-primary rounded"
+                            className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
                             aria-label="Edit"
                             title="Edit"
                           >

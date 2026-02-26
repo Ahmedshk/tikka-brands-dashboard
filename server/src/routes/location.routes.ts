@@ -20,10 +20,13 @@ import { requirePermission, requireLocationAccess } from '../middleware/rbac.mid
 const router = Router();
 
 router.use(authenticate);
+
+// List locations: any authenticated user (for navbar switcher). Controller filters by allowedLocationIds.
+router.get('/', validate(getLocationsQuerySchema), getLocations);
+
+// Create, read one, update, delete: require location-management permission and location access
 router.use(requirePermission('location-management'));
 router.use(requireLocationAccess);
-
-router.get('/', validate(getLocationsQuerySchema), getLocations);
 router.get('/:id', validate(getLocationSchema), getLocationById);
 router.post('/', validate(createLocationSchema), createLocation);
 router.put('/:id', validate(updateLocationSchema), updateLocation);

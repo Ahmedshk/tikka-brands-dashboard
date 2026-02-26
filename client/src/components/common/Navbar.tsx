@@ -30,6 +30,7 @@ const LogoutIcon = ({ className }: { className?: string }) => (
 );
 
 const LOCATION_MANAGEMENT_PATH = '/dashboard/location-management';
+const USER_MANAGEMENT_PATH = '/dashboard/user-management';
 
 export const Navbar = () => {
   const { pathname } = useLocation();
@@ -38,7 +39,7 @@ export const Navbar = () => {
   const user = useSelector((state: RootState) => state.auth.user);
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [locations, setLocations] = useState<Location[]>([]);
-  const hideLocationSelector = pathname === LOCATION_MANAGEMENT_PATH;
+  const hideLocationSelector = pathname === LOCATION_MANAGEMENT_PATH || pathname === USER_MANAGEMENT_PATH;
   const [locationsLoading, setLocationsLoading] = useState(true);
   const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);

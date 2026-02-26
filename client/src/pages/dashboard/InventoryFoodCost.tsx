@@ -18,9 +18,10 @@ import type { Goal } from '../../types';
 import InventoryAndFoodCostIcon from '@assets/icons/inventory_and_food_cost.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
 import PendingOrdersIcon from '@assets/icons/pending_orders.svg?react';
-import { Spinner } from '../../components/common/Spinner';
 import type { RootState } from '../../store/store';
+import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 
+const PAGE_ID = 'inventory-food-cost';
 const ORDER_TRACKER_CARD_SIZE = 12;
 
 const currencyFmt = (v: number) =>
@@ -33,6 +34,32 @@ const defaultOrderTrackerPeriod: OrderTrackerPeriodValue = {
 
 export const InventoryFoodCost = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const canKpiFoodCost = useCanAccessComponent(PAGE_ID, 'kpi-current-food-cost');
+  const canKpiInventory = useCanAccessComponent(PAGE_ID, 'kpi-inventory-value');
+  const canKpiWaste = useCanAccessComponent(PAGE_ID, 'kpi-waste-cost');
+  const canKpiPending = useCanAccessComponent(PAGE_ID, 'kpi-pending-orders');
+  const canCostOfGoods = useCanAccessComponent(PAGE_ID, 'cost-of-goods-sold-gauge');
+  const canVariance = useCanAccessComponent(PAGE_ID, 'food-cost-variance');
+  const canOrderTracker = useCanAccessComponent(PAGE_ID, 'order-tracker');
+
+  const shouldFetchKpis =
+    canKpiFoodCost || canKpiInventory || canKpiWaste || canKpiPending || canCostOfGoods || canVariance;
+  const kpiMetrics = useMemo(() => {
+    const m: string[] = [];
+    if (canKpiFoodCost) m.push('currentFoodCost');
+    if (canKpiInventory) m.push('inventoryValue');
+    if (canKpiWaste) m.push('wasteCost');
+    if (canKpiPending) m.push('pendingOrdersCount');
+    if (canCostOfGoods) {
+      m.push('foodCostPercent', 'theoreticalUsage', 'theoreticalUsagePercent');
+      if (!m.includes('currentFoodCost')) m.push('currentFoodCost');
+    }
+    if (canVariance) m.push('varianceItems');
+    return [...new Set(m)];
+  }, [canKpiFoodCost, canKpiInventory, canKpiWaste, canKpiPending, canCostOfGoods, canVariance]);
+  const shouldFetchGoals = canCostOfGoods;
+  const shouldFetchOrders = canOrderTracker;
+
   const [orderTrackerModalOpen, setOrderTrackerModalOpen] = useState(false);
   const [orderDetailModalOpen, setOrderDetailModalOpen] = useState(false);
   const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<OrderTrackerOrder | null>(null);
@@ -48,7 +75,7 @@ export const InventoryFoodCost = () => {
   const [goals, setGoals] = useState<Goal | null>(null);
 
   useEffect(() => {
-    if (!currentLocation?._id) {
+    if (!currentLocation?._id || !shouldFetchKpis || kpiMetrics.length === 0) {
       setInventoryKpisData(null);
       setKpisError(null);
       return;
@@ -56,17 +83,17 @@ export const InventoryFoodCost = () => {
     setKpisLoading(true);
     setKpisError(null);
     inventoryService
-      .getInventoryKPIs(currentLocation._id)
+      .getInventoryKPIs(currentLocation._id, { metrics: kpiMetrics })
       .then(setInventoryKpisData)
       .catch((err) => {
         setKpisError(err instanceof Error ? err.message : 'Failed to load inventory KPIs');
         setInventoryKpisData(null);
       })
       .finally(() => setKpisLoading(false));
-  }, [currentLocation?._id]);
+  }, [currentLocation?._id, shouldFetchKpis, kpiMetrics.join(',')]);
 
   useEffect(() => {
-    if (!currentLocation?._id) {
+    if (!currentLocation?._id || !shouldFetchGoals) {
       setGoals(null);
       return;
     }
@@ -74,7 +101,7 @@ export const InventoryFoodCost = () => {
       .getByLocationId(currentLocation._id)
       .then(setGoals)
       .catch(() => setGoals(null));
-  }, [currentLocation?._id]);
+  }, [currentLocation?._id, shouldFetchGoals]);
 
   const countPeriodLabel = useMemo(() => {
     const start = inventoryKpisData?.countPeriodStart;
@@ -116,40 +143,52 @@ export const InventoryFoodCost = () => {
     const inventoryValue = d?.inventoryValue != null ? currencyFmt(d.inventoryValue) : (kpisLoading ? '…' : '—');
     const wasteCostValue = d?.wasteCost != null ? currencyFmt(d.wasteCost) : (kpisLoading ? '…' : '—');
     const pendingValue = d?.pendingOrdersCount != null ? pendingFmt(d.pendingOrdersCount) : (kpisLoading ? '…' : '—');
-    return [
-      {
+    const items: InventoryKPIItem[] = [];
+    if (canKpiFoodCost) {
+      items.push({
         title: 'Current Food Cost',
         timePeriod: countPeriodLabel,
         value: foodCostValue,
         accentColor: 'green',
         rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      },
-      {
+        loading: kpisLoading,
+      });
+    }
+    if (canKpiInventory) {
+      items.push({
         title: 'Inventory value',
         timePeriod: countPeriodLabel,
         value: inventoryValue,
         accentColor: 'blue',
         rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      },
-      {
+        loading: kpisLoading,
+      });
+    }
+    if (canKpiWaste) {
+      items.push({
         title: 'Waste Cost',
         timePeriod: countPeriodLabel,
         value: wasteCostValue,
         accentColor: 'orange',
         rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      },
-      {
+        loading: kpisLoading,
+      });
+    }
+    if (canKpiPending) {
+      items.push({
         title: 'Pending Orders',
         timePeriod: pendingOrdersPeriodLabel,
         value: pendingValue,
         accentColor: 'purple',
         rightIcon: <PendingOrdersIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      },
-    ];
-  }, [inventoryKpisData, kpisLoading, countPeriodLabel, pendingOrdersPeriodLabel]);
+        loading: kpisLoading,
+      });
+    }
+    return items;
+  }, [inventoryKpisData, kpisLoading, countPeriodLabel, pendingOrdersPeriodLabel, canKpiFoodCost, canKpiInventory, canKpiWaste, canKpiPending]);
 
   useEffect(() => {
-    if (!currentLocation?._id) {
+    if (!currentLocation?._id || !shouldFetchOrders) {
       setOrderTrackerOrders([]);
       setOrderTrackerError(null);
       return;
@@ -173,7 +212,7 @@ export const InventoryFoodCost = () => {
         setOrderTrackerOrders([]);
       })
       .finally(() => setOrderTrackerLoading(false));
-  }, [currentLocation?._id, orderTrackerPeriod.periodType, orderTrackerPeriod.periodStart, orderTrackerPeriod.periodEnd]);
+  }, [currentLocation?._id, shouldFetchOrders, orderTrackerPeriod.periodType, orderTrackerPeriod.periodStart, orderTrackerPeriod.periodEnd]);
 
   const orderTrackerCardRows = orderTrackerOrders.slice(0, ORDER_TRACKER_CARD_SIZE);
 
@@ -190,65 +229,79 @@ export const InventoryFoodCost = () => {
         {!currentLocation && (
           <p className="text-sm text-secondary mb-6">Select a location to view inventory KPIs.</p>
         )}
-        {currentLocation && kpisError && (
+        {shouldFetchKpis && currentLocation && kpisError && (
           <p className="text-sm text-red-600 mb-6" role="alert">{kpisError}</p>
         )}
-        {currentLocation && kpisLoading && (
-          <div className="flex items-center justify-center gap-2 py-8 mb-6">
-            <Spinner size="lg" className="text-button-primary" />
-            <span className="text-sm text-primary">Loading inventory KPIs…</span>
-          </div>
-        )}
-        {currentLocation && !kpisLoading && (
+        {shouldFetchKpis && currentLocation && inventoryKPIs.length > 0 && (
           <InventoryKPICards items={inventoryKPIs} />
         )}
 
-        {currentLocation && orderTrackerError && (
+        {canOrderTracker && currentLocation && orderTrackerError && (
           <p className="text-sm text-red-600 mb-2" role="alert">
             Order Tracker: {orderTrackerError}
           </p>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div className="flex flex-col gap-6 order-1 lg:order-1">
-            <CostOfGoodsSoldCard
-              value={inventoryKpisData?.foodCostPercent ?? 0}
-              goal={goals?.foodCostGoal ?? null}
-              timePeriod={kpisLoading ? null : countPeriodLabel}
-              overTarget={
-                inventoryKpisData?.foodCostPercent != null && goals?.foodCostGoal != null
-                  ? inventoryKpisData.foodCostPercent - goals.foodCostGoal
-                  : null
-              }
-              theoreticalUsage={inventoryKpisData?.theoreticalUsage ?? null}
-              theoreticalUsagePercent={inventoryKpisData?.theoreticalUsagePercent ?? null}
-              actualUsage={inventoryKpisData?.currentFoodCost ?? null}
-              actualUsagePercent={inventoryKpisData?.foodCostPercent ?? null}
-              loading={kpisLoading}
-            />
-            <VarianceChartCard
-              items={inventoryKpisData?.varianceItems ?? []}
-              timePeriod={kpisLoading ? null : countPeriodLabel}
-              loading={kpisLoading}
-              onViewAll={(barBandWidth) => {
-                setVarianceBarBandWidth(barBandWidth);
-                setVarianceModalOpen(true);
-              }}
-            />
-          </div>
+        {(canCostOfGoods || canVariance || canOrderTracker) && (
+          <div
+            className={
+              (canCostOfGoods || canVariance) && canOrderTracker
+                ? 'grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6'
+                : 'grid grid-cols-1 gap-6 mb-6'
+            }
+          >
+            {(canCostOfGoods || canVariance) && (
+              <div className="flex flex-col gap-6 order-1 lg:order-1">
+                {canCostOfGoods && (
+                  <CostOfGoodsSoldCard
+                    value={inventoryKpisData?.foodCostPercent ?? 0}
+                    goal={goals?.foodCostGoal ?? null}
+                    timePeriod={kpisLoading ? null : countPeriodLabel}
+                    overTarget={
+                      inventoryKpisData?.foodCostPercent != null && goals?.foodCostGoal != null
+                        ? inventoryKpisData.foodCostPercent - goals.foodCostGoal
+                        : null
+                    }
+                    theoreticalUsage={inventoryKpisData?.theoreticalUsage ?? null}
+                    theoreticalUsagePercent={inventoryKpisData?.theoreticalUsagePercent ?? null}
+                    actualUsage={inventoryKpisData?.currentFoodCost ?? null}
+                    actualUsagePercent={inventoryKpisData?.foodCostPercent ?? null}
+                    loading={kpisLoading}
+                  />
+                )}
+                {canVariance && (
+                  <VarianceChartCard
+                    items={inventoryKpisData?.varianceItems ?? []}
+                    timePeriod={kpisLoading ? null : countPeriodLabel}
+                    loading={kpisLoading}
+                    onViewAll={(barBandWidth) => {
+                      setVarianceBarBandWidth(barBandWidth);
+                      setVarianceModalOpen(true);
+                    }}
+                  />
+                )}
+              </div>
+            )}
 
-          <OrderTrackerCard
-            timePeriod={orderTrackerPeriod}
-            onPeriodChange={setOrderTrackerPeriod}
-            rows={orderTrackerCardRows}
-            loading={orderTrackerLoading}
-            onViewAll={() => setOrderTrackerModalOpen(true)}
-            onView={(order) => {
-              setSelectedOrderForDetail(order);
-              setOrderDetailModalOpen(true);
-            }}
-            className="order-3 lg:order-2 min-h-0 lg:h-full"
-          />
-        </div>
+            {canOrderTracker && (
+              <OrderTrackerCard
+                timePeriod={orderTrackerPeriod}
+                onPeriodChange={setOrderTrackerPeriod}
+                rows={orderTrackerCardRows}
+                loading={orderTrackerLoading}
+                onViewAll={() => setOrderTrackerModalOpen(true)}
+                onView={(order) => {
+                  setSelectedOrderForDetail(order);
+                  setOrderDetailModalOpen(true);
+                }}
+                className={
+                  canCostOfGoods || canVariance
+                    ? 'order-3 lg:order-2 min-h-0 lg:h-full'
+                    : 'min-h-0'
+                }
+              />
+            )}
+          </div>
+        )}
       </div>
 
       <OrderTrackerModal

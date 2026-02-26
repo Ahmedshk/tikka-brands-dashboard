@@ -68,7 +68,7 @@ api.interceptors.response.use(
         originalRequest.url?.includes("/auth/refresh") === true;
       if (isRefreshRequest) {
         store.dispatch(clearUser());
-        toast.error(getErrorMessage(error));
+        // Don't toast: no refresh cookie is normal on login/set-password/forgot-password
         throw error;
       }
 

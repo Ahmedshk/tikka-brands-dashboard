@@ -29,9 +29,22 @@ export class AuthService {
   /** Resolve allowed location IDs for a role. Returns 'all' or array of location IDs. */
   async getAllowedLocationIds(roleName: string): Promise<"all" | string[]> {
     const role = await this.roleRepository.findByName(roleName);
-    if (!role?.locations) return "all";
-    if (role.locations === "all") return "all";
-    return Array.isArray(role.locations) ? role.locations : "all";
+    if (!role) return "all";
+    const access = (role as { locationAccess?: string }).locationAccess;
+    if (access !== "specific") return "all";
+    const ids = (role as { locationIds?: unknown[] }).locationIds ?? [];
+    const resolved = ids
+      .map((l) => {
+        if (l == null) return "";
+        if (typeof l === "object" && "_id" in l)
+          return String((l as { _id: unknown })._id);
+        if (typeof l === "object" && l !== null && typeof (l as { toString?: () => string }).toString === "function")
+          return (l as { toString(): string }).toString();
+        if (typeof l === "string") return l;
+        return "";
+      })
+      .filter(Boolean);
+    return resolved.length > 0 ? resolved : "all";
   }
 
   async login(
@@ -62,15 +75,33 @@ export class AuthService {
       );
     }
 
-    const [permissions, allowedLocationIds] = await Promise.all([
-      this.getPermissionsForRole(user.role),
-      this.getAllowedLocationIds(user.role),
-    ]);
+    // First login: set status to active
+    if (user.status === "pending") {
+      await this.userRepository.updateById(user._id.toString(), { status: "active" });
+      (user as typeof user & { status: string }).status = "active";
+    }
+
+    // Resolve effective role name (from roleId or role field)
+    let effectiveRoleName: string | null = null;
+    if (user.roleId) {
+      const roleDoc = await this.roleRepository.findById(user.roleId.toString());
+      effectiveRoleName = roleDoc?.name ?? user.role ?? null;
+    } else {
+      effectiveRoleName = user.role ?? null;
+    }
+
+    const [permissions, allowedLocationIds] =
+      effectiveRoleName != null && effectiveRoleName !== ""
+        ? await Promise.all([
+            this.getPermissionsForRole(effectiveRoleName),
+            this.getAllowedLocationIds(effectiveRoleName),
+          ])
+        : [{ type: "custom" as const, pages: [] }, [] as string[]];
 
     const tokenPayload: TokenPayload = {
       userId: user._id.toString(),
       email: user.email,
-      role: user.role,
+      role: effectiveRoleName ?? user.role ?? "",
     };
 
     const accessToken = generateAccessToken(tokenPayload);
@@ -103,14 +134,24 @@ export class AuthService {
     if (!user.isActive) {
       throw new UnauthorizedError("Your account has been deactivated.");
     }
-    const [permissions, allowedLocationIds] = await Promise.all([
-      this.getPermissionsForRole(user.role),
-      this.getAllowedLocationIds(user.role),
-    ]);
+    let effectiveRoleName: string | null = null;
+    if (user.roleId) {
+      const roleDoc = await this.roleRepository.findById(user.roleId.toString());
+      effectiveRoleName = roleDoc?.name ?? user.role ?? null;
+    } else {
+      effectiveRoleName = user.role ?? null;
+    }
+    const [permissions, allowedLocationIds] =
+      effectiveRoleName != null && effectiveRoleName !== ""
+        ? await Promise.all([
+            this.getPermissionsForRole(effectiveRoleName),
+            this.getAllowedLocationIds(effectiveRoleName),
+          ])
+        : [{ type: "custom" as const, pages: [] }, [] as string[]];
     const tokenPayload: TokenPayload = {
       userId: user._id.toString(),
       email: user.email,
-      role: user.role,
+      role: effectiveRoleName ?? user.role ?? "",
     };
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
