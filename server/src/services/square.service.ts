@@ -2,6 +2,7 @@ import type {
   SquareLocationForHours,
   TimeRange,
 } from "../utils/businessHours.util.js";
+import { generateDistinctColors } from "../utils/colorPalette.util.js";
 import {
   getStartOfDayUtc,
   getDatePartsInTz,
@@ -208,8 +209,8 @@ function isPaidOrder(order: SquareOrder): boolean {
 }
 
 /**
- * Per-order net sales in cents (Gross - Returns - Discounts, excluding tax, tips, service charge, card surcharge).
- * Returns 0 if order has no net_amounts or total_money; otherwise total_money - tax - tip - service_charge - card_surcharge, clamped to >= 0.
+ * Per-order net sales in cents (Gross - Returns - Discounts, excluding tax, tips, card surcharge).
+ * Returns 0 if order has no net_amounts or total_money; otherwise total_money - tax - tip - card_surcharge, clamped to >= 0.
  */
 function orderNetSalesCents(order: SquareOrder): number {
   const net = order.net_amounts;
@@ -218,7 +219,6 @@ function orderNetSalesCents(order: SquareOrder): number {
   const tax = moneyToCents(net.tax_money);
   const tip = moneyToCents(net.tip_money);
   const cardSurcharge = moneyToCents(net.card_surcharge_money);
-  // Service charge excluded from net sales per product
   return Math.max(0, total - tax - tip - cardSurcharge);
 }
 
@@ -351,34 +351,6 @@ const SOURCE_LABEL_MAP: Record<string, string> = {
   order: "Order",
 };
 
-/**
- * Sources of Sales chart palette: no repeated colors.
- * First 11 = KPI card accent colors (green, gold, blue, orange, purple, red, yellow, gray, azure, positive, negative).
- * Next 9 = extra distinct colors for additional segments.
- */
-const SOURCES_CHART_PALETTE: string[] = [
-  "#5DC54F", // green
-  "#FDB90E", // gold
-  "#009BBE", // blue
-  "#FF8DC7", // pink
-  "#BE68FF", // purple
-  "#F59E0B", // orange
-  "#A82323", // brownish
-  "#215E61", // sea greenish
-  "#79AFFF", // azure
-  "#6D6D6D", // gray
-  "#FFFF00", // yellow
-  "#22C55E", // positive (green)
-  "#EF4444", // negative (red)
-  "#9C27B0", // deep purple
-  "#009688", // teal
-  "#8BC34A", // light green
-  "#FF9800", // amber
-  "#795548", // brown
-  "#607D8B", // blue grey
-  "#FF1C28", // red
-];
-
 function deriveSegmentKey(order: SquareOrder): string {
   const sourceName = (order.source?.name ?? "").trim().toLowerCase();
   const fulfillmentType = order.fulfillments?.[0]?.type?.trim().toLowerCase();
@@ -404,12 +376,6 @@ function segmentKeyToLabel(key: string): string {
   );
 }
 
-function segmentColorByIndex(index: number): string {
-  return (
-    SOURCES_CHART_PALETTE[index % SOURCES_CHART_PALETTE.length] ?? "#6D6D6D"
-  );
-}
-
 /**
  * Aggregate net sales by source/fulfillment from an array of orders.
  * Returns segments with id, label, value (percentage 0-100), amount (formatted), color.
@@ -431,6 +397,7 @@ function getSourcesOfSalesFromOrders(
   if (totalCents <= 0) return [];
 
   const keys = Object.keys(byKey).sort((a, b) => a.localeCompare(b));
+  const colors = generateDistinctColors(keys.length, { nonAdjacent: true });
   return keys.map((key, index) => {
     const amountCents = byKey[key] ?? 0;
     const value = Math.round((amountCents / totalCents) * 1000) / 10;
@@ -446,7 +413,7 @@ function getSourcesOfSalesFromOrders(
       label: segmentKeyToLabel(key),
       value,
       amount,
-      color: segmentColorByIndex(index),
+      color: colors[index] ?? "#6D6D6D",
     };
   });
 }
@@ -524,7 +491,6 @@ export async function getNetSalesInRange(
     }
 
     const data = (await res.json()) as SearchOrdersResponse;
-    console.log("🚀 ~ getNetSalesInRange ~ data:", data);
     if (data.errors && data.errors.length > 0) {
       throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
     }
@@ -1202,12 +1168,15 @@ export async function getOrderTimeSeriesBySourceInRange(
   const sourceKeys = Object.keys(bySourceAndKey).sort((a, b) =>
     a.localeCompare(b),
   );
+  const colors = generateDistinctColors(sourceKeys.length, {
+    nonAdjacent: true,
+  });
   const series: OrderTimeSeriesBySourceSeries[] = sourceKeys.map(
     (sourceKey, index) => ({
       id: sourceKey,
       label: segmentKeyToLabel(sourceKey),
       data: keys.map((k) => (bySourceAndKey[sourceKey] ?? {})[k] ?? 0),
-      color: segmentColorByIndex(index),
+      color: colors[index] ?? "#6D6D6D",
     }),
   );
 

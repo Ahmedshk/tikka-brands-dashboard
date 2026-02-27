@@ -100,10 +100,6 @@ export const getCommandCenterKPIs = async (
         location.timezone,
         location.businessStartTime ?? "00:00",
       );
-      console.log(
-        "🚀 ~ getCommandCenterKPIs ~ rangeWeekToDate:",
-        rangeWeekToDate,
-      );
 
       const netSalesPromises: Promise<number | null>[] = [];
       const laborCostPromises: Promise<number | null>[] = [];
