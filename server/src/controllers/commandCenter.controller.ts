@@ -11,6 +11,7 @@ import {
   getBusinessStartTimeRange,
   getWeekToDateRange,
   getTodayRangeFullDay,
+  getTodayInTimezone,
   getSameDayLastWeekRange,
   getHourInTimezone,
 } from "../utils/timezone.util.js";
@@ -83,8 +84,12 @@ export const getCommandCenterKPIs = async (
 
     let laborCostGoal = 0;
     if (wantLaborCost) {
-      const goals = await goalService.getByLocationId(locationId);
-      laborCostGoal = goals.laborCostGoal ?? 0;
+      const todayInTz = getTodayInTimezone(location.timezone);
+      const result = await goalService.getByLocationIdAndDate(
+        locationId,
+        todayInTz,
+      );
+      laborCostGoal = result.goals.laborCostGoal ?? 0;
     }
 
     const rangeToday: TimeRange = getBusinessStartTimeRange(

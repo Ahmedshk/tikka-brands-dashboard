@@ -107,15 +107,16 @@ export class AuthService {
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
 
-    const userWithoutPassword = user.toObject() as Omit<IUser, "password"> & {
+    const { password: _, ...userWithoutPassword } = user as Record<string, unknown>;
+    const safeUser = userWithoutPassword as Omit<IUser, "password"> & {
       permissions?: RolePermissions;
       allowedLocationIds?: "all" | string[];
     };
-    userWithoutPassword.permissions = permissions;
-    userWithoutPassword.allowedLocationIds = allowedLocationIds;
+    safeUser.permissions = permissions;
+    safeUser.allowedLocationIds = allowedLocationIds;
 
     return {
-      user: userWithoutPassword,
+      user: safeUser,
       accessToken,
       refreshToken,
     };
@@ -155,14 +156,15 @@ export class AuthService {
     };
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
-    const userWithoutPassword = user.toObject() as Omit<IUser, "password"> & {
+    const { password: _, ...refreshUserWithoutPassword } = user as Record<string, unknown>;
+    const safeRefreshUser = refreshUserWithoutPassword as Omit<IUser, "password"> & {
       permissions?: RolePermissions;
       allowedLocationIds?: "all" | string[];
     };
-    userWithoutPassword.permissions = permissions;
-    userWithoutPassword.allowedLocationIds = allowedLocationIds;
+    safeRefreshUser.permissions = permissions;
+    safeRefreshUser.allowedLocationIds = allowedLocationIds;
     return {
-      user: userWithoutPassword,
+      user: safeRefreshUser,
       accessToken,
       refreshToken,
     };

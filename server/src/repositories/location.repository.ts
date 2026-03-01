@@ -8,15 +8,15 @@ export class LocationRepository {
   }
 
   async findById(id: string): Promise<LocationDocument | null> {
-    return await LocationModel.findById(id);
+    return await LocationModel.findById(id).lean().exec() as LocationDocument | null;
   }
 
   async findAll(): Promise<LocationDocument[]> {
-    return await LocationModel.find().sort({ createdAt: -1 });
+    return await LocationModel.find().sort({ createdAt: -1 }).lean().exec() as LocationDocument[];
   }
 
   async findPaginated(skip: number, limit: number): Promise<LocationDocument[]> {
-    return await LocationModel.find().sort({ createdAt: -1 }).skip(skip).limit(limit).exec();
+    return await LocationModel.find().sort({ createdAt: -1 }).skip(skip).limit(limit).lean().exec() as LocationDocument[];
   }
 
   async count(): Promise<number> {
@@ -24,7 +24,7 @@ export class LocationRepository {
   }
 
   async updateById(id: string, updateData: Partial<Omit<ILocation, '_id' | 'createdAt' | 'updatedAt'>>): Promise<LocationDocument | null> {
-    return await LocationModel.findByIdAndUpdate(id, updateData, { new: true });
+    return await LocationModel.findByIdAndUpdate(id, updateData, { new: true }).lean().exec() as LocationDocument | null;
   }
 
   async deleteById(id: string): Promise<boolean> {

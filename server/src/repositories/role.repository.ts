@@ -72,6 +72,6 @@ export class RoleRepository {
   }
 
   async setActive(id: string, isActive: boolean): Promise<RoleDocument | null> {
-    return await RoleModel.findByIdAndUpdate(id, { isActive }, { new: true });
+    return await RoleModel.findByIdAndUpdate(id, { isActive }, { new: true }).lean().exec() as RoleDocument | null;
   }
 }

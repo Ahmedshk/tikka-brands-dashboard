@@ -388,7 +388,7 @@ export const getSalesTrend = async (
     if (period.granularity === "monthly") {
       const displayEnd = period.displayEndAt ?? period.endAt;
       const displayRange = { startAt: period.startAt, endAt: displayEnd };
-      const buckets = getOrderedBucketsAndLabels(displayRange, timezone, "monthly");
+      const buckets = getOrderedBucketsAndLabels(displayRange, timezone, "monthly", { periodType });
       for (let i = 0; i < buckets.keys.length; i++) {
         const key = buckets.keys[i];
         if (key == null) continue;
@@ -405,12 +405,13 @@ export const getSalesTrend = async (
     const comparison = getSalesTrendComparisonRange(
       comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
       period.startAt,
-      displayEnd,
+      period.endAt,
       timezone,
       comparisonDate,
       comparisonStart,
       comparisonEnd,
       businessStartTime,
+      periodType as Parameters<typeof getSalesTrendComparisonRange>[8],
     );
 
     const seriesGranularity = toSeriesGranularity(period.granularity);
@@ -439,7 +440,7 @@ export const getSalesTrend = async (
         dataRange,
         timezone,
         seriesGranularity,
-        { accessToken: squareAccessToken ?? undefined },
+        { accessToken: squareAccessToken ?? undefined, periodType },
       );
       let xAxisLabelsSource = result.labels;
       let seriesSource = result.series;
@@ -448,11 +449,13 @@ export const getSalesTrend = async (
           displayRange,
           timezone,
           seriesGranularity,
+          { periodType },
         );
         const dataBuckets = getOrderedBucketsAndLabels(
           dataRange,
           timezone,
           seriesGranularity,
+          { periodType },
         );
         xAxisLabelsSource = displayBuckets.labels;
         const dataLen = dataBuckets.keys.length;
@@ -493,7 +496,7 @@ export const getSalesTrend = async (
             dataRange,
             timezone,
             seriesGranularity,
-            { accessToken: squareAccessToken ?? undefined },
+            { accessToken: squareAccessToken ?? undefined, periodType },
           ),
           comparisonRange
             ? getOrderTimeSeriesInRange(
@@ -501,7 +504,7 @@ export const getSalesTrend = async (
                 comparisonRange,
                 timezone,
                 seriesGranularity,
-                { accessToken: squareAccessToken ?? undefined },
+                { accessToken: squareAccessToken ?? undefined, periodType },
               )
             : null,
         ]);
@@ -510,11 +513,13 @@ export const getSalesTrend = async (
             displayRange,
             timezone,
             seriesGranularity,
+            { periodType },
           );
           const dataBuckets = getOrderedBucketsAndLabels(
             dataRange,
             timezone,
             seriesGranularity,
+            { periodType },
           );
           xAxisLabels = displayBuckets.labels;
           const netSalesByKey: Record<string, number> = {};
@@ -593,7 +598,7 @@ export const getSalesTrend = async (
               dataRange,
               timezone,
               seriesGranularity,
-              { apiKey: homebaseApiKey ?? undefined },
+              { apiKey: homebaseApiKey ?? undefined, periodType },
             ),
             comparisonRange
               ? getLaborAndHoursTimeSeriesInRange(
@@ -601,7 +606,7 @@ export const getSalesTrend = async (
                   comparisonRange,
                   timezone,
                   seriesGranularity,
-                  { apiKey: homebaseApiKey ?? undefined },
+                  { apiKey: homebaseApiKey ?? undefined, periodType },
                 )
               : null,
           ]);
@@ -610,11 +615,13 @@ export const getSalesTrend = async (
               displayRange,
               timezone,
               seriesGranularity,
+              { periodType },
             );
             const dataBuckets = getOrderedBucketsAndLabels(
               dataRange,
               timezone,
               seriesGranularity,
+              { periodType },
             );
             xAxisLabels = displayBuckets.labels;
             const laborCostByKey: Record<string, number> = {};
@@ -673,8 +680,8 @@ export const getSalesTrend = async (
 
     if (comparisonRange && comparisonPeriod.length > 0) {
       const currentRange = useDisplayRange ? displayRange : dataRange;
-      const currentBuckets = getOrderedBucketsAndLabels(currentRange, timezone, seriesGranularity);
-      const compBuckets = getOrderedBucketsAndLabels(comparisonRange, timezone, seriesGranularity);
+      const currentBuckets = getOrderedBucketsAndLabels(currentRange, timezone, seriesGranularity, { periodType });
+      const compBuckets = getOrderedBucketsAndLabels(comparisonRange, timezone, seriesGranularity, { periodType });
 
       const currentByKey = new Map<string, number | null>();
       currentBuckets.keys.forEach((k, i) => { currentByKey.set(k, currentPeriod[i] ?? null); });
@@ -704,6 +711,7 @@ export const getSalesTrend = async (
           { startAt: mergedStart, endAt: mergedEnd },
           timezone,
           seriesGranularity,
+          { periodType },
         );
         finalKeys = mergedBuckets.keys;
         xAxisLabels = mergedBuckets.labels;
@@ -754,6 +762,10 @@ export const getSalesTrend = async (
         granularity: period.granularity,
         currentPeriod,
         comparisonPeriod,
+        periodRange: { startAt: period.startAt, endAt: period.endAt },
+        comparisonRange: comparisonRange
+          ? { startAt: comparisonRange.startAt, endAt: comparisonRange.endAt }
+          : null,
       },
     });
   } catch (error) {
@@ -816,12 +828,13 @@ export const getSalesTrendKpi = async (
     const comparison = getSalesTrendComparisonRange(
       comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
       period.startAt,
-      displayEnd,
+      period.endAt,
       timezone,
       comparisonDate,
       comparisonStart,
       comparisonEnd,
       businessStartTime,
+      periodType as Parameters<typeof getSalesTrendComparisonRange>[8],
     );
 
     const seriesGranularity = toSeriesGranularity(period.granularity);
@@ -834,6 +847,7 @@ export const getSalesTrendKpi = async (
       dataRange,
       timezone,
       seriesGranularity,
+      { periodType },
     );
     const numDaysCurrent = currentBuckets.keys.length;
     const numDaysComparison = comparisonRange
@@ -841,6 +855,7 @@ export const getSalesTrendKpi = async (
           comparisonRange,
           timezone,
           seriesGranularity,
+          { periodType },
         ).keys.length
       : 0;
 
@@ -859,7 +874,7 @@ export const getSalesTrendKpi = async (
           dataRange,
           timezone,
           seriesGranularity,
-          { accessToken: squareAccessToken ?? undefined },
+          { accessToken: squareAccessToken ?? undefined, periodType },
         ),
         comparisonRange
           ? getOrderTimeSeriesInRange(
@@ -867,7 +882,7 @@ export const getSalesTrendKpi = async (
               comparisonRange,
               timezone,
               seriesGranularity,
-              { accessToken: squareAccessToken ?? undefined },
+              { accessToken: squareAccessToken ?? undefined, periodType },
             )
           : null,
       ]);
@@ -890,7 +905,7 @@ export const getSalesTrendKpi = async (
             dataRange,
             timezone,
             seriesGranularity,
-            { apiKey: homebaseApiKey ?? undefined },
+            { apiKey: homebaseApiKey ?? undefined, periodType },
           ),
           comparisonRange
             ? getLaborAndHoursTimeSeriesInRange(
@@ -898,7 +913,7 @@ export const getSalesTrendKpi = async (
                 comparisonRange,
                 timezone,
                 seriesGranularity,
-                { apiKey: homebaseApiKey ?? undefined },
+                { apiKey: homebaseApiKey ?? undefined, periodType },
               )
             : null,
         ]);
@@ -927,6 +942,10 @@ export const getSalesTrendKpi = async (
     res.status(200).json({
       success: true,
       data: {
+        periodRange: { startAt: period.startAt, endAt: period.endAt },
+        comparisonRange: comparisonRange
+          ? { startAt: comparisonRange.startAt, endAt: comparisonRange.endAt }
+          : null,
         current: {
           totalNetSales: totalNetSalesCurrent,
           totalTransactions: totalTransactionsCurrent,
@@ -994,12 +1013,13 @@ export const getSalesByCategory = async (
     const comparison = getSalesTrendComparisonRange(
       comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
       period.startAt,
-      displayEnd,
+      period.endAt,
       timezone,
       comparisonDate,
       comparisonStart,
       comparisonEnd,
       businessStartTime,
+      periodType as Parameters<typeof getSalesTrendComparisonRange>[8],
     );
 
     const dataRange = { startAt: period.startAt, endAt: period.endAt };
@@ -1066,6 +1086,10 @@ export const getSalesByCategory = async (
           })),
           totalNetSales: comparisonResult.totalNetSalesCents / 100,
         },
+        periodRange: { startAt: period.startAt, endAt: period.endAt },
+        comparisonRange: comparisonRange
+          ? { startAt: comparisonRange.startAt, endAt: comparisonRange.endAt }
+          : null,
       },
     });
   } catch (error) {

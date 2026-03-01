@@ -38,6 +38,8 @@ function getApiKey(): string | undefined {
 
 export interface HomebaseServiceOptions {
   apiKey?: string | undefined;
+  /** Used for label formatting (same as Square): last52weeks = month+year on all monthly; daily day-name when not today/last52weeks/thisYear */
+  periodType?: string | undefined;
 }
 
 function resolveApiKey(override?: string): string | undefined {
@@ -346,15 +348,21 @@ function getBucketKeyForDate(
   return "";
 }
 
+interface GetOrderedBucketsAndLabelsOptions {
+  periodType?: string | undefined;
+}
+
 /** Generate ordered bucket keys and labels for a range (same as Square for alignment). */
 function getOrderedBucketsAndLabels(
   range: TimeRange,
   timezone: string,
   granularity: SalesTrendGranularity,
+  options?: GetOrderedBucketsAndLabelsOptions,
 ): { keys: string[]; labels: string[] } {
   const start = new Date(range.startAt);
   const end = new Date(range.endAt);
   const tz = timezone.trim();
+  const periodType = options?.periodType;
   const keys: string[] = [];
   const labels: string[] = [];
   const seen = new Set<string>();
@@ -404,8 +412,19 @@ function getOrderedBucketsAndLabels(
     return { keys, labels };
   }
   if (granularity === "daily") {
+    const showDayName =
+      periodType != null &&
+      periodType !== "today" &&
+      periodType !== "last52weeks" &&
+      periodType !== "thisYear";
     const labelF = new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
+      month: "short",
+      day: "numeric",
+    });
+    const labelFWithWeekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      weekday: "short",
       month: "short",
       day: "numeric",
     });
@@ -424,7 +443,9 @@ function getOrderedBucketsAndLabels(
       if (key && !seen.has(key)) {
         seen.add(key);
         keys.push(key);
-        labels.push(labelF.format(cursor));
+        labels.push(
+          showDayName ? labelFWithWeekday.format(cursor) : labelF.format(cursor),
+        );
       }
       const nextInstant = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
       const nextParts = getDatePartsInTz(nextInstant, tz);
@@ -463,6 +484,7 @@ function getOrderedBucketsAndLabels(
     return { keys, labels };
   }
   if (granularity === "monthly") {
+    const last52weeksAllYear = periodType === "last52weeks";
     const labelF = new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
       month: "short",
@@ -472,19 +494,30 @@ function getOrderedBucketsAndLabels(
       month: "short",
       year: "numeric",
     });
+    const labelFShortYear = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      month: "short",
+      year: "2-digit",
+    });
     const startParts = getDatePartsInTz(start, tz);
     const endParts = getDatePartsInTz(end, tz);
+    const startYear = startParts.y;
     let y = startParts.y;
     let month0 = startParts.m;
-    let lastYear: number | null = null;
     while (y < endParts.y || (y === endParts.y && month0 <= endParts.m)) {
       const cursor = getStartOfDayUtc(y, month0, 1, tz);
       const key = getBucketKeyForDate(cursor, tz, "monthly");
       if (key && !seen.has(key)) {
         seen.add(key);
         keys.push(key);
-        const label = lastYear !== null && y !== lastYear ? labelFWithYear.format(cursor) : labelF.format(cursor);
-        lastYear = y;
+        let label: string;
+        if (last52weeksAllYear) {
+          label = labelFShortYear.format(cursor);
+          label = label.replace(/\s*(\d{2})$/, ", $1");
+        } else {
+          label =
+            y !== startYear ? labelFWithYear.format(cursor) : labelF.format(cursor);
+        }
         labels.push(label);
       }
       month0 += 1;
@@ -515,7 +548,12 @@ export async function getLaborAndHoursTimeSeriesInRange(
   granularity: SalesTrendGranularity,
   options?: HomebaseServiceOptions,
 ): Promise<LaborHoursTimeSeriesResult> {
-  const { keys, labels } = getOrderedBucketsAndLabels(range, timezone, granularity);
+  const { keys, labels } = getOrderedBucketsAndLabels(
+    range,
+    timezone,
+    granularity,
+    options?.periodType != null ? { periodType: options.periodType } : undefined,
+  );
   const laborCostByKey: Record<string, number> = {};
   const hoursByKey: Record<string, number> = {};
   for (const k of keys) {

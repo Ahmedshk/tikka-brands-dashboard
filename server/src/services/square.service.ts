@@ -42,6 +42,8 @@ interface SquareOrderLineItem {
 
 interface SquareOrder {
   created_at?: string;
+  /** Order state (e.g. OPEN, COMPLETED, CANCELED). CANCELED orders are excluded from net sales. */
+  state?: string;
   total_money?: Money;
   net_amounts?: NetAmounts;
   /** Refund/return amounts for the order (Square Order.return_amounts). */
@@ -84,6 +86,8 @@ function getAccessToken(): string {
 
 export interface SquareServiceOptions {
   accessToken?: string | undefined;
+  /** Used for label formatting: last52weeks = month+year on all monthly; daily day-name when not today/last52weeks/thisYear */
+  periodType?: string | undefined;
 }
 
 function resolveAccessToken(override?: string): string {
@@ -208,6 +212,11 @@ function isPaidOrder(order: SquareOrder): boolean {
   );
 }
 
+/** True if order is paid and not CANCELED; use for net sales and order count. */
+function isOrderCountedForNetSales(order: SquareOrder): boolean {
+  return isPaidOrder(order) && order.state !== "CANCELED";
+}
+
 /**
  * Per-order net sales in cents (Gross - Returns - Discounts, excluding tax, tips, card surcharge).
  * Returns 0 if order has no net_amounts or total_money; otherwise total_money - tax - tip - card_surcharge, clamped to >= 0.
@@ -303,11 +312,11 @@ function getOrderStatsFromOrders(orders: SquareOrder[]): OrderStatsInRange {
   };
 
   for (const order of orders) {
-    const isPaid = isPaidOrder(order);
+    const countedForNetSales = isOrderCountedForNetSales(order);
     const refundCents = moneyToCents(order.return_amounts?.total_money);
     const hasRefunds = refundCents > 0;
 
-    if (isPaid) {
+    if (countedForNetSales) {
       stats.orderCount += 1;
       stats.netSalesCents += orderNetSalesCents(order);
       stats.totalDiscountCents += moneyToCents(
@@ -386,7 +395,7 @@ function getSourcesOfSalesFromOrders(
   const byKey: Record<string, number> = {};
 
   for (const order of orders) {
-    if (!isPaidOrder(order)) continue;
+    if (!isOrderCountedForNetSales(order)) continue;
     const cents = orderNetSalesCents(order);
     if (cents <= 0) continue;
     const key = deriveSegmentKey(order);
@@ -497,7 +506,7 @@ export async function getNetSalesInRange(
 
     const orders = data.orders ?? [];
     for (const order of orders) {
-      if (!isPaidOrder(order)) continue;
+      if (!isOrderCountedForNetSales(order)) continue;
       totalCents += orderNetSalesCents(order);
     }
 
@@ -575,7 +584,7 @@ export async function searchOrdersInRange(
 
     const orders = data.orders ?? [];
     for (const order of orders) {
-      if (!isPaidOrder(order)) continue;
+      if (!isOrderCountedForNetSales(order)) continue;
       const created_at = order.created_at ?? "";
       if (!created_at) continue;
       result.push({
@@ -688,9 +697,13 @@ export interface NetSalesByCategoryResult {
   totalNetSalesCents: number;
 }
 
+/** Category label for items with no category or when category cannot be resolved. */
+const UNCATEGORIZED_LABEL = "Uncategorized";
+
 /**
  * Aggregate net sales by category for a time range using Square Orders (line items) and Catalog API.
  * Allocates order-level net sales to line items proportionally; resolves variation -> item -> category via BatchRetrieveCatalog.
+ * Line items without catalog_object_id, or items whose category cannot be resolved, are grouped under "Uncategorized".
  */
 export async function getNetSalesByCategoryInRange(
   squareLocationId: string,
@@ -706,9 +719,11 @@ export async function getNetSalesByCategoryInRange(
 
   const variationToCents: Record<string, number> = {};
   let totalNetSalesCents = 0;
+  /** Proportional net sales for line items that have no catalog_object_id; attributed to Uncategorized. */
+  let uncategorizedLineCents = 0;
 
   for (const order of orders) {
-    if (!isPaidOrder(order)) continue;
+    if (!isOrderCountedForNetSales(order)) continue;
     const orderNetCents = orderNetSalesCents(order);
     totalNetSalesCents += orderNetCents;
     const lineItems = order.line_items ?? [];
@@ -719,9 +734,12 @@ export async function getNetSalesByCategoryInRange(
     if (orderTotalCents <= 0) continue;
     for (const line of lineItems) {
       const catalogObjectId = line.catalog_object_id?.trim();
-      if (!catalogObjectId) continue;
       const lineCents =
         orderNetCents * (moneyToCents(line.total_money) / orderTotalCents);
+      if (!catalogObjectId) {
+        uncategorizedLineCents += lineCents;
+        continue;
+      }
       variationToCents[catalogObjectId] =
         (variationToCents[catalogObjectId] ?? 0) + lineCents;
     }
@@ -729,6 +747,12 @@ export async function getNetSalesByCategoryInRange(
 
   const variationIds = Object.keys(variationToCents);
   if (variationIds.length === 0) {
+    if (uncategorizedLineCents > 0) {
+      return {
+        categories: [{ name: UNCATEGORIZED_LABEL, netSalesCents: uncategorizedLineCents }],
+        totalNetSalesCents,
+      };
+    }
     return { categories: [], totalNetSalesCents };
   }
 
@@ -794,12 +818,15 @@ export async function getNetSalesByCategoryInRange(
   }
 
   const byCategory: Record<string, number> = {};
+  if (uncategorizedLineCents > 0) {
+    byCategory[UNCATEGORIZED_LABEL] = uncategorizedLineCents;
+  }
   for (const variationId of variationIds) {
     const itemId = variationToItemId[variationId];
     const categoryId = itemId ? itemIdToCategoryId[itemId] : undefined;
     const name = categoryId
-      ? (categoryIdToName[categoryId] ?? "Uncategorized")
-      : "Uncategorized";
+      ? (categoryIdToName[categoryId] ?? UNCATEGORIZED_LABEL)
+      : UNCATEGORIZED_LABEL;
     const cents = variationToCents[variationId] ?? 0;
     byCategory[name] = (byCategory[name] ?? 0) + cents;
   }
@@ -889,15 +916,21 @@ function getBucketKeyForDate(
   return "";
 }
 
+export interface GetOrderedBucketsAndLabelsOptions {
+  periodType?: string | undefined;
+}
+
 /** Generate ordered bucket keys and display labels for a range (keys in TZ for consistency with order bucketing). Exported for controller display-range label generation. */
 export function getOrderedBucketsAndLabels(
   range: TimeRange,
   timezone: string,
   granularity: SalesTrendGranularity,
+  options?: GetOrderedBucketsAndLabelsOptions,
 ): { keys: string[]; labels: string[] } {
   const start = new Date(range.startAt);
   const end = new Date(range.endAt);
   const tz = timezone.trim();
+  const periodType = options?.periodType;
   const keys: string[] = [];
   const labels: string[] = [];
   const seen = new Set<string>();
@@ -948,8 +981,19 @@ export function getOrderedBucketsAndLabels(
   }
 
   if (granularity === "daily") {
+    const showDayName =
+      periodType != null &&
+      periodType !== "today" &&
+      periodType !== "last52weeks" &&
+      periodType !== "thisYear";
     const labelF = new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
+      month: "short",
+      day: "numeric",
+    });
+    const labelFWithWeekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      weekday: "short",
       month: "short",
       day: "numeric",
     });
@@ -968,7 +1012,9 @@ export function getOrderedBucketsAndLabels(
       if (key && !seen.has(key)) {
         seen.add(key);
         keys.push(key);
-        labels.push(labelF.format(cursor));
+        labels.push(
+          showDayName ? labelFWithWeekday.format(cursor) : labelF.format(cursor),
+        );
       }
       const nextInstant = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
       const nextParts = getDatePartsInTz(nextInstant, tz);
@@ -1023,6 +1069,7 @@ export function getOrderedBucketsAndLabels(
   }
 
   if (granularity === "monthly") {
+    const last52weeksAllYear = periodType === "last52weeks";
     const labelF = new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
       month: "short",
@@ -1032,22 +1079,30 @@ export function getOrderedBucketsAndLabels(
       month: "short",
       year: "numeric",
     });
+    const labelFShortYear = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      month: "short",
+      year: "2-digit",
+    });
     const startParts = getDatePartsInTz(start, tz);
     const endParts = getDatePartsInTz(end, tz);
+    const startYear = startParts.y;
     let y = startParts.y;
     let month0 = startParts.m;
-    let lastYear: number | null = null;
     while (y < endParts.y || (y === endParts.y && month0 <= endParts.m)) {
       const cursor = getStartOfDayUtc(y, month0, 1, tz);
       const key = getBucketKeyForDate(cursor, tz, "monthly");
       if (key && !seen.has(key)) {
         seen.add(key);
         keys.push(key);
-        const label =
-          lastYear !== null && y !== lastYear
-            ? labelFWithYear.format(cursor)
-            : labelF.format(cursor);
-        lastYear = y;
+        let label: string;
+        if (last52weeksAllYear) {
+          label = labelFShortYear.format(cursor);
+          label = label.replace(/\s*(\d{2})$/, ", $1");
+        } else {
+          label =
+            y !== startYear ? labelFWithYear.format(cursor) : labelF.format(cursor);
+        }
         labels.push(label);
       }
       month0 += 1;
@@ -1083,6 +1138,7 @@ export async function getOrderTimeSeriesInRange(
     range,
     timezone,
     granularity,
+    options?.periodType != null ? { periodType: options.periodType } : undefined,
   );
   const netSalesByKey: Record<string, number> = {};
   const countByKey: Record<string, number> = {};
@@ -1097,7 +1153,7 @@ export async function getOrderTimeSeriesInRange(
     options?.accessToken,
   );
   for (const order of orders) {
-    if (!isPaidOrder(order)) continue;
+    if (!isOrderCountedForNetSales(order)) continue;
     const key = getBucketKeyForDate(
       new Date(order.created_at ?? ""),
       timezone,
@@ -1141,6 +1197,7 @@ export async function getOrderTimeSeriesBySourceInRange(
     range,
     timezone,
     granularity,
+    options?.periodType != null ? { periodType: options.periodType } : undefined,
   );
   const bySourceAndKey: Record<string, Record<string, number>> = {};
 
@@ -1150,7 +1207,7 @@ export async function getOrderTimeSeriesBySourceInRange(
     options?.accessToken,
   );
   for (const order of orders) {
-    if (!isPaidOrder(order)) continue;
+    if (!isOrderCountedForNetSales(order)) continue;
     const cents = orderNetSalesCents(order);
     if (cents <= 0) continue;
     const sourceKey = deriveSegmentKey(order);

@@ -10,10 +10,10 @@ export class LogoRepository {
   }
 
   async findById(id: string): Promise<LogoDocument | null> {
-    return await LogoModel.findById(id);
+    return await LogoModel.findById(id).lean().exec() as LogoDocument | null;
   }
 
   async findAll(limit = LIST_LIMIT): Promise<LogoDocument[]> {
-    return await LogoModel.find().sort({ createdAt: -1 }).limit(limit).exec();
+    return await LogoModel.find().sort({ createdAt: -1 }).limit(limit).lean().exec() as LogoDocument[];
   }
 }

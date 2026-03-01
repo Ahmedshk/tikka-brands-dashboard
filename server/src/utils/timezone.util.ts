@@ -431,3 +431,57 @@ export function getHourInTimezone(isoDateString: string, timezone: string): numb
   const hourStr = formatter.format(date);
   return Number.parseInt(hourStr, 10) || 0;
 }
+
+/**
+ * Get the current calendar date in the given IANA timezone as YYYY-MM-DD.
+ */
+export function getTodayInTimezone(timezone: string): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone.trim(),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(now);
+  const get = (type: string) =>
+    parts.find((p) => p.type === type)?.value ?? "0";
+  const y = get("year");
+  const m = get("month").padStart(2, "0");
+  const d = get("day").padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * For a date string YYYY-MM-DD, return the Sunday of that week and the day-of-week (0=Sun .. 6=Sat).
+ * Used for goal resolution (future week + day override).
+ */
+export function getWeekStartAndDayOfWeek(dateStr: string): {
+  weekStartDate: string;
+  dayOfWeek: number;
+} {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  const yStr = match?.[1];
+  const mStr = match?.[2];
+  const dStr = match?.[3];
+  if (!yStr || !mStr || !dStr) {
+    return { weekStartDate: dateStr, dayOfWeek: 0 };
+  }
+  const y = Number.parseInt(yStr, 10);
+  const m = Number.parseInt(mStr, 10) - 1;
+  const d = Number.parseInt(dStr, 10);
+  const date = new Date(Date.UTC(y, m, d));
+  if (Number.isNaN(date.getTime())) {
+    return { weekStartDate: dateStr, dayOfWeek: 0 };
+  }
+  const dayOfWeek = date.getUTCDay();
+  const sunday = new Date(date);
+  sunday.setUTCDate(date.getUTCDate() - dayOfWeek);
+  const sy = sunday.getUTCFullYear();
+  const sm = String(sunday.getUTCMonth() + 1).padStart(2, "0");
+  const sd = String(sunday.getUTCDate()).padStart(2, "0");
+  return {
+    weekStartDate: `${sy}-${sm}-${sd}`,
+    dayOfWeek: dayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+  };
+}

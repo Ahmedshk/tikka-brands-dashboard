@@ -8,15 +8,15 @@ export class UserRepository {
   }
 
   async findById(id: string): Promise<UserDocument | null> {
-    return await UserModel.findById(id);
+    return await UserModel.findById(id).lean().exec() as UserDocument | null;
   }
 
   async findByEmail(email: string, includePassword = false): Promise<UserDocument | null> {
     const query = UserModel.findOne({ email: email.toLowerCase() });
     if (includePassword) {
-      return await query.select('+password');
+      return await query.select('+password').lean().exec() as UserDocument | null;
     }
-    return await query;
+    return await query.lean().exec() as UserDocument | null;
   }
 
   async findAll(): Promise<UserDocument[]> {
@@ -68,7 +68,7 @@ export class UserRepository {
   }
 
   async updateById(id: string, updateData: Partial<IUser>): Promise<UserDocument | null> {
-    return await UserModel.findByIdAndUpdate(id, updateData, { new: true });
+    return await UserModel.findByIdAndUpdate(id, updateData, { new: true }).lean().exec() as UserDocument | null;
   }
 
   async deleteById(id: string): Promise<boolean> {
@@ -77,16 +77,16 @@ export class UserRepository {
   }
 
   async findByRole(role: string): Promise<UserDocument[]> {
-    return await UserModel.find({ role });
+    return await UserModel.find({ role }).lean().exec() as UserDocument[];
   }
 
   async findBySquareId(squareId: string): Promise<UserDocument | null> {
-    return await UserModel.findOne({ squareId: squareId.trim() });
+    return await UserModel.findOne({ squareId: squareId.trim() }).lean().exec() as UserDocument | null;
   }
 
   async findByInvitationToken(token: string): Promise<UserDocument | null> {
     if (!token || !token.trim()) return null;
-    return await UserModel.findOne({ invitationToken: token.trim() });
+    return await UserModel.findOne({ invitationToken: token.trim() }).lean().exec() as UserDocument | null;
   }
 
   async setPasswordAndClearInvitationToken(
@@ -100,6 +100,6 @@ export class UserRepository {
         $unset: { invitationToken: 1, invitationTokenExpiresAt: 1 },
       },
       { new: true }
-    );
+    ).lean().exec() as UserDocument | null;
   }
 }

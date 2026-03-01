@@ -22,11 +22,7 @@ function randomPassword(length = 16): string {
 }
 
 function toIUser(doc: UserDocument): IUser {
-  const plain =
-    doc && typeof (doc as UserDocument & { toObject?: () => Record<string, unknown> }).toObject === 'function'
-      ? (doc as UserDocument & { toObject: () => Record<string, unknown> }).toObject()
-      : { ...doc };
-  const { _id, ...rest } = plain;
+  const { _id, ...rest } = doc as Record<string, unknown>;
   return { ...rest, _id: _id != null ? String(_id) : undefined } as IUser;
 }
 
@@ -163,8 +159,7 @@ export class UserService {
   async getUserById(id: string): Promise<IUser | null> {
     const doc = await this.userRepository.findById(id);
     if (!doc) return null;
-    const plain = doc.toObject() as Record<string, unknown> & { _id: unknown };
-    return toIUser({ ...plain, _id: doc._id } as UserDocument);
+    return toIUser(doc);
   }
 
   async getUserByEmail(email: string): Promise<IUser | null> {

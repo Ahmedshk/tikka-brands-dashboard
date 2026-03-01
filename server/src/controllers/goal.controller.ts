@@ -11,11 +11,24 @@ export const getGoals = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
-    const goals = await goalService.getByLocationId(locationId);
-    res.status(200).json({
-      success: true,
-      data: { goals },
-    });
+    const date =
+      typeof req.query.date === "string" && req.query.date.trim()
+        ? req.query.date.trim()
+        : undefined;
+
+    if (date) {
+      const result = await goalService.getByLocationIdAndDate(locationId, date);
+      res.status(200).json({
+        success: true,
+        data: { goals: result.goals, source: result.source },
+      });
+    } else {
+      const setting = await goalService.getByLocationId(locationId);
+      res.status(200).json({
+        success: true,
+        data: { goals: setting },
+      });
+    }
   } catch (error) {
     next(error);
   }
@@ -27,25 +40,16 @@ export const upsertGoals = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const {
-      locationId,
-      salesGoal,
-      laborCostGoal,
-      hoursGoal,
-      spmhGoal,
-      foodCostGoal,
-    } = req.body;
-    const goals = await goalService.upsert(locationId, {
-      salesGoal,
-      laborCostGoal,
-      hoursGoal,
-      spmhGoal,
-      foodCostGoal,
+    const { locationId, default: defaultGoals, weekly, futureWeeks } = req.body;
+    const setting = await goalService.upsert(locationId, {
+      default: defaultGoals,
+      weekly,
+      futureWeeks,
     });
     res.status(200).json({
       success: true,
       message: "Goals saved successfully",
-      data: { goals },
+      data: { goals: setting },
     });
   } catch (error) {
     next(error);
