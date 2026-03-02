@@ -22,13 +22,28 @@ export interface HomebaseTimecardLabor {
   [key: string]: unknown;
 }
 
+export interface HomebaseTimebreak {
+  id: number;
+  timecard_id: number;
+  paid: boolean;
+  duration: number;
+  start_at?: string;
+  end_at?: string | null;
+  [key: string]: unknown;
+}
+
 export interface HomebaseTimecard {
   id: number;
   user_id: number;
   job_id: number;
+  first_name?: string;
+  last_name?: string;
+  role?: string;
+  department?: string;
+  timebreaks?: HomebaseTimebreak[];
   labor?: HomebaseTimecardLabor;
   clock_in?: string;
-  clock_out?: string;
+  clock_out?: string | null;
   [key: string]: unknown;
 }
 

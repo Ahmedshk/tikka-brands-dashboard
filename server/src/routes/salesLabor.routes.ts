@@ -5,6 +5,7 @@ import {
   getSalesTrend,
   getSalesTrendKpi,
   getSalesByCategory,
+  getTimesheet,
 } from "../controllers/salesLabor.controller.js";
 import { validate } from "../utils/zod.util.js";
 import {
@@ -13,6 +14,7 @@ import {
   getSalesTrendQuerySchema,
   getSalesTrendKpiQuerySchema,
   getSalesByCategoryQuerySchema,
+  getTimesheetQuerySchema,
 } from "../validators/salesLabor.validators.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requirePermission, requireLocationAccess } from "../middleware/rbac.middleware.js";
@@ -51,6 +53,12 @@ router.get(
   "/sales-by-category",
   validate(getSalesByCategoryQuerySchema),
   getSalesByCategory,
+);
+
+router.get(
+  "/timesheet",
+  validate(getTimesheetQuerySchema),
+  getTimesheet,
 );
 
 export default router;

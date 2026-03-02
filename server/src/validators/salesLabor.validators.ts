@@ -31,6 +31,12 @@ export const getHourlyBreakdownQuerySchema = z.object({
   }),
 });
 
+export const getTimesheetQuerySchema = z.object({
+  query: z.object({
+    locationId: z.string().min(1, "Location ID is required"),
+  }),
+});
+
 const periodTypeSchema = z.enum([
   "today",
   "last7days",

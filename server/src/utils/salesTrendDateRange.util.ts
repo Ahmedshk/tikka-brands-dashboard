@@ -113,7 +113,7 @@ function addDays(y: number, m: number, d: number, delta: number): { y: number; m
 }
 
 /** End of day (23:59:59.999) in TZ for (y,m,d). */
-function getEndOfDayUtc(
+export function getEndOfDayUtc(
   y: number,
   m: number,
   d: number,
