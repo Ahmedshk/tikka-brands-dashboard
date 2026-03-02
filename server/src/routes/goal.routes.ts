@@ -6,15 +6,19 @@ import {
   upsertGoalsSchema,
 } from "../validators/goal.validators.js";
 import { authenticate } from "../middleware/auth.middleware.js";
+import { attachUserContext } from "../middleware/user-context.middleware.js";
 import { requirePermission, requireLocationAccess } from "../middleware/rbac.middleware.js";
 
 const router = Router();
 
 router.use(authenticate);
-router.use(requirePermission('goal-setting'));
+router.use(attachUserContext);
 router.use(requireLocationAccess);
 
+// Fetch goals: allowed for any authenticated user (e.g. dashboard pages that show goal comparison).
 router.get("/", validate(getGoalsQuerySchema), getGoals);
-router.put("/", validate(upsertGoalsSchema), upsertGoals);
+
+// Create/update goals: requires Goal Setting page permission.
+router.put("/", requirePermission('goal-setting'), validate(upsertGoalsSchema), upsertGoals);
 
 export default router;

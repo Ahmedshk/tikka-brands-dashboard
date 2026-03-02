@@ -1,3 +1,5 @@
+import type { RolePermissions } from './rbac.types.js';
+
 export enum UserRole {
   OWNER = 'Owner',
   DIRECTOR_OF_OPERATIONS = 'Director of Operations',
@@ -32,6 +34,14 @@ export interface IUser {
   homebaseId?: string;
   /** Cloudinary public_id for profile image; never expose raw URL to client. */
   profileImagePublicId?: string | null;
+  /** Additive permission overrides (extra pages/components on top of role). Only type 'custom' or null. */
+  permissionOverrides?: RolePermissions | null;
+  /** Additional location IDs the user can access on top of the role's locations. */
+  locationOverrides?: string[] | null;
+  /** Permission pages/components to remove from (role ∪ permissionOverrides) for this user. */
+  permissionRemovals?: RolePermissions | null;
+  /** Location IDs to remove from (role locations ∪ locationOverrides) for this user. */
+  locationRemovals?: string[] | null;
   createdAt?: Date;
   updatedAt?: Date;
 }

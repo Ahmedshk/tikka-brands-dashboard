@@ -31,9 +31,21 @@ export const requireRole = (allowedRoles: UserRole[]) => {
   };
 };
 
+/** Page is fully removed only when removal entry has no components (whole-page removal). */
+function isPageFullyRemoved(
+  removalPages: Array<{ pageId: string; components?: string[] }>,
+  pageId: string
+): boolean {
+  const entry = removalPages.find((p) => p.pageId === pageId);
+  if (!entry) return false;
+  const comps = entry.components;
+  return comps == null || comps.length === 0;
+}
+
 /**
  * Require that the user's permissions allow access to the given page.
- * If permissions.type === 'all', allow. If type === 'custom', allow only if pages includes pageId.
+ * If permissions.type === 'all', allow unless page is fully removed (removal with empty components).
+ * If type === 'custom', allow only if pages includes pageId and page is not fully removed.
  */
 export const requirePermission = (pageId: string) => {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -54,7 +66,20 @@ export const requirePermission = (pageId: string) => {
       return;
     }
 
+    const removalPages = req.user.permissionRemovals?.type === 'custom' ? req.user.permissionRemovals.pages : [];
+    const fullyRemoved = isPageFullyRemoved(removalPages, pageId);
+
     if (permissions.type === 'all') {
+      if (fullyRemoved) {
+        logger.warn(`Access denied: page ${pageId} removed for user`, {
+          userId: req.user.userId,
+        });
+        res.status(403).json({
+          success: false,
+          message: 'Insufficient permissions',
+        });
+        return;
+      }
       next();
       return;
     }
@@ -62,6 +87,17 @@ export const requirePermission = (pageId: string) => {
     const hasPage = permissions.pages?.some((p) => p.pageId === pageId) ?? false;
     if (!hasPage) {
       logger.warn(`Access denied: missing page permission ${pageId}`, {
+        userId: req.user.userId,
+      });
+      res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions',
+      });
+      return;
+    }
+
+    if (fullyRemoved) {
+      logger.warn(`Access denied: page ${pageId} removed for user`, {
         userId: req.user.userId,
       });
       res.status(403).json({
@@ -105,6 +141,17 @@ export const requireLocationAccess = (
   const allowed = req.user.allowedLocationIds;
   if (!allowed) {
     next();
+    return;
+  }
+  const locationRemovals = req.user.locationRemovals ?? [];
+  if (locationRemovals.includes(locationId)) {
+    logger.warn(`Access denied: location ${locationId} removed for user`, {
+      userId: req.user.userId,
+    });
+    res.status(403).json({
+      success: false,
+      message: "You do not have access to this location.",
+    });
     return;
   }
   if (allowed === "all") {

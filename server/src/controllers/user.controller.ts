@@ -25,6 +25,10 @@ function toUserDTO(
     updatedAt?: Date;
     password?: string;
     profileImagePublicId?: string | null;
+    permissionOverrides?: import('../types/rbac.types.js').RolePermissions | null;
+    locationOverrides?: unknown;
+    permissionRemovals?: import('../types/rbac.types.js').RolePermissions | null;
+    locationRemovals?: unknown;
   }
 ) {
   let id: string | undefined;
@@ -38,6 +42,16 @@ function toUserDTO(
   const base = `${req.protocol}://${req.get('host') ?? ''}`.replace(/\/$/, '');
   const profileImageUrl =
     id && user.profileImagePublicId ? `${base}/api/proxy/image/${id}` : null;
+  const locationOverrides = Array.isArray(user.locationOverrides)
+    ? (user.locationOverrides as unknown[]).map((x) =>
+        typeof x === 'string' ? x : (x as { toString?(): string })?.toString?.() ?? ''
+      ).filter(Boolean)
+    : null;
+  const locationRemovals = Array.isArray(user.locationRemovals)
+    ? (user.locationRemovals as unknown[]).map((x) =>
+        typeof x === 'string' ? x : (x as { toString?(): string })?.toString?.() ?? ''
+      ).filter(Boolean)
+    : null;
   return {
     _id: id,
     firstName: user.firstName,
@@ -54,6 +68,10 @@ function toUserDTO(
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     profileImageUrl,
+    permissionOverrides: user.permissionOverrides ?? null,
+    locationOverrides: locationOverrides?.length ? locationOverrides : null,
+    permissionRemovals: user.permissionRemovals ?? null,
+    locationRemovals: locationRemovals?.length ? locationRemovals : null,
   };
 }
 
@@ -159,7 +177,21 @@ export const updateUser = async (
     if (id === undefined || Array.isArray(id)) {
       throw new ValidationError('Invalid user id');
     }
-    const { firstName, lastName, email, phone, squareId, homebaseId, roleId, isActive, profileImagePublicId } = req.body;
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      squareId,
+      homebaseId,
+      roleId,
+      isActive,
+      profileImagePublicId,
+      permissionOverrides,
+      locationOverrides,
+      permissionRemovals,
+      locationRemovals,
+    } = req.body;
     const user = await userService.updateUser(id, {
       firstName,
       lastName,
@@ -170,6 +202,10 @@ export const updateUser = async (
       roleId: roleId ?? undefined,
       isActive,
       profileImagePublicId: profileImagePublicId ?? undefined,
+      ...(permissionOverrides === undefined ? {} : { permissionOverrides }),
+      ...(locationOverrides === undefined ? {} : { locationOverrides }),
+      ...(permissionRemovals === undefined ? {} : { permissionRemovals }),
+      ...(locationRemovals === undefined ? {} : { locationRemovals }),
     });
     if (!user) {
       throw new NotFoundError('User not found');

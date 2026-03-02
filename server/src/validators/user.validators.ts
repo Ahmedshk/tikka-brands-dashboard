@@ -29,6 +29,20 @@ export const createUserSchema = z.object({
   }),
 });
 
+const pagePermissionSchema = z.object({
+  pageId: z.string().min(1),
+  pageLabel: z.string().min(1),
+  components: z.array(z.string()).optional(),
+});
+
+const permissionOverridesSchema = z.union([
+  z.null(),
+  z.object({
+    type: z.literal('custom'),
+    pages: z.array(pagePermissionSchema),
+  }),
+]);
+
 export const updateUserSchema = z.object({
   params: z.object({
     id: z.string().min(1, 'User ID is required'),
@@ -43,6 +57,10 @@ export const updateUserSchema = z.object({
     roleId: z.string().min(1).optional().nullable(),
     isActive: z.boolean().optional(),
     profileImagePublicId: z.string().trim().optional().nullable(),
+    permissionOverrides: permissionOverridesSchema.optional(),
+    locationOverrides: z.array(z.string().min(1)).optional().nullable(),
+    permissionRemovals: permissionOverridesSchema.optional(),
+    locationRemovals: z.array(z.string().min(1)).optional().nullable(),
   }),
 });
 

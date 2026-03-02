@@ -4,12 +4,15 @@ import { RoleRepository } from "../repositories/role.repository.js";
 import {
   generateAccessToken,
   generateRefreshToken,
+  verifyAccessToken,
   verifyRefreshToken,
-  TokenPayload,
 } from "../utils/jwt.util.js";
+import type { TokenPayload } from "../types/auth.types.js";
 import { IUser } from "../types/user.types.js";
 import { UnauthorizedError } from "../utils/errors.util.js";
+import { logger } from "../utils/logger.util.js";
 import type { RolePermissions } from "../types/rbac.types.js";
+import { mergeRolePermissionsWithOverrides } from "../utils/permissions.util.js";
 
 export class AuthService {
   private readonly userRepository: UserRepository;
@@ -45,6 +48,20 @@ export class AuthService {
       })
       .filter(Boolean);
     return resolved.length > 0 ? resolved : "all";
+  }
+
+  /** Merge role's allowed location IDs with user's location overrides. */
+  private mergeLocationOverrides(
+    roleLocationIds: "all" | string[],
+    locationOverrides: unknown
+  ): "all" | string[] {
+    if (roleLocationIds === "all") return "all";
+    const overrides = (locationOverrides as unknown[] | null | undefined) ?? [];
+    if (overrides.length === 0) return roleLocationIds;
+    const overrideStrings = overrides
+      .map((x) => (typeof x === "string" ? x : (x as { toString?(): string })?.toString?.() ?? ""))
+      .filter(Boolean);
+    return [...new Set([...roleLocationIds, ...overrideStrings])];
   }
 
   async login(
@@ -90,13 +107,16 @@ export class AuthService {
       effectiveRoleName = user.role ?? null;
     }
 
-    const [permissions, allowedLocationIds] =
+    let [permissions, allowedLocationIds] =
       effectiveRoleName != null && effectiveRoleName !== ""
         ? await Promise.all([
             this.getPermissionsForRole(effectiveRoleName),
             this.getAllowedLocationIds(effectiveRoleName),
           ])
         : [{ type: "custom" as const, pages: [] }, [] as string[]];
+
+    permissions = mergeRolePermissionsWithOverrides(permissions, user.permissionOverrides ?? null);
+    allowedLocationIds = this.mergeLocationOverrides(allowedLocationIds, user.locationOverrides);
 
     const tokenPayload: TokenPayload = {
       userId: user._id.toString(),
@@ -110,10 +130,20 @@ export class AuthService {
     const { password: _, ...userWithoutPassword } = user as unknown as Record<string, unknown>;
     const safeUser = userWithoutPassword as Omit<IUser, "password"> & {
       permissions?: RolePermissions;
+      permissionOverrides?: RolePermissions | null;
       allowedLocationIds?: "all" | string[];
+      permissionRemovals?: RolePermissions | null;
+      locationRemovals?: string[];
     };
     safeUser.permissions = permissions;
+    safeUser.permissionOverrides = user.permissionOverrides ?? null;
     safeUser.allowedLocationIds = allowedLocationIds;
+    safeUser.permissionRemovals = user.permissionRemovals ?? null;
+    safeUser.locationRemovals = Array.isArray(user.locationRemovals)
+      ? (user.locationRemovals as unknown[]).map((x) =>
+          typeof x === "string" ? x : (x as { toString?(): string })?.toString?.() ?? ""
+        ).filter(Boolean)
+      : [];
 
     return {
       user: safeUser,
@@ -122,12 +152,38 @@ export class AuthService {
     };
   }
 
+  private verifyRefreshTokenOrThrow(token: string): TokenPayload {
+    try {
+      return verifyRefreshToken(token);
+    } catch (err) {
+      const isJwtError =
+        err &&
+        typeof err === "object" &&
+        "name" in err &&
+        (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError");
+      if (isJwtError) {
+        if (process.env.NODE_ENV === "development") {
+          try {
+            verifyAccessToken(token);
+            logger.warn(
+              "Refresh cookie verifies as ACCESS token — client may be sending wrong cookie"
+            );
+          } catch {
+            /* token is not the access token */
+          }
+        }
+        throw new UnauthorizedError("Invalid or expired refresh token");
+      }
+      throw err;
+    }
+  }
+
   async refreshToken(token: string): Promise<{
     user: Omit<IUser, "password">;
     accessToken: string;
     refreshToken: string;
   }> {
-    const payload = verifyRefreshToken(token);
+    const payload = this.verifyRefreshTokenOrThrow(token);
     const user = await this.userRepository.findById(payload.userId);
     if (!user) {
       throw new UnauthorizedError("User not found");
@@ -142,13 +198,17 @@ export class AuthService {
     } else {
       effectiveRoleName = user.role ?? null;
     }
-    const [permissions, allowedLocationIds] =
+    let [permissions, allowedLocationIds] =
       effectiveRoleName != null && effectiveRoleName !== ""
         ? await Promise.all([
             this.getPermissionsForRole(effectiveRoleName),
             this.getAllowedLocationIds(effectiveRoleName),
           ])
         : [{ type: "custom" as const, pages: [] }, [] as string[]];
+
+    permissions = mergeRolePermissionsWithOverrides(permissions, user.permissionOverrides ?? null);
+    allowedLocationIds = this.mergeLocationOverrides(allowedLocationIds, user.locationOverrides);
+
     const tokenPayload: TokenPayload = {
       userId: user._id.toString(),
       email: user.email,
@@ -159,10 +219,20 @@ export class AuthService {
     const { password: _, ...refreshUserWithoutPassword } = user as unknown as Record<string, unknown>;
     const safeRefreshUser = refreshUserWithoutPassword as Omit<IUser, "password"> & {
       permissions?: RolePermissions;
+      permissionOverrides?: RolePermissions | null;
       allowedLocationIds?: "all" | string[];
+      permissionRemovals?: RolePermissions | null;
+      locationRemovals?: string[];
     };
     safeRefreshUser.permissions = permissions;
+    safeRefreshUser.permissionOverrides = user.permissionOverrides ?? null;
     safeRefreshUser.allowedLocationIds = allowedLocationIds;
+    safeRefreshUser.permissionRemovals = user.permissionRemovals ?? null;
+    safeRefreshUser.locationRemovals = Array.isArray(user.locationRemovals)
+      ? (user.locationRemovals as unknown[]).map((x) =>
+          typeof x === "string" ? x : (x as { toString?(): string })?.toString?.() ?? ""
+        ).filter(Boolean)
+      : [];
     return {
       user: safeRefreshUser,
       accessToken,

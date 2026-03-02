@@ -19,9 +19,15 @@ import {
   isLaborDateRangeError,
 } from "../utils/salesTrendControllerHelpers.js";
 import { NotFoundError } from "../utils/errors.util.js";
-import { parseMetricsQuery } from "../config/kpi-metrics.config.js";
 import {
-  validateSalesLaborMetrics,
+  parseMetricsQuery,
+  filterAllowedMetrics,
+  getAllMetricIdsForPage,
+  PAGE_COMPONENT_IDS,
+} from "../config/kpi-metrics.config.js";
+import { getEffectivePagePermission } from "../utils/permissions.util.js";
+import {
+  SALES_LABOR_KPI_METRICS,
   buildEmptySalesLaborKPIs,
   getSalesLaborTimeRange,
   fetchSquareOrderStatsAndSources,
@@ -46,10 +52,42 @@ export const getSalesLaborKPIs = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
-    const metrics = parseMetricsQuery(req.query.metrics);
-    if (!validateSalesLaborMetrics(res, req.user?.permissions, metrics)) {
-      return;
+    const queryMetrics = parseMetricsQuery(req.query.metrics);
+
+    const effectivePage = getEffectivePagePermission(
+      req.user!.permissions!,
+      req.user!.permissionRemovals ?? null,
+      "sales-labor-detail",
+      PAGE_COMPONENT_IDS["sales-labor-detail"] ?? [],
+      "Sales & Labor Detail",
+      req.user!.permissionOverrides ?? null
+    );
+    const effectivePermissions =
+      effectivePage != null
+        ? { type: "custom" as const, pages: [effectivePage] }
+        : undefined;
+    const allMetricIds = getAllMetricIdsForPage("sales-labor-detail");
+    const allowedMetrics = effectivePermissions
+      ? filterAllowedMetrics(effectivePermissions, "sales-labor-detail", allMetricIds)
+      : [];
+
+    if (queryMetrics?.length) {
+      const invalid = queryMetrics.filter(
+        (m) =>
+          !SALES_LABOR_KPI_METRICS.includes(
+            m as (typeof SALES_LABOR_KPI_METRICS)[number]
+          )
+      );
+      if (invalid.length > 0) {
+        res.status(400).json({ success: false, message: "Invalid metric" });
+        return;
+      }
     }
+
+    const metrics =
+      queryMetrics?.length
+        ? queryMetrics.filter((m) => allowedMetrics.includes(m))
+        : allowedMetrics;
     const withCreds = await locationService.getByIdWithCredentials(locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");
@@ -73,6 +111,14 @@ export const getSalesLaborKPIs = async (
     const range = getSalesLaborTimeRange(loc);
     const squareLocationId = location.squareLocationId?.trim();
     const homebaseLocationId = location.homebaseLocationId?.trim();
+
+    if (metrics.length === 0) {
+      res.status(200).json({
+        success: true,
+        data: buildEmptySalesLaborKPIs(),
+      });
+      return;
+    }
 
     const [squareData, laborData] = await Promise.all([
       squareLocationId

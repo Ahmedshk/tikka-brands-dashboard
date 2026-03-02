@@ -58,6 +58,46 @@ const userSchema = new Schema<UserDocument>(
     squareId: { type: String, trim: true, default: undefined },
     homebaseId: { type: String, trim: true, default: undefined },
     profileImagePublicId: { type: String, trim: true, default: undefined },
+    permissionOverrides: {
+      type: {
+        type: String,
+        enum: ['custom'],
+        required: true,
+      },
+      pages: [
+        {
+          pageId: { type: String, required: true },
+          pageLabel: { type: String, required: true },
+          components: [{ type: String }],
+        },
+      ],
+      _id: false,
+    },
+    locationOverrides: {
+      type: [Schema.Types.ObjectId],
+      ref: 'Location',
+      default: undefined,
+    },
+    permissionRemovals: {
+      type: {
+        type: String,
+        enum: ['custom'],
+        required: true,
+      },
+      pages: [
+        {
+          pageId: { type: String, required: true },
+          pageLabel: { type: String, required: true },
+          components: [{ type: String }],
+        },
+      ],
+      _id: false,
+    },
+    locationRemovals: {
+      type: [Schema.Types.ObjectId],
+      ref: 'Location',
+      default: undefined,
+    },
   },
   {
     timestamps: true,

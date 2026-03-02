@@ -3,7 +3,13 @@ import { GoalService } from "../services/goal.service.js";
 import { LocationService } from "../services/location.service.js";
 import { searchOrdersInRange } from "../services/square.service.js";
 import { NotFoundError } from "../utils/errors.util.js";
-import { parseMetricsQuery } from "../config/kpi-metrics.config.js";
+import {
+  parseMetricsQuery,
+  PAGE_COMPONENT_IDS,
+  filterAllowedMetrics,
+  getAllMetricIdsForPage,
+} from "../config/kpi-metrics.config.js";
+import { getEffectivePagePermission } from "../utils/permissions.util.js";
 import {
   parsePeriodsQuery,
   validateCommandCenterMetrics,
@@ -47,10 +53,45 @@ export const getCommandCenterKPIs = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
-    const metrics = parseMetricsQuery(req.query.metrics);
+    const queryMetrics = parseMetricsQuery(req.query.metrics);
     const periods = parsePeriodsQuery(req.query.periods);
 
-    if (!validateCommandCenterMetrics(res, req.user?.permissions, metrics)) {
+    const effectivePage = getEffectivePagePermission(
+      req.user!.permissions!,
+      req.user!.permissionRemovals ?? null,
+      "command-center",
+      PAGE_COMPONENT_IDS["command-center"] ?? [],
+      "Command Center",
+      req.user!.permissionOverrides ?? null
+    );
+    const effectivePermissions =
+      effectivePage != null
+        ? { type: "custom" as const, pages: [effectivePage] }
+        : undefined;
+    if (!validateCommandCenterMetrics(res, effectivePermissions, queryMetrics)) {
+      return;
+    }
+
+    const allMetricIds = getAllMetricIdsForPage("command-center");
+    const allowedMetrics = effectivePermissions
+      ? filterAllowedMetrics(effectivePermissions, "command-center", allMetricIds)
+      : [];
+    const metrics =
+      queryMetrics?.length ?
+        queryMetrics.filter((m) => allowedMetrics.includes(m))
+        : allowedMetrics;
+
+    if (metrics.length === 0) {
+      const emptyToday: Record<string, unknown> = {};
+      const emptyWeekToDate: Record<string, unknown> = {};
+      if (Array.isArray(periods) && periods.includes("weekToDate")) {
+        res.status(200).json({
+          success: true,
+          data: { today: emptyToday, weekToDate: emptyWeekToDate },
+        });
+      } else {
+        res.status(200).json({ success: true, data: emptyToday });
+      }
       return;
     }
 
@@ -127,12 +168,30 @@ export const getCommandCenterKPIs = async (
 
 export type { HourlySalesRow } from "../types/commandCenter.types.js";
 
+const HOURLY_SALES_COMPONENT_ID = "hourly-net-sales-chart";
+
 export const getHourlySales = async (
   req: Request,
   res: Response,
   next: NextFunction,
 ): Promise<void> => {
   try {
+    const effectivePage = getEffectivePagePermission(
+      req.user!.permissions!,
+      req.user!.permissionRemovals ?? null,
+      "command-center",
+      PAGE_COMPONENT_IDS["command-center"] ?? [],
+      "Command Center",
+      req.user!.permissionOverrides ?? null
+    );
+    const canAccessHourly =
+      effectivePage?.components?.includes("full-page") === true ||
+      effectivePage?.components?.includes(HOURLY_SALES_COMPONENT_ID) === true;
+    if (!canAccessHourly) {
+      res.status(403).json({ success: false, message: "Forbidden" });
+      return;
+    }
+
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
     const withCreds = await locationService.getByIdWithCredentials(locationId);

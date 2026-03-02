@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import http from 'node:http';
 import app from './app.js';
@@ -7,8 +9,9 @@ import { initializeNodemailer } from './config/nodemailer.js';
 import { RoleService } from './services/role.service.js';
 import { logger } from './utils/logger.util.js';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables from server directory (so correct .env is used regardless of cwd)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const PORT = process.env.PORT || 5000;
 

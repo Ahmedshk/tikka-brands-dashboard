@@ -14,6 +14,17 @@ export interface ILocation {
   updatedAt?: Date;
 }
 
+/**
+ * Minimal location shape for list endpoints (GET /locations).
+ * Excludes sensitive fields: address, squareLocationId, homebaseLocationId, marketManBuyerGuid, etc.
+ */
+export interface ILocationListItem {
+  _id: string;
+  storeName: string;
+  timezone: string;
+  logoDataUrl?: string;
+}
+
 /** Location as returned to API responses (no encrypted credentials). */
 export interface ILocationResponse extends Omit<ILocation, 'squareAccessTokenEnc' | 'homebaseApiKeyEnc'> {
   /** True when this location has a stored Square access token (value never sent to client). */

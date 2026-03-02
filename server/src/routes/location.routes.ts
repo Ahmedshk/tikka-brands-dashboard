@@ -15,11 +15,13 @@ import {
   getLocationsQuerySchema,
 } from '../validators/location.validators.js';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { attachUserContext } from '../middleware/user-context.middleware.js';
 import { requirePermission, requireLocationAccess } from '../middleware/rbac.middleware.js';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(attachUserContext);
 
 // List locations: any authenticated user (for navbar switcher). Controller filters by allowedLocationIds.
 router.get('/', validate(getLocationsQuerySchema), getLocations);

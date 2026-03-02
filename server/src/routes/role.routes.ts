@@ -15,11 +15,13 @@ import {
   deleteRoleParamsSchema,
 } from "../validators/role.validators.js";
 import { authenticate } from "../middleware/auth.middleware.js";
+import { attachUserContext } from "../middleware/user-context.middleware.js";
 import { requirePermission } from "../middleware/rbac.middleware.js";
 
 const router = Router();
 
 router.use(authenticate);
+router.use(attachUserContext);
 router.use(requirePermission('rbac-management'));
 
 router.get("/", validate(listRolesQuerySchema), listRoles);

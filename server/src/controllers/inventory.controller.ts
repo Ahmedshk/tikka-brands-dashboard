@@ -12,7 +12,13 @@ import {
 } from '../services/marketman.service.js';
 import type { OrderTrackerOrderDto } from '../types/inventory.types.js';
 import { NotFoundError } from '../utils/errors.util.js';
-import { assertCanAccessMetrics, parseMetricsQuery } from '../config/kpi-metrics.config.js';
+import {
+  filterAllowedMetrics,
+  getAllMetricIdsForPage,
+  parseMetricsQuery,
+  PAGE_COMPONENT_IDS,
+} from '../config/kpi-metrics.config.js';
+import { getEffectivePagePermission } from '../utils/permissions.util.js';
 
 const locationService = new LocationService();
 
@@ -68,16 +74,45 @@ export const getInventoryKPIsHandler = async (
   try {
     const locationId =
       typeof req.query.locationId === 'string' ? req.query.locationId : '';
-    const metrics = parseMetricsQuery(req.query.metrics);
-    if (metrics?.length) {
-      const invalid = metrics.filter(
+    const queryMetrics = parseMetricsQuery(req.query.metrics);
+
+    const effectivePage = getEffectivePagePermission(
+      req.user?.permissions!,
+      req.user?.permissionRemovals ?? null,
+      'inventory-food-cost',
+      PAGE_COMPONENT_IDS['inventory-food-cost'] ?? [],
+      'Inventory & Food Cost',
+      req.user?.permissionOverrides ?? null
+    );
+    const effectivePermissions =
+      effectivePage != null
+        ? { type: 'custom' as const, pages: [effectivePage] }
+        : undefined;
+    const allMetricIds = getAllMetricIdsForPage('inventory-food-cost');
+    const allowedMetrics = effectivePermissions
+      ? filterAllowedMetrics(effectivePermissions, 'inventory-food-cost', allMetricIds)
+      : [];
+
+    let metrics: string[] | undefined;
+    if (queryMetrics?.length) {
+      const invalid = queryMetrics.filter(
         (m) => !INVENTORY_KPI_METRICS.includes(m as (typeof INVENTORY_KPI_METRICS)[number])
       );
       if (invalid.length > 0) {
         res.status(400).json({ success: false, message: 'Invalid metric' });
         return;
       }
-      assertCanAccessMetrics(req.user?.permissions, 'inventory-food-cost', metrics);
+      metrics = queryMetrics.filter((m) => allowedMetrics.includes(m));
+      if (metrics.length === 0) {
+        res.status(403).json({ success: false, message: 'Insufficient permissions' });
+        return;
+      }
+    } else {
+      if (allowedMetrics.length === 0) {
+        res.status(200).json({ success: true, data: {} });
+        return;
+      }
+      metrics = allowedMetrics;
     }
 
     const location = await locationService.getById(locationId);
@@ -116,22 +151,7 @@ export const getInventoryKPIsHandler = async (
 
     res.status(200).json({
       success: true,
-      data: metrics?.length
-        ? data
-        : {
-            currentFoodCost: data.currentFoodCost ?? null,
-            inventoryValue: data.inventoryValue ?? null,
-            wasteCost: data.wasteCost ?? null,
-            foodCostPercent: data.foodCostPercent ?? null,
-            theoreticalUsage: data.theoreticalUsage ?? null,
-            theoreticalUsagePercent: data.theoreticalUsagePercent ?? null,
-            varianceItems: data.varianceItems ?? [],
-            pendingOrdersCount: data.pendingOrdersCount ?? null,
-            countPeriodStart: data.countPeriodStart ?? null,
-            countPeriodEnd: data.countPeriodEnd ?? null,
-            pendingOrdersPeriodStart: data.pendingOrdersPeriodStart ?? null,
-            pendingOrdersPeriodEnd: data.pendingOrdersPeriodEnd ?? null,
-          },
+      data,
     });
   } catch (error) {
     next(error);

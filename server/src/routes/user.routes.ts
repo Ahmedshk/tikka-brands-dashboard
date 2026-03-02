@@ -10,6 +10,7 @@ import {
   syncFromSquareSchema,
 } from '../validators/user.validators.js';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { attachUserContext } from '../middleware/user-context.middleware.js';
 import { requirePermission } from '../middleware/rbac.middleware.js';
 import { uploadProfileImageMulter } from '../middleware/upload-profile.middleware.js';
 import { ValidationError } from '../utils/errors.util.js';
@@ -17,6 +18,7 @@ import { ValidationError } from '../utils/errors.util.js';
 const router = Router();
 
 router.use(authenticate);
+router.use(attachUserContext);
 router.use(requirePermission('user-management'));
 
 function handleUploadError(req: Request, res: Response, next: NextFunction): void {
