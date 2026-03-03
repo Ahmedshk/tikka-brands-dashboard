@@ -153,9 +153,12 @@ function getLastWeekUtcRange(timezone: string): { from: Date; to: Date } {
 }
 
 /** This week from Sunday 00:00 through today 23:59 in timezone as UTC Dates. */
-function getThisWeekThroughTodayUtcRange(
-  timezone: string,
-): { from: Date; to: Date; periodStart: string; periodEnd: string } {
+function getThisWeekThroughTodayUtcRange(timezone: string): {
+  from: Date;
+  to: Date;
+  periodStart: string;
+  periodEnd: string;
+} {
   const now = new Date();
   const { y, m, d } = getDatePartsInTz(now, timezone);
   const dayOfWeek = new Date(y, m, d).getDay();
@@ -171,9 +174,12 @@ function getThisWeekThroughTodayUtcRange(
 }
 
 /** Last week (Sun–Sat) in timezone as UTC Dates with date-only strings for display. */
-function getLastWeekUtcRangeWithPeriod(
-  timezone: string,
-): { from: Date; to: Date; periodStart: string; periodEnd: string } {
+function getLastWeekUtcRangeWithPeriod(timezone: string): {
+  from: Date;
+  to: Date;
+  periodStart: string;
+  periodEnd: string;
+} {
   const { from } = getCurrentWeekUtcRange(timezone);
   const fromDate = new Date(from);
   const sunLast = addDays(
@@ -253,16 +259,12 @@ export async function getInventoryKPIs(
       const startNorm = String(countPeriodStart).trim().replace(/-/g, "/");
       const endNorm = String(countPeriodEnd).trim().replace(/-/g, "/");
       const startValid =
-        validCountDates != null && validCountDates.startDates.includes(startNorm);
+        validCountDates != null &&
+        validCountDates.startDates.includes(startNorm);
       const endValid =
         validCountDates != null && validCountDates.endDates.includes(endNorm);
       const orderValid = startNorm <= endNorm;
-      if (
-        validCountDates &&
-        startValid &&
-        endValid &&
-        orderValid
-      ) {
+      if (validCountDates && startValid && endValid && orderValid) {
         promises.push(
           fetchActualTheoDataByDateRange(buyerGuid, startNorm, endNorm),
         );
@@ -277,17 +279,25 @@ export async function getInventoryKPIs(
   }
   if (needPendingOrders) {
     promises.push(
-      fetchPendingOrdersByDeliveryDate(buyerGuid, timezone, pendingOrdersPeriod),
+      fetchPendingOrdersByDeliveryDate(
+        buyerGuid,
+        timezone,
+        pendingOrdersPeriod,
+      ),
     );
   } else {
     promises.push(Promise.resolve(null));
   }
 
-  const [actualTheoResult, pendingOrdersResult] = await Promise.allSettled(
-    promises,
-  );
+  const [actualTheoResult, pendingOrdersResult] =
+    await Promise.allSettled(promises);
 
-  if (needActualTheo && actualTheoResult.status === "fulfilled" && actualTheoResult.value) {
+  if (
+    needActualTheo &&
+    actualTheoResult != null &&
+    actualTheoResult.status === "fulfilled" &&
+    actualTheoResult.value
+  ) {
     const v = actualTheoResult.value as {
       currentFoodCost: number | null;
       inventoryValue: number | null;
@@ -311,7 +321,12 @@ export async function getInventoryKPIs(
     result.countPeriodEnd = v.countPeriodEnd ?? null;
     if (Array.isArray(v.varianceItems)) result.varianceItems = v.varianceItems;
   }
-  if (needPendingOrders && pendingOrdersResult.status === "fulfilled" && pendingOrdersResult.value) {
+  if (
+    needPendingOrders &&
+    pendingOrdersResult != null &&
+    pendingOrdersResult.status === "fulfilled" &&
+    pendingOrdersResult.value
+  ) {
     const v = pendingOrdersResult.value as {
       count: number | null;
       periodStart: string | null;
@@ -325,21 +340,28 @@ export async function getInventoryKPIs(
   if (requestedMetrics?.length) {
     const filtered: Record<string, unknown> = {};
     const includeCountPeriod = requestedMetrics.some((m) =>
-      ["currentFoodCost", "inventoryValue", "wasteCost", "varianceItems"].includes(m),
+      [
+        "currentFoodCost",
+        "inventoryValue",
+        "wasteCost",
+        "varianceItems",
+      ].includes(m),
     );
-    const includePendingPeriod = requestedMetrics.includes("pendingOrdersCount");
+    const includePendingPeriod =
+      requestedMetrics.includes("pendingOrdersCount");
     for (const k of requestedMetrics) {
-      if (k in result) filtered[k] = (result as Record<string, unknown>)[k];
+      if (k in result) filtered[k] = (result as unknown as Record<string, unknown>)[k];
     }
     if (includeCountPeriod) {
       filtered.countPeriodStart = result.countPeriodStart ?? null;
       filtered.countPeriodEnd = result.countPeriodEnd ?? null;
     }
     if (includePendingPeriod) {
-      filtered.pendingOrdersPeriodStart = result.pendingOrdersPeriodStart ?? null;
+      filtered.pendingOrdersPeriodStart =
+        result.pendingOrdersPeriodStart ?? null;
       filtered.pendingOrdersPeriodEnd = result.pendingOrdersPeriodEnd ?? null;
     }
-    return filtered as InventoryKPIsResult;
+    return filtered as unknown as InventoryKPIsResult;
   }
 
   return result;
@@ -349,8 +371,7 @@ const VALID_DATE_REGEX = /^\d{4}\/\d{2}\/\d{2}$/;
 function filterValidDates(arr: unknown): string[] {
   return Array.isArray(arr)
     ? arr.filter(
-        (d): d is string =>
-          typeof d === "string" && VALID_DATE_REGEX.test(d),
+        (d): d is string => typeof d === "string" && VALID_DATE_REGEX.test(d),
       )
     : [];
 }
@@ -458,7 +479,12 @@ async function fetchActualTheoDataByDateRange(
     const theoreticalUsage =
       firstCategory?.TheoreticalUsage != null
         ? roundTo2(Number(firstCategory.TheoreticalUsage))
-        : null;
+        : roundTo2(
+            data.ActualTheoDataRows.reduce(
+              (s, row) => s + (Number(row.TheoreticalUsageCost) || 0),
+              0,
+            ),
+          );
     const rawTheoPercent = firstCategory?.TheoreticalUsagePercent;
     const theoreticalUsagePercent =
       rawTheoPercent != null ? roundTo2(Number(rawTheoPercent) * 100) : null;
@@ -468,23 +494,22 @@ async function fetchActualTheoDataByDateRange(
         0,
       ),
     );
-    const varianceItems: VarianceItem[] = data.ActualTheoDataRows.map(
-      (row) => {
-        const item: VarianceItem = {
-          label: row.ItemName ?? "—",
-          varianceCost: roundTo2(Number(row.VarianceValue) ?? 0),
-        };
-        if (row.COGS != null) item.actualCost = roundTo2(Number(row.COGS));
-        if (row.TheoreticalUsageCost != null)
-          item.theoreticalCost = roundTo2(Number(row.TheoreticalUsageCost));
-        if (row.ActualUsage != null) item.actualQuantity = Number(row.ActualUsage);
-        if (row.TheoreticalUsage != null)
-          item.theoreticalQuantity = Number(row.TheoreticalUsage);
-        if (row.UOM != null && String(row.UOM).trim() !== "")
-          item.uom = String(row.UOM).trim();
-        return item;
-      },
-    );
+    const varianceItems: VarianceItem[] = data.ActualTheoDataRows.map((row) => {
+      const item: VarianceItem = {
+        label: row.ItemName ?? "—",
+        varianceCost: roundTo2(Number(row.VarianceValue) ?? 0),
+      };
+      if (row.COGS != null) item.actualCost = roundTo2(Number(row.COGS));
+      if (row.TheoreticalUsageCost != null)
+        item.theoreticalCost = roundTo2(Number(row.TheoreticalUsageCost));
+      if (row.ActualUsage != null)
+        item.actualQuantity = Number(row.ActualUsage);
+      if (row.TheoreticalUsage != null)
+        item.theoreticalQuantity = Number(row.TheoreticalUsage);
+      if (row.UOM != null && String(row.UOM).trim() !== "")
+        item.uom = String(row.UOM).trim();
+      return item;
+    });
     return {
       currentFoodCost,
       inventoryValue,
@@ -553,10 +578,12 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
       countPeriodStart: null,
       countPeriodEnd: null,
     };
-  const startNotAfterEnd = validCountDates.startDates.filter((d) => d <= countEnd);
+  const startNotAfterEnd = validCountDates.startDates.filter(
+    (d) => d <= countEnd,
+  );
   const countStart: string | null =
     startNotAfterEnd.length > 0
-      ? [...startNotAfterEnd].sort((a, b) => (a < b ? -1 : 1)).at(-1) ?? null
+      ? ([...startNotAfterEnd].sort((a, b) => (a < b ? -1 : 1)).at(-1) ?? null)
       : null;
   if (!countStart)
     return {
@@ -842,7 +869,12 @@ export function getOrderTrackerRanges(
     }
     case "since3DaysAgo": {
       const threeDaysAgo = addDays(y, m, d, -3);
-      const from = getStartOfDayUtc(threeDaysAgo.y, threeDaysAgo.m, threeDaysAgo.d, tz);
+      const from = getStartOfDayUtc(
+        threeDaysAgo.y,
+        threeDaysAgo.m,
+        threeDaysAgo.d,
+        tz,
+      );
       const to = getEndOfDayUtc(y, m, d, tz);
       return {
         api: "both",
@@ -885,7 +917,9 @@ export function getOrderTrackerRanges(
 }
 
 /** Merge order arrays and deduplicate by OrderNumber. */
-export function mergeOrdersByOrderNumber(ordersArrays: MarketManOrder[][]): MarketManOrder[] {
+export function mergeOrdersByOrderNumber(
+  ordersArrays: MarketManOrder[][],
+): MarketManOrder[] {
   const byNumber = new Map<string, MarketManOrder>();
   for (const arr of ordersArrays) {
     for (const order of arr) {

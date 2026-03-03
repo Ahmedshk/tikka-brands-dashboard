@@ -1,7 +1,7 @@
 /**
- * Compute default count period with Saturday preference:
+ * Compute default count period with Saturday/Sunday preference:
  * - End: Saturday of last week (week that just ended), if that date is in endDates; else fallback to latest in endDates (prefer Saturday of that week).
- * - Start: Saturday of the week before last week, if that date is in startDates and <= end; else use the last valid start date on or before the chosen end date.
+ * - Start: Sunday of the same week as the chosen end date, if that date is in startDates and <= end; else use the last valid start date on or before the chosen end date.
  * Dates are in yyyy-MM-dd format.
  */
 export function getDefaultCountPeriod(
@@ -22,17 +22,16 @@ export function getDefaultCountPeriod(
           return getSaturdayInWeekIfAvailable(latestEnd, endDates) ?? latestEnd;
         })();
 
-  const weekBeforeLastSaturday =
-    lastWeekSaturday ? getPreviousWeekSaturday(lastWeekSaturday) : null;
+  const sundayOfEndWeek = getSundayOfWeek(endDate);
   const startCandidates = startDates.filter((d) => d <= endDate).sort();
   if (startCandidates.length === 0) return { startDate: null, endDate };
 
-  // Prefer week-before-last Saturday; otherwise use last valid start date on or before end
+  // Prefer Sunday of the same week as end; otherwise use last valid start date on or before end
   const startDate =
-    weekBeforeLastSaturday &&
-    startDates.includes(weekBeforeLastSaturday) &&
-    weekBeforeLastSaturday <= endDate
-      ? weekBeforeLastSaturday
+    sundayOfEndWeek &&
+    startDates.includes(sundayOfEndWeek) &&
+    sundayOfEndWeek <= endDate
+      ? sundayOfEndWeek
       : startCandidates[startCandidates.length - 1]!;
   return { startDate, endDate };
 }
@@ -44,6 +43,23 @@ function getTodayISO(): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+/** Get Sunday (start of week, Sun=0) for the week containing the given yyyy-MM-dd date. Returns yyyy-MM-dd. */
+function getSundayOfWeek(iso: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return null;
+  const y = Number(match[1]);
+  const m = Number(match[2]) - 1;
+  const d = Number(match[3]);
+  const date = new Date(y, m, d);
+  const day = date.getDay();
+  const sun = new Date(date);
+  sun.setDate(sun.getDate() - day);
+  const sy = sun.getFullYear();
+  const sm = String(sun.getMonth() + 1).padStart(2, '0');
+  const sd = String(sun.getDate()).padStart(2, '0');
+  return `${sy}-${sm}-${sd}`;
 }
 
 /** Get Saturday (end of week, Sun=0) for the week containing the given yyyy-MM-dd date. Returns yyyy-MM-dd. */

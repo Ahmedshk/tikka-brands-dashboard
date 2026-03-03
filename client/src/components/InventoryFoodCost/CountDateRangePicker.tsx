@@ -188,7 +188,23 @@ export function CountDateRangePicker({
         onClose={onRequestClose}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        slotProps={{ paper: { sx: { maxWidth: 'min(95vw, 640px)' } } }}
+        slotProps={{
+          paper: {
+            sx: {
+              maxWidth: 'min(95vw, 640px)',
+              '@media (max-width: 640px)': {
+                position: 'fixed',
+                left: '50% !important',
+                top: '50% !important',
+                transform: 'translate(-50%, -50%) !important',
+                margin: 0,
+                width: '95vw',
+                maxWidth: '95vw',
+                maxHeight: '90vh',
+              },
+            },
+          },
+        }}
       >
         <div className="p-4 flex flex-col gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
