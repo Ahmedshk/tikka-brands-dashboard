@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { LocationService } from '../services/location.service.js';
 import {
   getInventoryKPIs,
+  getValidCountDates,
   getOrderTrackerRanges,
   getOrdersByDeliveryDate,
   getOrdersBySentDate,
@@ -95,11 +96,21 @@ export const getInventoryKPIsHandler = async (
     const timezone = location.timezone?.trim() || 'America/Denver';
     const pendingOrdersPeriod =
       req.query.pendingOrdersPeriod === 'lastWeek' ? 'lastWeek' : 'thisWeek';
+    const countPeriodStart =
+      typeof req.query.countPeriodStart === 'string'
+        ? req.query.countPeriodStart.trim()
+        : undefined;
+    const countPeriodEnd =
+      typeof req.query.countPeriodEnd === 'string'
+        ? req.query.countPeriodEnd.trim()
+        : undefined;
     const data = await getInventoryKPIs(
       buyerGuid,
       timezone,
       metrics,
       pendingOrdersPeriod,
+      countPeriodStart,
+      countPeriodEnd,
     );
 
     res.status(200).json({
@@ -120,6 +131,51 @@ export const getInventoryKPIsHandler = async (
             pendingOrdersPeriodStart: data.pendingOrdersPeriodStart ?? null,
             pendingOrdersPeriodEnd: data.pendingOrdersPeriodEnd ?? null,
           },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getValidCountDatesHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const locationId =
+      typeof req.query.locationId === 'string' ? req.query.locationId : '';
+    if (!locationId) {
+      res.status(400).json({ success: false, message: 'Location ID is required' });
+      return;
+    }
+    const location = await locationService.getById(locationId);
+    if (!location) {
+      throw new NotFoundError('Location not found');
+    }
+    const buyerGuid = location.marketManBuyerGuid?.trim();
+    if (!buyerGuid) {
+      res.status(400).json({
+        success: false,
+        message:
+          'Location has no MarketMan buyer GUID. Configure it in Location Management.',
+      });
+      return;
+    }
+    const result = await getValidCountDates(buyerGuid);
+    if (!result) {
+      res.status(200).json({
+        success: true,
+        data: { startDates: [], endDates: [] },
+      });
+      return;
+    }
+    res.status(200).json({
+      success: true,
+      data: {
+        startDates: result.startDates,
+        endDates: result.endDates,
+      },
     });
   } catch (error) {
     next(error);

@@ -35,6 +35,7 @@ export const API_ENDPOINTS = {
   },
   INVENTORY: {
     KPIS: "/inventory/kpis",
+    VALID_COUNT_DATES: "/inventory/valid-count-dates",
     ORDERS: "/inventory/orders",
   },
   ROLES: "/roles",

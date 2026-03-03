@@ -27,6 +27,16 @@ const inventoryMetricEnum = z.enum([
 
 const pendingOrdersPeriodEnum = z.enum(['thisWeek', 'lastWeek']);
 
+const countPeriodDateSchema = z
+  .string()
+  .regex(/^\d{4}[-\/]\d{2}[-\/]\d{2}$/, 'Date must be yyyy-MM-dd or yyyy/MM/dd');
+
+export const getValidCountDatesQuerySchema = z.object({
+  query: z.object({
+    locationId: z.string().min(1, 'Location ID is required'),
+  }),
+});
+
 export const getInventoryKPIsQuerySchema = z.object({
   query: z.object({
     locationId: z.string().min(1, 'Location ID is required'),
@@ -36,6 +46,8 @@ export const getInventoryKPIsQuerySchema = z.object({
       .transform((s) => (s ? s.split(',').map((x) => x.trim()).filter(Boolean) : undefined))
       .pipe(z.array(inventoryMetricEnum).optional()),
     pendingOrdersPeriod: pendingOrdersPeriodEnum.optional(),
+    countPeriodStart: countPeriodDateSchema.optional(),
+    countPeriodEnd: countPeriodDateSchema.optional(),
   }),
 });
 

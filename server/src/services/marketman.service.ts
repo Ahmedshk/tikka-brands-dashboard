@@ -208,6 +208,8 @@ export async function getInventoryKPIs(
   timezone: string,
   requestedMetrics?: string[],
   pendingOrdersPeriod: PendingOrdersPeriod = "thisWeek",
+  countPeriodStart?: string | null,
+  countPeriodEnd?: string | null,
 ): Promise<InventoryKPIsResult> {
   const result: InventoryKPIsResult = {
     currentFoodCost: null,
@@ -241,7 +243,35 @@ export async function getInventoryKPIs(
 
   const promises: Promise<unknown>[] = [];
   if (needActualTheo) {
-    promises.push(fetchActualTheoDataForCountDate(buyerGuid));
+    const hasCountPeriodOverride =
+      countPeriodStart != null &&
+      countPeriodEnd != null &&
+      String(countPeriodStart).trim() !== "" &&
+      String(countPeriodEnd).trim() !== "";
+    if (hasCountPeriodOverride) {
+      const validCountDates = await getValidCountDates(buyerGuid);
+      const startNorm = String(countPeriodStart).trim().replace(/-/g, "/");
+      const endNorm = String(countPeriodEnd).trim().replace(/-/g, "/");
+      const startValid =
+        validCountDates != null && validCountDates.startDates.includes(startNorm);
+      const endValid =
+        validCountDates != null && validCountDates.endDates.includes(endNorm);
+      const orderValid = startNorm <= endNorm;
+      if (
+        validCountDates &&
+        startValid &&
+        endValid &&
+        orderValid
+      ) {
+        promises.push(
+          fetchActualTheoDataByDateRange(buyerGuid, startNorm, endNorm),
+        );
+      } else {
+        promises.push(fetchActualTheoDataForCountDate(buyerGuid));
+      }
+    } else {
+      promises.push(fetchActualTheoDataForCountDate(buyerGuid));
+    }
   } else {
     promises.push(Promise.resolve(null));
   }
@@ -327,8 +357,9 @@ function filterValidDates(arr: unknown): string[] {
 
 /**
  * Get valid count dates from GetValidCountDates (StartDateCountsUTC and EndDateCountsUTC).
+ * Exported for use by inventory controller (valid-count-dates endpoint).
  */
-async function getValidCountDates(buyerGuid: string): Promise<{
+export async function getValidCountDates(buyerGuid: string): Promise<{
   startDates: string[];
   endDates: string[];
 } | null> {
@@ -348,10 +379,14 @@ async function getValidCountDates(buyerGuid: string): Promise<{
 }
 
 /**
- * Fetches GetActualTheoDataByBuyer for the count period (last two valid count dates)
- * and returns current food cost, inventory value, and the period start/end for display.
+ * Fetches GetActualTheoDataByBuyer for the given count start/end and returns
+ * current food cost, inventory value, variance, and period for display.
  */
-async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
+async function fetchActualTheoDataByDateRange(
+  buyerGuid: string,
+  countStart: string,
+  countEnd: string,
+): Promise<{
   currentFoodCost: number | null;
   inventoryValue: number | null;
   wasteCost: number | null;
@@ -359,59 +394,10 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
   theoreticalUsage: number | null;
   theoreticalUsagePercent: number | null;
   varianceItems: VarianceItem[];
-  countPeriodStart: string | null;
-  countPeriodEnd: string | null;
+  countPeriodStart: string;
+  countPeriodEnd: string;
 }> {
   try {
-    const validCountDates = await getValidCountDates(buyerGuid);
-    if (!validCountDates)
-      return {
-        currentFoodCost: null,
-        inventoryValue: null,
-        wasteCost: null,
-        foodCostPercent: null,
-        theoreticalUsage: null,
-        theoreticalUsagePercent: null,
-        varianceItems: [],
-        countPeriodStart: null,
-        countPeriodEnd: null,
-      };
-    // Count end = last EndDateCountsUTC; count start = latest StartDateCountsUTC that is not greater than count end
-    const countEnd: string | null =
-      validCountDates.endDates.at(-1) ?? null;
-    if (!countEnd) {
-      return {
-        currentFoodCost: null,
-        inventoryValue: null,
-        wasteCost: null,
-        foodCostPercent: null,
-        theoreticalUsage: null,
-        theoreticalUsagePercent: null,
-        varianceItems: [],
-        countPeriodStart: null,
-        countPeriodEnd: null,
-      };
-    }
-    const startNotAfterEnd = validCountDates.startDates.filter(
-      (d) => d <= countEnd,
-    );
-    const countStart: string | null =
-      startNotAfterEnd.length > 0
-        ? startNotAfterEnd.sort((a, b) => (a < b ? -1 : 1)).at(-1) ?? null
-        : null;
-    if (!countStart) {
-      return {
-        currentFoodCost: null,
-        inventoryValue: null,
-        wasteCost: null,
-        foodCostPercent: null,
-        theoreticalUsage: null,
-        theoreticalUsagePercent: null,
-        varianceItems: [],
-        countPeriodStart: null,
-        countPeriodEnd: null,
-      };
-    }
     const data = await marketManRequest<{
       ActualTheoDataRows?: Array<{
         COGS?: number;
@@ -520,10 +506,80 @@ async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
       theoreticalUsage: null,
       theoreticalUsagePercent: null,
       varianceItems: [],
+      countPeriodStart: countStart,
+      countPeriodEnd: countEnd,
+    };
+  }
+}
+
+/**
+ * Fetches GetActualTheoDataByBuyer for the count period (auto-picked last two valid count dates)
+ * and returns current food cost, inventory value, and the period start/end for display.
+ */
+async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
+  currentFoodCost: number | null;
+  inventoryValue: number | null;
+  wasteCost: number | null;
+  foodCostPercent: number | null;
+  theoreticalUsage: number | null;
+  theoreticalUsagePercent: number | null;
+  varianceItems: VarianceItem[];
+  countPeriodStart: string | null;
+  countPeriodEnd: string | null;
+}> {
+  const validCountDates = await getValidCountDates(buyerGuid);
+  if (!validCountDates)
+    return {
+      currentFoodCost: null,
+      inventoryValue: null,
+      wasteCost: null,
+      foodCostPercent: null,
+      theoreticalUsage: null,
+      theoreticalUsagePercent: null,
+      varianceItems: [],
       countPeriodStart: null,
       countPeriodEnd: null,
     };
-  }
+  const countEnd: string | null = validCountDates.endDates.at(-1) ?? null;
+  if (!countEnd)
+    return {
+      currentFoodCost: null,
+      inventoryValue: null,
+      wasteCost: null,
+      foodCostPercent: null,
+      theoreticalUsage: null,
+      theoreticalUsagePercent: null,
+      varianceItems: [],
+      countPeriodStart: null,
+      countPeriodEnd: null,
+    };
+  const startNotAfterEnd = validCountDates.startDates.filter((d) => d <= countEnd);
+  const countStart: string | null =
+    startNotAfterEnd.length > 0
+      ? [...startNotAfterEnd].sort((a, b) => (a < b ? -1 : 1)).at(-1) ?? null
+      : null;
+  if (!countStart)
+    return {
+      currentFoodCost: null,
+      inventoryValue: null,
+      wasteCost: null,
+      foodCostPercent: null,
+      theoreticalUsage: null,
+      theoreticalUsagePercent: null,
+      varianceItems: [],
+      countPeriodStart: null,
+      countPeriodEnd: null,
+    };
+  const result = await fetchActualTheoDataByDateRange(
+    buyerGuid,
+    countStart,
+    countEnd,
+  );
+  return {
+    ...result,
+    countPeriodStart: result.countPeriodStart,
+    countPeriodEnd: result.countPeriodEnd,
+  };
 }
 
 async function fetchWeeklyWasteCost(

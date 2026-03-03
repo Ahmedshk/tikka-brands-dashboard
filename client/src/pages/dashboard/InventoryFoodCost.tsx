@@ -6,6 +6,9 @@ import {
   CostOfGoodsSoldCard,
   VarianceChartCard,
   OrderTrackerCard,
+  getDefaultCountPeriod,
+  CountDateRangePicker,
+  CountDateRangePickerTrigger,
 } from '../../components/InventoryFoodCost';
 import type {
   InventoryKPIItem,
@@ -72,11 +75,53 @@ export const InventoryFoodCost = () => {
   const [orderTrackerError, setOrderTrackerError] = useState<string | null>(null);
   const [varianceModalOpen, setVarianceModalOpen] = useState(false);
   const [varianceBarBandWidth, setVarianceBarBandWidth] = useState<number | null>(null);
+  const [countPickerOpen, setCountPickerOpen] = useState(false);
+  const [countPickerAnchorEl, setCountPickerAnchorEl] = useState<HTMLElement | null>(null);
   const [inventoryKpisData, setInventoryKpisData] = useState<Awaited<ReturnType<typeof inventoryService.getInventoryKPIs>> | null>(null);
   const [kpisLoading, setKpisLoading] = useState(!!currentLocation?._id && shouldFetchKpis);
   const [kpisError, setKpisError] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal | null>(null);
   const [pendingOrdersPeriod, setPendingOrdersPeriod] = useState<PendingOrdersKPIPeriod>('thisWeek');
+  const [countPeriodStart, setCountPeriodStart] = useState<string | null>(null);
+  const [countPeriodEnd, setCountPeriodEnd] = useState<string | null>(null);
+  const [validStartDates, setValidStartDates] = useState<string[]>([]);
+  const [validEndDates, setValidEndDates] = useState<string[]>([]);
+
+  useEffect(() => {
+    setCountPeriodStart(null);
+    setCountPeriodEnd(null);
+  }, [currentLocation?._id]);
+
+  useEffect(() => {
+    if (!currentLocation?._id || !canCostOfGoods) {
+      setValidStartDates([]);
+      setValidEndDates([]);
+      return;
+    }
+    const controller = new AbortController();
+    inventoryService
+      .getValidCountDates(currentLocation._id, { signal: controller.signal })
+      .then(({ startDates, endDates }) => {
+        if (controller.signal.aborted) return;
+        setValidStartDates(startDates);
+        setValidEndDates(endDates);
+        setCountPeriodStart((prevStart) => {
+          if (prevStart != null) return prevStart;
+          return getDefaultCountPeriod(startDates, endDates).startDate;
+        });
+        setCountPeriodEnd((prevEnd) => {
+          if (prevEnd != null) return prevEnd;
+          return getDefaultCountPeriod(startDates, endDates).endDate;
+        });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setValidStartDates([]);
+          setValidEndDates([]);
+        }
+      });
+    return () => controller.abort();
+  }, [currentLocation?._id, canCostOfGoods]);
 
   useEffect(() => {
     if (!currentLocation?._id || !shouldFetchKpis || kpiMetrics.length === 0) {
@@ -92,6 +137,8 @@ export const InventoryFoodCost = () => {
       .getInventoryKPIs(currentLocation._id, {
         metrics: kpiMetrics,
         pendingOrdersPeriod: canKpiPending ? pendingOrdersPeriod : undefined,
+        countPeriodStart: countPeriodStart ?? undefined,
+        countPeriodEnd: countPeriodEnd ?? undefined,
         signal: controller.signal,
       })
       .then(setInventoryKpisData)
@@ -109,6 +156,8 @@ export const InventoryFoodCost = () => {
     shouldFetchKpis,
     kpiMetrics.join(','),
     canKpiPending ? pendingOrdersPeriod : null,
+    countPeriodStart,
+    countPeriodEnd,
   ]);
 
   useEffect(() => {
@@ -132,8 +181,11 @@ export const InventoryFoodCost = () => {
     const end = inventoryKpisData?.countPeriodEnd;
     if (!start || !end) return '—';
     const parse = (s: string) => {
-      const [y, m, d] = s.split('/').map(Number);
-      return new Date(y, (m ?? 1) - 1, d ?? 1);
+      const parts = s.split('/').map(Number);
+      const y = parts[0] ?? 0;
+      const m = (parts[1] ?? 1) - 1;
+      const d = parts[2] ?? 1;
+      return new Date(y, m, d);
     };
     const fmt = (date: Date) =>
       date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -149,8 +201,11 @@ export const InventoryFoodCost = () => {
     const end = inventoryKpisData?.pendingOrdersPeriodEnd;
     if (!start || !end) return '—';
     const parse = (s: string) => {
-      const [y, m, d] = s.split('/').map(Number);
-      return new Date(y, (m ?? 1) - 1, d ?? 1);
+      const parts = s.split('/').map(Number);
+      const y = parts[0] ?? 0;
+      const m = (parts[1] ?? 1) - 1;
+      const d = parts[2] ?? 1;
+      return new Date(y, m, d);
     };
     const fmt = (date: Date) =>
       date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -258,15 +313,53 @@ export const InventoryFoodCost = () => {
 
   const orderTrackerCardRows = orderTrackerOrders.slice(0, ORDER_TRACKER_CARD_SIZE);
 
+  const showCountPeriodPicker =
+    canCostOfGoods && validStartDates.length > 0 && validEndDates.length > 0;
+
   return (
     <Layout>
       <div className="p-6">
-        <div className="mb-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-base md:text-lg 2xl:text-xl font-semibold text-primary">
             <InventoryAndFoodCostIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
             Inventory & Food Cost
           </h2>
+          {showCountPeriodPicker && (
+            <div className="flex items-center gap-2 text-xs md:text-sm 2xl:text-base">
+              <span className="font-semibold text-secondary">Count Period</span>
+              <CountDateRangePickerTrigger
+                startDate={countPeriodStart}
+                endDate={countPeriodEnd}
+                onClick={(e: React.MouseEvent<HTMLElement>) => {
+                  setCountPickerAnchorEl(e.currentTarget as HTMLElement);
+                  setCountPickerOpen(true);
+                }}
+                disabled={kpisLoading}
+                className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-primary hover:bg-gray-50 min-w-0"
+              />
+            </div>
+          )}
         </div>
+
+        {showCountPeriodPicker && countPickerAnchorEl != null && (
+          <CountDateRangePicker
+            startDate={countPeriodStart}
+            endDate={countPeriodEnd}
+            validStartDates={validStartDates}
+            validEndDates={validEndDates}
+            onChange={(start, end) => {
+              setCountPeriodStart(start);
+              setCountPeriodEnd(end);
+            }}
+            onClose={() => setCountPickerOpen(false)}
+            open={countPickerOpen}
+            anchorEl={countPickerAnchorEl}
+            onRequestClose={() => {
+              setCountPickerOpen(false);
+              setCountPickerAnchorEl(null);
+            }}
+          />
+        )}
 
         {!currentLocation && (
           <p className="text-sm text-secondary mb-6">Select a location to view inventory KPIs.</p>

@@ -78,12 +78,41 @@ export interface GetOrdersParams {
   periodEnd?: string;
 }
 
+/** Normalize date from server (yyyy/MM/dd) to client format (yyyy-MM-dd). */
+function normalizeDateToClient(serverDate: string): string {
+  return serverDate.replace(/\//g, '-');
+}
+
 export const inventoryService = {
+  async getValidCountDates(
+    locationId: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<{ startDates: string[]; endDates: string[] }> {
+    const res = await api.get<
+      ApiResponse<{ startDates: string[]; endDates: string[] }>
+    >(API_ENDPOINTS.INVENTORY.VALID_COUNT_DATES, {
+      params: { locationId },
+      signal: options?.signal,
+    });
+    if (!res.data.success || res.data.data == null) {
+      throw new Error(
+        res.data.message ?? "Failed to load valid count dates"
+      );
+    }
+    const { startDates, endDates } = res.data.data;
+    return {
+      startDates: (startDates ?? []).map(normalizeDateToClient),
+      endDates: (endDates ?? []).map(normalizeDateToClient),
+    };
+  },
+
   async getInventoryKPIs(
     locationId: string,
     options?: {
       metrics?: string[];
       pendingOrdersPeriod?: 'thisWeek' | 'lastWeek';
+      countPeriodStart?: string;
+      countPeriodEnd?: string;
       signal?: AbortSignal;
     }
   ): Promise<InventoryKPIsData> {
@@ -91,12 +120,20 @@ export const inventoryService = {
       locationId: string;
       metrics?: string;
       pendingOrdersPeriod?: string;
+      countPeriodStart?: string;
+      countPeriodEnd?: string;
     } = { locationId };
     if (options?.metrics?.length) {
       params.metrics = options.metrics.join(',');
     }
     if (options?.pendingOrdersPeriod) {
       params.pendingOrdersPeriod = options.pendingOrdersPeriod;
+    }
+    if (options?.countPeriodStart) {
+      params.countPeriodStart = options.countPeriodStart;
+    }
+    if (options?.countPeriodEnd) {
+      params.countPeriodEnd = options.countPeriodEnd;
     }
     const res = await api.get<ApiResponse<InventoryKPIsData>>(
       API_ENDPOINTS.INVENTORY.KPIS,
