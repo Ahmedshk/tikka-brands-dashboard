@@ -21,8 +21,9 @@ import {
   commandCenterService,
   type SalesLaborKPIsData,
   type HourlyBreakdownData,
+  type TimesheetRow,
 } from '../../services/commandCenter.service';
-import { goalService } from '../../services/goal.service';
+import { goalService, getTodayInTimezone } from '../../services/goal.service';
 import type { Goal } from '../../types';
 import type { RootState } from '../../store/store';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
@@ -32,14 +33,6 @@ const PAGE_ID = 'sales-labor-detail';
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
-
-const clockedInStaffRows = [
-  { name: 'Alex Jonson', role: 'Line Cook', clockIn: '10:00 am', currentHours: 6.5, status: 'On Clock' as const },
-  { name: 'Kraven meachle', role: 'Prep Cook', clockIn: '8:00 am', currentHours: 6.5, status: 'On Break' as const },
-  { name: 'Sarah Miller', role: 'Server', clockIn: '9:30 am', currentHours: 5, status: 'On Clock' as const },
-  { name: 'James Wilson', role: 'Line Cook', clockIn: '11:00 am', currentHours: 4, status: 'On Clock' as const },
-  { name: 'Emma Davis', role: 'Prep Cook', clockIn: '7:00 am', currentHours: 8, status: 'On Break' as const },
-];
 
 export const SalesLaborDetails = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
@@ -83,8 +76,10 @@ export const SalesLaborDetails = () => {
   const [kpis, setKpis] = useState<SalesLaborKPIsData | null>(null);
   const [hourlyBreakdown, setHourlyBreakdown] = useState<HourlyBreakdownData | null>(null);
   const [goals, setGoals] = useState<Goal | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!currentLocation?._id && shouldFetch);
   const [error, setError] = useState<string | null>(null);
+  const [timesheetRows, setTimesheetRows] = useState<TimesheetRow[]>([]);
+  const [timesheetLoading, setTimesheetLoading] = useState(!!currentLocation?._id && canStaff);
 
   useEffect(() => {
     if (!currentLocation?._id || !shouldFetch) {
@@ -92,24 +87,30 @@ export const SalesLaborDetails = () => {
       setHourlyBreakdown(null);
       setGoals(null);
       setError(null);
+      setLoading(false);
       return;
     }
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
     const locationId = currentLocation._id;
     const promises: Promise<unknown>[] = [];
     if (kpiMetrics.length > 0) {
-      promises.push(commandCenterService.getSalesLaborKPIs(locationId, { metrics: kpiMetrics }));
+      promises.push(commandCenterService.getSalesLaborKPIs(locationId, { metrics: kpiMetrics, signal: controller.signal }));
     } else {
       promises.push(Promise.resolve(null));
     }
     if (canHourly) {
-      promises.push(commandCenterService.getHourlyBreakdown(locationId));
+      promises.push(commandCenterService.getHourlyBreakdown(locationId, { signal: controller.signal }));
     } else {
       promises.push(Promise.resolve(null));
     }
     if (canDaily) {
-      promises.push(goalService.getByLocationId(locationId).catch(() => null));
+      const date = getTodayInTimezone(currentLocation.timezone ?? 'UTC');
+      promises.push(goalService.getResolved(locationId, date, { signal: controller.signal }).catch((err) => {
+        if (controller.signal.aborted) throw err;
+        return null;
+      }));
     } else {
       promises.push(Promise.resolve(null));
     }
@@ -120,13 +121,37 @@ export const SalesLaborDetails = () => {
         setGoals((goalsData as Goal | null) ?? null);
       })
       .catch((err) => {
+        if (controller.signal.aborted) return;
         setError(err instanceof Error ? err.message : 'Failed to load Sales & Labor data');
         setKpis(null);
         setHourlyBreakdown(null);
         setGoals(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [currentLocation?._id, shouldFetch, canHourly, canDaily, kpiMetrics.join(',')]);
+
+  useEffect(() => {
+    if (!currentLocation?._id || !canStaff) {
+      setTimesheetRows([]);
+      setTimesheetLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setTimesheetLoading(true);
+    commandCenterService
+      .getTimesheet(currentLocation._id, { signal: controller.signal })
+      .then(setTimesheetRows)
+      .catch(() => {
+        if (!controller.signal.aborted) setTimesheetRows([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setTimesheetLoading(false);
+      });
+    return () => controller.abort();
+  }, [currentLocation?._id, canStaff]);
 
   const salesLaborKPIs = useMemo((): SalesLaborKPIItem[] => {
     const unavail = '—';
@@ -254,7 +279,8 @@ export const SalesLaborDetails = () => {
           >
             {canStaff && (
               <ClockedInStaffCard
-                rows={clockedInStaffRows}
+                rows={timesheetRows}
+                loading={timesheetLoading}
                 className={canDaily ? 'lg:col-span-2' : ''}
               />
             )}

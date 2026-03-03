@@ -24,6 +24,10 @@ export interface SalesTrendChartCardProps {
   className?: string;
   /** When true, show spinner inside the card instead of the chart */
   loading?: boolean;
+  /** Formatted date range for current period (e.g. "02/22/26 – 02/27/26"); shown with legend */
+  periodDateRange?: string;
+  /** Formatted date range for comparison period; shown with legend when present */
+  comparisonDateRange?: string;
 }
 
 const defaultTheme = createTheme({ palette: { mode: 'light' } });
@@ -31,7 +35,7 @@ const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
 const desktopMargin = { top: 10, right: 25, bottom: 0, left: 0 };
 const mobileMargin = { top: 4, right: 14, bottom: 0, left: 0 };
 
-const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200';
+const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden min-w-0';
 
 function StackedTooltipContent({ valueFormatter }: { valueFormatter?: (v: number) => string }) {
   const axesTooltipData = useAxesTooltip();
@@ -99,6 +103,8 @@ export const SalesTrendChartCard = ({
   height = 280,
   className = '',
   loading = false,
+  periodDateRange,
+  comparisonDateRange,
 }: SalesTrendChartCardProps) => {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
@@ -213,29 +219,39 @@ export const SalesTrendChartCard = ({
           </div>
         )}
       </div>
-      {!loading && !isStacked && series.length >= 2 && (() => {
+      {!loading && !isStacked && series.length >= 1 && (() => {
         const current = series.find((s) => s.id === 'current') ?? series[0];
         const comparisonSeries = series.find((s) => s.id === 'comparison') ?? series[1];
         return (
-          <div className="px-5 pb-2 flex items-center gap-4">
+          <div className="px-5 pb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
             <span className="flex items-center gap-2 text-xs text-primary">
               <span
                 className="w-3 h-3 rounded-full shrink-0"
                 style={{ backgroundColor: current?.color ?? '#FBC52A' }}
                 aria-hidden
               />
-              {' '}
-              {current?.label ?? 'This period'}
+              <span>
+                {current?.label ?? 'This period'}
+                {(periodDateRange != null && periodDateRange !== '') && (
+                  <span className="block text-[10px] text-gray-500 font-normal">{periodDateRange}</span>
+                )}
+              </span>
             </span>
-            <span className="flex items-center gap-2 text-xs text-primary">
-              <span
-                className="rounded-full border-2 border-dashed bg-transparent box-content shrink-0"
-                style={{ width: 10, height: 10, borderColor: comparisonSeries?.color ?? '#9ca3af' }}
-                aria-hidden
-              />
-              {' '}
-              {comparisonSeries?.label ?? 'Comparison'}
-            </span>
+            {series.length >= 2 && comparisonSeries && (
+              <span className="flex items-center gap-2 text-xs text-primary">
+                <span
+                  className="rounded-full border-2 border-dashed bg-transparent box-content shrink-0"
+                  style={{ width: 10, height: 10, borderColor: comparisonSeries?.color ?? '#9ca3af' }}
+                  aria-hidden
+                />
+                <span>
+                  {comparisonSeries?.label ?? 'Comparison'}
+                  {comparisonDateRange && (
+                    <span className="block text-[10px] text-gray-500 font-normal">{comparisonDateRange}</span>
+                  )}
+                </span>
+              </span>
+            )}
           </div>
         );
       })()}
@@ -254,7 +270,7 @@ export const SalesTrendChartCard = ({
         </div>
       )}
       <div
-        className="scrollbar-touch min-h-[200px] -mx-3 px-3 pb-5 md:mx-0 md:px-5 overflow-x-auto md:overflow-visible overflow-y-hidden"
+        className="scrollbar-touch min-h-[200px] min-w-0 max-w-full -mx-3 px-3 pb-5 md:mx-0 md:px-5 overflow-x-auto md:overflow-visible overflow-y-hidden"
         style={loading || series.length === 0 ? { minHeight: height } : undefined}
       >
         <div className="min-w-[560px] md:min-w-0 w-full">

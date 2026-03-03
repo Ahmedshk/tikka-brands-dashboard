@@ -70,6 +70,16 @@ export interface Location {
   updatedAt?: string;
 }
 
+/** The five numeric goal values (shared shape). */
+export interface GoalValues {
+  salesGoal: number;
+  laborCostGoal: number;
+  hoursGoal: number;
+  spmhGoal: number;
+  foodCostGoal: number;
+}
+
+/** Resolved goal for a single date (used by Command Center, Sales & Labor, etc.). */
 export interface Goal {
   _id?: string;
   locationId: string;
@@ -80,4 +90,30 @@ export interface Goal {
   foodCostGoal: number;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** Day-of-week index: 0 = Sunday, 6 = Saturday. */
+export type GoalDayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+/** One future week override. */
+export interface FutureWeekGoals {
+  weekStartDate: string;
+  days: Partial<Record<GoalDayOfWeek, GoalValues>>;
+}
+
+/** Full goal setting for editing (default + weekly + future weeks). */
+export interface GoalSetting {
+  locationId: string;
+  default: GoalValues;
+  weekly: Partial<Record<GoalDayOfWeek, GoalValues>>;
+  futureWeeks: FutureWeekGoals[];
+}
+
+/** Source of the resolved goal for a date. */
+export type GoalSource = 'default' | 'weekly' | 'futureWeek';
+
+/** Response when fetching resolved goal for a date (includes source). */
+export interface ResolvedGoalWithSource {
+  goal: Goal;
+  source: GoalSource;
 }

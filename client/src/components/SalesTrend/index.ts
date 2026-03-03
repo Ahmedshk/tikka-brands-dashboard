@@ -9,6 +9,7 @@ export {
 export type {
   ComparisonPeriodPickerValue,
   ComparisonPeriodPickerProps,
+  ComparisonOptionsContext,
 } from './ComparisonPeriodPicker';
 export { KPIsTableCard } from './KPIsTableCard';
 export type { KPIsTableRow, KPIsTableCardProps } from './KPIsTableCard';

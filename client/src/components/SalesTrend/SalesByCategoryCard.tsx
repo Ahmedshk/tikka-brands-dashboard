@@ -34,6 +34,10 @@ export interface SalesByCategoryCardProps {
   onPeriodChange?: (value: PeriodPickerValue) => void;
   onComparisonChange?: (value: ComparisonPeriodPickerValue) => void;
   excludeNoneFromComparison?: boolean;
+  /** Formatted date range for current period (e.g. "02/22/26 – 02/27/26"); shown with legend */
+  periodDateRange?: string;
+  /** Formatted date range for comparison period; shown with legend when present */
+  comparisonDateRange?: string;
 }
 
 function getTrendColor(currentValue: number, comparisonValue: number) {
@@ -73,6 +77,8 @@ export const SalesByCategoryCard = ({
   onPeriodChange,
   onComparisonChange,
   excludeNoneFromComparison = false,
+  periodDateRange,
+  comparisonDateRange,
 }: SalesByCategoryCardProps) => {
   const [viewMode, setViewMode] = useState<ViewMode>('visual');
   const [modalOpen, setModalOpen] = useState(false);
@@ -146,9 +152,14 @@ export const SalesByCategoryCard = ({
                 style={{ backgroundColor: TREND_POSITIVE }}
                 aria-hidden
               />
-              {currentPeriodLabel}
-              {' '}
-              (increase)
+              <span>
+                {currentPeriodLabel}
+                {' '}
+                (increase)
+                {periodDateRange != null && periodDateRange !== '' && (
+                  <span className="block text-[10px] text-gray-500 font-normal">{periodDateRange}</span>
+                )}
+              </span>
             </span>
             <span className="flex items-center gap-2">
               <span
@@ -156,9 +167,14 @@ export const SalesByCategoryCard = ({
                 style={{ backgroundColor: TREND_NEGATIVE }}
                 aria-hidden
               />
-              {currentPeriodLabel}
-              {' '}
-              (decrease)
+              <span>
+                {currentPeriodLabel}
+                {' '}
+                (decrease)
+                {periodDateRange != null && periodDateRange !== '' && (
+                  <span className="block text-[10px] text-gray-500 font-normal">{periodDateRange}</span>
+                )}
+              </span>
             </span>
             <span className="flex items-center gap-2">
               <span
@@ -166,7 +182,12 @@ export const SalesByCategoryCard = ({
                 style={{ backgroundColor: COMPARISON_BAR_COLOR }}
                 aria-hidden
               />
-              {comparisonPeriodLabel}
+              <span>
+                {comparisonPeriodLabel}
+                {comparisonDateRange != null && comparisonDateRange !== '' && (
+                  <span className="block text-[10px] text-gray-500 font-normal">{comparisonDateRange}</span>
+                )}
+              </span>
             </span>
           </div>
         )}
@@ -174,12 +195,26 @@ export const SalesByCategoryCard = ({
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
               <thead>
-                <tr className="text-left text-xs md:text-sm 2xl:text-base text-secondary border-b border-gray-200">
+                <tr
+                  className={`text-left text-xs md:text-sm 2xl:text-base text-secondary ${periodDateRange == null && comparisonDateRange == null ? 'border-b border-gray-200' : ''}`}
+                >
                   <th className="pb-3 pr-4 pl-2 font-semibold">Label</th>
                   <th className="pb-3 pr-4 font-semibold text-right">{currentPeriodLabel}</th>
                   <th className="pb-3 pr-4 font-semibold text-right">{comparisonPeriodLabel}</th>
                   <th className="pb-3 pr-2 font-semibold text-right">Percentage (%)</th>
                 </tr>
+                {(periodDateRange != null || comparisonDateRange != null) && (
+                  <tr className="text-left text-[8px] md:text-[10px] text-primary border-b border-gray-200">
+                    <th className="pb-2 pr-4 pl-2 font-normal" />
+                    <th className="pb-2 pr-4 font-normal text-right">
+                      {periodDateRange ?? ''}
+                    </th>
+                    <th className="pb-2 pr-4 font-normal text-right">
+                      {comparisonDateRange ?? ''}
+                    </th>
+                    <th className="pb-2 pr-2" />
+                  </tr>
+                )}
               </thead>
               <tbody className="text-primary text-[10px] md:text-xs 2xl:text-sm">
                 {displayItems.map((item, index) => {

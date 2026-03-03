@@ -15,7 +15,7 @@ import type {
 } from '../../services/commandCenter.service';
 import type { PeriodPickerValue } from './PeriodPicker';
 
-const DATE_DISPLAY_FORMAT = 'MM/dd/yyyy';
+const DATE_DISPLAY_FORMAT = 'MM/dd/yy';
 
 /**
  * End date of comparison range when only start is chosen.
@@ -48,10 +48,17 @@ function getComparisonEndFromStart(
   return startIso;
 }
 
+export interface ComparisonOptionsContext {
+  /** When period is custom, number of days in the range (from differenceInCalendarDays). Used to show "Same period previous week" when < 7 days. */
+  customRangeDays?: number;
+}
+
 export function getComparisonOptionsForPeriod(
   periodType: SalesTrendPeriodType,
+  context?: ComparisonOptionsContext,
 ): { value: SalesTrendComparisonType; label: string }[] {
   const currentYear = new Date().getFullYear();
+  const customRangeDays = context?.customRangeDays;
   switch (periodType) {
     case 'today':
       return [
@@ -111,13 +118,18 @@ export function getComparisonOptionsForPeriod(
         { value: 'custom', label: 'Custom' },
       ];
     case 'custom':
-    default:
-      return [
+    default: {
+      const base = [
         { value: 'none', label: 'None' },
+        ...(customRangeDays != null && customRangeDays < 6
+          ? [{ value: 'samePeriodPreviousWeek' as const, label: 'Same period previous week' }]
+          : []),
         { value: 'samePeriodPreviousMonth', label: 'Same period previous month' },
         { value: 'priorYear', label: 'Prior year' },
         { value: 'custom', label: 'Custom' },
       ];
+      return base;
+    }
   }
 }
 
@@ -176,13 +188,6 @@ export function ComparisonPeriodPicker({
   const pickingRef = useRef<'start' | 'end'>('start');
 
   const periodType = period.periodType;
-  const comparisonOptions = useMemo(() => {
-    const opts = getComparisonOptionsForPeriod(periodType);
-    if (!excludeComparisonTypes?.length) return opts;
-    const set = new Set(excludeComparisonTypes);
-    return opts.filter((o) => !set.has(o.value));
-  }, [periodType, excludeComparisonTypes]);
-
   const customRangeDays = useMemo(() => {
     if (periodType !== 'custom' || !period.periodStart || !period.periodEnd) return undefined;
     const s = parseISODateToLocal(period.periodStart);
@@ -190,6 +195,13 @@ export function ComparisonPeriodPicker({
     if (!s || !e) return undefined;
     return differenceInCalendarDays(e, s);
   }, [periodType, period.periodStart, period.periodEnd]);
+
+  const comparisonOptions = useMemo(() => {
+    const opts = getComparisonOptionsForPeriod(periodType, { customRangeDays });
+    if (!excludeComparisonTypes?.length) return opts;
+    const set = new Set(excludeComparisonTypes);
+    return opts.filter((o) => !set.has(o.value));
+  }, [periodType, excludeComparisonTypes, customRangeDays]);
 
   const autoEndDate = periodType !== 'custom' || customRangeDays != null;
 
@@ -275,11 +287,13 @@ export function ComparisonPeriodPicker({
       } else {
         onChange({ comparisonType: 'custom' });
       }
+      // Keep menu open so user can pick start/end; close happens in handleCalendarChange or handleEndBlur when both set
     } else {
       setLocalStart('');
       setLocalEnd('');
       pickingRef.current = 'start';
       onChange({ comparisonType });
+      setAnchorEl(null);
     }
   };
 
@@ -297,6 +311,7 @@ export function ComparisonPeriodPicker({
         comparisonStart: dateIso,
         comparisonEnd: endIso,
       });
+      setAnchorEl(null);
       return;
     }
 
@@ -320,6 +335,7 @@ export function ComparisonPeriodPicker({
         comparisonStart: formatDateToISO(currentStart),
         comparisonEnd: dateIso,
       });
+      setAnchorEl(null);
     }
   };
 
@@ -340,6 +356,7 @@ export function ComparisonPeriodPicker({
         comparisonStart: startIso,
         comparisonEnd: endIso,
       });
+      if (autoEndDate) setAnchorEl(null);
     }
   };
 
@@ -353,14 +370,15 @@ export function ComparisonPeriodPicker({
         comparisonStart: formatDateToISO(startD),
         comparisonEnd: formatDateToISO(endD),
       });
+      setAnchorEl(null);
     }
   };
 
   const displayLabel = (() => {
     if (value.comparisonType === 'custom' && value.comparisonStart && value.comparisonEnd) {
       try {
-        const s = format(parse(value.comparisonStart, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
-        const e = format(parse(value.comparisonEnd, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
+        const s = format(parse(value.comparisonStart, 'yyyy-MM-dd', new Date()), DATE_DISPLAY_FORMAT);
+        const e = format(parse(value.comparisonEnd, 'yyyy-MM-dd', new Date()), DATE_DISPLAY_FORMAT);
         return value.comparisonStart === value.comparisonEnd ? s : `${s} – ${e}`;
       } catch {
         return 'Custom';

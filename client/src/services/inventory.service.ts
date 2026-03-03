@@ -81,7 +81,7 @@ export interface GetOrdersParams {
 export const inventoryService = {
   async getInventoryKPIs(
     locationId: string,
-    options?: { metrics?: string[] }
+    options?: { metrics?: string[]; signal?: AbortSignal }
   ): Promise<InventoryKPIsData> {
     const params: { locationId: string; metrics?: string } = { locationId };
     if (options?.metrics?.length) {
@@ -89,7 +89,7 @@ export const inventoryService = {
     }
     const res = await api.get<ApiResponse<InventoryKPIsData>>(
       API_ENDPOINTS.INVENTORY.KPIS,
-      { params },
+      { params, signal: options?.signal },
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to load inventory KPIs");
@@ -99,7 +99,8 @@ export const inventoryService = {
 
   async getOrders(
     locationId: string,
-    params: GetOrdersParams
+    params: GetOrdersParams,
+    options?: { signal?: AbortSignal }
   ): Promise<OrderTrackerOrder[]> {
     const res = await api.get<ApiResponse<{ orders: OrderTrackerOrder[] }>>(
       API_ENDPOINTS.INVENTORY.ORDERS,
@@ -110,6 +111,7 @@ export const inventoryService = {
           ...(params.periodStart && { periodStart: params.periodStart }),
           ...(params.periodEnd && { periodEnd: params.periodEnd }),
         },
+        signal: options?.signal,
       }
     );
     if (!res.data.success || res.data.data == null) {

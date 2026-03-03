@@ -48,9 +48,12 @@ export function Dropdown({
   const selectedOption = options.find((o) => o.value === value);
   const displayLabel = selectedOption ? selectedOption.label : placeholder;
 
+  // Only notify when open state changes; do not depend on onOpenChange so that a new
+  // callback reference from the parent (e.g. inline function) does not re-run and refetch.
   useEffect(() => {
     onOpenChange?.(open);
-  }, [open, onOpenChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only when open changes
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;

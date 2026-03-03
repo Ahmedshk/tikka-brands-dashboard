@@ -78,6 +78,15 @@ export interface HourlyBreakdownData {
   laborCostPercentPerHour: (number | null)[];
 }
 
+export interface TimesheetRow {
+  name: string;
+  role: string;
+  clockIn: string | null;
+  clockOut: string | null;
+  totalHours: number;
+  status: "On Clock" | "On Break" | "Clocked Out";
+}
+
 export type SalesTrendPeriodType =
   | "today"
   | "last7days"
@@ -140,6 +149,10 @@ export interface SalesTrendKpiPeriodTotals {
 }
 
 export interface SalesTrendKpiData {
+  /** Period date range (ISO) for display under column header */
+  periodRange?: { startAt: string; endAt: string };
+  /** Comparison date range (ISO) when comparison is not none */
+  comparisonRange?: { startAt: string; endAt: string } | null;
   current: SalesTrendKpiPeriodTotals;
   comparison: SalesTrendKpiPeriodTotals;
 }
@@ -169,6 +182,10 @@ export interface SalesByCategoryData {
     categories: SalesByCategoryCategoryItem[];
     totalNetSales: number;
   };
+  /** Period date range (ISO) for display in legend */
+  periodRange?: { startAt: string; endAt: string };
+  /** Comparison date range (ISO) when comparison is not none */
+  comparisonRange?: { startAt: string; endAt: string } | null;
 }
 
 export type SalesTrendGranularity = "hourly" | "daily" | "weekly" | "monthly";
@@ -179,6 +196,10 @@ export interface SalesTrendLineData {
   /** Nulls indicate future/no-data buckets so the chart line breaks. */
   currentPeriod: (number | null)[];
   comparisonPeriod: (number | null)[];
+  /** Period date range (ISO) for display in legend */
+  periodRange?: { startAt: string; endAt: string };
+  /** Comparison date range (ISO) when comparison is not none */
+  comparisonRange?: { startAt: string; endAt: string } | null;
 }
 
 export interface SalesTrendStackedSeriesItem {
@@ -205,7 +226,7 @@ export function isSalesTrendStacked(
 export const commandCenterService = {
   async getKPIs(
     locationId: string,
-    options?: { metrics?: string[]; periods?: ("today" | "weekToDate")[] }
+    options?: { metrics?: string[]; periods?: ("today" | "weekToDate")[]; signal?: AbortSignal }
   ): Promise<CommandCenterKPIsData | CommandCenterKPIsDataDual> {
     const params: { locationId: string; metrics?: string; periods?: string } = { locationId };
     if (options?.metrics?.length) {
@@ -216,17 +237,17 @@ export const commandCenterService = {
     }
     const res = await api.get<
       ApiResponse<CommandCenterKPIsData | CommandCenterKPIsDataDual>
-    >(API_ENDPOINTS.COMMAND_CENTER.KPIS, { params });
+    >(API_ENDPOINTS.COMMAND_CENTER.KPIS, { params, signal: options?.signal });
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch Command Center KPIs");
     }
     return res.data.data;
   },
 
-  async getHourlySales(locationId: string): Promise<HourlySalesRow[]> {
+  async getHourlySales(locationId: string, options?: { signal?: AbortSignal }): Promise<HourlySalesRow[]> {
     const res = await api.get<ApiResponse<HourlySalesRow[]>>(
       API_ENDPOINTS.COMMAND_CENTER.HOURLY_SALES,
-      { params: { locationId } }
+      { params: { locationId }, signal: options?.signal }
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch hourly sales");
@@ -236,7 +257,7 @@ export const commandCenterService = {
 
   async getSalesLaborKPIs(
     locationId: string,
-    options?: { metrics?: string[] }
+    options?: { metrics?: string[]; signal?: AbortSignal }
   ): Promise<SalesLaborKPIsData> {
     const params: { locationId: string; metrics?: string } = { locationId };
     if (options?.metrics?.length) {
@@ -244,7 +265,7 @@ export const commandCenterService = {
     }
     const res = await api.get<ApiResponse<SalesLaborKPIsData>>(
       API_ENDPOINTS.SALES_LABOR.KPIS,
-      { params }
+      { params, signal: options?.signal }
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch Sales & Labor KPIs");
@@ -253,11 +274,12 @@ export const commandCenterService = {
   },
 
   async getHourlyBreakdown(
-    locationId: string
+    locationId: string,
+    options?: { signal?: AbortSignal }
   ): Promise<HourlyBreakdownData> {
     const res = await api.get<ApiResponse<HourlyBreakdownData>>(
       API_ENDPOINTS.SALES_LABOR.HOURLY_BREAKDOWN,
-      { params: { locationId } }
+      { params: { locationId }, signal: options?.signal }
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(
@@ -267,9 +289,24 @@ export const commandCenterService = {
     return res.data.data;
   },
 
+  async getTimesheet(
+    locationId: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<TimesheetRow[]> {
+    const res = await api.get<ApiResponse<{ rows: TimesheetRow[] }>>(
+      API_ENDPOINTS.SALES_LABOR.TIMESHEET,
+      { params: { locationId }, signal: options?.signal }
+    );
+    if (!res.data.success || res.data.data == null) {
+      throw new Error(res.data.message ?? "Failed to fetch timesheet");
+    }
+    return res.data.data.rows;
+  },
+
   async getSalesTrend(
     locationId: string,
-    params: SalesTrendParams
+    params: SalesTrendParams,
+    options?: { signal?: AbortSignal }
   ): Promise<SalesTrendData> {
     const res = await api.get<ApiResponse<SalesTrendData>>(
       API_ENDPOINTS.SALES_LABOR.SALES_TREND,
@@ -289,6 +326,7 @@ export const commandCenterService = {
           metric: params.metric,
           groupBy: params.groupBy,
         },
+        signal: options?.signal,
       }
     );
     if (!res.data.success || res.data.data == null) {
@@ -301,7 +339,8 @@ export const commandCenterService = {
 
   async getSalesTrendKpi(
     locationId: string,
-    params: SalesTrendKpiParams
+    params: SalesTrendKpiParams,
+    options?: { signal?: AbortSignal }
   ): Promise<SalesTrendKpiData> {
     const res = await api.get<ApiResponse<SalesTrendKpiData>>(
       API_ENDPOINTS.SALES_LABOR.SALES_TREND_KPI,
@@ -319,6 +358,7 @@ export const commandCenterService = {
               comparisonEnd: params.comparisonEnd,
             }),
         },
+        signal: options?.signal,
       }
     );
     if (!res.data.success || res.data.data == null) {
@@ -329,7 +369,8 @@ export const commandCenterService = {
 
   async getSalesByCategory(
     locationId: string,
-    params: SalesByCategoryParams
+    params: SalesByCategoryParams,
+    options?: { signal?: AbortSignal }
   ): Promise<SalesByCategoryData> {
     const res = await api.get<ApiResponse<SalesByCategoryData>>(
       API_ENDPOINTS.SALES_LABOR.SALES_BY_CATEGORY,
@@ -347,6 +388,7 @@ export const commandCenterService = {
               comparisonEnd: params.comparisonEnd,
             }),
         },
+        signal: options?.signal,
       }
     );
     if (!res.data.success || res.data.data == null) {

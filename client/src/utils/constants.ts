@@ -28,6 +28,7 @@ export const API_ENDPOINTS = {
   SALES_LABOR: {
     KPIS: "/sales-labor/kpis",
     HOURLY_BREAKDOWN: "/sales-labor/hourly-breakdown",
+    TIMESHEET: "/sales-labor/timesheet",
     SALES_TREND: "/sales-labor/sales-trend",
     SALES_TREND_KPI: "/sales-labor/sales-trend-kpi",
     SALES_BY_CATEGORY: "/sales-labor/sales-by-category",

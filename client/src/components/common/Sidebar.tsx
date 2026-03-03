@@ -8,6 +8,14 @@ import MainLogo from '@assets/logos/main_logo.svg?react';
 import ArrowUpIcon from '@assets/icons/arrow_up.svg?react';
 import ArrowDownIcon from '@assets/icons/arrow_down.svg?react';
 
+/** On these pages the sidebar always shows the default logo (location change does not affect it). */
+const SIDEBAR_DEFAULT_LOGO_PATHS = new Set([
+  '/dashboard/user-management',
+  '/dashboard/rbac-management',
+  '/dashboard/goal-setting',
+  '/dashboard/location-management',
+]);
+
 interface SidebarProps {
   activePath: string;
   expandedItems: Set<string>;
@@ -21,6 +29,7 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
   const navigate = useNavigate();
   const filteredNav = useFilteredNavigation();
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const useDefaultLogo = SIDEBAR_DEFAULT_LOGO_PATHS.has(activePath);
   const [isMobile, setIsMobile] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [mouseStartX, setMouseStartX] = useState<number | null>(null);
@@ -342,10 +351,10 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
           </button>
           {/* Logo */}
           <div className="px-6 py-4 border-b border-gray-200 flex justify-center items-center">
-            {currentLocation?.logoDataUrl ? (
-              <img src={currentLocation.logoDataUrl} alt="" className="max-w-[180px] w-full h-10 object-contain object-center" />
-            ) : (
+            {useDefaultLogo || !currentLocation?.logoDataUrl ? (
               <MainLogo className="max-w-[180px] w-full" />
+            ) : (
+              <img src={currentLocation.logoDataUrl} alt="" className="max-w-[180px] w-full h-10 object-contain object-center" />
             )}
           </div>
 
@@ -456,16 +465,16 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
     >
       {/* Logo - same height as navbar (72px) so the border aligns with navbar bottom */}
       <div className={`h-[72px] min-h-[72px] border-b border-gray-200 flex items-center justify-center shrink-0 ${isDesktopExpanded ? 'px-6' : 'px-3'}`}>
-        {currentLocation?.logoDataUrl ? (
+        {useDefaultLogo || !currentLocation?.logoDataUrl ? (
           isDesktopExpanded ? (
-            <img src={currentLocation.logoDataUrl} alt="" className="max-w-[180px] w-full h-10 object-contain object-center" />
+            <MainLogo className="max-w-[180px] w-full" />
           ) : (
-            <img src={currentLocation.logoDataUrl} alt="" className="h-8 w-8 object-contain" />
+            <MainLogo className="h-8 w-8 object-contain" />
           )
         ) : isDesktopExpanded ? (
-          <MainLogo className="max-w-[180px] w-full" />
+          <img src={currentLocation.logoDataUrl} alt="" className="max-w-[180px] w-full h-10 object-contain object-center" />
         ) : (
-          <MainLogo className="h-8 w-8 object-contain" />
+          <img src={currentLocation.logoDataUrl} alt="" className="h-8 w-8 object-contain" />
         )}
       </div>
 

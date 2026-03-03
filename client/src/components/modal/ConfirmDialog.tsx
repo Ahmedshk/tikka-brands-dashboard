@@ -46,13 +46,21 @@ export const ConfirmDialog = ({
 
   const handleCancel = (e: React.SyntheticEvent) => {
     e.preventDefault();
-    onClose();
+    if (dialogRef.current?.open) {
+      dialogRef.current.close();
+    } else {
+      onClose();
+    }
   };
 
   const handleConfirm = async () => {
     try {
       await Promise.resolve(onConfirm());
-      onClose();
+      if (dialogRef.current?.open) {
+        dialogRef.current.close();
+      } else {
+        onClose();
+      }
     } catch {
       // Caller handles error; dialog stays open
     }
@@ -67,7 +75,7 @@ export const ConfirmDialog = ({
     <dialog
       ref={dialogRef}
       onCancel={handleCancel}
-      className="fixed inset-0 z-[300] m-0 grid h-screen w-screen min-h-screen min-w-full max-w-none max-h-none place-items-center bg-transparent border-0 p-4 outline-none [&::backdrop]:bg-black/50"
+      className="fixed inset-0 z-[300] m-0 h-screen w-screen min-h-screen min-w-full max-w-none max-h-none bg-transparent border-0 p-4 outline-none hidden open:grid place-items-center [&::backdrop]:bg-black/50"
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-message"
     >

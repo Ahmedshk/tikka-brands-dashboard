@@ -22,7 +22,7 @@ export const PERIOD_OPTIONS: { value: SalesTrendPeriodType; label: string }[] = 
   { value: 'custom', label: 'Custom' },
 ];
 
-const DATE_DISPLAY_FORMAT = 'MM/dd/yyyy';
+const DATE_DISPLAY_FORMAT = 'MM/dd/yy';
 
 export interface PeriodPickerValue {
   periodType: SalesTrendPeriodType;
@@ -126,11 +126,13 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
         periodStart: start ? formatDateToISO(start) : undefined,
         periodEnd: end ? formatDateToISO(end) : undefined,
       });
+      // Keep menu open so user can pick start/end dates; close happens in handleCalendarChange or handleEndBlur when both dates set
     } else {
       setLocalStart('');
       setLocalEnd('');
       pickingRef.current = 'start';
       onChange({ periodType });
+      setAnchorEl(null);
     }
   };
 
@@ -159,6 +161,7 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
         periodStart: formatDateToISO(currentStart),
         periodEnd: dateIso,
       });
+      setAnchorEl(null);
     }
   };
 
@@ -168,15 +171,18 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
   };
   const handleEndBlur = () => {
     const d = parseDateSafe(localEnd);
-    if (d) onChange({ ...value, periodEnd: formatDateToISO(d) });
+    if (d) {
+      onChange({ ...value, periodEnd: formatDateToISO(d) });
+      if (parseDateSafe(localStart)) setAnchorEl(null);
+    }
   };
 
   const displayLabel = (() => {
     if (value.periodType === 'custom' && value.periodStart && value.periodEnd) {
       try {
-        const s = format(parse(value.periodStart, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
-        const e = format(parse(value.periodEnd, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
-        return `${s} – ${e}`;
+        const s = format(parse(value.periodStart, 'yyyy-MM-dd', new Date()), DATE_DISPLAY_FORMAT);
+        const e = format(parse(value.periodEnd, 'yyyy-MM-dd', new Date()), DATE_DISPLAY_FORMAT);
+        return s === e ? s : `${s} – ${e}`;
       } catch {
         return 'Custom';
       }

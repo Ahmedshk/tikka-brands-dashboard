@@ -1,4 +1,6 @@
 import GaugeComponent from 'react-gauge-component';
+import IncreaseDownIcon from '@assets/icons/increase_down.svg?react';
+import DecreaseUpIcon from '@assets/icons/decrease_up.svg?react';
 
 export interface PercentageGaugeProps {
   /** Current value (e.g. 0–100 for percentage) */
@@ -124,13 +126,11 @@ export const PercentageGauge = ({
           <p
             className={`flex items-center justify-center gap-1 text-sm font-bold ${overTarget > 0 ? 'text-negative' : 'text-positive'}`}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              {overTarget > 0 ? (
-                <path d="M7 14l5-5 5 5H7z" />
-              ) : (
-                <path d="M7 10l5 5 5-5H7z" />
-              )}
-            </svg>
+            {overTarget > 0 ? (
+              <IncreaseDownIcon className="w-3.5 h-3 shrink-0 [&_path]:fill-current" aria-hidden />
+            ) : (
+              <DecreaseUpIcon className="w-3.5 h-3 shrink-0 [&_path]:fill-current" aria-hidden />
+            )}
             {overTarget > 0 ? `${overTarget.toFixed(2)}% Over Target` : `${Math.abs(overTarget).toFixed(2)}% Under Target`}
           </p>
         </>

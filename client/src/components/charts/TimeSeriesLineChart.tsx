@@ -38,8 +38,8 @@ const defaultTheme = createTheme({
 
 const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
 
-const desktopMargin = { top: 10, right: 25, bottom: 0, left: 0 };
-const mobileMargin = { top: 4, right: 14, bottom: 0, left: 0 };
+const desktopMargin = { top: 10, right: 35, bottom: 0, left: 0 };
+const mobileMargin = { top: 4, right: 25, bottom: 0, left: 0 };
 
 const TooltipSeriesOrderContext = createContext<string[] | undefined>(undefined);
 const TooltipValueFormatterContext = createContext<((value: number) => string) | undefined>(undefined);

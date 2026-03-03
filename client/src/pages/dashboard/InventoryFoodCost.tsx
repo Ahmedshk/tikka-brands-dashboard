@@ -13,7 +13,7 @@ import { OrderDetailModal } from '../../components/modal/OrderDetailModal';
 import { VarianceChartModal } from '../../components/modal/VarianceChartModal';
 import { inventoryService, type OrderTrackerOrder } from '../../services/inventory.service';
 import type { OrderTrackerPeriodValue } from '../../components/InventoryFoodCost/OrderTrackerPeriodPicker';
-import { goalService } from '../../services/goal.service';
+import { goalService, getTodayInTimezone } from '../../services/goal.service';
 import type { Goal } from '../../types';
 import InventoryAndFoodCostIcon from '@assets/icons/inventory_and_food_cost.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
@@ -65,12 +65,12 @@ export const InventoryFoodCost = () => {
   const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<OrderTrackerOrder | null>(null);
   const [orderTrackerPeriod, setOrderTrackerPeriod] = useState<OrderTrackerPeriodValue>(defaultOrderTrackerPeriod);
   const [orderTrackerOrders, setOrderTrackerOrders] = useState<OrderTrackerOrder[]>([]);
-  const [orderTrackerLoading, setOrderTrackerLoading] = useState(false);
+  const [orderTrackerLoading, setOrderTrackerLoading] = useState(!!currentLocation?._id && shouldFetchOrders);
   const [orderTrackerError, setOrderTrackerError] = useState<string | null>(null);
   const [varianceModalOpen, setVarianceModalOpen] = useState(false);
   const [varianceBarBandWidth, setVarianceBarBandWidth] = useState<number | null>(null);
   const [inventoryKpisData, setInventoryKpisData] = useState<Awaited<ReturnType<typeof inventoryService.getInventoryKPIs>> | null>(null);
-  const [kpisLoading, setKpisLoading] = useState(false);
+  const [kpisLoading, setKpisLoading] = useState(!!currentLocation?._id && shouldFetchKpis);
   const [kpisError, setKpisError] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal | null>(null);
 
@@ -78,18 +78,24 @@ export const InventoryFoodCost = () => {
     if (!currentLocation?._id || !shouldFetchKpis || kpiMetrics.length === 0) {
       setInventoryKpisData(null);
       setKpisError(null);
+      setKpisLoading(false);
       return;
     }
+    const controller = new AbortController();
     setKpisLoading(true);
     setKpisError(null);
     inventoryService
-      .getInventoryKPIs(currentLocation._id, { metrics: kpiMetrics })
+      .getInventoryKPIs(currentLocation._id, { metrics: kpiMetrics, signal: controller.signal })
       .then(setInventoryKpisData)
       .catch((err) => {
+        if (controller.signal.aborted) return;
         setKpisError(err instanceof Error ? err.message : 'Failed to load inventory KPIs');
         setInventoryKpisData(null);
       })
-      .finally(() => setKpisLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setKpisLoading(false);
+      });
+    return () => controller.abort();
   }, [currentLocation?._id, shouldFetchKpis, kpiMetrics.join(',')]);
 
   useEffect(() => {
@@ -97,11 +103,16 @@ export const InventoryFoodCost = () => {
       setGoals(null);
       return;
     }
+    const controller = new AbortController();
+    const date = getTodayInTimezone(currentLocation.timezone ?? 'UTC');
     goalService
-      .getByLocationId(currentLocation._id)
+      .getResolved(currentLocation._id, date, { signal: controller.signal })
       .then(setGoals)
-      .catch(() => setGoals(null));
-  }, [currentLocation?._id, shouldFetchGoals]);
+      .catch(() => {
+        if (!controller.signal.aborted) setGoals(null);
+      });
+    return () => controller.abort();
+  }, [currentLocation?._id, currentLocation?.timezone, shouldFetchGoals]);
 
   const countPeriodLabel = useMemo(() => {
     const start = inventoryKpisData?.countPeriodStart;
@@ -191,6 +202,7 @@ export const InventoryFoodCost = () => {
     if (!currentLocation?._id || !shouldFetchOrders) {
       setOrderTrackerOrders([]);
       setOrderTrackerError(null);
+      setOrderTrackerLoading(false);
       return;
     }
     const isCustom = orderTrackerPeriod.periodType === 'custom';
@@ -202,16 +214,21 @@ export const InventoryFoodCost = () => {
       setOrderTrackerLoading(false);
       return;
     }
+    const controller = new AbortController();
     setOrderTrackerLoading(true);
     setOrderTrackerError(null);
     inventoryService
-      .getOrders(currentLocation._id, orderTrackerPeriod)
+      .getOrders(currentLocation._id, orderTrackerPeriod, { signal: controller.signal })
       .then(setOrderTrackerOrders)
       .catch((err) => {
+        if (controller.signal.aborted) return;
         setOrderTrackerError(err instanceof Error ? err.message : 'Failed to load orders');
         setOrderTrackerOrders([]);
       })
-      .finally(() => setOrderTrackerLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setOrderTrackerLoading(false);
+      });
+    return () => controller.abort();
   }, [currentLocation?._id, shouldFetchOrders, orderTrackerPeriod.periodType, orderTrackerPeriod.periodStart, orderTrackerPeriod.periodEnd]);
 
   const orderTrackerCardRows = orderTrackerOrders.slice(0, ORDER_TRACKER_CARD_SIZE);

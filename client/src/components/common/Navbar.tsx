@@ -32,6 +32,8 @@ const LogoutIcon = ({ className }: { className?: string }) => (
 
 const LOCATION_MANAGEMENT_PATH = '/dashboard/location-management';
 const USER_MANAGEMENT_PATH = '/dashboard/user-management';
+const RBAC_MANAGEMENT_PATH = '/dashboard/rbac-management';
+const GOAL_SETTING_PATH = '/dashboard/goal-setting';
 
 export const Navbar = () => {
   const { pathname } = useLocation();
@@ -40,7 +42,11 @@ export const Navbar = () => {
   const user = useSelector((state: RootState) => state.auth.user);
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [locations, setLocations] = useState<Location[]>([]);
-  const hideLocationSelector = pathname === LOCATION_MANAGEMENT_PATH || pathname === USER_MANAGEMENT_PATH;
+  const hideLocationSelector =
+    pathname === LOCATION_MANAGEMENT_PATH ||
+    pathname === USER_MANAGEMENT_PATH ||
+    pathname === RBAC_MANAGEMENT_PATH ||
+    pathname === GOAL_SETTING_PATH;
   const [locationsLoading, setLocationsLoading] = useState(true);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -49,11 +55,11 @@ export const Navbar = () => {
 
   // Fetch locations and sync current location from storage or first location
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     (async () => {
       try {
-        const data = await locationService.getAll();
-        if (cancelled) return;
+        const data = await locationService.getAll({ signal: controller.signal });
+        if (controller.signal.aborted) return;
         setLocations(data);
         const storedId = getStoredLocationId();
         const match = data.find((loc) => loc._id === storedId);
@@ -63,14 +69,12 @@ export const Navbar = () => {
           dispatch(setCurrentLocation(data[0] ?? null));
         }
       } catch {
-        if (!cancelled) setLocations([]);
+        if (!controller.signal.aborted) setLocations([]);
       } finally {
-        if (!cancelled) setLocationsLoading(false);
+        if (!controller.signal.aborted) setLocationsLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [dispatch]);
 
   // Keep current location in sync if it was removed from list (e.g. deleted elsewhere)
@@ -80,6 +84,7 @@ export const Navbar = () => {
     if (!stillExists) dispatch(setCurrentLocation(locations[0] ?? null));
   }, [locations, currentLocation, dispatch]);
 
+  const locationsRefreshController = useRef<AbortController | null>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
   const notificationMobileRef = useRef<HTMLDivElement>(null);
@@ -173,7 +178,11 @@ export const Navbar = () => {
               }
               onOpenChange={(open) => {
                 if (open) {
-                  locationService.getAll().then((data) => {
+                  locationsRefreshController.current?.abort();
+                  const controller = new AbortController();
+                  locationsRefreshController.current = controller;
+                  locationService.getAll({ signal: controller.signal }).then((data) => {
+                    if (controller.signal.aborted) return;
                     setLocations(data);
                     const stillExists = currentLocation && data.some((loc) => loc._id === currentLocation._id);
                     if (currentLocation && !stillExists && data.length > 0) dispatch(setCurrentLocation(data[0] ?? null));

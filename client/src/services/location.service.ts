@@ -14,7 +14,7 @@ export interface LocationsPaginatedResponse {
 }
 
 export const locationService = {
-  async getAll(): Promise<Location[]> {
+  async getAll(options?: { signal?: AbortSignal }): Promise<Location[]> {
     const res = await api.get<
       ApiResponse<{
         locations: Location[];
@@ -23,7 +23,7 @@ export const locationService = {
         limit: number;
         totalPages: number;
       }>
-    >(`${BASE}?page=1&limit=500`);
+    >(`${BASE}?page=1&limit=500`, { signal: options?.signal });
     if (!res.data.success || !res.data.data?.locations) {
       throw new Error(res.data.message ?? "Failed to fetch locations");
     }

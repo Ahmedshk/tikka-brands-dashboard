@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { Layout } from '../../components/common/Layout';
 import { Dropdown } from '../../components/common/Dropdown';
-import { format, parse } from 'date-fns';
+import { format, parse, differenceInCalendarDays } from 'date-fns';
 import {
   SalesTrendChartCard,
   PeriodPicker,
@@ -31,6 +31,11 @@ import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 
 const PAGE_ID = 'sales-trend-reports';
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
+
+function isAbortError(err: unknown): boolean {
+  if (err instanceof Error) return err.name === 'CanceledError' || (err as { code?: string }).code === 'ERR_CANCELED';
+  return false;
+}
 
 const METRIC_OPTIONS: { value: SalesTrendMetric; label: string }[] = [
   { value: 'netSales', label: 'Net Sales' },
@@ -101,8 +106,8 @@ function percentDiff(current: number, comparison: number): number | null {
 function getKpiPeriodLabel(value: PeriodPickerValue): string {
   if (value.periodType === 'custom' && value.periodStart && value.periodEnd) {
     try {
-      const s = format(parse(value.periodStart, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
-      const e = format(parse(value.periodEnd, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
+      const s = format(parse(value.periodStart, 'yyyy-MM-dd', new Date()), DATE_DISPLAY_FORMAT);
+      const e = format(parse(value.periodEnd, 'yyyy-MM-dd', new Date()), DATE_DISPLAY_FORMAT);
       return s === e ? s : `${s} – ${e}`;
     } catch {
       return 'Custom';
@@ -111,18 +116,43 @@ function getKpiPeriodLabel(value: PeriodPickerValue): string {
   return PERIOD_OPTIONS.find((o) => o.value === value.periodType)?.label ?? 'Period';
 }
 
-function getKpiComparisonLabel(periodType: PeriodPickerValue['periodType'], value: ComparisonPeriodPickerValue): string {
+function getKpiComparisonLabel(period: PeriodPickerValue, value: ComparisonPeriodPickerValue): string {
   if (value.comparisonType === 'custom' && value.comparisonStart && value.comparisonEnd) {
     try {
-      const s = format(parse(value.comparisonStart, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
-      const e = format(parse(value.comparisonEnd, 'yyyy-MM-dd', new Date()), 'MMM d, yyyy');
+      const s = format(parse(value.comparisonStart, 'yyyy-MM-dd', new Date()), DATE_DISPLAY_FORMAT);
+      const e = format(parse(value.comparisonEnd, 'yyyy-MM-dd', new Date()), DATE_DISPLAY_FORMAT);
       return s === e ? s : `${s} – ${e}`;
     } catch {
       return 'Comparison';
     }
   }
-  const opts = getComparisonOptionsForPeriod(periodType);
+  const opts = getComparisonOptionsForPeriod(period.periodType, {
+    customRangeDays: getCustomRangeDays(period),
+  });
   return opts.find((o) => o.value === value.comparisonType)?.label ?? 'Comparison';
+}
+
+const DATE_DISPLAY_FORMAT = 'MM/dd/yy';
+
+function getCustomRangeDays(period: PeriodPickerValue): number | undefined {
+  if (period.periodType !== 'custom' || !period.periodStart || !period.periodEnd) return undefined;
+  const s = parse(period.periodStart, 'yyyy-MM-dd', new Date());
+  const e = parse(period.periodEnd, 'yyyy-MM-dd', new Date());
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return undefined;
+  return differenceInCalendarDays(e, s);
+}
+
+/** Format ISO range for display: single date if same day, otherwise "Start – End". Uses mm/dd/yy. */
+function formatDateRange(startAt: string, endAt: string): string {
+  try {
+    const start = new Date(startAt);
+    const end = new Date(endAt);
+    const s = format(start, DATE_DISPLAY_FORMAT);
+    const e = format(end, DATE_DISPLAY_FORMAT);
+    return s === e ? s : `${s} – ${e}`;
+  } catch {
+    return '';
+  }
 }
 
 function buildKpiRows(data: SalesTrendKpiData | null): KPIsTableRow[] {
@@ -208,52 +238,62 @@ export const SalesTrendReports = () => {
   const [metric, setMetric] = useState<SalesTrendMetric>('netSales');
   const [groupBy, setGroupBy] = useState<SalesTrendGroupBy>('none');
   const [trendData, setTrendData] = useState<SalesTrendData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!currentLocation?._id && canTrendsChart);
   const [error, setError] = useState<string | null>(null);
 
   const [kpiPeriod, setKpiPeriod] = useState<PeriodPickerValue>({ periodType: 'today' });
   const [kpiComparison, setKpiComparison] = useState<ComparisonPeriodPickerValue>({ comparisonType: '1DayPrior' });
   const [kpiData, setKpiData] = useState<SalesTrendKpiData | null>(null);
-  const [kpiLoading, setKpiLoading] = useState(false);
+  const [kpiLoading, setKpiLoading] = useState(!!currentLocation?._id && canKpis);
   const [kpiError, setKpiError] = useState<string | null>(null);
   const [categoryPeriod, setCategoryPeriod] = useState<PeriodPickerValue>(defaultPeriod);
   const [categoryComparison, setCategoryComparison] = useState<ComparisonPeriodPickerValue>(defaultComparison);
   const [categoryData, setCategoryData] = useState<SalesByCategoryData | null>(null);
-  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [categoryLoading, setCategoryLoading] = useState(!!currentLocation?._id && canNetSalesByCategory);
   const [categoryError, setCategoryError] = useState<string | null>(null);
 
   const locationId = currentLocation?._id ?? null;
 
-  useEffect(() => {
-    const options = getComparisonOptionsForPeriod(kpiPeriod.periodType).filter((o) => o.value !== 'none');
+  /** When KPI period changes, sync comparison in the same tick so only one API call is made. */
+  const handleKpiPeriodChange = (newPeriod: PeriodPickerValue) => {
+    setKpiPeriod(newPeriod);
+    const options = getComparisonOptionsForPeriod(newPeriod.periodType, {
+      customRangeDays: getCustomRangeDays(newPeriod),
+    }).filter((o) => o.value !== 'none');
     const exists = options.some((o) => o.value === kpiComparison.comparisonType);
     if (!exists && options.length > 0) {
-      const fallback = kpiPeriod.periodType === 'thisYear' ? 'priorYear' : (options[0]?.value ?? 'priorYear');
-      setKpiComparison((prev) =>
+      const fallback = newPeriod.periodType === 'thisYear' ? 'priorYear' : (options[0]?.value ?? 'priorYear');
+      setKpiComparison(
         fallback === 'custom'
           ? { comparisonType: 'custom' }
-          : { ...prev, comparisonType: fallback as ComparisonPeriodPickerValue['comparisonType'] }
+          : { comparisonType: fallback as ComparisonPeriodPickerValue['comparisonType'], comparisonStart: undefined, comparisonEnd: undefined }
       );
     }
-  }, [kpiPeriod.periodType]);
+  };
 
-  useEffect(() => {
-    const options = getComparisonOptionsForPeriod(categoryPeriod.periodType).filter((o) => o.value !== 'none');
+  /** When category period changes, sync comparison in the same tick so only one API call is made. */
+  const handleCategoryPeriodChange = (newPeriod: PeriodPickerValue) => {
+    setCategoryPeriod(newPeriod);
+    const options = getComparisonOptionsForPeriod(newPeriod.periodType, {
+      customRangeDays: getCustomRangeDays(newPeriod),
+    }).filter((o) => o.value !== 'none');
     const exists = options.some((o) => o.value === categoryComparison.comparisonType);
     if (!exists && options.length > 0) {
-      const fallback = categoryPeriod.periodType === 'thisYear' ? 'priorYear' : (options[0]?.value ?? 'priorYear');
-      setCategoryComparison((prev) =>
+      const fallback = newPeriod.periodType === 'thisYear' ? 'priorYear' : (options[0]?.value ?? 'priorYear');
+      setCategoryComparison(
         fallback === 'custom'
           ? { comparisonType: 'custom' }
-          : { ...prev, comparisonType: fallback as ComparisonPeriodPickerValue['comparisonType'] }
+          : { comparisonType: fallback as ComparisonPeriodPickerValue['comparisonType'], comparisonStart: undefined, comparisonEnd: undefined }
       );
     }
-  }, [categoryPeriod.periodType]);
+  };
 
   /** When period changes, sync comparison to a valid option in the same tick so the trend effect runs once. */
   const handleTrendPeriodChange = (newPeriod: PeriodPickerValue) => {
     setPeriod(newPeriod);
-    const options = getComparisonOptionsForPeriod(newPeriod.periodType);
+    const options = getComparisonOptionsForPeriod(newPeriod.periodType, {
+      customRangeDays: getCustomRangeDays(newPeriod),
+    });
     const exists = options.some((o) => o.value === comparison.comparisonType);
     if (!exists && options.length > 0) {
       const fallback =
@@ -272,8 +312,23 @@ export const SalesTrendReports = () => {
     if (!locationId || !canTrendsChart) {
       setTrendData(null);
       setError(null);
+      setLoading(false);
       return;
     }
+    if (period.periodType === 'custom' && (!period.periodStart || !period.periodEnd)) {
+      setTrendData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    if (comparison.comparisonType === 'custom' && (!comparison.comparisonStart || !comparison.comparisonEnd)) {
+      setTrendData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    let aborted = false;
     setLoading(true);
     setError(null);
     const params = {
@@ -293,9 +348,15 @@ export const SalesTrendReports = () => {
       groupBy: metric === 'netSales' ? groupBy : ('none' as SalesTrendGroupBy),
     };
     commandCenterService
-      .getSalesTrend(locationId, params)
-      .then(setTrendData)
+      .getSalesTrend(locationId, params, { signal: controller.signal })
+      .then((data) => {
+        if (!aborted) setTrendData(data);
+      })
       .catch((err: unknown) => {
+        if (isAbortError(err)) {
+          aborted = true;
+          return;
+        }
         const res = (err as { response?: { data?: { message?: string } } })
           ?.response?.data?.message;
         let message = 'Failed to load sales trend';
@@ -307,7 +368,13 @@ export const SalesTrendReports = () => {
         setError(message);
         setTrendData(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!aborted) setLoading(false);
+      });
+    return () => {
+      aborted = true;
+      controller.abort();
+    };
   }, [
     locationId,
     canTrendsChart,
@@ -325,8 +392,23 @@ export const SalesTrendReports = () => {
     if (!locationId || !canKpis) {
       setKpiData(null);
       setKpiError(null);
+      setKpiLoading(false);
       return;
     }
+    if (kpiPeriod.periodType === 'custom' && (!kpiPeriod.periodStart || !kpiPeriod.periodEnd)) {
+      setKpiData(null);
+      setKpiError(null);
+      setKpiLoading(false);
+      return;
+    }
+    if (kpiComparison.comparisonType === 'custom' && (!kpiComparison.comparisonStart || !kpiComparison.comparisonEnd)) {
+      setKpiData(null);
+      setKpiError(null);
+      setKpiLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    let aborted = false;
     setKpiLoading(true);
     setKpiError(null);
     const kpiParams = {
@@ -346,9 +428,15 @@ export const SalesTrendReports = () => {
       }),
     };
     commandCenterService
-      .getSalesTrendKpi(locationId, kpiParams)
-      .then(setKpiData)
+      .getSalesTrendKpi(locationId, kpiParams, { signal: controller.signal })
+      .then((data) => {
+        if (!aborted) setKpiData(data);
+      })
       .catch((err: unknown) => {
+        if (isAbortError(err)) {
+          aborted = true;
+          return;
+        }
         const res = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
         let message = 'Failed to load KPIs';
         if (typeof res === 'string' && res.trim()) message = res;
@@ -356,7 +444,13 @@ export const SalesTrendReports = () => {
         setKpiError(message);
         setKpiData(null);
       })
-      .finally(() => setKpiLoading(false));
+      .finally(() => {
+        if (!aborted) setKpiLoading(false);
+      });
+    return () => {
+      aborted = true;
+      controller.abort();
+    };
   }, [
     locationId,
     canKpis,
@@ -372,8 +466,23 @@ export const SalesTrendReports = () => {
     if (!locationId || !canNetSalesByCategory) {
       setCategoryData(null);
       setCategoryError(null);
+      setCategoryLoading(false);
       return;
     }
+    if (categoryPeriod.periodType === 'custom' && (!categoryPeriod.periodStart || !categoryPeriod.periodEnd)) {
+      setCategoryData(null);
+      setCategoryError(null);
+      setCategoryLoading(false);
+      return;
+    }
+    if (categoryComparison.comparisonType === 'custom' && (!categoryComparison.comparisonStart || !categoryComparison.comparisonEnd)) {
+      setCategoryData(null);
+      setCategoryError(null);
+      setCategoryLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    let aborted = false;
     setCategoryLoading(true);
     setCategoryError(null);
     const categoryParams = {
@@ -393,9 +502,15 @@ export const SalesTrendReports = () => {
       }),
     };
     commandCenterService
-      .getSalesByCategory(locationId, categoryParams)
-      .then(setCategoryData)
+      .getSalesByCategory(locationId, categoryParams, { signal: controller.signal })
+      .then((data) => {
+        if (!aborted) setCategoryData(data);
+      })
       .catch((err: unknown) => {
+        if (isAbortError(err)) {
+          aborted = true;
+          return;
+        }
         const res = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
         let message = 'Failed to load sales by category';
         if (typeof res === 'string' && res.trim()) message = res;
@@ -403,7 +518,13 @@ export const SalesTrendReports = () => {
         setCategoryError(message);
         setCategoryData(null);
       })
-      .finally(() => setCategoryLoading(false));
+      .finally(() => {
+        if (!aborted) setCategoryLoading(false);
+      });
+    return () => {
+      aborted = true;
+      controller.abort();
+    };
   }, [
     locationId,
     canNetSalesByCategory,
@@ -543,6 +664,16 @@ export const SalesTrendReports = () => {
             onGroupByChange={(v) => setGroupBy(v as SalesTrendGroupBy)}
             yAxis={chartProps?.yAxis}
             height={280}
+            periodDateRange={
+              trendData && !isSalesTrendStacked(trendData) && trendData.periodRange
+                ? formatDateRange(trendData.periodRange.startAt, trendData.periodRange.endAt)
+                : undefined
+            }
+            comparisonDateRange={
+              trendData && !isSalesTrendStacked(trendData) && trendData.comparisonRange
+                ? formatDateRange(trendData.comparisonRange.startAt, trendData.comparisonRange.endAt)
+                : undefined
+            }
           />
         )}
 
@@ -559,10 +690,20 @@ export const SalesTrendReports = () => {
                 loading={kpiLoading}
                 title="KPIs"
                 currentPeriodLabel={getKpiPeriodLabel(kpiPeriod)}
-                comparisonPeriodLabel={getKpiComparisonLabel(kpiPeriod.periodType, kpiComparison)}
+                comparisonPeriodLabel={getKpiComparisonLabel(kpiPeriod, kpiComparison)}
+                currentPeriodDateRange={
+                  kpiData?.periodRange
+                    ? formatDateRange(kpiData.periodRange.startAt, kpiData.periodRange.endAt)
+                    : undefined
+                }
+                comparisonPeriodDateRange={
+                  kpiData?.comparisonRange
+                    ? formatDateRange(kpiData.comparisonRange.startAt, kpiData.comparisonRange.endAt)
+                    : undefined
+                }
                 periodValue={kpiPeriod}
                 comparisonValue={kpiComparison}
-                onPeriodChange={setKpiPeriod}
+                onPeriodChange={handleKpiPeriodChange}
                 onComparisonChange={setKpiComparison}
                 excludeNoneFromComparison
               />
@@ -580,12 +721,22 @@ export const SalesTrendReports = () => {
                 allItems={categoryItems}
                 loading={categoryLoading}
                 currentPeriodLabel={getKpiPeriodLabel(categoryPeriod)}
-                comparisonPeriodLabel={getKpiComparisonLabel(categoryPeriod.periodType, categoryComparison)}
+                comparisonPeriodLabel={getKpiComparisonLabel(categoryPeriod, categoryComparison)}
                 periodValue={categoryPeriod}
                 comparisonValue={categoryComparison}
-                onPeriodChange={setCategoryPeriod}
+                onPeriodChange={handleCategoryPeriodChange}
                 onComparisonChange={setCategoryComparison}
                 excludeNoneFromComparison
+                periodDateRange={
+                  categoryData?.periodRange
+                    ? formatDateRange(categoryData.periodRange.startAt, categoryData.periodRange.endAt)
+                    : undefined
+                }
+                comparisonDateRange={
+                  categoryData?.comparisonRange
+                    ? formatDateRange(categoryData.comparisonRange.startAt, categoryData.comparisonRange.endAt)
+                    : undefined
+                }
               />
             </div>
           )}

@@ -67,49 +67,64 @@ export const CommandCenter = () => {
   const showAlerts = canAlertsFinancial || canAlertsInventory || canAlertsReputation;
 
   const [kpis, setKpis] = useState<Awaited<ReturnType<typeof commandCenterService.getKPIs>> | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!currentLocation?._id && shouldFetchKpis);
   const [error, setError] = useState<string | null>(null);
   const [netSalesPeriod, setNetSalesPeriod] = useState<CommandCenterKPIPeriod>('today');
   const [laborCostPeriod, setLaborCostPeriod] = useState<CommandCenterKPIPeriod>('today');
   const [reviewRatingPeriod, setReviewRatingPeriod] = useState<CommandCenterKPIPeriod>('today');
   const [hourlySales, setHourlySales] = useState<HourlySalesRow[] | null>(null);
-  const [hourlySalesLoading, setHourlySalesLoading] = useState(false);
+  const [hourlySalesLoading, setHourlySalesLoading] = useState(!!currentLocation?._id && shouldFetchHourly);
   const [hourlySalesError, setHourlySalesError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentLocation?._id || !shouldFetchKpis || kpiMetrics.length === 0) {
       setKpis(null);
       setError(null);
+      setLoading(false);
       return;
     }
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
     commandCenterService
       .getKPIs(currentLocation._id, {
         metrics: kpiMetrics,
         periods: ['today', 'weekToDate'],
+        signal: controller.signal,
       })
       .then(setKpis)
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load KPIs"))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : "Failed to load KPIs");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [currentLocation?._id, shouldFetchKpis, kpiMetrics.join(",")]);
 
   useEffect(() => {
     if (!currentLocation?._id || !shouldFetchHourly) {
       setHourlySales(null);
       setHourlySalesError(null);
+      setHourlySalesLoading(false);
       return;
     }
+    const controller = new AbortController();
     setHourlySalesLoading(true);
     setHourlySalesError(null);
     commandCenterService
-      .getHourlySales(currentLocation._id)
+      .getHourlySales(currentLocation._id, { signal: controller.signal })
       .then(setHourlySales)
       .catch((err) => {
+        if (controller.signal.aborted) return;
         setHourlySalesError(err instanceof Error ? err.message : 'Failed to load hourly sales');
         setHourlySales(null);
       })
-      .finally(() => setHourlySalesLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setHourlySalesLoading(false);
+      });
+    return () => controller.abort();
   }, [currentLocation?._id, shouldFetchHourly]);
 
   const commandCenterKPIs = useMemo((): CommandCenterKPIItem[] => {
@@ -208,12 +223,25 @@ export const CommandCenter = () => {
 
   const hourlyChartData = useMemo(() => {
     if (hourlySales && hourlySales.length > 0) {
+      const todayTotal = hourlySales.reduce((sum, r) => sum + (r.today ?? 0), 0);
+      const lastWeekTotal = hourlySales.reduce((sum, r) => sum + r.last_week, 0);
+      let percentChange: number | null;
+      if (lastWeekTotal === 0 && todayTotal === 0) {
+        percentChange = 0;
+      } else if (lastWeekTotal === 0) {
+        percentChange = null;
+      } else {
+        percentChange = ((todayTotal - lastWeekTotal) / lastWeekTotal) * 100;
+      }
       return {
         xAxisData: hourlySales.map((r) => formatHourToAmPm(r.hour)),
         series: [
           { id: 'lastWeek', label: 'Last Week', data: hourlySales.map((r) => r.last_week) },
           { id: 'today', label: 'Today', data: hourlySales.map((r) => r.today) },
         ],
+        todayTotal,
+        lastWeekTotal,
+        percentChange,
       };
     }
     const emptyHours = Array.from({ length: 24 }, (_, h) =>
@@ -225,6 +253,9 @@ export const CommandCenter = () => {
         { id: 'lastWeek', label: 'Last Week', data: emptyHours.map(() => 0) },
         { id: 'today', label: 'Today', data: emptyHours.map(() => null) },
       ],
+      todayTotal: 0,
+      lastWeekTotal: 0,
+      percentChange: null,
     };
   }, [hourlySales]);
 
@@ -261,6 +292,10 @@ export const CommandCenter = () => {
               <HourlySalesChartCard
                 xAxisData={hourlyChartData.xAxisData}
                 series={hourlyChartData.series}
+                todayTotal={hourlyChartData.todayTotal}
+                lastWeekTotal={hourlyChartData.lastWeekTotal}
+                percentChange={hourlyChartData.percentChange}
+                valueFormatter={formatCurrency}
                 height={256}
                 className={canLaborGauge ? 'lg:col-span-2' : ''}
                 yAxis={{ valueFormatter: (v) => formatCurrency(Number(v)) }}

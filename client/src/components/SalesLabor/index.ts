@@ -9,6 +9,6 @@ export type { ClockedInStaffCardProps } from './ClockedInStaffCard';
 export { DailyTargetsSectionCard } from './DailyTargetsSectionCard';
 export type { DailyTargetsSectionCardProps } from './DailyTargetsSectionCard';
 export { ClockedInStaffTable } from './ClockedInStaffTable';
-export type { ClockedInStaffRow, ClockedInStaffTableProps } from './ClockedInStaffTable';
+export type { TimesheetRow, ClockedInStaffRow, ClockedInStaffTableProps } from './ClockedInStaffTable';
 export { DailyTargetsCard } from './DailyTargetsCard';
 export type { TargetActualItem, DailyTargetsCardProps } from './DailyTargetsCard';

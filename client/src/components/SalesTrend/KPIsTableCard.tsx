@@ -18,6 +18,10 @@ export interface KPIsTableCardProps {
   title?: string;
   currentPeriodLabel?: string;
   comparisonPeriodLabel?: string;
+  /** Date range for current period (e.g. "Feb 22 – Feb 28, 2026" or "Feb 22, 2026"); shown under column header when set */
+  currentPeriodDateRange?: string;
+  /** Date range for comparison period; shown under column header when set */
+  comparisonPeriodDateRange?: string;
   /** Full period value for PeriodPicker (enables calendar for custom range) */
   periodValue?: PeriodPickerValue;
   /** Full comparison value for ComparisonPeriodPicker (enables calendar for custom) */
@@ -105,6 +109,8 @@ export const KPIsTableCard = ({
   title = 'KPIs',
   currentPeriodLabel = 'Last 30 Days',
   comparisonPeriodLabel = 'Last Year',
+  currentPeriodDateRange,
+  comparisonPeriodDateRange,
   periodValue,
   comparisonValue,
   onPeriodChange,
@@ -157,19 +163,32 @@ export const KPIsTableCard = ({
                     </p>
                     <div className="flex flex-col gap-1 text-xs text-secondary">
                       <p className="flex justify-between items-baseline gap-2">
-                        <span>{currentPeriodLabel}</span>
+                        <span>
+                          {currentPeriodLabel}
+                          {currentPeriodDateRange && (
+                            <span className="block text-[10px] text-gray-500 font-normal">
+                              {currentPeriodDateRange}
+                            </span>
+                          )}
+                        </span>
                         <span className="font-semibold text-primary shrink-0">{formatCell(row.current)}</span>
                       </p>
                       <p className="flex justify-between items-baseline gap-2">
-                        <span>{comparisonPeriodLabel}</span>
+                        <span>
+                          {comparisonPeriodLabel}
+                          {comparisonPeriodDateRange && (
+                            <span className="block text-[10px] text-gray-500 font-normal">
+                              {comparisonPeriodDateRange}
+                            </span>
+                          )}
+                        </span>
                         <span className="font-semibold text-primary shrink-0">{formatCell(row.previous)}</span>
                       </p>
                       <p className="flex justify-between items-baseline gap-2 pt-0.5">
                         <span>Change</span>
                         <span
-                          className={`font-semibold shrink-0 ${
-                            row.percent === null ? 'text-secondary' : row.percent >= 0 ? 'text-positive' : 'text-negative'
-                          }`}
+                          className={`font-semibold shrink-0 ${row.percent === null ? 'text-secondary' : row.percent >= 0 ? 'text-positive' : 'text-negative'
+                            }`}
                         >
                           {row.percent === null ? 'N/A' : `${row.percent >= 0 ? '+' : ''}${row.percent}%`}
                         </span>
@@ -184,12 +203,24 @@ export const KPIsTableCard = ({
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
                 <thead>
-                  <tr className="text-left text-xs md:text-sm 2xl:text-base text-secondary border-b border-gray-200">
+                  <tr className="text-left text-xs md:text-sm 2xl:text-base text-secondary">
                     <th className="pb-3 pr-4 pl-2 font-semibold" />
                     <th className="pb-3 pr-4 font-semibold text-right">{currentPeriodLabel}</th>
                     <th className="pb-3 pr-4 font-semibold text-right">{comparisonPeriodLabel}</th>
                     <th className="pb-3 pr-2 font-semibold text-right">Percentage (%)</th>
                   </tr>
+                  {(currentPeriodDateRange != null || comparisonPeriodDateRange != null) && (
+                    <tr className="text-left text-[8px] md:text-[10px] text-primary border-b border-gray-200">
+                      <th className="pb-2 pr-4 pl-2 font-normal" />
+                      <th className="pb-2 pr-4 font-normal text-right">
+                        {currentPeriodDateRange ?? ''}
+                      </th>
+                      <th className="pb-2 pr-4 font-normal text-right">
+                        {comparisonPeriodDateRange ?? ''}
+                      </th>
+                      <th className="pb-2 pr-2" />
+                    </tr>
+                  )}
                 </thead>
                 <tbody className="text-primary text-[10px] md:text-xs 2xl:text-sm">
                   {rows.map((row, index) => (
@@ -202,9 +233,8 @@ export const KPIsTableCard = ({
                       <td className="py-3 pr-4 text-right font-semibold">{formatCell(row.previous)}</td>
                       <td className="py-3 pr-2 text-right">
                         <span
-                          className={`font-semibold ${
-                            row.percent === null ? 'text-secondary' : row.percent >= 0 ? 'text-positive' : 'text-negative'
-                          }`}
+                          className={`font-semibold ${row.percent === null ? 'text-secondary' : row.percent >= 0 ? 'text-positive' : 'text-negative'
+                            }`}
                         >
                           {row.percent === null ? 'N/A' : `${row.percent >= 0 ? '+' : ''}${row.percent}%`}
                         </span>

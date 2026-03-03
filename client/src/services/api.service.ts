@@ -18,6 +18,10 @@ function getErrorMessage(error: AxiosError<ApiResponse>): string {
   return error.message || "Something went wrong";
 }
 
+function isCanceledError(error: AxiosError<ApiResponse>): boolean {
+  return error.code === "ERR_CANCELED" || error.name === "CanceledError";
+}
+
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true, // Important for HTTP-only cookies
@@ -55,6 +59,9 @@ api.interceptors.response.use(
     return response;
   },
   async (error: AxiosError<ApiResponse>) => {
+    if (isCanceledError(error)) {
+      throw error;
+    }
     const originalRequest = error.config as InternalAxiosRequestConfig & {
       _retry?: boolean;
     };
