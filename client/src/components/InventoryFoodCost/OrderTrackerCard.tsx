@@ -3,6 +3,7 @@ import type { OrderTrackerPeriodValue } from './OrderTrackerPeriodPicker';
 import { OrderTrackerPeriodPicker } from './OrderTrackerPeriodPicker';
 import { Spinner } from '../common/Spinner';
 import ViewIcon from '@assets/icons/view.svg?react';
+import CommentIcon from '@assets/icons/comment.svg?react';
 
 const cardClass =
   'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
@@ -73,9 +74,16 @@ export const OrderTrackerCard = ({
                         <p className="text-sm font-medium text-primary truncate">
                           PO# {row.poNumber}
                         </p>
-                        <p className="text-xs text-gray-600 mt-0.5">
-                          <span className="font-medium">Supplier:</span>{' '}
+                        <p className="text-xs text-gray-600 mt-0.5 flex items-center gap-1.5 min-w-0">
+                          <span className="font-medium shrink-0">Supplier:</span>{' '}
                           <span className="truncate">{row.supplier}</span>
+                          {row.orderDetails?.Comments?.trim() && (
+                            <CommentIcon
+                              className="w-4 h-4 md:w-5 md:h-5 shrink-0 text-amber-500"
+                              aria-label="Order has a comment"
+                              title="Order has a comment"
+                            />
+                          )}
                         </p>
                         <p className="text-xs text-gray-600">
                           <span className="font-medium">Delivery date:</span>{' '}
@@ -136,7 +144,18 @@ export const OrderTrackerCard = ({
                           }
                         >
                           <td className="py-3 pr-4 pl-2">{row.poNumber}</td>
-                          <td className="py-3 pr-4">{row.supplier}</td>
+                          <td className="py-3 pr-4">
+                            <span className="inline-flex items-center gap-1.5">
+                              {row.supplier}
+                              {row.orderDetails?.Comments?.trim() && (
+                                <CommentIcon
+                                  className="w-4 h-4 shrink-0 text-amber-500"
+                                  aria-label="Order has a comment"
+                                  title="Order has a comment"
+                                />
+                              )}
+                            </span>
+                          </td>
                           <td className="py-3 pr-4 text-center">
                             {row.deliveryDate}
                           </td>

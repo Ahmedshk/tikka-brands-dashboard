@@ -81,11 +81,22 @@ export interface GetOrdersParams {
 export const inventoryService = {
   async getInventoryKPIs(
     locationId: string,
-    options?: { metrics?: string[]; signal?: AbortSignal }
+    options?: {
+      metrics?: string[];
+      pendingOrdersPeriod?: 'thisWeek' | 'lastWeek';
+      signal?: AbortSignal;
+    }
   ): Promise<InventoryKPIsData> {
-    const params: { locationId: string; metrics?: string } = { locationId };
+    const params: {
+      locationId: string;
+      metrics?: string;
+      pendingOrdersPeriod?: string;
+    } = { locationId };
     if (options?.metrics?.length) {
-      params.metrics = options.metrics.join(",");
+      params.metrics = options.metrics.join(',');
+    }
+    if (options?.pendingOrdersPeriod) {
+      params.pendingOrdersPeriod = options.pendingOrdersPeriod;
     }
     const res = await api.get<ApiResponse<InventoryKPIsData>>(
       API_ENDPOINTS.INVENTORY.KPIS,

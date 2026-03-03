@@ -93,7 +93,14 @@ export const getInventoryKPIsHandler = async (
     }
 
     const timezone = location.timezone?.trim() || 'America/Denver';
-    const data = await getInventoryKPIs(buyerGuid, timezone, metrics);
+    const pendingOrdersPeriod =
+      req.query.pendingOrdersPeriod === 'lastWeek' ? 'lastWeek' : 'thisWeek';
+    const data = await getInventoryKPIs(
+      buyerGuid,
+      timezone,
+      metrics,
+      pendingOrdersPeriod,
+    );
 
     res.status(200).json({
       success: true,

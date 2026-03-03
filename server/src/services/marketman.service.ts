@@ -152,6 +152,47 @@ function getLastWeekUtcRange(timezone: string): { from: Date; to: Date } {
   };
 }
 
+/** This week from Sunday 00:00 through today 23:59 in timezone as UTC Dates. */
+function getThisWeekThroughTodayUtcRange(
+  timezone: string,
+): { from: Date; to: Date; periodStart: string; periodEnd: string } {
+  const now = new Date();
+  const { y, m, d } = getDatePartsInTz(now, timezone);
+  const dayOfWeek = new Date(y, m, d).getDay();
+  const sun = addDays(y, m, d, -dayOfWeek);
+  const from = getStartOfDayUtc(sun.y, sun.m, sun.d, timezone);
+  const to = getEndOfDayUtc(y, m, d, timezone);
+  return {
+    from,
+    to,
+    periodStart: formatDateOnly(sun.y, sun.m, sun.d),
+    periodEnd: formatDateOnly(y, m, d),
+  };
+}
+
+/** Last week (Sun–Sat) in timezone as UTC Dates with date-only strings for display. */
+function getLastWeekUtcRangeWithPeriod(
+  timezone: string,
+): { from: Date; to: Date; periodStart: string; periodEnd: string } {
+  const { from } = getCurrentWeekUtcRange(timezone);
+  const fromDate = new Date(from);
+  const sunLast = addDays(
+    fromDate.getFullYear(),
+    fromDate.getMonth(),
+    fromDate.getDate(),
+    -7,
+  );
+  const satLast = addDays(sunLast.y, sunLast.m, sunLast.d, 6);
+  return {
+    from: getStartOfDayUtc(sunLast.y, sunLast.m, sunLast.d, timezone),
+    to: getEndOfDayUtc(satLast.y, satLast.m, satLast.d, timezone),
+    periodStart: formatDateOnly(sunLast.y, sunLast.m, sunLast.d),
+    periodEnd: formatDateOnly(satLast.y, satLast.m, satLast.d),
+  };
+}
+
+export type PendingOrdersPeriod = "thisWeek" | "lastWeek";
+
 const ACTUAL_THEO_METRICS = [
   "currentFoodCost",
   "inventoryValue",
@@ -166,6 +207,7 @@ export async function getInventoryKPIs(
   buyerGuid: string,
   timezone: string,
   requestedMetrics?: string[],
+  pendingOrdersPeriod: PendingOrdersPeriod = "thisWeek",
 ): Promise<InventoryKPIsResult> {
   const result: InventoryKPIsResult = {
     currentFoodCost: null,
@@ -204,7 +246,9 @@ export async function getInventoryKPIs(
     promises.push(Promise.resolve(null));
   }
   if (needPendingOrders) {
-    promises.push(fetchPendingOrdersByDeliveryDate(buyerGuid, timezone));
+    promises.push(
+      fetchPendingOrdersByDeliveryDate(buyerGuid, timezone, pendingOrdersPeriod),
+    );
   } else {
     promises.push(Promise.resolve(null));
   }
@@ -525,26 +569,23 @@ function isReceivedOrCancelled(order: { OrderStatusUIName?: string }): boolean {
 }
 
 /**
- * Fetch pending orders (not yet received, not cancelled) with delivery date from 30 days ago through today.
+ * Fetch pending orders (not yet received, not cancelled) with delivery date in the given period.
  * Uses GetOrdersByDeliveryDate; returns count and period (date-only) for the card.
+ * - thisWeek: from this week's Sunday 00:00 through today 23:59
+ * - lastWeek: from last week's Sunday 00:00 through last week's Saturday 23:59
  */
 async function fetchPendingOrdersByDeliveryDate(
   buyerGuid: string,
   timezone: string,
+  period: PendingOrdersPeriod = "thisWeek",
 ): Promise<{ count: number; periodStart: string; periodEnd: string } | null> {
   try {
-    const now = new Date();
-    const { y, m, d } = getDatePartsInTz(now, timezone);
-    const todayEnd = getEndOfDayUtc(y, m, d, timezone);
-    const thirtyDaysAgo = addDays(y, m, d, -30);
-    const from30DaysAgoStart = getStartOfDayUtc(
-      thirtyDaysAgo.y,
-      thirtyDaysAgo.m,
-      thirtyDaysAgo.d,
-      timezone,
-    );
-    const dateTimeFromUTC = formatMarketManDateUtc(from30DaysAgoStart);
-    const dateTimeToUTC = formatMarketManDateUtc(todayEnd);
+    const range =
+      period === "lastWeek"
+        ? getLastWeekUtcRangeWithPeriod(timezone)
+        : getThisWeekThroughTodayUtcRange(timezone);
+    const dateTimeFromUTC = formatMarketManDateUtc(range.from);
+    const dateTimeToUTC = formatMarketManDateUtc(range.to);
 
     const data = await marketManRequest<{
       Orders?: Array<{ OrderStatusUIName?: string }>;
@@ -558,13 +599,11 @@ async function fetchPendingOrdersByDeliveryDate(
     );
     const orders = Array.isArray(data.Orders) ? data.Orders : [];
     const pendingCount = orders.filter((o) => !isReceivedOrCancelled(o)).length;
-    const periodStart = formatDateOnly(
-      thirtyDaysAgo.y,
-      thirtyDaysAgo.m,
-      thirtyDaysAgo.d,
-    );
-    const periodEnd = formatDateOnly(y, m, d);
-    return { count: pendingCount, periodStart, periodEnd };
+    return {
+      count: pendingCount,
+      periodStart: range.periodStart,
+      periodEnd: range.periodEnd,
+    };
   } catch (err) {
     console.error("[MarketMan] GetOrdersByDeliveryDate error:", err);
   }

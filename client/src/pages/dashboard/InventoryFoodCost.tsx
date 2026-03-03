@@ -7,7 +7,10 @@ import {
   VarianceChartCard,
   OrderTrackerCard,
 } from '../../components/InventoryFoodCost';
-import type { InventoryKPIItem } from '../../components/InventoryFoodCost/InventoryKPICards';
+import type {
+  InventoryKPIItem,
+  PendingOrdersKPIPeriod,
+} from '../../components/InventoryFoodCost/InventoryKPICards';
 import { OrderTrackerModal } from '../../components/modal/OrderTrackerModal';
 import { OrderDetailModal } from '../../components/modal/OrderDetailModal';
 import { VarianceChartModal } from '../../components/modal/VarianceChartModal';
@@ -73,6 +76,7 @@ export const InventoryFoodCost = () => {
   const [kpisLoading, setKpisLoading] = useState(!!currentLocation?._id && shouldFetchKpis);
   const [kpisError, setKpisError] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal | null>(null);
+  const [pendingOrdersPeriod, setPendingOrdersPeriod] = useState<PendingOrdersKPIPeriod>('thisWeek');
 
   useEffect(() => {
     if (!currentLocation?._id || !shouldFetchKpis || kpiMetrics.length === 0) {
@@ -85,7 +89,11 @@ export const InventoryFoodCost = () => {
     setKpisLoading(true);
     setKpisError(null);
     inventoryService
-      .getInventoryKPIs(currentLocation._id, { metrics: kpiMetrics, signal: controller.signal })
+      .getInventoryKPIs(currentLocation._id, {
+        metrics: kpiMetrics,
+        pendingOrdersPeriod: canKpiPending ? pendingOrdersPeriod : undefined,
+        signal: controller.signal,
+      })
       .then(setInventoryKpisData)
       .catch((err) => {
         if (controller.signal.aborted) return;
@@ -96,7 +104,12 @@ export const InventoryFoodCost = () => {
         if (!controller.signal.aborted) setKpisLoading(false);
       });
     return () => controller.abort();
-  }, [currentLocation?._id, shouldFetchKpis, kpiMetrics.join(',')]);
+  }, [
+    currentLocation?._id,
+    shouldFetchKpis,
+    kpiMetrics.join(','),
+    canKpiPending ? pendingOrdersPeriod : null,
+  ]);
 
   useEffect(() => {
     if (!currentLocation?._id || !shouldFetchGoals) {
@@ -193,10 +206,22 @@ export const InventoryFoodCost = () => {
         accentColor: 'purple',
         rightIcon: <PendingOrdersIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
         loading: kpisLoading,
+        period: pendingOrdersPeriod,
+        onPeriodChange: setPendingOrdersPeriod,
       });
     }
     return items;
-  }, [inventoryKpisData, kpisLoading, countPeriodLabel, pendingOrdersPeriodLabel, canKpiFoodCost, canKpiInventory, canKpiWaste, canKpiPending]);
+  }, [
+    inventoryKpisData,
+    kpisLoading,
+    countPeriodLabel,
+    pendingOrdersPeriodLabel,
+    canKpiFoodCost,
+    canKpiInventory,
+    canKpiWaste,
+    canKpiPending,
+    pendingOrdersPeriod,
+  ]);
 
   useEffect(() => {
     if (!currentLocation?._id || !shouldFetchOrders) {

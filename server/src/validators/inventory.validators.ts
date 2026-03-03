@@ -25,6 +25,8 @@ const inventoryMetricEnum = z.enum([
   "varianceItems",
 ]);
 
+const pendingOrdersPeriodEnum = z.enum(['thisWeek', 'lastWeek']);
+
 export const getInventoryKPIsQuerySchema = z.object({
   query: z.object({
     locationId: z.string().min(1, 'Location ID is required'),
@@ -33,6 +35,7 @@ export const getInventoryKPIsQuerySchema = z.object({
       .optional()
       .transform((s) => (s ? s.split(',').map((x) => x.trim()).filter(Boolean) : undefined))
       .pipe(z.array(inventoryMetricEnum).optional()),
+    pendingOrdersPeriod: pendingOrdersPeriodEnum.optional(),
   }),
 });
 
