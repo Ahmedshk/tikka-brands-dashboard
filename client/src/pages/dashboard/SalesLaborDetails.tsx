@@ -164,7 +164,7 @@ export const SalesLaborDetails = () => {
     if (canKpi1) items.push({ title: 'Actual Total Net Sales', timePeriod: 'Today', value: fmt(kpis?.actualTotalSales ?? null, true), accentColor: 'green', rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
     if (canKpi2) items.push({ title: 'Actual Labor Cost %', timePeriod: 'Today', value: fmtPercent(kpis?.actualLaborCostPercent ?? null), accentColor: 'blue', rightIcon: <ActualLaborCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
     if (canKpi3) items.push({ title: 'Total Hours', timePeriod: 'Today', value: fmtHours(kpis?.totalHours ?? null), accentColor: 'orange', rightIcon: <TotalHoursIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
-    if (canKpi4) items.push({ title: 'Sales Per Man Hour', timePeriod: 'Today', value: fmt(kpis?.salesPerManHour ?? null, true), accentColor: 'purple', rightIcon: <SalesPerManHourIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
+    if (canKpi4) items.push({ title: 'Sales Per Man Hour', timePeriod: 'Today', value: kpis?.salesPerManHour != null ? `${formatCurrency(kpis.salesPerManHour)}/hr` : unavail, accentColor: 'purple', rightIcon: <SalesPerManHourIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
     if (canKpi5) items.push({ title: 'No. of Transactions', timePeriod: 'Today', value: fmtWhole(kpis?.transactionCount ?? null), accentColor: 'gray', rightIcon: <NoOfTransactionsIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
     if (canKpi6) items.push({ title: 'Average Check', timePeriod: 'Today', value: fmt(kpis?.averageCheck ?? null, true), accentColor: 'red', rightIcon: <AverageCheckIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
     if (canKpi7) items.push({ title: 'Total Discounts', timePeriod: 'Today', value: fmt(kpis?.totalDiscounts ?? null, true), accentColor: 'azure', rightIcon: <TotalDiscountsIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
@@ -182,20 +182,25 @@ export const SalesLaborDetails = () => {
     const spmhActual = kpis?.salesPerManHour ?? 0;
     const spmhTarget = goals?.spmhGoal ?? 0;
     const to2 = (n: number) => Number(n.toFixed(2));
+    const fmtSales = (n: number) =>
+      `$${to2(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     return [
       {
         label: 'Sales Target',
         actual: salesActual,
         target: salesTarget,
         higherIsBetter: true,
-        formatValue: (n: number) =>
-          `$${to2(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        targetTolerance: goals?.salesGoalTolerance,
+        goalTooltip: `Goal: Meet or Exceed ${fmtSales(salesTarget)}`,
+        formatValue: fmtSales,
       },
       {
         label: 'Labor Cost %',
         actual: laborActual,
         target: laborTarget,
         higherIsBetter: false,
+        targetTolerance: goals?.laborCostGoalTolerance,
+        goalTooltip: `Goal: Stay at or below ${to2(laborTarget)}%`,
         formatValue: (n: number) => `${to2(n)}%`,
       },
       {
@@ -203,6 +208,8 @@ export const SalesLaborDetails = () => {
         actual: hoursActual,
         target: hoursTarget,
         higherIsBetter: false,
+        targetTolerance: goals?.hoursGoalTolerance,
+        goalTooltip: `Goal: Stay at or below ${to2(hoursTarget)} hrs`,
         formatValue: (n: number) => String(to2(n)),
       },
       {
@@ -210,7 +217,9 @@ export const SalesLaborDetails = () => {
         actual: spmhActual,
         target: spmhTarget,
         higherIsBetter: true,
-        formatValue: (n: number) => `$${to2(n).toFixed(2)}`,
+        targetTolerance: goals?.spmhGoalTolerance,
+        goalTooltip: `Goal: Meet or Exceed $${to2(spmhTarget).toFixed(2)}/hr`,
+        formatValue: (n: number) => `$${to2(n).toFixed(2)}/hr`,
       },
     ];
   }, [kpis, goals]);

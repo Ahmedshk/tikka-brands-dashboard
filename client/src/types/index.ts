@@ -70,13 +70,18 @@ export interface Location {
   updatedAt?: string;
 }
 
-/** The five numeric goal values (shared shape). */
+/** The five numeric goal values and their tolerance % (shared shape). */
 export interface GoalValues {
   salesGoal: number;
   laborCostGoal: number;
   hoursGoal: number;
   spmhGoal: number;
   foodCostGoal: number;
+  salesGoalTolerance?: number;
+  laborCostGoalTolerance?: number;
+  hoursGoalTolerance?: number;
+  spmhGoalTolerance?: number;
+  foodCostGoalTolerance?: number;
 }
 
 /** Resolved goal for a single date (used by Command Center, Sales & Labor, etc.). */
@@ -88,6 +93,11 @@ export interface Goal {
   hoursGoal: number;
   spmhGoal: number;
   foodCostGoal: number;
+  salesGoalTolerance?: number;
+  laborCostGoalTolerance?: number;
+  hoursGoalTolerance?: number;
+  spmhGoalTolerance?: number;
+  foodCostGoalTolerance?: number;
   createdAt?: string;
   updatedAt?: string;
 }

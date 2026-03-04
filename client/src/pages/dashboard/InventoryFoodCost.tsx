@@ -22,7 +22,9 @@ import type { OrderTrackerPeriodValue } from '../../components/InventoryFoodCost
 import { goalService, getTodayInTimezone } from '../../services/goal.service';
 import type { Goal } from '../../types';
 import InventoryAndFoodCostIcon from '@assets/icons/inventory_and_food_cost.svg?react';
-import DollarIcon from '@assets/icons/dollar.svg?react';
+import CurrentFoodCostIcon from '@assets/icons/current_food_cost.svg?react';
+import InventoryValueIcon from '@assets/icons/inventory_value.svg?react';
+import WasteCostIcon from '@assets/icons/waste_cost.svg?react';
 import PendingOrdersIcon from '@assets/icons/pending_orders.svg?react';
 import type { RootState } from '../../store/store';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
@@ -229,7 +231,7 @@ export const InventoryFoodCost = () => {
         timePeriod: countPeriodLabel,
         value: foodCostValue,
         accentColor: 'green',
-        rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+        rightIcon: <CurrentFoodCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
         loading: kpisLoading,
       });
     }
@@ -239,7 +241,7 @@ export const InventoryFoodCost = () => {
         timePeriod: countPeriodLabel,
         value: inventoryValue,
         accentColor: 'blue',
-        rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+        rightIcon: <InventoryValueIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
         loading: kpisLoading,
       });
     }
@@ -248,8 +250,8 @@ export const InventoryFoodCost = () => {
         title: 'Waste Cost',
         timePeriod: countPeriodLabel,
         value: wasteCostValue,
-        accentColor: 'orange',
-        rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+        accentColor: 'purple',
+        rightIcon: <WasteCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
         loading: kpisLoading,
       });
     }
@@ -258,7 +260,7 @@ export const InventoryFoodCost = () => {
         title: 'Pending Orders',
         timePeriod: pendingOrdersPeriodLabel,
         value: pendingValue,
-        accentColor: 'purple',
+        accentColor: 'orange',
         rightIcon: <PendingOrdersIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
         loading: kpisLoading,
         period: pendingOrdersPeriod,
@@ -390,6 +392,7 @@ export const InventoryFoodCost = () => {
                   <CostOfGoodsSoldCard
                     value={inventoryKpisData?.foodCostPercent ?? 0}
                     goal={goals?.foodCostGoal ?? null}
+                    goalTolerance={goals?.foodCostGoalTolerance ?? null}
                     timePeriod={kpisLoading ? null : countPeriodLabel}
                     overTarget={
                       inventoryKpisData?.foodCostPercent != null && goals?.foodCostGoal != null

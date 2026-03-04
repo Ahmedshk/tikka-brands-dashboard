@@ -315,6 +315,11 @@ export const CommandCenter = () => {
                     ? kpis.today.laborCostGoal
                     : kpis?.laborCostGoal) ?? null
                 }
+                goalTolerance={
+                  (kpis != null && isCommandCenterKPIsDual(kpis)
+                    ? kpis.today.laborCostGoalTolerance
+                    : kpis?.laborCostGoalTolerance) ?? null
+                }
                 subtitle="Labor Cost as % of Net Sales"
                 overTarget={
                   (() => {

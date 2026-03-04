@@ -7,6 +7,7 @@ export interface CommandCenterKPIsData {
   laborCostToday?: number | null;
   laborCostPercentToday?: number | null;
   laborCostGoal?: number;
+  laborCostGoalTolerance?: number;
   laborCostStatus?: "green" | "red" | null;
   reviewRating?: number;
   reviewCount?: number;
@@ -18,6 +19,7 @@ export interface CommandCenterKPIsTodaySlice {
   laborCostToday?: number | null;
   laborCostPercentToday?: number | null;
   laborCostGoal?: number;
+  laborCostGoalTolerance?: number;
   laborCostStatus?: "green" | "red" | null;
   reviewRating?: number;
   reviewCount?: number;
@@ -29,6 +31,7 @@ export interface CommandCenterKPIsWeekToDateSlice {
   laborCostWeekToDate?: number | null;
   laborCostPercentWeekToDate?: number | null;
   laborCostGoal?: number;
+  laborCostGoalTolerance?: number;
   laborCostStatusWeekToDate?: "green" | "red" | null;
   reviewRating?: number;
   reviewCount?: number;

@@ -8,6 +8,11 @@ const goalValuesSchema = new Schema<IGoalValues>(
     hoursGoal: { type: Number, required: true, default: 0 },
     spmhGoal: { type: Number, required: true, default: 0 },
     foodCostGoal: { type: Number, required: true, default: 0 },
+    salesGoalTolerance: { type: Number, required: false, default: 0 },
+    laborCostGoalTolerance: { type: Number, required: false, default: 0 },
+    hoursGoalTolerance: { type: Number, required: false, default: 0 },
+    spmhGoalTolerance: { type: Number, required: false, default: 0 },
+    foodCostGoalTolerance: { type: Number, required: false, default: 0 },
   },
   { _id: false }
 );

@@ -25,6 +25,11 @@ export class GoalRepository {
       hoursGoal: 0,
       spmhGoal: 0,
       foodCostGoal: 0,
+      salesGoalTolerance: 0,
+      laborCostGoalTolerance: 0,
+      hoursGoalTolerance: 0,
+      spmhGoalTolerance: 0,
+      foodCostGoalTolerance: 0,
     };
 
     const merged = {

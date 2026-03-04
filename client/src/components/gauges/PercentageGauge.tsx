@@ -1,3 +1,4 @@
+import React from 'react';
 import GaugeComponent from 'react-gauge-component';
 import IncreaseDownIcon from '@assets/icons/increase_down.svg?react';
 import DecreaseUpIcon from '@assets/icons/decrease_up.svg?react';
@@ -13,6 +14,10 @@ export interface PercentageGaugeProps {
   subtitle?: string;
   /** If set, show "X% Over Target" in red; if negative, show "X% Under Target" */
   overTarget?: number | null;
+  /** When true and overTarget > 0, show the over-target line in tolerance color (e.g. within tolerance) */
+  overTargetWithinTolerance?: boolean;
+  /** Color for the over-target line when within tolerance (e.g. #FDB90E) */
+  overTargetToleranceColor?: string;
   /** Segment limits (upper bound per segment); default [33, 66, 100] for green/yellow/red */
   segmentStops?: number[];
   /** Colors for segments (default green, yellow, red) */
@@ -47,6 +52,8 @@ export const PercentageGauge = ({
   unit = '%',
   subtitle,
   overTarget = null,
+  overTargetWithinTolerance = false,
+  overTargetToleranceColor = '#FDB90E',
   segmentStops = DEFAULT_SEGMENT_STOPS,
   segmentColors = DEFAULT_SEGMENT_COLORS,
   goalTick = null,
@@ -80,6 +87,37 @@ export const PercentageGauge = ({
     goalTick != null && Math.abs(val - goalTick) < 0.5 ? `${val}% (Goal)` : `${val}%`;
 
   const formatValue = (val: number) => `${val.toFixed(2)}${unit}`;
+
+  function getStatusLineClass(): string {
+    if (overTarget == null) return '';
+    if (overTarget === 0) return 'text-positive';
+    if (overTarget > 0 && overTargetWithinTolerance) return '';
+    if (overTarget > 0) return 'text-negative';
+    return 'text-positive';
+  }
+
+  function renderStatusLineContent(): React.ReactNode {
+    if (overTarget == null) return null;
+    if (overTarget === 0) return 'On Target';
+    if (overTarget > 0) {
+      return (
+        <>
+          <span className="inline-flex shrink-0" style={{ transform: 'rotate(180deg)' }} aria-hidden>
+            <IncreaseDownIcon className="w-3.5 h-3 [&_path]:fill-current" />
+          </span>
+          {`${overTarget.toFixed(2)}% Over Target`}
+        </>
+      );
+    }
+    return (
+      <>
+        <span className="inline-flex shrink-0" style={{ transform: 'rotate(180deg)' }} aria-hidden>
+          <DecreaseUpIcon className="w-3.5 h-3 [&_path]:fill-current" />
+        </span>
+        {`${Math.abs(overTarget).toFixed(2)}% Under Target`}
+      </>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center" style={{ maxWidth: size }}>
@@ -120,18 +158,18 @@ export const PercentageGauge = ({
       />
       <p className="text-2xl font-bold text-secondary mt-2">{formatValue(value)}</p>
       {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
-      {overTarget != null && overTarget !== 0 && (
+      {overTarget != null && (
         <>
           <hr className="w-full border-gray-200 mt-3 mb-2" />
           <p
-            className={`flex items-center justify-center gap-1 text-sm font-bold ${overTarget > 0 ? 'text-negative' : 'text-positive'}`}
+            className={`flex items-center justify-center gap-1 text-sm font-bold ${getStatusLineClass()}`}
+            style={
+              overTarget > 0 && overTargetWithinTolerance
+                ? { color: overTargetToleranceColor }
+                : undefined
+            }
           >
-            {overTarget > 0 ? (
-              <IncreaseDownIcon className="w-3.5 h-3 shrink-0 [&_path]:fill-current" aria-hidden />
-            ) : (
-              <DecreaseUpIcon className="w-3.5 h-3 shrink-0 [&_path]:fill-current" aria-hidden />
-            )}
-            {overTarget > 0 ? `${overTarget.toFixed(2)}% Over Target` : `${Math.abs(overTarget).toFixed(2)}% Under Target`}
+            {renderStatusLineContent()}
           </p>
         </>
       )}

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const goalValueSchema = z.number().min(0, "Goal must be 0 or greater");
+const toleranceSchema = z.number().min(0, "Tolerance must be 0 or greater").max(100, "Tolerance must be 100 or less").optional();
 
 const goalValuesSchema = z.object({
   salesGoal: goalValueSchema,
@@ -8,6 +9,11 @@ const goalValuesSchema = z.object({
   hoursGoal: goalValueSchema,
   spmhGoal: goalValueSchema,
   foodCostGoal: goalValueSchema,
+  salesGoalTolerance: toleranceSchema,
+  laborCostGoalTolerance: toleranceSchema,
+  hoursGoalTolerance: toleranceSchema,
+  spmhGoalTolerance: toleranceSchema,
+  foodCostGoalTolerance: toleranceSchema,
 });
 
 const weeklySchema = z

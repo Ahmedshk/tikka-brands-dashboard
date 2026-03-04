@@ -59,7 +59,7 @@ export interface VarianceChartItem {
 }
 
 export interface VarianceChartCardProps {
-  /** Full list of variance items; card displays top 5 by variance */
+  /** Full list of variance items; card displays top 5 by absolute variance */
   items: VarianceChartItem[];
   /** Date range label (e.g. count period), shown next to title like other cards */
   timePeriod?: string | null;
@@ -69,10 +69,10 @@ export interface VarianceChartCardProps {
   onViewAll?: (barBandWidth: number) => void;
 }
 
-/** Top 5 items by variance (descending); card shows these in descending order. */
+/** Top 5 items by absolute variance (descending); card shows these in descending order of |variance|. */
 function getTop5VarianceItems(items: VarianceChartItem[]): VarianceChartItem[] {
   return [...items]
-    .sort((a, b) => b.varianceCost - a.varianceCost)
+    .sort((a, b) => Math.abs(b.varianceCost) - Math.abs(a.varianceCost))
     .slice(0, 5);
 }
 
@@ -121,7 +121,7 @@ export const VarianceChartCard = ({ items, timePeriod = null, loading = false, o
             )}
           </p>
           <p className="text-[10px] md:text-xs 2xl:text-sm text-primary mt-0.5">
-            Top 5 items with highest variance.
+            Top 5 items with highest absolute variance.
           </p>
         </div>
         {onViewAll != null && items.length > 5 && !loading && (

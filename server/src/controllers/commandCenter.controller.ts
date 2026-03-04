@@ -83,6 +83,7 @@ export const getCommandCenterKPIs = async (
       !metrics?.length || metrics.includes("reviewRating");
 
     let laborCostGoal = 0;
+    let laborCostGoalTolerance = 0;
     if (wantLaborCost) {
       const todayInTz = getTodayInTimezone(location.timezone);
       const result = await goalService.getByLocationIdAndDate(
@@ -90,6 +91,7 @@ export const getCommandCenterKPIs = async (
         todayInTz,
       );
       laborCostGoal = result.goals.laborCostGoal ?? 0;
+      laborCostGoalTolerance = result.goals.laborCostGoalTolerance ?? 0;
     }
 
     const rangeToday: TimeRange = getBusinessStartTimeRange(
@@ -203,10 +205,12 @@ export const getCommandCenterKPIs = async (
         todayData.laborCostToday = laborCostToday;
         todayData.laborCostPercentToday = laborCostPercentToday;
         todayData.laborCostGoal = laborCostGoal;
+        todayData.laborCostGoalTolerance = laborCostGoalTolerance;
         todayData.laborCostStatus = laborCostStatusToday;
         weekToDateData.laborCostWeekToDate = laborCostWeekToDate;
         weekToDateData.laborCostPercentWeekToDate = laborCostPercentWeekToDate;
         weekToDateData.laborCostGoal = laborCostGoal;
+        weekToDateData.laborCostGoalTolerance = laborCostGoalTolerance;
         weekToDateData.laborCostStatusWeekToDate = laborCostStatusWeekToDate;
       }
       if (wantReviewRating) {
@@ -271,6 +275,7 @@ export const getCommandCenterKPIs = async (
       data.laborCostToday = laborCostToday;
       data.laborCostPercentToday = laborCostPercentToday;
       data.laborCostGoal = laborCostGoal;
+      data.laborCostGoalTolerance = laborCostGoalTolerance;
       data.laborCostStatus = laborCostStatus;
     }
     if (wantReviewRating) {

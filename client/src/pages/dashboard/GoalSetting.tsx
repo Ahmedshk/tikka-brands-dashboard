@@ -8,8 +8,7 @@ import { Dropdown } from '../../components/common/Dropdown';
 import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
 import { goalService, getTodayInTimezone } from '../../services/goal.service';
 import { locationService } from '../../services/location.service';
-import type { GoalSetting, GoalValues, GoalDayOfWeek, FutureWeekGoals, Goal, GoalSource } from '../../types';
-import type { Location } from '../../types';
+import type { GoalSetting as GoalSettingType, GoalValues, GoalDayOfWeek, FutureWeekGoals, Goal, GoalSource, Location } from '../../types';
 import { RootState } from '../../store/store';
 import AdminAndSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
 import Popover from '@mui/material/Popover';
@@ -22,15 +21,36 @@ const DEFAULT_GOAL_VALUES: GoalValues = {
   hoursGoal: 0,
   spmhGoal: 0,
   foodCostGoal: 0,
+  salesGoalTolerance: 0,
+  laborCostGoalTolerance: 0,
+  hoursGoalTolerance: 0,
+  spmhGoalTolerance: 0,
+  foodCostGoalTolerance: 0,
 };
 
-const FIELDS: { key: keyof GoalValues; label: string; unit?: 'prefix' | 'suffix'; unitChar?: string }[] = [
-  { key: 'salesGoal', label: 'Sales Goal', unit: 'prefix', unitChar: '$' },
-  { key: 'laborCostGoal', label: 'Labor cost % Goal', unit: 'suffix', unitChar: '%' },
-  { key: 'hoursGoal', label: 'Hours Goal', unit: 'suffix', unitChar: ' hrs' },
-  { key: 'spmhGoal', label: 'SPMH Goal', unit: 'prefix', unitChar: '$' },
-  { key: 'foodCostGoal', label: 'Food cost % Goal', unit: 'suffix', unitChar: '%' },
-];
+const GOAL_FIELD_KEYS = [
+  'salesGoal',
+  'laborCostGoal',
+  'hoursGoal',
+  'spmhGoal',
+  'foodCostGoal',
+] as const;
+
+type GoalValueKey = (typeof GOAL_FIELD_KEYS)[number];
+
+const FIELDS: {
+  key: GoalValueKey;
+  toleranceKey: keyof GoalValues;
+  label: string;
+  unit?: 'prefix' | 'suffix';
+  unitChar?: string;
+}[] = [
+    { key: 'salesGoal', toleranceKey: 'salesGoalTolerance', label: 'Sales Goal', unit: 'prefix', unitChar: '$' },
+    { key: 'laborCostGoal', toleranceKey: 'laborCostGoalTolerance', label: 'Labor cost % Goal', unit: 'suffix', unitChar: '%' },
+    { key: 'hoursGoal', toleranceKey: 'hoursGoalTolerance', label: 'Hours Goal', unit: 'suffix', unitChar: ' hrs' },
+    { key: 'spmhGoal', toleranceKey: 'spmhGoalTolerance', label: 'SPMH Goal', unit: 'prefix', unitChar: '$' },
+    { key: 'foodCostGoal', toleranceKey: 'foodCostGoalTolerance', label: 'Food cost % Goal', unit: 'suffix', unitChar: '%' },
+  ];
 
 const DAY_NAMES: Record<GoalDayOfWeek, string> = {
   0: 'Sunday',
@@ -52,7 +72,12 @@ function goalValuesEqual(a: GoalValues, b: GoalValues): boolean {
     Number(a.laborCostGoal) === Number(b.laborCostGoal) &&
     Number(a.hoursGoal) === Number(b.hoursGoal) &&
     Number(a.spmhGoal) === Number(b.spmhGoal) &&
-    Number(a.foodCostGoal) === Number(b.foodCostGoal)
+    Number(a.foodCostGoal) === Number(b.foodCostGoal) &&
+    Number(a.salesGoalTolerance ?? 0) === Number(b.salesGoalTolerance ?? 0) &&
+    Number(a.laborCostGoalTolerance ?? 0) === Number(b.laborCostGoalTolerance ?? 0) &&
+    Number(a.hoursGoalTolerance ?? 0) === Number(b.hoursGoalTolerance ?? 0) &&
+    Number(a.spmhGoalTolerance ?? 0) === Number(b.spmhGoalTolerance ?? 0) &&
+    Number(a.foodCostGoalTolerance ?? 0) === Number(b.foodCostGoalTolerance ?? 0)
   );
 }
 
@@ -73,8 +98,11 @@ function weeklyEqual(
 function futureWeeksEqual(a: FutureWeekGoals[], b: FutureWeekGoals[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    if (a[i].weekStartDate !== b[i].weekStartDate) return false;
-    if (!weeklyEqual(a[i].days ?? {}, b[i].days ?? {})) return false;
+    const ai = a[i];
+    const bi = b[i];
+    if (ai === undefined || bi === undefined) return false;
+    if (ai.weekStartDate !== bi.weekStartDate) return false;
+    if (!weeklyEqual(ai.days ?? {}, bi.days ?? {})) return false;
   }
   return true;
 }
@@ -97,8 +125,11 @@ function formatDateMmDdYyyy(iso: string): string {
 
 /** Add days to YYYY-MM-DD, return YYYY-MM-DD */
 function addDaysToDate(isoDate: string, days: number): string {
-  const [y, m, d] = isoDate.split('-').map(Number);
-  const date = new Date(y, (m ?? 1) - 1, (d ?? 1) + days);
+  const parts = isoDate.split('-').map(Number);
+  const y = parts[0] ?? 0;
+  const m = (parts[1] ?? 1) - 1;
+  const d = (parts[2] ?? 1) + days;
+  const date = new Date(y, m, d);
   const oy = date.getFullYear();
   const om = String(date.getMonth() + 1).padStart(2, '0');
   const od = String(date.getDate()).padStart(2, '0');
@@ -108,8 +139,11 @@ function addDaysToDate(isoDate: string, days: number): string {
 /** Get Sunday (week start) of current week in timezone as YYYY-MM-DD */
 function getCurrentWeekStartInTimezone(timezone: string): string {
   const todayStr = getTodayInTimezone(timezone);
-  const [y, m, d] = todayStr.split('-').map(Number);
-  const date = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));
+  const parts = todayStr.split('-').map(Number);
+  const y = parts[0] ?? 0;
+  const m = (parts[1] ?? 1) - 1;
+  const d = parts[2] ?? 1;
+  const date = new Date(Date.UTC(y, m, d));
   const dayOfWeek = date.getUTCDay();
   date.setUTCDate(date.getUTCDate() - dayOfWeek);
   const sy = date.getUTCFullYear();
@@ -181,7 +215,7 @@ export const GoalSetting = () => {
   const [defaultGoals, setDefaultGoals] = useState<GoalValues>({ ...DEFAULT_GOAL_VALUES });
   const [weekly, setWeekly] = useState<Partial<Record<GoalDayOfWeek, GoalValues>>>({});
   const [futureWeeks, setFutureWeeks] = useState<FutureWeekGoals[]>([]);
-  const [saved, setSaved] = useState<GoalSetting | null>(null);
+  const [saved, setSaved] = useState<GoalSettingType | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -324,7 +358,8 @@ export const GoalSetting = () => {
 
   /** For days with no weekly override, show empty (zeros); otherwise show set values. */
   const getWeeklyDay = (day: GoalDayOfWeek): GoalValues => {
-    return weekly[day] ?? { ...DEFAULT_GOAL_VALUES };
+    const dayValues = weekly[day];
+    return dayValues ? { ...DEFAULT_GOAL_VALUES, ...dayValues } : { ...DEFAULT_GOAL_VALUES };
   };
 
   const updateWeeklyDay = (day: GoalDayOfWeek, key: keyof GoalValues, value: string) => {
@@ -380,7 +415,8 @@ export const GoalSetting = () => {
   const getFutureWeekDay = (weekIndex: number, day: GoalDayOfWeek): GoalValues => {
     const week = futureWeeks[weekIndex];
     if (!week) return { ...DEFAULT_GOAL_VALUES };
-    return week.days[day] ?? { ...DEFAULT_GOAL_VALUES };
+    const dayValues = week.days[day];
+    return dayValues ? { ...DEFAULT_GOAL_VALUES, ...dayValues } : { ...DEFAULT_GOAL_VALUES };
   };
 
   const updateFutureWeekDay = (
@@ -392,7 +428,9 @@ export const GoalSetting = () => {
     const num = value === '' ? 0 : Number(value);
     setFutureWeeks((prev) => {
       const next = [...prev];
-      const week = { ...next[weekIndex], days: { ...next[weekIndex].days } };
+      const existing = next[weekIndex];
+      if (!existing) return prev;
+      const week = { ...existing, days: { ...existing.days } };
       const current = week.days[day] ?? { ...DEFAULT_GOAL_VALUES };
       week.days[day] = { ...current, [key]: Number.isNaN(num) ? current[key] : num };
       next[weekIndex] = week;
@@ -404,7 +442,9 @@ export const GoalSetting = () => {
     const normalized = getSundayOfWeek(new Date(dateStr + 'T12:00:00'));
     setFutureWeeks((prev) => {
       const next = [...prev];
-      next[weekIndex] = { ...next[weekIndex], weekStartDate: normalized };
+      const existing = next[weekIndex];
+      if (!existing) return prev;
+      next[weekIndex] = { ...existing, weekStartDate: normalized };
       return next;
     });
   };
@@ -452,33 +492,66 @@ export const GoalSetting = () => {
     onChange: (key: keyof GoalValues, value: string) => void,
     idPrefix: string
   ) => (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-      {FIELDS.map(({ key, label, unit, unitChar }) => {
-        const step = key === 'laborCostGoal' || key === 'foodCostGoal' ? 0.1 : 1;
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-8">
+      {FIELDS.map(({ key, toleranceKey, label, unit, unitChar }) => {
+        const toleranceVal = values[toleranceKey] ?? 0;
         return (
-          <div key={key} className="flex flex-col gap-1">
-            <label
-              htmlFor={`${idPrefix}-${key}`}
-              className="text-xs md:text-sm font-medium text-primary"
-            >
-              {label}
-            </label>
-            <div className="flex items-center rounded-xl border border-[#DBDBDB] bg-[#F9F9F9] overflow-hidden">
-              {unit === 'prefix' && unitChar != null && (
-                <span className="pl-3 text-sm text-primary shrink-0">{unitChar}</span>
-              )}
-              <input
-                id={`${idPrefix}-${key}`}
-                type="number"
-                min={0}
-                step={step}
-                value={values[key] === 0 ? '' : values[key]}
-                onChange={(e) => onChange(key, e.target.value)}
-                className="w-full min-w-0 px-3 py-2 bg-transparent border-0 text-sm text-primary focus:ring-0 focus:outline-none"
-              />
-              {unit === 'suffix' && unitChar != null && (
-                <span className="pr-3 text-sm text-primary shrink-0">{unitChar}</span>
-              )}
+          <div key={key} className="flex flex-col gap-2">
+            <div className="flex flex-row gap-2 items-center">
+              <label
+                htmlFor={`${idPrefix}-${key}`}
+                className="flex-1 min-w-0 text-xs md:text-sm font-medium text-primary"
+              >
+                {label}
+              </label>
+              <label
+                htmlFor={`${idPrefix}-${toleranceKey}`}
+                className="shrink-0 w-26 text-xs font-medium text-primary text-left"
+              >
+                Tolerance %
+              </label>
+            </div>
+            <div className="flex flex-row gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center rounded-xl border border-[#DBDBDB] bg-[#F9F9F9] overflow-hidden">
+                  {unit === 'prefix' && unitChar != null && (
+                    <span className="pl-3 text-sm text-primary shrink-0">{unitChar}</span>
+                  )}
+                  <input
+                    id={`${idPrefix}-${key}`}
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={values[key] === 0 ? '' : values[key]}
+                    onChange={(e) => onChange(key, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (['e', 'E', '+', '-'].includes(e.key)) e.preventDefault();
+                    }}
+                    className="w-full min-w-0 px-3 py-2 bg-transparent border-0 text-sm text-primary focus:ring-0 focus:outline-none"
+                  />
+                  {unit === 'suffix' && unitChar != null && (
+                    <span className="pr-3 text-sm text-primary shrink-0">{unitChar}</span>
+                  )}
+                </div>
+              </div>
+              <div className="shrink-0 w-26">
+                <div className="flex items-center rounded-xl border border-[#DBDBDB] bg-[#F9F9F9] overflow-hidden">
+                  <input
+                    id={`${idPrefix}-${toleranceKey}`}
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.01}
+                    value={toleranceVal === 0 ? '' : toleranceVal}
+                    onChange={(e) => onChange(toleranceKey, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (['e', 'E', '+', '-'].includes(e.key)) e.preventDefault();
+                    }}
+                    className="w-full min-w-0 px-3 py-2 bg-transparent border-0 text-sm text-primary focus:ring-0 focus:outline-none"
+                  />
+                  <span className="pr-3 text-sm text-primary shrink-0">%</span>
+                </div>
+              </div>
             </div>
           </div>
         );
@@ -486,25 +559,41 @@ export const GoalSetting = () => {
     </div>
   );
 
-  const formatGoalValue = (key: keyof GoalValues, value: number): string => {
+  const formatGoalValue = (key: GoalValueKey, value: number): string => {
     if (key === 'laborCostGoal' || key === 'foodCostGoal') {
-      return `${Number(value).toFixed(1)}%`;
+      return `${Number(value).toFixed(2)}%`;
     }
     if (key === 'salesGoal' || key === 'spmhGoal') {
       return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
+    if (key === 'hoursGoal') {
+      return `${Number(value).toFixed(2)} hrs`;
+    }
     return String(value);
   };
 
+  const formatToleranceValue = (goal: Goal | null, toleranceKey: keyof GoalValues): string => {
+    if (goal == null) return '—';
+    const val = goal[toleranceKey];
+    if (typeof val !== 'number') return '—';
+    return `${Number(val).toFixed(2)}%`;
+  };
+
   const renderGoalReadOnly = (goal: Goal | null) => (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-      {FIELDS.map(({ key, label }) => {
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-8">
+      {FIELDS.map(({ key, toleranceKey, label }) => {
         const numVal = goal != null && typeof goal[key] === 'number' ? goal[key] : null;
         const display = numVal === null ? '—' : formatGoalValue(key, numVal);
+        const toleranceDisplay = formatToleranceValue(goal, toleranceKey);
         return (
           <div key={key} className="flex flex-col gap-1">
             <span className="text-xs md:text-sm font-medium text-primary">{label}</span>
-            <span className="text-sm text-primary py-2">{display}</span>
+            <div className="flex flex-row gap-x-2 items-baseline">
+              <span className="text-sm text-primary py-2">{display}</span>
+              <span className="text-xs text-primary/80">
+                Tolerance: {toleranceDisplay}
+              </span>
+            </div>
           </div>
         );
       })}
@@ -631,7 +720,7 @@ export const GoalSetting = () => {
                         Default goals are used when no day or week override is
                         set.
                       </p>
-                      <div className="max-w-2xl">
+                      <div className="max-w-full">
                         {renderGoalInputs(defaultGoals, updateDefault, 'default')}
                       </div>
                     </div>
@@ -722,8 +811,8 @@ export const GoalSetting = () => {
                                     minDate={
                                       nextWeekStart
                                         ? new Date(
-                                            nextWeekStart + 'T12:00:00'
-                                          )
+                                          nextWeekStart + 'T12:00:00'
+                                        )
                                         : undefined
                                     }
                                     placeholder="Select week"
@@ -849,29 +938,29 @@ export const GoalSetting = () => {
                   )}
 
                   {activeTab !== 'previous' && (
-                  <div className="mt-8 flex gap-3 max-w-xs">
-                    <button
-                      type="button"
-                      onClick={handleReset}
-                      className="flex-1 min-w-0 flex items-center justify-center px-4 py-3 border border-gray-200 rounded-xl text-sm md:text-base 2xl:text-lg font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer"
-                    >
-                      Reset
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className="flex-1 min-w-0 flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-sm md:text-base 2xl:text-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-60 cursor-pointer"
-                    >
-                      {saving ? (
-                        <>
-                          <Spinner size="sm" className="h-4 w-4 text-white" />
-                          Saving...
-                        </>
-                      ) : (
-                        'Save Goals'
-                      )}
-                    </button>
-                  </div>
+                    <div className="mt-8 flex gap-3 max-w-xs">
+                      <button
+                        type="button"
+                        onClick={handleReset}
+                        className="flex-1 min-w-0 flex items-center justify-center px-4 py-3 border border-gray-200 rounded-xl text-sm md:text-base 2xl:text-lg font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer"
+                      >
+                        Reset
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="flex-1 min-w-0 flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-sm md:text-base 2xl:text-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-60 cursor-pointer"
+                      >
+                        {saving ? (
+                          <>
+                            <Spinner size="sm" className="h-4 w-4 text-white" />
+                            Saving...
+                          </>
+                        ) : (
+                          'Save Goals'
+                        )}
+                      </button>
+                    </div>
                   )}
                 </form>
               </>

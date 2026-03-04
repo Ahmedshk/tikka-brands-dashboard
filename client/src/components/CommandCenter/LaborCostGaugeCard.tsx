@@ -3,11 +3,14 @@ import { PercentageGauge } from '../gauges/PercentageGauge';
 
 const POSITIVE_COLOR = '#5DC54F';
 const NEGATIVE_COLOR = '#F04B5B';
+const TOLERANCE_COLOR = '#FDB90E';
 
 export interface LaborCostGaugeCardProps {
   value: number;
   /** Goal percentage; gauge shows green 0→goal, red goal→100. If omitted, uses default segments. */
   goal?: number | null;
+  /** Tolerance %; band above goal from goal to (goal + tolerance) is shown in #FDB90E (over goal but within tolerance). */
+  goalTolerance?: number | null;
   subtitle?: string;
   overTarget?: number | null;
   size?: number;
@@ -20,6 +23,7 @@ const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 o
 export const LaborCostGaugeCard = ({
   value,
   goal = null,
+  goalTolerance = null,
   subtitle = 'Labor vs Goals',
   overTarget = null,
   size = 340,
@@ -27,17 +31,32 @@ export const LaborCostGaugeCard = ({
 }: LaborCostGaugeCardProps) => {
   const { segmentStops, segmentColors } = useMemo(() => {
     const g = goal ?? 0;
+    const tol = goalTolerance ?? 0;
     if (g <= 0) {
       return { segmentStops: [100] as number[], segmentColors: [NEGATIVE_COLOR] };
     }
     if (g >= 100) {
       return { segmentStops: [100] as number[], segmentColors: [POSITIVE_COLOR] };
     }
+    if (tol > 0) {
+      const high = Math.min(100, g + tol);
+      return {
+        segmentStops: [g, high, 100],
+        segmentColors: [POSITIVE_COLOR, TOLERANCE_COLOR, NEGATIVE_COLOR],
+      };
+    }
     return {
       segmentStops: [g, 100],
       segmentColors: [POSITIVE_COLOR, NEGATIVE_COLOR],
     };
-  }, [goal]);
+  }, [goal, goalTolerance]);
+
+  const overTargetWithinTolerance =
+    overTarget != null &&
+    overTarget > 0 &&
+    goal != null &&
+    (goalTolerance ?? 0) > 0 &&
+    value <= goal + (goalTolerance ?? 0);
 
   return (
     <div className={`${cardClass} ${className}`}>
@@ -48,6 +67,8 @@ export const LaborCostGaugeCard = ({
             value={value}
             subtitle={subtitle}
             overTarget={overTarget}
+            overTargetWithinTolerance={overTargetWithinTolerance}
+            overTargetToleranceColor={TOLERANCE_COLOR}
             size={size}
             segmentStops={segmentStops}
             segmentColors={segmentColors}

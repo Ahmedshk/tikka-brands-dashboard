@@ -127,7 +127,7 @@ export const KPICard = ({
           </div>
         ) : (
           <>
-            <p className={`text-xl md:text-2xl 2xl:text-[26px] font-semibold min-w-0 flex-shrink-0 ${valueClassName}`}>{value}</p>
+            <p className={`text-lg md:text-xl 2xl:text-2xl font-semibold min-w-0 flex-shrink-0 ${valueClassName}`}>{value}</p>
             {hasRightContent && <div className="flex-shrink-0 min-w-0">{renderRightContent()}</div>}
           </>
         )}

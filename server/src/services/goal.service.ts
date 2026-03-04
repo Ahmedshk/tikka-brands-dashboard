@@ -14,6 +14,11 @@ const defaultGoalValues: IGoalValues = {
   hoursGoal: 0,
   spmhGoal: 0,
   foodCostGoal: 0,
+  salesGoalTolerance: 0,
+  laborCostGoalTolerance: 0,
+  hoursGoalTolerance: 0,
+  spmhGoalTolerance: 0,
+  foodCostGoalTolerance: 0,
 };
 
 export class GoalService {
@@ -44,6 +49,8 @@ export class GoalService {
    * Get resolved goals for a specific date (YYYY-MM-DD in location timezone).
    * Resolution: future week override for that week+day → weekly[dayOfWeek] → default.
    * Returns goal and source so clients can show only explicitly set goals.
+   * Each field (goal or tolerance) is taken from the resolved values for the date when present;
+   * when not present (e.g. goal set but tolerance not set for that date), the default value (0) is used.
    */
   async getByLocationIdAndDate(
     locationId: string,
@@ -58,7 +65,7 @@ export class GoalService {
     const futureDay = futureWeek?.days?.[dayOfWeek as DayOfWeek];
     if (futureDay) {
       return {
-        goals: this.valuesToGoal(locationId, futureDay),
+        goals: this.valuesToGoal(locationId, { ...defaultGoalValues, ...futureDay }),
         source: "futureWeek",
       };
     }
@@ -66,13 +73,13 @@ export class GoalService {
     const weeklyDay = setting.weekly?.[dayOfWeek as DayOfWeek];
     if (weeklyDay) {
       return {
-        goals: this.valuesToGoal(locationId, weeklyDay),
+        goals: this.valuesToGoal(locationId, { ...defaultGoalValues, ...weeklyDay }),
         source: "weekly",
       };
     }
 
     return {
-      goals: this.valuesToGoal(locationId, setting.default),
+      goals: this.valuesToGoal(locationId, { ...defaultGoalValues, ...setting.default }),
       source: "default",
     };
   }
@@ -114,11 +121,18 @@ export class GoalService {
         hoursGoal: doc.hoursGoal ?? 0,
         spmhGoal: doc.spmhGoal ?? 0,
         foodCostGoal: doc.foodCostGoal ?? 0,
+        salesGoalTolerance: 0,
+        laborCostGoalTolerance: 0,
+        hoursGoalTolerance: 0,
+        spmhGoalTolerance: 0,
+        foodCostGoalTolerance: 0,
       };
     }
 
-    const defaultVal: IGoalValues =
-      doc.default ?? legacyValues ?? defaultGoalValues;
+    const defaultVal: IGoalValues = {
+      ...defaultGoalValues,
+      ...(doc.default ?? legacyValues ?? {}),
+    };
 
     return {
       locationId: doc.locationId,
