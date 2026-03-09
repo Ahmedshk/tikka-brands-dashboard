@@ -103,7 +103,6 @@ export class UserService {
 
   /** Throws if removing or deactivating the last user with Owner role. */
   private async ensureNotLastOwner(
-    userId: string,
     currentRole: string | null,
     newRole?: string | null,
     newIsActive?: boolean,
@@ -322,7 +321,6 @@ export class UserService {
     const current = await this.userRepository.findById(id);
     if (current != null) {
       await this.ensureNotLastOwner(
-        id,
         current.role,
         updateData.role,
         updateData.isActive,
