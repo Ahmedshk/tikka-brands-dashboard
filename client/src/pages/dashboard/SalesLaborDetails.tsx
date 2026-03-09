@@ -8,7 +8,6 @@ import {
   ClockedInStaffCard,
   DailyTargetsSectionCard,
 } from '../../components/SalesLabor';
-import type { SalesLaborKPIItem, TargetActualItem } from '../../components/SalesLabor';
 import SalesAndLaborIcon from '@assets/icons/sales_and_labor.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
 import ActualLaborCostIcon from '@assets/icons/actual_labor_cost.svg?react';
@@ -27,12 +26,14 @@ import { goalService, getTodayInTimezone } from '../../services/goal.service';
 import type { Goal } from '../../types';
 import type { RootState } from '../../store/store';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
+import {
+  formatCurrency,
+  getSalesLaborKpiMetrics,
+  buildDailyTargetsItems,
+} from '../../utils/salesLaborDetailsHelpers';
+import { buildSalesLaborKPIItems } from '../../utils/salesLaborKpiBuilder';
 
 const PAGE_ID = 'sales-labor-detail';
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
-}
 
 export const SalesLaborDetails = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
@@ -53,25 +54,22 @@ export const SalesLaborDetails = () => {
     canKpi1 || canKpi2 || canKpi3 || canKpi4 || canKpi5 || canKpi6 || canKpi7 || canKpi8 ||
     canHourly || canSources || canStaff || canDaily;
 
-  const kpiMetrics = useMemo(() => {
-    const m: string[] = [];
-    if (canKpi1) m.push('actualTotalSales');
-    if (canKpi2) m.push('actualLaborCostPercent');
-    if (canKpi3) m.push('totalHours');
-    if (canKpi4) m.push('salesPerManHour');
-    if (canKpi5) m.push('transactionCount');
-    if (canKpi6) m.push('averageCheck');
-    if (canKpi7) m.push('totalDiscounts');
-    if (canKpi8) m.push('totalRefunds');
-    if (canSources) m.push('sourcesOfSales');
-    if (canDaily) {
-      if (!m.includes('actualTotalSales')) m.push('actualTotalSales');
-      if (!m.includes('actualLaborCostPercent')) m.push('actualLaborCostPercent');
-      if (!m.includes('totalHours')) m.push('totalHours');
-      if (!m.includes('salesPerManHour')) m.push('salesPerManHour');
-    }
-    return [...new Set(m)];
-  }, [canKpi1, canKpi2, canKpi3, canKpi4, canKpi5, canKpi6, canKpi7, canKpi8, canSources, canDaily]);
+  const kpiMetrics = useMemo(
+    () =>
+      getSalesLaborKpiMetrics({
+        canKpi1,
+        canKpi2,
+        canKpi3,
+        canKpi4,
+        canKpi5,
+        canKpi6,
+        canKpi7,
+        canKpi8,
+        canSources,
+        canDaily,
+      }),
+    [canKpi1, canKpi2, canKpi3, canKpi4, canKpi5, canKpi6, canKpi7, canKpi8, canSources, canDaily]
+  );
 
   const [kpis, setKpis] = useState<SalesLaborKPIsData | null>(null);
   const [hourlyBreakdown, setHourlyBreakdown] = useState<HourlyBreakdownData | null>(null);
@@ -153,76 +151,37 @@ export const SalesLaborDetails = () => {
     return () => controller.abort();
   }, [currentLocation?._id, canStaff]);
 
-  const salesLaborKPIs = useMemo((): SalesLaborKPIItem[] => {
-    const unavail = '—';
-    const fmt = (n: number | null, asCurrency: boolean) =>
-      n == null ? unavail : asCurrency ? formatCurrency(n) : String(n);
-    const fmtPercent = (n: number | null) => (n == null ? unavail : `${Number(n.toFixed(1))}%`);
-    const fmtWhole = (n: number | null) => (n == null ? unavail : String(Math.round(n)));
-    const fmtHours = (n: number | null) => (n == null ? unavail : Number(n).toFixed(2));
-    const items: SalesLaborKPIItem[] = [];
-    if (canKpi1) items.push({ title: 'Actual Total Net Sales', timePeriod: 'Today', value: fmt(kpis?.actualTotalSales ?? null, true), accentColor: 'green', rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
-    if (canKpi2) items.push({ title: 'Actual Labor Cost %', timePeriod: 'Today', value: fmtPercent(kpis?.actualLaborCostPercent ?? null), accentColor: 'blue', rightIcon: <ActualLaborCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
-    if (canKpi3) items.push({ title: 'Total Hours', timePeriod: 'Today', value: fmtHours(kpis?.totalHours ?? null), accentColor: 'orange', rightIcon: <TotalHoursIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
-    if (canKpi4) items.push({ title: 'Sales Per Man Hour', timePeriod: 'Today', value: kpis?.salesPerManHour != null ? `${formatCurrency(kpis.salesPerManHour)}/hr` : unavail, accentColor: 'purple', rightIcon: <SalesPerManHourIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
-    if (canKpi5) items.push({ title: 'No. of Transactions', timePeriod: 'Today', value: fmtWhole(kpis?.transactionCount ?? null), accentColor: 'gray', rightIcon: <NoOfTransactionsIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
-    if (canKpi6) items.push({ title: 'Average Check', timePeriod: 'Today', value: fmt(kpis?.averageCheck ?? null, true), accentColor: 'red', rightIcon: <AverageCheckIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
-    if (canKpi7) items.push({ title: 'Total Discounts', timePeriod: 'Today', value: fmt(kpis?.totalDiscounts ?? null, true), accentColor: 'azure', rightIcon: <TotalDiscountsIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />, loading });
-    if (canKpi8) items.push({ title: 'Total Refunds', timePeriod: 'Today', value: fmt(kpis?.totalRefunds ?? null, true), accentColor: 'yellow', subtitle: '#Refunds', extra: typeof kpis?.totalRefundCount === 'number' ? String(kpis.totalRefundCount).padStart(2, '0') : undefined, extraClassName: 'bg-quaternary/20 text-primary', loading });
-    return items;
-  }, [kpis, loading, canKpi1, canKpi2, canKpi3, canKpi4, canKpi5, canKpi6, canKpi7, canKpi8]);
+  const salesLaborKPIs = useMemo(
+    () =>
+      buildSalesLaborKPIItems({
+        kpis,
+        loading,
+        canKpi1,
+        canKpi2,
+        canKpi3,
+        canKpi4,
+        canKpi5,
+        canKpi6,
+        canKpi7,
+        canKpi8,
+        icons: {
+          dollar: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+          actualLaborCost: <ActualLaborCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+          totalHours: <TotalHoursIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+          salesPerManHour: <SalesPerManHourIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+          noOfTransactions: <NoOfTransactionsIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+          averageCheck: <AverageCheckIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+          totalDiscounts: <TotalDiscountsIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+          totalRefunds: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+        },
+      }),
+    [kpis, loading, canKpi1, canKpi2, canKpi3, canKpi4, canKpi5, canKpi6, canKpi7, canKpi8]
+  );
 
-  const dailyTargetsItems = useMemo((): TargetActualItem[] => {
-    const salesActual = kpis?.actualTotalSales ?? 0;
-    const salesTarget = goals?.salesGoal ?? 0;
-    const laborActual = kpis?.actualLaborCostPercent ?? 0;
-    const laborTarget = goals?.laborCostGoal ?? 0;
-    const hoursActual = kpis?.totalHours ?? 0;
-    const hoursTarget = goals?.hoursGoal ?? 0;
-    const spmhActual = kpis?.salesPerManHour ?? 0;
-    const spmhTarget = goals?.spmhGoal ?? 0;
-    const to2 = (n: number) => Number(n.toFixed(2));
-    const fmtSales = (n: number) =>
-      `$${to2(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    return [
-      {
-        label: 'Sales Target',
-        actual: salesActual,
-        target: salesTarget,
-        higherIsBetter: true,
-        targetTolerance: goals?.salesGoalTolerance,
-        goalTooltip: `Goal: Meet or Exceed ${fmtSales(salesTarget)}`,
-        formatValue: fmtSales,
-      },
-      {
-        label: 'Labor Cost %',
-        actual: laborActual,
-        target: laborTarget,
-        higherIsBetter: false,
-        targetTolerance: goals?.laborCostGoalTolerance,
-        goalTooltip: `Goal: Stay at or below ${to2(laborTarget)}%`,
-        formatValue: (n: number) => `${to2(n)}%`,
-      },
-      {
-        label: 'Hours Target',
-        actual: hoursActual,
-        target: hoursTarget,
-        higherIsBetter: false,
-        targetTolerance: goals?.hoursGoalTolerance,
-        goalTooltip: `Goal: Stay at or below ${to2(hoursTarget)} hrs`,
-        formatValue: (n: number) => String(to2(n)),
-      },
-      {
-        label: 'SPMH Target',
-        actual: spmhActual,
-        target: spmhTarget,
-        higherIsBetter: true,
-        targetTolerance: goals?.spmhGoalTolerance,
-        goalTooltip: `Goal: Meet or Exceed $${to2(spmhTarget).toFixed(2)}/hr`,
-        formatValue: (n: number) => `$${to2(n).toFixed(2)}/hr`,
-      },
-    ];
-  }, [kpis, goals]);
+  const dailyTargetsItems = useMemo(
+    () => buildDailyTargetsItems(kpis, goals),
+    [kpis, goals]
+  );
 
   return (
     <Layout>
@@ -266,9 +225,9 @@ export const SalesLaborDetails = () => {
             {canSources && (
               <SourcesOfSalesCard
                 totalSales={
-                  kpis?.actualTotalSales != null
-                    ? formatCurrency(kpis.actualTotalSales)
-                    : '—'
+                  kpis?.actualTotalSales == null
+                    ? '—'
+                    : formatCurrency(kpis.actualTotalSales)
                 }
                 segments={kpis?.sourcesOfSales ?? []}
                 subtitle="Today"

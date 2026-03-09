@@ -1,24 +1,30 @@
 import { LocationRepository } from '../repositories/location.repository.js';
 import { LogoService } from './logo.service.js';
-import { ILocation, ILocationResponse } from '../types/location.types.js';
+import {
+  ILocation,
+  ILocationResponse,
+  type CreateLocationData,
+  type UpdateLocationData,
+  type LocationWithCredentials,
+} from '../types/location.types.js';
 import { NotFoundError } from '../utils/errors.util.js';
 import { encryptCredentials, decryptCredentials } from '../utils/credentialsEncryption.util.js';
 
-export type CreateLocationData = Omit<ILocation, '_id' | 'createdAt' | 'updatedAt' | 'squareAccessTokenEnc' | 'homebaseApiKeyEnc'> & {
-  squareAccessToken: string;
-  homebaseApiKey: string;
-};
-
-export type UpdateLocationData = Partial<Omit<ILocation, '_id' | 'createdAt' | 'updatedAt' | 'squareAccessTokenEnc' | 'homebaseApiKeyEnc'>> & {
-  squareAccessToken?: string;
-  homebaseApiKey?: string;
-  logoId?: string | null;
-};
-
-export interface LocationWithCredentials {
-  location: ILocationResponse;
-  squareAccessToken: string | null;
-  homebaseApiKey: string | null;
+/** Safely coerce logoId (string, ObjectId, or populated doc) to string for API response. */
+function toLogoIdString(val: unknown): string | undefined {
+  if (val == null) return undefined;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object' && val !== null) {
+    if ('_id' in val) return String((val as { _id: unknown })._id);
+    const customToString = (val as { toString?: () => string }).toString;
+    if (typeof customToString === 'function') {
+      const s = customToString.call(val);
+      if (s && s !== '[object Object]') return s;
+    }
+    return undefined;
+  }
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  return undefined;
 }
 
 export class LocationService {
@@ -150,7 +156,10 @@ export class LocationService {
       businessStartTime: doc.businessStartTime ?? '00:00',
       hasSquareAccessToken: Boolean(doc.squareAccessTokenEnc),
       hasHomebaseApiKey: Boolean(doc.homebaseApiKeyEnc),
-      ...(doc.logoId != null && { logoId: String(doc.logoId) }),
+      ...(() => {
+        const id = toLogoIdString(doc.logoId);
+        return id == null ? {} : { logoId: id };
+      })(),
       ...(doc.marketManBuyerGuid != null && doc.marketManBuyerGuid !== '' && { marketManBuyerGuid: doc.marketManBuyerGuid }),
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
@@ -161,10 +170,10 @@ export class LocationService {
     response: ILocationResponse,
     logoId: unknown
   ): Promise<ILocationResponse> {
-    if (logoId == null) return response;
-    const logo = await this.logoService.getById(String(logoId));
-    if (logo) {
-      return { ...response, logoDataUrl: logo.dataUrl };
+    const logoIdStr = toLogoIdString(logoId);
+    if (logoIdStr) {
+      const logo = await this.logoService.getById(logoIdStr);
+      return logo ? { ...response, logoDataUrl: logo.dataUrl } : response;
     }
     return response;
   }

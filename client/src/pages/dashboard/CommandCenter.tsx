@@ -22,27 +22,10 @@ import type {
   CommandCenterKPIPeriod,
 } from '../../components/CommandCenter';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
+import { formatCurrency, formatHourToAmPm } from '../../utils/commandCenterHelpers';
+import { buildCommandCenterKPIItems } from '../../utils/commandCenterKpiBuilder';
 
 const PAGE_ID = 'command-center';
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-/** Convert "HH:00" or "HH:mm" to "12 am", "01 am", "12 pm", "01 pm", etc. */
-function formatHourToAmPm(hourStr: string): string {
-  const parts = hourStr.trim().split(':');
-  const h = Number.parseInt(parts[0] ?? '0', 10) % 24;
-  if (h === 0) return '12 am';
-  if (h === 12) return '12 pm';
-  if (h < 12) return `${String(h).padStart(2, '0')} am`;
-  return `${String(h - 12).padStart(2, '0')} pm`;
-}
 
 export const CommandCenter = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
@@ -128,88 +111,25 @@ export const CommandCenter = () => {
   }, [currentLocation?._id, shouldFetchHourly]);
 
   const commandCenterKPIs = useMemo((): CommandCenterKPIItem[] => {
-    const isDual = kpis != null && isCommandCenterKPIsDual(kpis);
-    const todaySlice = isDual ? kpis.today : kpis ?? undefined;
-    const wtdSlice = isDual ? kpis.weekToDate : undefined;
-
-    const getNetSalesValue = (period: CommandCenterKPIPeriod) => {
-      const src = period === 'weekToDate' ? wtdSlice : todaySlice;
-      const raw = period === 'weekToDate' ? src?.netSalesWeekToDate : src?.netSalesToday;
-      return raw != null ? formatCurrency(raw) : loading ? "…" : "Unavailable";
-    };
-    const getLaborCostValue = (period: CommandCenterKPIPeriod) => {
-      const src = period === 'weekToDate' ? wtdSlice : todaySlice;
-      const raw = period === 'weekToDate' ? src?.laborCostWeekToDate : src?.laborCostToday;
-      return raw != null ? formatCurrency(raw) : loading ? "…" : "Unavailable";
-    };
-    const getReviewRatingValue = (period: CommandCenterKPIPeriod) => {
-      const src = period === 'weekToDate' ? wtdSlice : todaySlice;
-      return src?.reviewRating != null ? String(src.reviewRating) : "—";
-    };
-    const getReviewCountStr = (period: CommandCenterKPIPeriod) => {
-      const src = period === 'weekToDate' ? wtdSlice : todaySlice;
-      return src?.reviewCount != null ? `${src.reviewCount} Reviews` : "— Reviews";
-    };
-    const timePeriodLabel = (period: CommandCenterKPIPeriod) =>
-      period === 'weekToDate' ? "Week to date" : "Today";
-
-    const items: CommandCenterKPIItem[] = [];
-    if (canNetSales) {
-      const period = netSalesPeriod;
-      const value = getNetSalesValue(period);
-      const raw = period === 'weekToDate' ? wtdSlice?.netSalesWeekToDate : todaySlice?.netSalesToday;
-      items.push({
-        title: "Net Sales",
-        timePeriod: loading ? undefined : timePeriodLabel(period),
-        value,
-        accentColor: "green",
-        valueClassName: raw != null ? "text-secondary" : undefined,
-        rightIcon: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-        loading,
-        ...(isDual && {
-          period: netSalesPeriod,
-          onPeriodChange: setNetSalesPeriod,
-        }),
-      });
-    }
-    if (canLaborCost) {
-      const period = laborCostPeriod;
-      const value = getLaborCostValue(period);
-      const raw = period === 'weekToDate' ? wtdSlice?.laborCostWeekToDate : todaySlice?.laborCostToday;
-      items.push({
-        title: "Labor Cost",
-        timePeriod: loading ? undefined : timePeriodLabel(period),
-        value,
-        accentColor: "blue",
-        valueClassName: raw != null ? "text-secondary" : undefined,
-        rightIcon: <LaborCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-        loading,
-        ...(isDual && {
-          period: laborCostPeriod,
-          onPeriodChange: setLaborCostPeriod,
-        }),
-      });
-    }
-    if (canReviewRating) {
-      const period = reviewRatingPeriod;
-      items.push({
-        title: "Review Rating",
-        timePeriod: loading ? undefined : timePeriodLabel(period),
-        value: getReviewRatingValue(period),
-        accentColor: "gold" as const,
-        titleIcon: <StarIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-quaternary" aria-hidden />,
-        subtitle: "Good",
-        subtitleIcon: <StarIcon className="w-4 h-4 md:w-4 md:h-4 2xl:w-5 2xl:h-5 text-quaternary" aria-hidden />,
-        extra: getReviewCountStr(period),
-        extraClassName: "bg-[rgba(253,185,14,0.2)] px-4",
-        loading,
-        ...(isDual && {
-          period: reviewRatingPeriod,
-          onPeriodChange: setReviewRatingPeriod,
-        }),
-      });
-    }
-    return items;
+    return buildCommandCenterKPIItems({
+      kpis,
+      loading,
+      canNetSales,
+      canLaborCost,
+      canReviewRating,
+      netSalesPeriod,
+      laborCostPeriod,
+      reviewRatingPeriod,
+      setNetSalesPeriod,
+      setLaborCostPeriod,
+      setReviewRatingPeriod,
+      icons: {
+        dollar: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+        laborCost: <LaborCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+        starTitle: <StarIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-quaternary" aria-hidden />,
+        starSubtitle: <StarIcon className="w-4 h-4 md:w-4 md:h-4 2xl:w-5 2xl:h-5 text-quaternary" aria-hidden />,
+      },
+    });
   }, [
     kpis,
     loading,
@@ -303,40 +223,27 @@ export const CommandCenter = () => {
                 error={hourlySalesError}
               />
             )}
-            {canLaborGauge && (
-              <LaborCostGaugeCard
-                value={
-                  (kpis != null && isCommandCenterKPIsDual(kpis)
-                    ? kpis.today.laborCostPercentToday
-                    : kpis?.laborCostPercentToday) ?? 0
-                }
-                goal={
-                  (kpis != null && isCommandCenterKPIsDual(kpis)
-                    ? kpis.today.laborCostGoal
-                    : kpis?.laborCostGoal) ?? null
-                }
-                goalTolerance={
-                  (kpis != null && isCommandCenterKPIsDual(kpis)
-                    ? kpis.today.laborCostGoalTolerance
-                    : kpis?.laborCostGoalTolerance) ?? null
-                }
-                subtitle="Labor Cost as % of Net Sales"
-                overTarget={
-                  (() => {
-                    const pct =
-                      kpis != null && isCommandCenterKPIsDual(kpis)
-                        ? kpis.today.laborCostPercentToday
-                        : kpis?.laborCostPercentToday;
-                    const goal =
-                      kpis != null && isCommandCenterKPIsDual(kpis)
-                        ? kpis.today.laborCostGoal
-                        : kpis?.laborCostGoal;
-                    return pct != null && goal != null ? pct - goal : null;
-                  })()
-                }
-                size={340}
-              />
-            )}
+            {canLaborGauge && (() => {
+              const gaugeToday =
+                kpis != null && isCommandCenterKPIsDual(kpis) ? kpis.today : kpis;
+              const pct = gaugeToday?.laborCostPercentToday ?? 0;
+              const goal = gaugeToday?.laborCostGoal ?? null;
+              const goalTolerance = gaugeToday?.laborCostGoalTolerance ?? null;
+              const overTarget =
+                gaugeToday?.laborCostPercentToday != null && gaugeToday?.laborCostGoal != null
+                  ? gaugeToday.laborCostPercentToday - gaugeToday.laborCostGoal
+                  : null;
+              return (
+                <LaborCostGaugeCard
+                  value={pct}
+                  goal={goal}
+                  goalTolerance={goalTolerance}
+                  subtitle="Labor Cost as % of Net Sales"
+                  overTarget={overTarget}
+                  size={340}
+                />
+              );
+            })()}
           </div>
         )}
 

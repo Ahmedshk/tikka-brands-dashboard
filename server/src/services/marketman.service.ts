@@ -12,6 +12,13 @@ import {
   getStartOfDayUtc,
   getDatePartsInTz,
 } from "../utils/salesTrendDateRange.util.js";
+import {
+  buildActualTheoPromise,
+  mergeActualTheoIntoResult,
+  mergePendingOrdersIntoResult,
+  filterResultByRequestedMetrics,
+  type ActualTheoFetchers,
+} from "../utils/marketmanKpiHelpers.js";
 
 export interface VarianceItem {
   label: string;
@@ -232,9 +239,7 @@ export async function getInventoryKPIs(
     pendingOrdersPeriodEnd: null,
   };
 
-  if (!buyerGuid?.trim()) {
-    return result;
-  }
+  if (!buyerGuid?.trim()) return result;
 
   const needActualTheo =
     !requestedMetrics?.length ||
@@ -247,123 +252,47 @@ export async function getInventoryKPIs(
 
   await getMarketManToken();
 
-  const promises: Promise<unknown>[] = [];
-  if (needActualTheo) {
-    const hasCountPeriodOverride =
-      countPeriodStart != null &&
-      countPeriodEnd != null &&
-      String(countPeriodStart).trim() !== "" &&
-      String(countPeriodEnd).trim() !== "";
-    if (hasCountPeriodOverride) {
-      const validCountDates = await getValidCountDates(buyerGuid);
-      const startNorm = String(countPeriodStart).trim().replace(/-/g, "/");
-      const endNorm = String(countPeriodEnd).trim().replace(/-/g, "/");
-      const startValid =
-        validCountDates != null &&
-        validCountDates.startDates.includes(startNorm);
-      const endValid =
-        validCountDates != null && validCountDates.endDates.includes(endNorm);
-      const orderValid = startNorm <= endNorm;
-      if (validCountDates && startValid && endValid && orderValid) {
-        promises.push(
-          fetchActualTheoDataByDateRange(buyerGuid, startNorm, endNorm),
-        );
-      } else {
-        promises.push(fetchActualTheoDataForCountDate(buyerGuid));
-      }
-    } else {
-      promises.push(fetchActualTheoDataForCountDate(buyerGuid));
-    }
-  } else {
-    promises.push(Promise.resolve(null));
-  }
-  if (needPendingOrders) {
-    promises.push(
-      fetchPendingOrdersByDeliveryDate(
+  const actualTheoPromise = needActualTheo
+    ? buildActualTheoPromise(buyerGuid, countPeriodStart, countPeriodEnd, {
+        getValidCountDates,
+        fetchActualTheoDataByDateRange,
+        fetchActualTheoDataForCountDate,
+      } as ActualTheoFetchers)
+    : Promise.resolve(null);
+  const pendingOrdersPromise = needPendingOrders
+    ? fetchPendingOrdersByDeliveryDate(
         buyerGuid,
         timezone,
         pendingOrdersPeriod,
-      ),
-    );
-  } else {
-    promises.push(Promise.resolve(null));
-  }
+      )
+    : Promise.resolve(null);
 
-  const [actualTheoResult, pendingOrdersResult] =
-    await Promise.allSettled(promises);
+  const [actualTheoResult, pendingOrdersResult] = await Promise.allSettled([
+    actualTheoPromise,
+    pendingOrdersPromise,
+  ]);
 
   if (
     needActualTheo &&
-    actualTheoResult != null &&
     actualTheoResult.status === "fulfilled" &&
-    actualTheoResult.value
+    actualTheoResult.value != null
   ) {
-    const v = actualTheoResult.value as {
-      currentFoodCost: number | null;
-      inventoryValue: number | null;
-      wasteCost: number | null;
-      foodCostPercent: number | null;
-      theoreticalUsage: number | null;
-      theoreticalUsagePercent: number | null;
-      varianceItems: VarianceItem[];
-      countPeriodStart: string | null;
-      countPeriodEnd: string | null;
-    };
-    if (v.currentFoodCost != null) result.currentFoodCost = v.currentFoodCost;
-    if (v.inventoryValue != null) result.inventoryValue = v.inventoryValue;
-    if (v.wasteCost != null) result.wasteCost = v.wasteCost;
-    if (v.foodCostPercent != null) result.foodCostPercent = v.foodCostPercent;
-    if (v.theoreticalUsage != null)
-      result.theoreticalUsage = v.theoreticalUsage;
-    if (v.theoreticalUsagePercent != null)
-      result.theoreticalUsagePercent = v.theoreticalUsagePercent;
-    result.countPeriodStart = v.countPeriodStart ?? null;
-    result.countPeriodEnd = v.countPeriodEnd ?? null;
-    if (Array.isArray(v.varianceItems)) result.varianceItems = v.varianceItems;
+    mergeActualTheoIntoResult(result, actualTheoResult.value);
   }
   if (
     needPendingOrders &&
-    pendingOrdersResult != null &&
     pendingOrdersResult.status === "fulfilled" &&
-    pendingOrdersResult.value
+    pendingOrdersResult.value != null
   ) {
-    const v = pendingOrdersResult.value as {
-      count: number | null;
-      periodStart: string | null;
-      periodEnd: string | null;
-    };
-    result.pendingOrdersCount = v.count;
-    result.pendingOrdersPeriodStart = v.periodStart ?? null;
-    result.pendingOrdersPeriodEnd = v.periodEnd ?? null;
+    mergePendingOrdersIntoResult(result, pendingOrdersResult.value);
   }
 
   if (requestedMetrics?.length) {
-    const filtered: Record<string, unknown> = {};
-    const includeCountPeriod = requestedMetrics.some((m) =>
-      [
-        "currentFoodCost",
-        "inventoryValue",
-        "wasteCost",
-        "varianceItems",
-      ].includes(m),
-    );
-    const includePendingPeriod =
-      requestedMetrics.includes("pendingOrdersCount");
-    for (const k of requestedMetrics) {
-      if (k in result) filtered[k] = (result as unknown as Record<string, unknown>)[k];
-    }
-    if (includeCountPeriod) {
-      filtered.countPeriodStart = result.countPeriodStart ?? null;
-      filtered.countPeriodEnd = result.countPeriodEnd ?? null;
-    }
-    if (includePendingPeriod) {
-      filtered.pendingOrdersPeriodStart =
-        result.pendingOrdersPeriodStart ?? null;
-      filtered.pendingOrdersPeriodEnd = result.pendingOrdersPeriodEnd ?? null;
-    }
-    return filtered as unknown as InventoryKPIsResult;
+    return filterResultByRequestedMetrics(
+      result,
+      requestedMetrics,
+    ) as unknown as InventoryKPIsResult;
   }
-
   return result;
 }
 
@@ -462,32 +391,32 @@ async function fetchActualTheoDataByDateRange(
       Array.isArray(categoryTotals) && categoryTotals.length > 0;
     const firstCategory = hasCategoryTotals ? categoryTotals[0] : undefined;
     const currentFoodCost = roundTo2(
-      firstCategory?.ActualUsage != null
-        ? Number(firstCategory.ActualUsage)
-        : data.ActualTheoDataRows.reduce(
+      firstCategory?.ActualUsage == null
+        ? data.ActualTheoDataRows.reduce(
             (s, row) => s + (Number(row.COGS) || 0),
             0,
-          ),
+          )
+        : Number(firstCategory.ActualUsage),
     );
     const wasteCost =
-      firstCategory?.WasteValue != null
-        ? roundTo2(Number(firstCategory.WasteValue))
-        : null;
+      firstCategory?.WasteValue == null
+        ? null
+        : roundTo2(Number(firstCategory.WasteValue));
     const rawPercent = firstCategory?.ActualUsagePercent;
     const foodCostPercent =
-      rawPercent != null ? roundTo2(Number(rawPercent) * 100) : null;
+      rawPercent == null ? null : roundTo2(Number(rawPercent) * 100);
     const theoreticalUsage =
-      firstCategory?.TheoreticalUsage != null
-        ? roundTo2(Number(firstCategory.TheoreticalUsage))
-        : roundTo2(
+      firstCategory?.TheoreticalUsage == null
+        ? roundTo2(
             data.ActualTheoDataRows.reduce(
               (s, row) => s + (Number(row.TheoreticalUsageCost) || 0),
               0,
             ),
-          );
+          )
+        : roundTo2(Number(firstCategory.TheoreticalUsage));
     const rawTheoPercent = firstCategory?.TheoreticalUsagePercent;
     const theoreticalUsagePercent =
-      rawTheoPercent != null ? roundTo2(Number(rawTheoPercent) * 100) : null;
+      rawTheoPercent == null ? null : roundTo2(Number(rawTheoPercent) * 100);
     const inventoryValue = roundTo2(
       data.ActualTheoDataRows.reduce(
         (s, row) => s + (Number(row.ClosingValue) || 0),
@@ -497,7 +426,7 @@ async function fetchActualTheoDataByDateRange(
     const varianceItems: VarianceItem[] = data.ActualTheoDataRows.map((row) => {
       const item: VarianceItem = {
         label: row.ItemName ?? "—",
-        varianceCost: roundTo2(Number(row.VarianceValue) ?? 0),
+        varianceCost: roundTo2(Number(row.VarianceValue) || 0),
       };
       if (row.COGS != null) item.actualCost = roundTo2(Number(row.COGS));
       if (row.TheoreticalUsageCost != null)

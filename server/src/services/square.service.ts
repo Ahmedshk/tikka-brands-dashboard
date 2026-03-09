@@ -4,9 +4,22 @@ import type {
 } from "../utils/businessHours.util.js";
 import { generateDistinctColors } from "../utils/colorPalette.util.js";
 import {
-  getStartOfDayUtc,
-  getDatePartsInTz,
-} from "../utils/salesTrendDateRange.util.js";
+  aggregateVariationCentsFromOrders,
+  buildCategoriesList,
+  resolveCategoryIdToName,
+  resolveVariationToItemAndCategoryIds,
+  type BatchRetrieveCatalogFn,
+  type NetSalesByCategoryResult,
+} from "../utils/squareNetSalesByCategoryHelpers.js";
+import {
+  ordersFromSearchPage,
+  type OrderInRange,
+} from "../utils/squareOrderSearchHelpers.js";
+import {
+  getOrderedBucketsAndLabels,
+  getBucketKeyForDate,
+  type SalesTrendGranularity,
+} from "../utils/homebaseOrderedBuckets.util.js";
 
 const SQUARE_BASE = "https://connect.squareup.com";
 
@@ -366,22 +379,22 @@ function deriveSegmentKey(order: SquareOrder): string {
 
   if (sourceName) {
     const mapped = SOURCE_LABEL_MAP[sourceName];
-    if (mapped) return mapped.toLowerCase().replace(/\s+/g, "-");
-    return sourceName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    if (mapped) return mapped.toLowerCase().replaceAll(/\s+/g, "-");
+    return sourceName.replaceAll(/\s+/g, "-").replaceAll(/[^a-z0-9-]/g, "");
   }
   if (fulfillmentType) {
     const mapped = SOURCE_LABEL_MAP[fulfillmentType];
-    if (mapped) return mapped.toLowerCase().replace(/\s+/g, "-");
+    if (mapped) return mapped.toLowerCase().replaceAll(/\s+/g, "-");
     return fulfillmentType;
   }
   return "order";
 }
 
 function segmentKeyToLabel(key: string): string {
-  const normalized = key.toLowerCase().replace(/\s+/g, "-");
+  const normalized = key.toLowerCase().replaceAll(/\s+/g, "-");
   return (
     SOURCE_LABEL_MAP[normalized] ??
-    key.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    key.replaceAll("-", " ").replaceAll(/\b\w/g, (c) => c.toUpperCase())
   );
 }
 
@@ -516,10 +529,7 @@ export async function getNetSalesInRange(
   return totalCents / 100;
 }
 
-export interface OrderInRange {
-  created_at: string;
-  amountCents: number;
-}
+export type { OrderInRange } from "../utils/squareOrderSearchHelpers.js";
 
 /**
  * Fetch all paid orders in the given time range with created_at and net sales (cents).
@@ -582,16 +592,12 @@ export async function searchOrdersInRange(
       throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
     }
 
-    const orders = data.orders ?? [];
-    for (const order of orders) {
-      if (!isOrderCountedForNetSales(order)) continue;
-      const created_at = order.created_at ?? "";
-      if (!created_at) continue;
-      result.push({
-        created_at,
-        amountCents: orderNetSalesCents(order),
-      });
-    }
+    const pageOrders = ordersFromSearchPage(
+      data.orders ?? [],
+      isOrderCountedForNetSales as (o: unknown) => boolean,
+      orderNetSalesCents as (o: unknown) => number,
+    );
+    result.push(...pageOrders);
 
     cursor = data.cursor;
   } while (cursor);
@@ -692,12 +698,8 @@ async function batchRetrieveCatalog(
   return data;
 }
 
-export interface NetSalesByCategoryResult {
-  categories: Array<{ name: string; netSalesCents: number }>;
-  totalNetSalesCents: number;
-}
+export type { NetSalesByCategoryResult } from "../utils/squareNetSalesByCategoryHelpers.js";
 
-/** Category label for items with no category or when category cannot be resolved. */
 const UNCATEGORIZED_LABEL = "Uncategorized";
 
 /**
@@ -717,83 +719,34 @@ export async function getNetSalesByCategoryInRange(
     options?.accessToken,
   );
 
-  const variationToCents: Record<string, number> = {};
-  let totalNetSalesCents = 0;
-  /** Proportional net sales for line items that have no catalog_object_id; attributed to Uncategorized. */
-  let uncategorizedLineCents = 0;
-
-  for (const order of orders) {
-    if (!isOrderCountedForNetSales(order)) continue;
-    const orderNetCents = orderNetSalesCents(order);
-    totalNetSalesCents += orderNetCents;
-    const lineItems = order.line_items ?? [];
-    const orderTotalCents = lineItems.reduce(
-      (sum, line) => sum + moneyToCents(line.total_money),
-      0,
+  const { variationToCents, totalNetSalesCents, uncategorizedLineCents } =
+    aggregateVariationCentsFromOrders(
+      orders,
+      isOrderCountedForNetSales as (o: unknown) => boolean,
+      orderNetSalesCents as (o: unknown) => number,
+      (line) => moneyToCents((line as { total_money?: Money }).total_money),
     );
-    if (orderTotalCents <= 0) continue;
-    for (const line of lineItems) {
-      const catalogObjectId = line.catalog_object_id?.trim();
-      const lineCents =
-        orderNetCents * (moneyToCents(line.total_money) / orderTotalCents);
-      if (!catalogObjectId) {
-        uncategorizedLineCents += lineCents;
-        continue;
-      }
-      variationToCents[catalogObjectId] =
-        (variationToCents[catalogObjectId] ?? 0) + lineCents;
-    }
-  }
 
   const variationIds = Object.keys(variationToCents);
   if (variationIds.length === 0) {
     if (uncategorizedLineCents > 0) {
       return {
-        categories: [{ name: UNCATEGORIZED_LABEL, netSalesCents: uncategorizedLineCents }],
+        categories: [
+          { name: UNCATEGORIZED_LABEL, netSalesCents: uncategorizedLineCents },
+        ],
         totalNetSalesCents,
       };
     }
     return { categories: [], totalNetSalesCents };
   }
 
-  const variationToItemId: Record<string, string> = {};
-  const itemIdToCategoryId: Record<string, string> = {};
-
-  function categoryIdFromItem(obj: {
-    item_data?: { category_id?: string; categories?: Array<{ id?: string }> };
-  }): string | undefined {
-    const data = obj.item_data;
-    if (!data) return undefined;
-    if (data.category_id) return data.category_id;
-    const first = data.categories?.[0];
-    return first?.id;
-  }
-
-  for (let i = 0; i < variationIds.length; i += BATCH_RETRIEVE_CATALOG_LIMIT) {
-    const chunk = variationIds.slice(i, i + BATCH_RETRIEVE_CATALOG_LIMIT);
-    const resp = await batchRetrieveCatalog(chunk, token, true);
-    const objects = resp.objects ?? [];
-    const related = resp.related_objects ?? [];
-    for (const obj of objects) {
-      if (
-        obj.type === "ITEM_VARIATION" &&
-        obj.id &&
-        obj.item_variation_data?.item_id
-      ) {
-        variationToItemId[obj.id] = obj.item_variation_data.item_id;
-      } else if (obj.type === "ITEM" && obj.id) {
-        variationToItemId[obj.id] = obj.id;
-        const catId = categoryIdFromItem(obj);
-        if (catId) itemIdToCategoryId[obj.id] = catId;
-      }
-    }
-    for (const obj of related) {
-      if (obj.type === "ITEM" && obj.id) {
-        const catId = categoryIdFromItem(obj);
-        if (catId) itemIdToCategoryId[obj.id] = catId;
-      }
-    }
-  }
+  const { variationToItemId, itemIdToCategoryId } =
+    await resolveVariationToItemAndCategoryIds(
+      variationIds,
+      batchRetrieveCatalog as BatchRetrieveCatalogFn,
+      token,
+      BATCH_RETRIEVE_CATALOG_LIMIT,
+    );
 
   const categoryIds = [
     ...new Set(
@@ -803,319 +756,27 @@ export async function getNetSalesByCategoryInRange(
     ),
   ] as string[];
 
-  const categoryIdToName: Record<string, string> = {};
-  if (categoryIds.length > 0) {
-    for (let i = 0; i < categoryIds.length; i += BATCH_RETRIEVE_CATALOG_LIMIT) {
-      const chunk = categoryIds.slice(i, i + BATCH_RETRIEVE_CATALOG_LIMIT);
-      const resp = await batchRetrieveCatalog(chunk, token, false);
-      const objects = resp.objects ?? [];
-      for (const obj of objects) {
-        if (obj.type === "CATEGORY" && obj.id && obj.category_data?.name) {
-          categoryIdToName[obj.id] = obj.category_data.name;
-        }
-      }
-    }
-  }
+  const categoryIdToName = await resolveCategoryIdToName(
+    categoryIds,
+    batchRetrieveCatalog as BatchRetrieveCatalogFn,
+    token,
+    BATCH_RETRIEVE_CATALOG_LIMIT,
+  );
 
-  const byCategory: Record<string, number> = {};
-  if (uncategorizedLineCents > 0) {
-    byCategory[UNCATEGORIZED_LABEL] = uncategorizedLineCents;
-  }
-  for (const variationId of variationIds) {
-    const itemId = variationToItemId[variationId];
-    const categoryId = itemId ? itemIdToCategoryId[itemId] : undefined;
-    const name = categoryId
-      ? (categoryIdToName[categoryId] ?? UNCATEGORIZED_LABEL)
-      : UNCATEGORIZED_LABEL;
-    const cents = variationToCents[variationId] ?? 0;
-    byCategory[name] = (byCategory[name] ?? 0) + cents;
-  }
-
-  const categories = Object.entries(byCategory)
-    .map(([name, netSalesCents]) => ({ name, netSalesCents }))
-    .sort((a, b) => b.netSalesCents - a.netSalesCents);
+  const categories = buildCategoriesList(
+    variationToCents,
+    variationToItemId,
+    itemIdToCategoryId,
+    categoryIdToName,
+    uncategorizedLineCents,
+    UNCATEGORIZED_LABEL,
+  );
 
   return { categories, totalNetSalesCents };
 }
 
-/** Granularity for sales trend time-series. */
-export type SalesTrendGranularity = "hourly" | "daily" | "weekly" | "monthly";
-
-/** Get bucket key for a date in the given timezone and granularity. */
-function getBucketKeyForDate(
-  date: Date,
-  timezone: string,
-  granularity: SalesTrendGranularity,
-): string {
-  if (Number.isNaN(date.getTime())) return "";
-  const tz = timezone.trim();
-  if (granularity === "hourly") {
-    const f = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      hour12: false,
-    });
-    const parts = f.formatToParts(date);
-    const get = (type: string) =>
-      parts.find((p) => p.type === type)?.value ?? "0";
-    const y = get("year");
-    const m = get("month");
-    const d = get("day");
-    const h = get("hour");
-    return `${y}-${m}-${d}T${h.padStart(2, "0")}`;
-  }
-  if (granularity === "daily") {
-    const f = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const parts = f.formatToParts(date);
-    const get = (type: string) =>
-      parts.find((p) => p.type === type)?.value ?? "0";
-    return `${get("year")}-${get("month")}-${get("day")}`;
-  }
-  if (granularity === "weekly") {
-    const f = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const parts = f.formatToParts(date);
-    const get = (type: string) =>
-      parts.find((p) => p.type === type)?.value ?? "0";
-    const y = Number.parseInt(get("year"), 10);
-    const m = Number.parseInt(get("month"), 10) - 1;
-    const d = Number.parseInt(get("day"), 10);
-    const dt = new Date(y, m, d);
-    const dayOfWeek = dt.getDay();
-    const toMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const mon = new Date(dt);
-    mon.setDate(mon.getDate() - toMonday);
-    const ym = String(mon.getFullYear());
-    const mm = String(mon.getMonth() + 1).padStart(2, "0");
-    const dd = String(mon.getDate()).padStart(2, "0");
-    return `${ym}-${mm}-${dd}`;
-  }
-  if (granularity === "monthly") {
-    const f = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-    });
-    const parts = f.formatToParts(date);
-    const get = (type: string) =>
-      parts.find((p) => p.type === type)?.value ?? "0";
-    return `${get("year")}-${get("month")}`;
-  }
-  return "";
-}
-
-export interface GetOrderedBucketsAndLabelsOptions {
-  periodType?: string | undefined;
-}
-
-/** Generate ordered bucket keys and display labels for a range (keys in TZ for consistency with order bucketing). Exported for controller display-range label generation. */
-export function getOrderedBucketsAndLabels(
-  range: TimeRange,
-  timezone: string,
-  granularity: SalesTrendGranularity,
-  options?: GetOrderedBucketsAndLabelsOptions,
-): { keys: string[]; labels: string[] } {
-  const start = new Date(range.startAt);
-  const end = new Date(range.endAt);
-  const tz = timezone.trim();
-  const periodType = options?.periodType;
-  const keys: string[] = [];
-  const labels: string[] = [];
-  const seen = new Set<string>();
-
-  if (granularity === "hourly") {
-    const labelF = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      hour: "numeric",
-      hour12: true,
-    });
-    const hourPartsF = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      hour12: false,
-    });
-    const getHourParts = (date: Date) => {
-      const parts = hourPartsF.formatToParts(date);
-      const get = (type: string) =>
-        parts.find((p) => p.type === type)?.value ?? "0";
-      return {
-        y: Number.parseInt(get("year"), 10),
-        m: Number.parseInt(get("month"), 10) - 1,
-        d: Number.parseInt(get("day"), 10),
-        h: Number.parseInt(get("hour"), 10),
-      };
-    };
-    let cursor = (() => {
-      const { y, m, d, h } = getHourParts(start);
-      const dayStart = getStartOfDayUtc(y, m, d, tz);
-      return new Date(dayStart.getTime() + h * 60 * 60 * 1000);
-    })();
-    while (cursor <= end) {
-      const key = getBucketKeyForDate(cursor, tz, "hourly");
-      if (key && !seen.has(key)) {
-        seen.add(key);
-        keys.push(key);
-        labels.push(labelF.format(cursor));
-      }
-      const next = new Date(cursor.getTime() + 60 * 60 * 1000);
-      const { y, m, d, h } = getHourParts(next);
-      const dayStart = getStartOfDayUtc(y, m, d, tz);
-      cursor = new Date(dayStart.getTime() + h * 60 * 60 * 1000);
-    }
-    return { keys, labels };
-  }
-
-  if (granularity === "daily") {
-    const showDayName =
-      periodType != null &&
-      periodType !== "today" &&
-      periodType !== "last52weeks" &&
-      periodType !== "thisYear";
-    const labelF = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      month: "short",
-      day: "numeric",
-    });
-    const labelFWithWeekday = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
-    const startParts = getDatePartsInTz(start, tz);
-    const endParts = getDatePartsInTz(end, tz);
-    let y = startParts.y;
-    let m = startParts.m;
-    let d = startParts.d;
-    while (
-      y < endParts.y ||
-      (y === endParts.y && m < endParts.m) ||
-      (y === endParts.y && m === endParts.m && d <= endParts.d)
-    ) {
-      const cursor = getStartOfDayUtc(y, m, d, tz);
-      const key = getBucketKeyForDate(cursor, tz, "daily");
-      if (key && !seen.has(key)) {
-        seen.add(key);
-        keys.push(key);
-        labels.push(
-          showDayName ? labelFWithWeekday.format(cursor) : labelF.format(cursor),
-        );
-      }
-      const nextInstant = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
-      const nextParts = getDatePartsInTz(nextInstant, tz);
-      y = nextParts.y;
-      m = nextParts.m;
-      d = nextParts.d;
-    }
-    return { keys, labels };
-  }
-
-  if (granularity === "weekly") {
-    const startParts = getDatePartsInTz(start, tz);
-    const dayOfWeekF = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      weekday: "short",
-    });
-    const startDayStart = getStartOfDayUtc(
-      startParts.y,
-      startParts.m,
-      startParts.d,
-      tz,
-    );
-    const startWeekday = dayOfWeekF.format(startDayStart);
-    const toMonday =
-      startWeekday === "Sun"
-        ? 6
-        : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(startWeekday);
-    const mondayInstant = new Date(
-      startDayStart.getTime() - toMonday * 24 * 60 * 60 * 1000,
-    );
-    let y = getDatePartsInTz(mondayInstant, tz).y;
-    let m = getDatePartsInTz(mondayInstant, tz).m;
-    let d = getDatePartsInTz(mondayInstant, tz).d;
-    let weekNum = 1;
-    while (true) {
-      const cursor = getStartOfDayUtc(y, m, d, tz);
-      if (cursor > end) break;
-      const key = getBucketKeyForDate(cursor, tz, "weekly");
-      if (key && !seen.has(key)) {
-        seen.add(key);
-        keys.push(key);
-        labels.push(`Week ${weekNum}`);
-        weekNum += 1;
-      }
-      const nextInstant = new Date(cursor.getTime() + 7 * 24 * 60 * 60 * 1000);
-      const nextParts = getDatePartsInTz(nextInstant, tz);
-      y = nextParts.y;
-      m = nextParts.m;
-      d = nextParts.d;
-    }
-    return { keys, labels };
-  }
-
-  if (granularity === "monthly") {
-    const last52weeksAllYear = periodType === "last52weeks";
-    const labelF = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      month: "short",
-    });
-    const labelFWithYear = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      month: "short",
-      year: "numeric",
-    });
-    const labelFShortYear = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      month: "short",
-      year: "2-digit",
-    });
-    const startParts = getDatePartsInTz(start, tz);
-    const endParts = getDatePartsInTz(end, tz);
-    const startYear = startParts.y;
-    let y = startParts.y;
-    let month0 = startParts.m;
-    while (y < endParts.y || (y === endParts.y && month0 <= endParts.m)) {
-      const cursor = getStartOfDayUtc(y, month0, 1, tz);
-      const key = getBucketKeyForDate(cursor, tz, "monthly");
-      if (key && !seen.has(key)) {
-        seen.add(key);
-        keys.push(key);
-        let label: string;
-        if (last52weeksAllYear) {
-          label = labelFShortYear.format(cursor);
-          label = label.replace(/\s*(\d{2})$/, ", $1");
-        } else {
-          label =
-            y !== startYear ? labelFWithYear.format(cursor) : labelF.format(cursor);
-        }
-        labels.push(label);
-      }
-      month0 += 1;
-      if (month0 > 11) {
-        month0 = 0;
-        y += 1;
-      }
-    }
-    return { keys, labels };
-  }
-
-  return { keys, labels };
-}
+export type { SalesTrendGranularity, GetOrderedBucketsAndLabelsOptions } from "../utils/homebaseOrderedBuckets.util.js";
+export { getOrderedBucketsAndLabels } from "../utils/homebaseOrderedBuckets.util.js";
 
 export interface OrderTimeSeriesResult {
   labels: string[];
@@ -1138,7 +799,7 @@ export async function getOrderTimeSeriesInRange(
     range,
     timezone,
     granularity,
-    options?.periodType != null ? { periodType: options.periodType } : undefined,
+    options?.periodType == null ? undefined : { periodType: options.periodType },
   );
   const netSalesByKey: Record<string, number> = {};
   const countByKey: Record<string, number> = {};
@@ -1197,7 +858,7 @@ export async function getOrderTimeSeriesBySourceInRange(
     range,
     timezone,
     granularity,
-    options?.periodType != null ? { periodType: options.periodType } : undefined,
+    options?.periodType == null ? undefined : { periodType: options.periodType },
   );
   const bySourceAndKey: Record<string, Record<string, number>> = {};
 
@@ -1217,7 +878,7 @@ export async function getOrderTimeSeriesBySourceInRange(
       granularity,
     );
     if (!bucketKey || !keys.includes(bucketKey)) continue;
-    if (!bySourceAndKey[sourceKey]) bySourceAndKey[sourceKey] = {};
+    bySourceAndKey[sourceKey] ??= {};
     const keyRecord = bySourceAndKey[sourceKey];
     keyRecord[bucketKey] = (keyRecord[bucketKey] ?? 0) + cents / 100;
   }
@@ -1232,7 +893,7 @@ export async function getOrderTimeSeriesBySourceInRange(
     (sourceKey, index) => ({
       id: sourceKey,
       label: segmentKeyToLabel(sourceKey),
-      data: keys.map((k) => (bySourceAndKey[sourceKey] ?? {})[k] ?? 0),
+      data: keys.map((k) => bySourceAndKey[sourceKey]?.[k] ?? 0),
       color: colors[index] ?? "#6D6D6D",
     }),
   );

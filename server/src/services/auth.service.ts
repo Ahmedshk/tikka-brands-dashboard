@@ -107,7 +107,7 @@ export class AuthService {
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
 
-    const { password: _, ...userWithoutPassword } = user as Record<string, unknown>;
+    const { password: _, ...userWithoutPassword } = user as unknown as Record<string, unknown>;
     const safeUser = userWithoutPassword as Omit<IUser, "password"> & {
       permissions?: RolePermissions;
       allowedLocationIds?: "all" | string[];
@@ -156,7 +156,7 @@ export class AuthService {
     };
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
-    const { password: _, ...refreshUserWithoutPassword } = user as Record<string, unknown>;
+    const { password: _, ...refreshUserWithoutPassword } = user as unknown as Record<string, unknown>;
     const safeRefreshUser = refreshUserWithoutPassword as Omit<IUser, "password"> & {
       permissions?: RolePermissions;
       allowedLocationIds?: "all" | string[];

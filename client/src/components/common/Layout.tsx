@@ -6,7 +6,7 @@ import { useSidebar } from '../../hooks/useSidebar';
 const SIDEBAR_STORAGE_KEY = 'sidebarExpanded';
 
 function getInitialSidebarOpen(): boolean {
-  if (typeof globalThis.window === 'undefined') return true;
+  if (globalThis.window === undefined) return true;
   if (globalThis.window.innerWidth < 1024) return false; // mobile: overlay always starts closed
   const stored = globalThis.localStorage.getItem(SIDEBAR_STORAGE_KEY);
   if (stored !== null) return stored === 'true';

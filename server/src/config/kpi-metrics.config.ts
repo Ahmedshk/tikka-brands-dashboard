@@ -3,7 +3,10 @@
  * Used by the backend to validate that the user's role has access to requested metrics.
  */
 
+import type { RolePermissions } from "../types/rbac.types.js";
 import { ForbiddenError } from "../utils/errors.util.js";
+
+export type { RolePermissions } from "../types/rbac.types.js";
 
 /** Parse metrics query (comma-separated string or array) to string[]. */
 export function parseMetricsQuery(query: unknown): string[] | undefined {
@@ -60,10 +63,6 @@ function hasComponentAccess(
   if (components.includes(FULL_PAGE_COMPONENT_ID)) return true;
   return components.includes(componentId);
 }
-
-export type RolePermissions =
-  | { type: "all" }
-  | { type: "custom"; pages: Array<{ pageId: string; components?: string[] }> };
 
 /**
  * Validates that the user's permissions allow access to every requested metric for the given page.

@@ -10,7 +10,7 @@ export interface SyncSquareModalProps {
   onError?: (message: string) => void;
 }
 
-export function SyncSquareModal({ open, onClose, onSynced, onError }: SyncSquareModalProps) {
+export function SyncSquareModal({ open, onClose, onSynced, onError }: Readonly<SyncSquareModalProps>) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [syncing, setSyncing] = useState(false);
@@ -41,13 +41,19 @@ export function SyncSquareModal({ open, onClose, onSynced, onError }: SyncSquare
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      open
+      onCancel={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 w-full max-w-none max-h-none m-0 border-0 bg-black/50 backdrop:bg-black/50"
       aria-labelledby="sync-square-title"
     >
-      <div className="bg-card-background rounded-xl shadow-lg border border-gray-200 w-full max-w-md">
+      <button
+        type="button"
+        className="absolute inset-0 w-full h-full cursor-default"
+        onClick={onClose}
+        aria-label="Close modal"
+      />
+      <div className="relative bg-card-background rounded-xl shadow-lg border border-gray-200 w-full max-w-md">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 id="sync-square-title" className="text-lg font-semibold text-primary">
             Sync from Square
@@ -92,6 +98,6 @@ export function SyncSquareModal({ open, onClose, onSynced, onError }: SyncSquare
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

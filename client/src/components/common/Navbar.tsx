@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/store';
@@ -137,6 +137,39 @@ export const Navbar = () => {
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
+  let locationPlaceholder: string;
+  if (locationsLoading) {
+    locationPlaceholder = 'Loading...';
+  } else if (locations.length === 0) {
+    locationPlaceholder = 'No locations';
+  } else {
+    locationPlaceholder = 'Select location';
+  }
+
+  let locationTriggerContent: ReactNode;
+  if (locationsLoading) {
+    locationTriggerContent = (
+      <>
+        <Spinner size="sm" className="flex-shrink-0 text-button-primary" />
+        <span className="text-xs md:text-sm 2xl:text-base text-primary">Loading...</span>
+      </>
+    );
+  } else if (currentLocation) {
+    locationTriggerContent = (
+      <span className="text-xs md:text-sm 2xl:text-base text-primary truncate" title={`${currentLocation.storeName} – ${currentLocation.address}`}>
+        {currentLocation.storeName}
+      </span>
+    );
+  } else if (locations.length === 0) {
+    locationTriggerContent = (
+      <span className="text-xs md:text-sm 2xl:text-base text-primary">No locations</span>
+    );
+  } else {
+    locationTriggerContent = (
+      <span className="text-xs md:text-sm 2xl:text-base text-secondary">Select location</span>
+    );
+  }
+
   return (
     <nav className="relative z-20 bg-card-background border-b border-gray-200 min-h-[72px] flex flex-col" ref={mobileMenuRef}>
       <div className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-8 h-[72px] shrink-0">
@@ -152,7 +185,7 @@ export const Navbar = () => {
                 const loc = locations.find((l) => l._id === id);
                 if (loc) dispatch(setCurrentLocation(loc));
               }}
-              placeholder={locationsLoading ? 'Loading...' : locations.length === 0 ? 'No locations' : 'Select location'}
+              placeholder={locationPlaceholder}
               aria-label="Select location"
               className="w-full"
               allowEmpty={true}
@@ -160,20 +193,7 @@ export const Navbar = () => {
               triggerLabel={
                 <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
                   <LocationIcon className="w-4 h-4 md:w-4.5 md:h-4.5 2xl:w-5 2xl:h-5 flex-shrink-0" />
-                  {locationsLoading ? (
-                    <>
-                      <Spinner size="sm" className="flex-shrink-0 text-button-primary" />
-                      <span className="text-xs md:text-sm 2xl:text-base text-primary">Loading...</span>
-                    </>
-                  ) : currentLocation ? (
-                    <span className="text-xs md:text-sm 2xl:text-base text-primary truncate" title={`${currentLocation.storeName} – ${currentLocation.address}`}>
-                      {currentLocation.storeName}
-                    </span>
-                  ) : locations.length === 0 ? (
-                    <span className="text-xs md:text-sm 2xl:text-base text-primary">No locations</span>
-                  ) : (
-                    <span className="text-xs md:text-sm 2xl:text-base text-secondary">Select location</span>
-                  )}
+                  {locationTriggerContent}
                 </span>
               }
               onOpenChange={(open) => {

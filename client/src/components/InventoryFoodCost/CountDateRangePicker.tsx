@@ -37,9 +37,9 @@ function createStartDay(
   validStartSet: Set<string>,
   selectedEnd: string | null,
   selectedStart: string | null
-): React.ComponentType<PickersDayProps<Date>> {
+): React.ComponentType<PickersDayProps> {
   const endTime = selectedEnd ? toMidnight(parseISO(selectedEnd)!) : 0;
-  return function StartDay(props: PickersDayProps<Date>) {
+  return function StartDay(props: PickersDayProps) {
     const { day, sx, style, disabled, ...rest } = props;
     const dayDate = toDate(day);
     if (!dayDate) return <PickersDay {...props} />;
@@ -61,7 +61,7 @@ function createStartDay(
       <PickersDay
         {...rest}
         day={day}
-        disabled={isDisabled}
+        disabled={Boolean(isDisabled)}
         sx={sx}
         style={{ ...style, ...outlineStyle, ...fillStyle }}
       />
@@ -74,9 +74,9 @@ function createEndDay(
   validEndSet: Set<string>,
   selectedStart: string | null,
   selectedEnd: string | null
-): React.ComponentType<PickersDayProps<Date>> {
+): React.ComponentType<PickersDayProps> {
   const startTime = selectedStart ? toMidnight(parseISO(selectedStart)!) : 0;
-  return function EndDay(props: PickersDayProps<Date>) {
+  return function EndDay(props: PickersDayProps) {
     const { day, sx, style, disabled, ...rest } = props;
     const dayDate = toDate(day);
     if (!dayDate) return <PickersDay {...props} />;
@@ -98,7 +98,7 @@ function createEndDay(
       <PickersDay
         {...rest}
         day={day}
-        disabled={isDisabled}
+        disabled={Boolean(isDisabled)}
         sx={sx}
         style={{ ...style, ...outlineStyle, ...fillStyle }}
       />
@@ -243,14 +243,14 @@ export function CountDateRangePicker({
                 className="inline-block w-5 h-5 rounded-full border-2 border-[#5DC54F] bg-transparent"
                 aria-hidden
               />
-              Valid count available for start date
+              <span>Valid count available for start date</span>
             </span>
             <span className="flex items-center gap-2">
               <span
                 className="inline-block w-5 h-5 rounded-full border-2 border-[#009BBE] bg-transparent"
                 aria-hidden
               />
-              Valid count available for end date
+              <span>Valid count available for end date</span>
             </span>
           </div>
           <div className="flex justify-end gap-2">
@@ -274,10 +274,12 @@ export function CountDateRangePicker({
             <span className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-gray-400 text-white flex items-center justify-center text-[10px] font-bold">
               i
             </span>
-            The calendar displays dates valid for variance analysis, based on
-            available inventory counts. Note that a day-end count makes the
-            following day relevant for starting date, and a day-start count
-            makes the previous day relevant for end of period.
+            <span>
+              The calendar displays dates valid for variance analysis, based on
+              available inventory counts. Note that a day-end count makes the
+              following day relevant for starting date, and a day-start count
+              makes the previous day relevant for end of period.
+            </span>
           </p>
         </div>
       </Popover>

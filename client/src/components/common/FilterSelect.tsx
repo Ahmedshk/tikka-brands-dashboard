@@ -25,7 +25,7 @@ export function FilterSelect({
   'aria-label': ariaLabel,
   className = '',
   openAbove = false,
-}: FilterSelectProps) {
+}: Readonly<FilterSelectProps>) {
   const dropdownOptions: DropdownOption[] = options.map((o) => ({ value: o.value, label: o.label }));
   return (
     <Dropdown

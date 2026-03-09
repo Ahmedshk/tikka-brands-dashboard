@@ -92,8 +92,8 @@ export const RBACTableCard = ({
                   <div className="text-xs text-secondary">
                     <span className="font-medium text-primary">Locations:</span>
                     <div className="mt-0.5 flex flex-col gap-0.5">
-                      {getLocationLines(row.locations).map((line, i) => (
-                        <span key={i} className="block break-words">
+                      {getLocationLines(row.locations).map((line) => (
+                        <span key={line} className="block break-words">
                           {line}
                         </span>
                       ))}
@@ -188,8 +188,8 @@ export const RBACTableCard = ({
                     </td>
                     <td className="w-[45%] px-4 lg:px-6 py-3 lg:py-4 text-secondary align-top">
                       <div className="flex flex-col gap-0.5">
-                        {getLocationLines(row.locations).map((line, i) => (
-                          <span key={i} className="block break-words">
+                        {getLocationLines(row.locations).map((line) => (
+                          <span key={line} className="block break-words">
                             {line}
                           </span>
                         ))}

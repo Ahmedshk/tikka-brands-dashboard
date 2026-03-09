@@ -119,11 +119,13 @@ export function getComparisonOptionsForPeriod(
       ];
     case 'custom':
     default: {
-      const base = [
+      const optionalWeek =
+        customRangeDays != null && customRangeDays < 6
+          ? [{ value: 'samePeriodPreviousWeek' as SalesTrendComparisonType, label: 'Same period previous week' }]
+          : [];
+      const base: { value: SalesTrendComparisonType; label: string }[] = [
         { value: 'none', label: 'None' },
-        ...(customRangeDays != null && customRangeDays < 6
-          ? [{ value: 'samePeriodPreviousWeek' as const, label: 'Same period previous week' }]
-          : []),
+        ...optionalWeek,
         { value: 'samePeriodPreviousMonth', label: 'Same period previous month' },
         { value: 'priorYear', label: 'Prior year' },
         { value: 'custom', label: 'Custom' },
@@ -174,7 +176,7 @@ export function ComparisonPeriodPicker({
   excludeComparisonTypes,
   id,
   className = '',
-}: ComparisonPeriodPickerProps) {
+}: Readonly<ComparisonPeriodPickerProps>) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const toDisplay = (iso: string) => {
     try {
@@ -324,10 +326,7 @@ export function ComparisonPeriodPicker({
       return;
     }
 
-    if (!isSameOrAfter(date, currentStart)) {
-      setLocalStart(str);
-      setLocalEnd('');
-    } else {
+    if (isSameOrAfter(date, currentStart)) {
       setLocalEnd(str);
       pickingRef.current = 'start';
       onChange({
@@ -336,6 +335,9 @@ export function ComparisonPeriodPicker({
         comparisonEnd: dateIso,
       });
       setAnchorEl(null);
+    } else {
+      setLocalStart(str);
+      setLocalEnd('');
     }
   };
 
@@ -450,7 +452,7 @@ export function ComparisonPeriodPicker({
                     bgcolor: value.comparisonType === opt.value ? 'action.selected' : undefined,
                   }}
                 >
-                  <ListItemText primary={opt.label} primaryTypographyProps={{ fontSize: 14 }} />
+                  <ListItemText primary={opt.label} slotProps={{ primary: { style: { fontSize: 14 } } }} />
                 </ListItemButton>
               ))}
             </List>
@@ -491,7 +493,7 @@ export function ComparisonPeriodPicker({
                     label="End date (auto)"
                     value={localEnd}
                     placeholder={DATE_DISPLAY_FORMAT}
-                    InputProps={{ readOnly: true }}
+                    slotProps={{ input: { readOnly: true } }}
                     fullWidth
                   />
                 ) : (

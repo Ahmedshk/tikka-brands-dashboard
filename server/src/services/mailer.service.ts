@@ -1,20 +1,19 @@
-import path from "path";
-import { fileURLToPath } from "url";
-import nodemailer from "nodemailer";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import ejs from "ejs";
+import { getMailTransport } from "../config/nodemailer.js";
 import { logger } from "../utils/logger.util.js";
+import type { SendInvitationEmailOptions } from "../types/mailer.types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.join(__dirname, "..", "templates");
 
-export interface SendInvitationEmailOptions {
-  to: string;
-  firstName: string;
-  setPasswordUrl: string;
-}
-
 function getBaseUrl(): string {
-  const base = process.env.CLIENT_URL ?? process.env.APP_URL ?? process.env.FRONTEND_URL ?? "";
+  const base =
+    process.env.CLIENT_URL ??
+    process.env.APP_URL ??
+    process.env.FRONTEND_URL ??
+    "";
   return (typeof base === "string" ? base : "").trim().replace(/\/$/, "");
 }
 
@@ -24,35 +23,12 @@ function getLogoUrl(): string {
   return base + "/main_logo.svg";
 }
 
-function createTransport() {
-  const host = process.env.SMTP_HOST?.trim();
-  const port = process.env.SMTP_PORT?.trim();
-  const user = process.env.SMTP_USER?.trim();
-  const pass = process.env.SMTP_PASS?.trim();
-  const secure =
-    process.env.SMTP_SECURE === "true" || process.env.SMTP_SECURE === "1";
-
-  if (!host || !user || !pass) {
-    logger.warn(
-      "Mailer: SMTP not fully configured (SMTP_HOST, SMTP_USER, SMTP_PASS). Skipping send.",
-    );
-    return null;
-  }
-
-  return nodemailer.createTransport({
-    host,
-    port: port ? parseInt(port, 10) : secure ? 465 : 587,
-    secure,
-    auth: { user, pass },
-  });
-}
-
 export async function sendInvitationEmail(
   options: SendInvitationEmailOptions,
 ): Promise<boolean> {
   const { to, firstName, setPasswordUrl } = options;
 
-  const transport = createTransport();
+  const transport = getMailTransport();
   if (!transport) return false;
 
   try {

@@ -23,12 +23,14 @@ function handleUploadError(req: Request, res: Response, next: NextFunction): voi
   uploadProfileImageMulter(req, res, (err: unknown) => {
     if (err) {
       const e = err as Error & { code?: string };
-      const message =
-        e.code === 'LIMIT_FILE_SIZE'
-          ? 'File too large. Profile image must be 2 MB or less.'
-          : e instanceof Error
-            ? e.message
-            : 'Upload failed';
+      let message: string;
+      if (e.code === 'LIMIT_FILE_SIZE') {
+        message = 'File too large. Profile image must be 2 MB or less.';
+      } else if (e instanceof Error) {
+        message = e.message;
+      } else {
+        message = 'Upload failed';
+      }
       next(new ValidationError(message));
       return;
     }

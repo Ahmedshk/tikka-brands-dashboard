@@ -1,5 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { LocationService } from '../services/location.service.js';
+import {
+  validateLocationId,
+  buildUpdateLocationData,
+} from '../utils/locationControllerHelpers.js';
 
 const locationService = new LocationService();
 
@@ -58,7 +62,9 @@ export const getLocations = async (
     );
     if (Array.isArray(allowedIds)) {
       const allowedSet = new Set(allowedIds);
-      const filtered = result.locations.filter((loc) => allowedSet.has(loc._id));
+      const filtered = result.locations.filter(
+        (loc) => loc._id != null && allowedSet.has(loc._id)
+      );
       const total = filtered.length;
       const totalPages = Math.max(1, Math.ceil(total / limit));
       const start = (page - 1) * limit;
@@ -91,11 +97,8 @@ export const getLocationById = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const id = req.params.id;
-    if (id === undefined || Array.isArray(id)) {
-      res.status(400).json({ success: false, message: 'Invalid location id' });
-      return;
-    }
+    const id = validateLocationId(req.params.id, res);
+    if (id === null) return;
     const location = await locationService.getById(id);
     if (!location) {
       res.status(404).json({
@@ -119,37 +122,10 @@ export const updateLocation = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const id = req.params.id;
-    if (id === undefined || Array.isArray(id)) {
-      res.status(400).json({ success: false, message: 'Invalid location id' });
-      return;
-    }
-    const {
-      storeName,
-      address,
-      squareLocationId,
-      homebaseLocationId,
-      timezone,
-      businessStartTime,
-      squareAccessToken,
-      homebaseApiKey,
-      logoId,
-      marketManBuyerGuid,
-    } = req.body;
-    const squareTrim = typeof squareAccessToken === 'string' ? squareAccessToken.trim() : '';
-    const homebaseTrim = typeof homebaseApiKey === 'string' ? homebaseApiKey.trim() : '';
-    const location = await locationService.update(id, {
-      ...(storeName !== undefined && { storeName }),
-      ...(address !== undefined && { address }),
-      ...(squareLocationId !== undefined && { squareLocationId }),
-      ...(homebaseLocationId !== undefined && { homebaseLocationId }),
-      ...(timezone !== undefined && { timezone }),
-      ...(businessStartTime !== undefined && { businessStartTime }),
-      ...(squareTrim && { squareAccessToken: squareTrim }),
-      ...(homebaseTrim && { homebaseApiKey: homebaseTrim }),
-      ...(logoId !== undefined && { logoId: logoId === null || logoId === '' ? null : String(logoId).trim() }),
-      ...(marketManBuyerGuid !== undefined && { marketManBuyerGuid: marketManBuyerGuid === null || marketManBuyerGuid === '' ? null : String(marketManBuyerGuid).trim() }),
-    });
+    const id = validateLocationId(req.params.id, res);
+    if (id === null) return;
+    const updateData = buildUpdateLocationData(req.body as Record<string, unknown>);
+    const location = await locationService.update(id, updateData);
     res.status(200).json({
       success: true,
       message: 'Location updated successfully',
@@ -166,11 +142,8 @@ export const deleteLocation = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const id = req.params.id;
-    if (id === undefined || Array.isArray(id)) {
-      res.status(400).json({ success: false, message: 'Invalid location id' });
-      return;
-    }
+    const id = validateLocationId(req.params.id, res);
+    if (id === null) return;
     await locationService.delete(id);
     res.status(200).json({
       success: true,

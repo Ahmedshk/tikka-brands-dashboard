@@ -113,13 +113,13 @@ function VarianceBarTooltipContent() {
         <div className="flex justify-between gap-4">
           <dt>Actual quantity</dt>
           <dd className="font-medium text-primary">
-            {item.actualQuantity != null ? formatQtyWithUnit(item.actualQuantity) : '—'}
+            {item.actualQuantity == null ? '—' : formatQtyWithUnit(item.actualQuantity)}
           </dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt>Theoretical quantity</dt>
           <dd className="font-medium text-primary">
-            {item.theoreticalQuantity != null ? formatQtyWithUnit(item.theoreticalQuantity) : '—'}
+            {item.theoreticalQuantity == null ? '—' : formatQtyWithUnit(item.theoreticalQuantity)}
           </dd>
         </div>
       </dl>

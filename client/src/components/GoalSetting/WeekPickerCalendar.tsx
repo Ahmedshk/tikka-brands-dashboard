@@ -17,7 +17,7 @@ function toDate(day: unknown): Date | null {
   if (typeof (day as { toJsDate?: () => Date }).toJsDate === 'function')
     return (day as { toJsDate: () => Date }).toJsDate();
   if (typeof (day as { getTime?: () => number }).getTime === 'function')
-    return new Date((day as { getTime: () => number }).getTime());
+    return new Date(day as Date);
   return null;
 }
 
@@ -54,7 +54,7 @@ function getRangeBorderRadius(isStart: boolean, isEnd: boolean): string {
 /** Custom day that highlights the full week (Sun–Sat) when a week is selected. */
 function createWeekDay(
   weekStartDate: string | null
-): React.ComponentType<PickersDayProps<Date>> {
+): React.ComponentType<PickersDayProps> {
   const rangeStart = weekStartDate ? parseISODate(weekStartDate) : null;
   const rangeEnd = rangeStart
     ? new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate() + 6)
@@ -62,7 +62,7 @@ function createWeekDay(
   const startTime = rangeStart ? toMidnight(rangeStart) : 0;
   const endTime = rangeEnd ? toMidnight(rangeEnd) : 0;
 
-  return function WeekDay(props: PickersDayProps<Date>) {
+  return function WeekDay(props: PickersDayProps) {
     const { day, sx, style, ...rest } = props;
     const dayDate = toDate(day);
     if (!dayDate || !rangeStart || !rangeEnd) {
@@ -117,7 +117,7 @@ export function WeekPickerCalendar({
   disabledWeekStarts = [],
   id,
   className = '',
-}: WeekPickerCalendarProps) {
+}: Readonly<WeekPickerCalendarProps>) {
   const calendarValue = useMemo(() => {
     if (!value) return null;
     const d = parseISODate(value);

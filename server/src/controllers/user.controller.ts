@@ -25,10 +25,16 @@ function toUserDTO(
     updatedAt?: Date;
     password?: string;
     profileImagePublicId?: string | null;
-    [key: string]: unknown;
   }
 ) {
-  const id = user._id != null ? (typeof user._id === 'string' ? user._id : user._id.toString()) : undefined;
+  let id: string | undefined;
+  if (user._id == null) {
+    id = undefined;
+  } else if (typeof user._id === 'string') {
+    id = user._id;
+  } else {
+    id = user._id.toString();
+  }
   const base = `${req.protocol}://${req.get('host') ?? ''}`.replace(/\/$/, '');
   const profileImageUrl =
     id && user.profileImagePublicId ? `${base}/api/proxy/image/${id}` : null;
@@ -60,15 +66,15 @@ export const listUsers = async (
     const search = req.query.search as string | undefined;
     const roleId = req.query.roleId as string | undefined;
     const locationId = req.query.locationId as string | undefined;
-    const page = req.query.page != null ? Number(req.query.page) : undefined;
-    const pageSize = req.query.pageSize != null ? Number(req.query.pageSize) : undefined;
-    const result = await userService.getUsers({
-      search,
-      roleId,
-      locationId,
-      page,
-      pageSize,
-    });
+    const page = req.query.page == null ? undefined : Number(req.query.page);
+    const pageSize = req.query.pageSize == null ? undefined : Number(req.query.pageSize);
+    const filters: { search?: string; roleId?: string; locationId?: string; page?: number; pageSize?: number } = {};
+    if (typeof search === 'string') filters.search = search;
+    if (typeof roleId === 'string') filters.roleId = roleId;
+    if (typeof locationId === 'string') filters.locationId = locationId;
+    if (typeof page === 'number') filters.page = page;
+    if (typeof pageSize === 'number') filters.pageSize = pageSize;
+    const result = await userService.getUsers(filters);
     const dtos = result.users.map((u) => toUserDTO(req, u));
     res.status(200).json({
       success: true,
@@ -104,7 +110,7 @@ export const createUser = async (
         squareId,
         homebaseId,
         roleId: roleId || null,
-        profileImagePublicId: profileImagePublicId ?? undefined,
+        profileImagePublicId: profileImagePublicId ?? null,
       },
       { sendInvite: invite === true }
     );
@@ -126,7 +132,10 @@ export const resendInvite = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
+    if (id === undefined || Array.isArray(id)) {
+      throw new ValidationError('Invalid user id');
+    }
     const user = await userService.resendInvite(id);
     if (!user) {
       throw new NotFoundError('User not found');
@@ -146,7 +155,10 @@ export const updateUser = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
+    if (id === undefined || Array.isArray(id)) {
+      throw new ValidationError('Invalid user id');
+    }
     const { firstName, lastName, email, phone, squareId, homebaseId, roleId, isActive, profileImagePublicId } = req.body;
     const user = await userService.updateUser(id, {
       firstName,
@@ -177,7 +189,10 @@ export const deleteUser = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
+    if (id === undefined || Array.isArray(id)) {
+      throw new ValidationError('Invalid user id');
+    }
     await userService.deleteUser(id);
     res.status(200).json({
       success: true,
@@ -211,8 +226,8 @@ export const uploadProfileImage = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const file = req.file as Express.Multer.File | undefined;
-    if (!file || !file.buffer) {
+    const file = req.file;
+    if (!file?.buffer) {
       throw new ValidationError('No image file provided. Use multipart field "image".');
     }
     const result = await uploadToCloudinary(

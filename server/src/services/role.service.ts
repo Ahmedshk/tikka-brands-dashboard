@@ -151,19 +151,21 @@ export class RoleService {
               storeName: (l as { storeName: string }).storeName ?? "",
             };
           }
-          const id =
-            typeof (l as { toString?: () => string }).toString === "function"
-              ? (l as { toString(): string }).toString()
-              : (typeof l === "object" && l !== null && "_id" in l
-                  ? String((l as { _id: unknown })._id)
-                  : String(l));
+          let id: string;
+          if (typeof (l as { toString?: () => string }).toString === "function") {
+            id = (l as { toString(): string }).toString();
+          } else if (typeof l === "object" && l !== null && "_id" in l) {
+            id = String((l as { _id: unknown })._id);
+          } else {
+            id = String(l);
+          }
           return { _id: id, storeName: "" };
         });
     }
     return {
       _id: doc._id.toString(),
       name: doc.name,
-      description: doc.description,
+      description: doc.description ?? "",
       permissions: doc.permissions,
       locations,
       isSystem: doc.isSystem,

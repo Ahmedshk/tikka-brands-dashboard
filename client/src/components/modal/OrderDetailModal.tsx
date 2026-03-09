@@ -45,6 +45,13 @@ export const OrderDetailModal = ({
   const details = order?.orderDetails;
   const items = details?.Items ?? [];
 
+  let totalDisplay = '—';
+  if (details?.PriceTotalWithoutVAT != null) {
+    totalDisplay = formatCurrency(details.PriceTotalWithoutVAT);
+  } else if (details?.PriceTotalWithVAT != null) {
+    totalDisplay = formatCurrency(details.PriceTotalWithVAT);
+  }
+
   return (
     <dialog
       ref={dialogRef}
@@ -52,7 +59,7 @@ export const OrderDetailModal = ({
       aria-labelledby="order-detail-modal-title"
       onClose={onClose}
     >
-      <div className="relative w-full min-w-0 max-w-full md:max-w-4xl">
+      <div className="relative w-full min-w-0 max-w-full md:max-w-6xl">
         <button
           type="button"
           onClick={() => {
@@ -92,13 +99,7 @@ export const OrderDetailModal = ({
                     details?.PriceTotalWithVAT != null) && (
                     <>
                       <span className="text-secondary">Total</span>
-                      <span>
-                        {details.PriceTotalWithoutVAT != null
-                          ? formatCurrency(details.PriceTotalWithoutVAT)
-                          : details.PriceTotalWithVAT != null
-                            ? formatCurrency(details.PriceTotalWithVAT)
-                            : '—'}
-                      </span>
+                      <span>{totalDisplay}</span>
                     </>
                   )}
                 </div>
@@ -108,9 +109,9 @@ export const OrderDetailModal = ({
                     {details.Comments.trim()}
                   </p>
                 )}
-                <div className="flex-1 min-h-0 overflow-auto">
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   {/* Mobile: item cards */}
-                  <div className="md:hidden divide-y divide-gray-200">
+                  <div className="md:hidden flex-1 min-h-0 overflow-auto divide-y divide-gray-200">
                     {items.length === 0 ? (
                       <p className="py-4 text-center text-secondary text-xs">
                         No line items
@@ -118,13 +119,12 @@ export const OrderDetailModal = ({
                     ) : (
                       items.map((item, index) => {
                         const cardBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
-                        const packQtyStr =
-                          item.PackQuantity != null
-                            ? String(item.PackQuantity) +
-                              (item.ItemMeasureTypeName?.trim()
-                                ? ` ${item.ItemMeasureTypeName.trim()}`
-                                : '')
-                            : '—';
+                        let packQtyStr = '—';
+                        if (item.PackQuantity != null) {
+                          const trimmed = item.ItemMeasureTypeName?.trim();
+                          const measureSuffix = trimmed ? ` ${trimmed}` : '';
+                          packQtyStr = String(item.PackQuantity) + measureSuffix;
+                        }
                         return (
                           <div
                             key={`${item.SKU ?? index}-${index}`}
@@ -143,25 +143,25 @@ export const OrderDetailModal = ({
                             </p>
                             <p className="text-xs text-gray-600">
                               <span className="font-medium">Packs Per Case:</span>{' '}
-                              {item.PacksPerCase != null
-                                ? String(item.PacksPerCase)
-                                : '—'}
+                              {item.PacksPerCase == null
+                                ? '—'
+                                : String(item.PacksPerCase)}
                             </p>
                             <p className="text-xs text-gray-600">
                               <span className="font-medium">Quantity:</span>{' '}
-                              {item.Quantity != null ? String(item.Quantity) : '—'}
+                              {item.Quantity == null ? '—' : String(item.Quantity)}
                             </p>
                             <p className="text-xs text-gray-600">
                               <span className="font-medium">Price:</span>{' '}
-                              {item.Price != null
-                                ? formatCurrency(item.Price)
-                                : '—'}
+                              {item.Price == null
+                                ? '—'
+                                : formatCurrency(item.Price)}
                             </p>
                             <p className="text-xs text-gray-600">
                               <span className="font-medium">Price Total:</span>{' '}
-                              {item.PriceTotal != null
-                                ? formatCurrency(item.PriceTotal)
-                                : '—'}
+                              {item.PriceTotal == null
+                                ? '—'
+                                : formatCurrency(item.PriceTotal)}
                             </p>
                           </div>
                         );
@@ -169,25 +169,25 @@ export const OrderDetailModal = ({
                     )}
                   </div>
                   {/* Desktop: table */}
-                  <div className="hidden md:block">
+                  <div className="hidden md:block min-h-0 flex-1 overflow-auto">
                     <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
-                      <thead>
+                      <thead className="sticky top-0 z-10 bg-card-background shadow-[0_1px_0_0_rgba(0,0,0,0.1)]">
                         <tr className="text-left text-secondary border-b border-gray-200">
-                          <th className="pb-2 pr-3 pl-0 font-semibold">Item Name</th>
-                          <th className="pb-2 pr-3 font-semibold">SKU</th>
-                          <th className="pb-2 pr-3 font-semibold text-right">
+                          <th className="pb-2 pr-3 pl-0 font-semibold bg-card-background">Item Name</th>
+                          <th className="pb-2 pr-3 font-semibold bg-card-background">SKU</th>
+                          <th className="pb-2 pr-3 font-semibold text-right bg-card-background">
                             Pack Qty
                           </th>
-                          <th className="pb-2 pr-3 font-semibold text-right">
+                          <th className="pb-2 pr-3 font-semibold text-right bg-card-background">
                             Packs Per Case
                           </th>
-                          <th className="pb-2 pr-3 font-semibold text-right">
+                          <th className="pb-2 pr-3 font-semibold text-right bg-card-background">
                             Quantity
                           </th>
-                          <th className="pb-2 pr-3 font-semibold text-right">
+                          <th className="pb-2 pr-3 font-semibold text-right bg-card-background">
                             Price
                           </th>
-                          <th className="pb-2 pr-0 font-semibold text-right">
+                          <th className="pb-2 pr-0 font-semibold text-right bg-card-background">
                             Price Total
                           </th>
                         </tr>
@@ -215,32 +215,33 @@ export const OrderDetailModal = ({
                               </td>
                               <td className="py-2 pr-3">{item.SKU ?? '—'}</td>
                               <td className="py-2 pr-3 text-right">
-                                {item.PackQuantity != null
-                                  ? String(item.PackQuantity) +
-                                    (item.ItemMeasureTypeName?.trim()
-                                      ? ` ${item.ItemMeasureTypeName.trim()}`
-                                      : '')
-                                  : '—'}
+                                {item.PackQuantity == null
+                                  ? '—'
+                                  : (() => {
+                                      const trimmed = item.ItemMeasureTypeName?.trim();
+                                      const suffix = trimmed ? ` ${trimmed}` : '';
+                                      return String(item.PackQuantity) + suffix;
+                                    })()}
                               </td>
                               <td className="py-2 pr-3 text-right">
-                                {item.PacksPerCase != null
-                                  ? String(item.PacksPerCase)
-                                  : '—'}
+                                {item.PacksPerCase == null
+                                  ? '—'
+                                  : String(item.PacksPerCase)}
                               </td>
                               <td className="py-2 pr-3 text-right">
-                                {item.Quantity != null
-                                  ? String(item.Quantity)
-                                  : '—'}
+                                {item.Quantity == null
+                                  ? '—'
+                                  : String(item.Quantity)}
                               </td>
                               <td className="py-2 pr-3 text-right">
-                                {item.Price != null
-                                  ? formatCurrency(item.Price)
-                                  : '—'}
+                                {item.Price == null
+                                  ? '—'
+                                  : formatCurrency(item.Price)}
                               </td>
                               <td className="py-2 pr-0 text-right">
-                                {item.PriceTotal != null
-                                  ? formatCurrency(item.PriceTotal)
-                                  : '—'}
+                                {item.PriceTotal == null
+                                  ? '—'
+                                  : formatCurrency(item.PriceTotal)}
                               </td>
                             </tr>
                           ))

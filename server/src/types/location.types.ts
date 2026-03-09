@@ -23,3 +23,20 @@ export interface ILocationResponse extends Omit<ILocation, 'squareAccessTokenEnc
   /** Populated when location has a logo; data URL for display (e.g. sidebar). */
   logoDataUrl?: string;
 }
+
+export type CreateLocationData = Omit<ILocation, '_id' | 'createdAt' | 'updatedAt' | 'squareAccessTokenEnc' | 'homebaseApiKeyEnc'> & {
+  squareAccessToken: string;
+  homebaseApiKey: string;
+};
+
+export type UpdateLocationData = Partial<Omit<ILocation, '_id' | 'createdAt' | 'updatedAt' | 'squareAccessTokenEnc' | 'homebaseApiKeyEnc'>> & {
+  squareAccessToken?: string;
+  homebaseApiKey?: string;
+  logoId?: string | null;
+};
+
+export interface LocationWithCredentials {
+  location: ILocationResponse;
+  squareAccessToken: string | null;
+  homebaseApiKey: string | null;
+}

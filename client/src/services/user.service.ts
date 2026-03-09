@@ -25,7 +25,7 @@ interface ApiUser {
 /** Use plain fields; if API sent Mongoose doc, data may be in _doc. */
 function pickUser(u: ApiUser): ApiUser {
   if (u && typeof u._doc === 'object' && u._doc !== null) {
-    const d = u._doc as Record<string, unknown>;
+    const d = u._doc;
     return {
       _id: typeof d._id === 'string' ? d._id : (d._id as { toString?: () => string })?.toString?.(),
       firstName: d.firstName as string,
@@ -54,7 +54,14 @@ function toUserRow(u: ApiUser): UserRow {
   const name = [firstName, lastName].filter(Boolean).join(' ').trim() || email;
   const isActive = d.isActive !== false;
   const statusVal = d.status ?? 'active';
-  const status = !isActive ? 'Suspended' as const : statusVal === 'pending' ? 'Pending' as const : 'Active' as const;
+  let status: 'Suspended' | 'Pending' | 'Active';
+  if (!isActive) {
+    status = 'Suspended';
+  } else if (statusVal === 'pending') {
+    status = 'Pending';
+  } else {
+    status = 'Active';
+  }
   return {
     _id: id,
     firstName,

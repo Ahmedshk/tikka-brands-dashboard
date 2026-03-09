@@ -27,7 +27,11 @@ export const getRole = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
+    if (id === undefined || Array.isArray(id)) {
+      res.status(400).json({ success: false, message: "Invalid role id" });
+      return;
+    }
     const role = await roleService.getById(id);
     if (!role) {
       throw new NotFoundError("Role not found");
@@ -65,7 +69,11 @@ export const updateRole = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
+    if (id === undefined || Array.isArray(id)) {
+      res.status(400).json({ success: false, message: "Invalid role id" });
+      return;
+    }
     const { name, description, permissions, locations } = req.body;
     const role = await roleService.update(id, {
       name,
@@ -92,7 +100,11 @@ export const deleteRole = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
+    if (id === undefined || Array.isArray(id)) {
+      res.status(400).json({ success: false, message: "Invalid role id" });
+      return;
+    }
     const result = await roleService.delete(id);
     if (!result.deleted && !result.deactivated) {
       throw new NotFoundError("Role not found");

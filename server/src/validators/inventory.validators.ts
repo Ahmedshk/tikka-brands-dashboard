@@ -29,7 +29,7 @@ const pendingOrdersPeriodEnum = z.enum(['thisWeek', 'lastWeek']);
 
 const countPeriodDateSchema = z
   .string()
-  .regex(/^\d{4}[-\/]\d{2}[-\/]\d{2}$/, 'Date must be yyyy-MM-dd or yyyy/MM/dd');
+  .regex(/^\d{4}[-/]\d{2}[-/]\d{2}$/, 'Date must be yyyy-MM-dd or yyyy/MM/dd');
 
 export const getValidCountDatesQuerySchema = z.object({
   query: z.object({

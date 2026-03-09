@@ -12,7 +12,7 @@ export const requireRole = (allowedRoles: UserRole[]) => {
       return;
     }
 
-    const userRole = req.user.role as UserRole;
+    const userRole = req.user.role;
 
     if (!allowedRoles.includes(userRole)) {
       logger.warn(`Access denied for role ${userRole}`, {

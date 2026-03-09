@@ -48,7 +48,7 @@ export const SetPassword = () => {
             email: res.data.email,
             firstName: res.data.firstName,
           });
-        } else if (res.expired) {
+        } else if (!res.success && res.expired) {
           setValidation({ status: 'expired' });
         } else {
           setValidation({ status: 'invalid' });

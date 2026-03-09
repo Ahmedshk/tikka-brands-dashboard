@@ -40,13 +40,13 @@ function UserRowCard({
   onEdit,
   onDelete,
   onResendInvite,
-}: {
+}: Readonly<{
   row: UserRow;
   index: number;
   onEdit?: (row: UserRow, index: number) => void;
   onDelete?: (row: UserRow, index: number) => void;
   onResendInvite?: (row: UserRow) => void;
-}) {
+}>) {
   const displayName =
     (row.name ?? [row.firstName, row.lastName].filter(Boolean).join(' ').trim()) || row.email || '—';
   const cardBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';

@@ -107,25 +107,25 @@ export const CostOfGoodsSoldCard = ({
               <div className="flex items-center justify-between gap-4">
                 <span className="text-xs md:text-sm text-primary">Theoretical Usage</span>
                 <span className="font-semibold text-secondary text-sm md:text-base">
-                  {theoreticalUsage != null ? formatCurrency(theoreticalUsage) : '—'}
+                  {theoreticalUsage == null ? '—' : formatCurrency(theoreticalUsage)}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-4 mt-1">
                 <span className="text-xs md:text-sm text-primary">Theoretical Usage %</span>
                 <span className="font-semibold text-secondary text-sm md:text-base">
-                  {theoreticalUsagePercent != null ? `${theoreticalUsagePercent.toFixed(2)}%` : '—'}
+                  {theoreticalUsagePercent == null ? '—' : `${theoreticalUsagePercent.toFixed(2)}%`}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-4 mt-2 pt-2 border-t border-gray-100">
                 <span className="text-xs md:text-sm text-primary">Actual Usage</span>
                 <span className="font-semibold text-secondary text-sm md:text-base">
-                  {actualUsage != null ? formatCurrency(actualUsage) : '—'}
+                  {actualUsage == null ? '—' : formatCurrency(actualUsage)}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-4 mt-1">
                 <span className="text-xs md:text-sm text-primary">Actual Usage %</span>
                 <span className="font-semibold text-secondary text-sm md:text-base">
-                  {actualUsagePercent != null ? `${actualUsagePercent.toFixed(2)}%` : '—'}
+                  {actualUsagePercent == null ? '—' : `${actualUsagePercent.toFixed(2)}%`}
                 </span>
               </div>
             </div>

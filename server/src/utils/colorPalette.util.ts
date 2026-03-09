@@ -89,6 +89,21 @@ export interface GenerateDistinctColorsOptions {
   nonAdjacent?: boolean;
 }
 
+/** Reorder a hue-ring color array so adjacent indices are less similar (swap first half with second half in pairs). */
+function reorderNonAdjacent(colors: string[]): void {
+  const count = colors.length;
+  if (count <= 2) return;
+  const half = Math.floor(count / 2);
+  for (let i = 0, j = half; i < half && j < count; i += 2, j += 2) {
+    const a = colors[i];
+    const b = colors[j];
+    if (a !== undefined && b !== undefined) {
+      colors[i] = b;
+      colors[j] = a;
+    }
+  }
+}
+
 /**
  * Generate an array of distinct colors for chart series.
  * Colors are evenly spaced in hue from a base color; optional reorder so adjacent indices are less similar.
@@ -106,13 +121,10 @@ export function generateDistinctColors(
   const b = baseHex & 0xff;
   const base = rgbToHsl(r, g, b);
 
-  if (count === 1) {
-    return [rgbToHex(r, g, b)];
-  }
+  if (count === 1) return [rgbToHex(r, g, b)];
 
   const step = 360 / count;
   const colors: string[] = [];
-
   for (let i = 0; i < count; i++) {
     let hue = (base.h + i * step) % 360;
     if (hue < 0) hue += 360;
@@ -120,19 +132,6 @@ export function generateDistinctColors(
     colors.push(rgbToHex(rgb.r, rgb.g, rgb.b));
   }
 
-  if (nonAdjacent && count > 2) {
-    const half = Math.floor(count / 2);
-    for (let i = 0, j = half; i < half; i += 2, j += 2) {
-      if (j < count) {
-        const a = colors[i];
-        const b = colors[j];
-        if (a !== undefined && b !== undefined) {
-          colors[i] = b;
-          colors[j] = a;
-        }
-      }
-    }
-  }
-
+  if (nonAdjacent) reorderNonAdjacent(colors);
   return colors;
 }

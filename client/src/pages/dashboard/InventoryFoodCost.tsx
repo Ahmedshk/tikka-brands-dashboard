@@ -36,6 +36,28 @@ const currencyFmt = (v: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 const pendingFmt = (n: number) => String(n).padStart(2, '0');
 
+/** Format "y/m/d" start and end as "Mon DD, YYYY – Mon DD, YYYY" or "—" if missing/invalid. */
+function formatPeriodRangeLabel(
+  start: string | null | undefined,
+  end: string | null | undefined
+): string {
+  if (!start || !end) return '—';
+  const parse = (s: string) => {
+    const parts = s.split('/').map(Number);
+    const y = parts[0] ?? 0;
+    const m = (parts[1] ?? 1) - 1;
+    const d = parts[2] ?? 1;
+    return new Date(y, m, d);
+  };
+  const fmt = (date: Date) =>
+    date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  try {
+    return `${fmt(parse(start))} – ${fmt(parse(end))}`;
+  } catch {
+    return '—';
+  }
+}
+
 const defaultOrderTrackerPeriod: OrderTrackerPeriodValue = {
   periodType: 'currentMonth',
 };
@@ -178,52 +200,29 @@ export const InventoryFoodCost = () => {
     return () => controller.abort();
   }, [currentLocation?._id, currentLocation?.timezone, shouldFetchGoals]);
 
-  const countPeriodLabel = useMemo(() => {
-    const start = inventoryKpisData?.countPeriodStart;
-    const end = inventoryKpisData?.countPeriodEnd;
-    if (!start || !end) return '—';
-    const parse = (s: string) => {
-      const parts = s.split('/').map(Number);
-      const y = parts[0] ?? 0;
-      const m = (parts[1] ?? 1) - 1;
-      const d = parts[2] ?? 1;
-      return new Date(y, m, d);
-    };
-    const fmt = (date: Date) =>
-      date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    try {
-      return `${fmt(parse(start))} – ${fmt(parse(end))}`;
-    } catch {
-      return '—';
-    }
-  }, [inventoryKpisData?.countPeriodStart, inventoryKpisData?.countPeriodEnd]);
+  const countPeriodLabel = useMemo(
+    () => formatPeriodRangeLabel(
+      inventoryKpisData?.countPeriodStart,
+      inventoryKpisData?.countPeriodEnd
+    ),
+    [inventoryKpisData?.countPeriodStart, inventoryKpisData?.countPeriodEnd]
+  );
 
-  const pendingOrdersPeriodLabel = useMemo(() => {
-    const start = inventoryKpisData?.pendingOrdersPeriodStart;
-    const end = inventoryKpisData?.pendingOrdersPeriodEnd;
-    if (!start || !end) return '—';
-    const parse = (s: string) => {
-      const parts = s.split('/').map(Number);
-      const y = parts[0] ?? 0;
-      const m = (parts[1] ?? 1) - 1;
-      const d = parts[2] ?? 1;
-      return new Date(y, m, d);
-    };
-    const fmt = (date: Date) =>
-      date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    try {
-      return `${fmt(parse(start))} – ${fmt(parse(end))}`;
-    } catch {
-      return '—';
-    }
-  }, [inventoryKpisData?.pendingOrdersPeriodStart, inventoryKpisData?.pendingOrdersPeriodEnd]);
+  const pendingOrdersPeriodLabel = useMemo(
+    () => formatPeriodRangeLabel(
+      inventoryKpisData?.pendingOrdersPeriodStart,
+      inventoryKpisData?.pendingOrdersPeriodEnd
+    ),
+    [inventoryKpisData?.pendingOrdersPeriodStart, inventoryKpisData?.pendingOrdersPeriodEnd]
+  );
 
   const inventoryKPIs = useMemo((): InventoryKPIItem[] => {
     const d = inventoryKpisData;
-    const foodCostValue = d?.currentFoodCost != null ? currencyFmt(d.currentFoodCost) : (kpisLoading ? '…' : '—');
-    const inventoryValue = d?.inventoryValue != null ? currencyFmt(d.inventoryValue) : (kpisLoading ? '…' : '—');
-    const wasteCostValue = d?.wasteCost != null ? currencyFmt(d.wasteCost) : (kpisLoading ? '…' : '—');
-    const pendingValue = d?.pendingOrdersCount != null ? pendingFmt(d.pendingOrdersCount) : (kpisLoading ? '…' : '—');
+    const fallback = kpisLoading ? '…' : '—';
+    const foodCostValue = d?.currentFoodCost == null ? fallback : currencyFmt(d.currentFoodCost);
+    const inventoryValue = d?.inventoryValue == null ? fallback : currencyFmt(d.inventoryValue);
+    const wasteCostValue = d?.wasteCost == null ? fallback : currencyFmt(d.wasteCost);
+    const pendingValue = d?.pendingOrdersCount == null ? fallback : pendingFmt(d.pendingOrdersCount);
     const items: InventoryKPIItem[] = [];
     if (canKpiFoodCost) {
       items.push({

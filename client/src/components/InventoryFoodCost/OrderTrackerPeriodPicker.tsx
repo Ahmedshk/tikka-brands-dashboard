@@ -65,7 +65,7 @@ export function OrderTrackerPeriodPicker({
   onChange,
   id,
   className = '',
-}: OrderTrackerPeriodPickerProps) {
+}: Readonly<OrderTrackerPeriodPickerProps>) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const toDisplay = (iso: string) => {
     try {
@@ -137,11 +137,13 @@ export function OrderTrackerPeriodPicker({
         periodStart: start ? formatDateToISO(start) : undefined,
         periodEnd: end ? formatDateToISO(end) : undefined,
       });
+      if (start && end) setAnchorEl(null);
     } else {
       setLocalStart('');
       setLocalEnd('');
       pickingRef.current = 'start';
       onChange({ periodType });
+      setAnchorEl(null);
     }
   };
 
@@ -159,10 +161,7 @@ export function OrderTrackerPeriodPicker({
       return;
     }
 
-    if (!isSameOrAfter(date, currentStart)) {
-      setLocalStart(str);
-      setLocalEnd('');
-    } else {
+    if (isSameOrAfter(date, currentStart)) {
       setLocalEnd(str);
       pickingRef.current = 'start';
       onChange({
@@ -170,6 +169,10 @@ export function OrderTrackerPeriodPicker({
         periodStart: formatDateToISO(currentStart),
         periodEnd: dateIso,
       });
+      setAnchorEl(null);
+    } else {
+      setLocalStart(str);
+      setLocalEnd('');
     }
   };
 
@@ -264,7 +267,7 @@ export function OrderTrackerPeriodPicker({
                     bgcolor: value.periodType === opt.value ? 'action.selected' : undefined,
                   }}
                 >
-                  <ListItemText primary={opt.label} primaryTypographyProps={{ fontSize: 14 }} />
+                  <ListItemText primary={opt.label} slotProps={{ primary: { style: { fontSize: 14 } } }} />
                 </ListItemButton>
               ))}
             </List>

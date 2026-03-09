@@ -255,9 +255,9 @@ export function getTodayRange(timezone?: string): {
     const parts = formatter.formatToParts(now);
     const get = (type: string) =>
       parts.find((p) => p.type === type)?.value ?? "0";
-    const y = parseInt(get("year"), 10);
-    const m = parseInt(get("month"), 10) - 1;
-    const d = parseInt(get("day"), 10);
+    const y = Number.parseInt(get("year"), 10);
+    const m = Number.parseInt(get("month"), 10) - 1;
+    const d = Number.parseInt(get("day"), 10);
 
     // Offset at noon UTC on this date in the timezone (for DST)
     const utcNoon = Date.UTC(y, m, d, 12, 0, 0, 0);
@@ -268,7 +268,7 @@ export function getTodayRange(timezone?: string): {
       minute: "2-digit",
     });
     const hourStr = hourFormatter.format(utcNoon);
-    const hour = parseInt(hourStr.split(":")[0] ?? "0", 10);
+    const hour = Number.parseInt(hourStr.split(":")[0] ?? "0", 10);
     const offsetHours = hour - 12;
 
     startDate = new Date(Date.UTC(y, m, d, -offsetHours, 0, 0, 0));

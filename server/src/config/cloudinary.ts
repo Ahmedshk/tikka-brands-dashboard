@@ -1,4 +1,7 @@
 import { v2 as cloudinary } from 'cloudinary';
+import type { UploadToCloudinaryResult } from '../types/cloudinary.types.js';
+
+export type { UploadToCloudinaryResult };
 
 const isConfigured = (): boolean => {
   const name = process.env.CLOUDINARY_CLOUD_NAME;
@@ -18,11 +21,6 @@ export const initializeCloudinary = (): void => {
 
 export function getCloudinaryConfigured(): boolean {
   return isConfigured();
-}
-
-export interface UploadToCloudinaryResult {
-  public_id: string;
-  secure_url: string;
 }
 
 /**

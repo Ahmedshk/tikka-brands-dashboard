@@ -54,8 +54,9 @@ export class UserRepository {
     if (filters.roleId) {
       query.roleId = filters.roleId;
     }
-    if (filters.search && filters.search.trim()) {
-      const term = filters.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchTerm = filters.search?.trim();
+    if (searchTerm) {
+      const term = searchTerm.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
       const regex = new RegExp(term, 'i');
       query.$or = [
         { firstName: regex },
@@ -85,7 +86,7 @@ export class UserRepository {
   }
 
   async findByInvitationToken(token: string): Promise<UserDocument | null> {
-    if (!token || !token.trim()) return null;
+    if (!token?.trim()) return null;
     return await UserModel.findOne({ invitationToken: token.trim() }).lean().exec() as UserDocument | null;
   }
 

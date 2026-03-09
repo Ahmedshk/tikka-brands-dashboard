@@ -23,6 +23,12 @@ const getStatusColor = (status: number): string => {
   return '\x1b[37m'; // White for other
 };
 
+const getDurationColor = (durationMs: number): string => {
+  if (durationMs > 1000) return '\x1b[31m';
+  if (durationMs > 500) return '\x1b[33m';
+  return '\x1b[32m';
+};
+
 export const requestLogger = (
   req: Request,
   res: Response,
@@ -51,7 +57,7 @@ export const requestLogger = (
     const duration = Date.now() - startTime;
     const status = res.statusCode;
     const statusColor = getStatusColor(status);
-    const durationColor = duration > 1000 ? '\x1b[31m' : duration > 500 ? '\x1b[33m' : '\x1b[32m';
+    const durationColor = getDurationColor(duration);
     
     console.log(
       `${dim}${time}${reset} ${methodColor}${bright}${method.padEnd(6)}${reset} ${path} ${statusColor}${status}${reset} ${dim}-${reset} ${durationColor}${duration}ms${reset}`

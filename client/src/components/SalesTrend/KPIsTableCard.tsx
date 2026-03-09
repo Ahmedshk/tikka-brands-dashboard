@@ -45,6 +45,17 @@ function formatCell(value: string | number): string {
     : value;
 }
 
+function getPercentColorClass(percent: number | null): string {
+  if (percent === null) return 'text-secondary';
+  return percent >= 0 ? 'text-positive' : 'text-negative';
+}
+
+function formatPercentDisplay(percent: number | null): string {
+  if (percent === null) return 'N/A';
+  const sign = percent >= 0 ? '+' : '';
+  return `${sign}${percent}%`;
+}
+
 const pickerClass =
   'border-0 rounded-lg px-2 py-1 text-xs font-medium text-primary bg-white focus:outline-none focus:ring-2 focus:ring-white/50 cursor-pointer';
 
@@ -187,10 +198,9 @@ export const KPIsTableCard = ({
                       <p className="flex justify-between items-baseline gap-2 pt-0.5">
                         <span>Change</span>
                         <span
-                          className={`font-semibold shrink-0 ${row.percent === null ? 'text-secondary' : row.percent >= 0 ? 'text-positive' : 'text-negative'
-                            }`}
+                          className={`font-semibold shrink-0 ${getPercentColorClass(row.percent)}`}
                         >
-                          {row.percent === null ? 'N/A' : `${row.percent >= 0 ? '+' : ''}${row.percent}%`}
+                          {formatPercentDisplay(row.percent)}
                         </span>
                       </p>
                     </div>
@@ -233,10 +243,9 @@ export const KPIsTableCard = ({
                       <td className="py-3 pr-4 text-right font-semibold">{formatCell(row.previous)}</td>
                       <td className="py-3 pr-2 text-right">
                         <span
-                          className={`font-semibold ${row.percent === null ? 'text-secondary' : row.percent >= 0 ? 'text-positive' : 'text-negative'
-                            }`}
+                          className={`font-semibold ${getPercentColorClass(row.percent)}`}
                         >
-                          {row.percent === null ? 'N/A' : `${row.percent >= 0 ? '+' : ''}${row.percent}%`}
+                          {formatPercentDisplay(row.percent)}
                         </span>
                       </td>
                     </tr>

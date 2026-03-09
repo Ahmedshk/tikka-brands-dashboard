@@ -16,7 +16,11 @@ export const proxyProfileImage = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { userId } = req.params;
+    const userId = req.params.userId;
+    if (userId === undefined || Array.isArray(userId)) {
+      res.status(400).json({ success: false, message: 'Invalid user id' });
+      return;
+    }
     const user = await userService.getUserById(userId);
     if (!user?.profileImagePublicId) {
       throw new NotFoundError('Profile image not found');

@@ -14,7 +14,7 @@ function toDate(day: unknown): Date | null {
   if (typeof (day as { toJsDate?: () => Date }).toJsDate === 'function')
     return (day as { toJsDate: () => Date }).toJsDate();
   if (typeof (day as { getTime?: () => number }).getTime === 'function')
-    return new Date((day as { getTime: () => number }).getTime());
+    return new Date(day as Date);
   return null;
 }
 
@@ -43,11 +43,11 @@ function getRangeBorderRadius(
 export function createRangeDay(
   rangeStart: Date,
   rangeEnd: Date,
-): ComponentType<PickersDayProps<Date>> {
+): ComponentType<PickersDayProps> {
   const startTime = toMidnight(rangeStart);
   const endTime = toMidnight(rangeEnd);
 
-  return function RangeDay(props: PickersDayProps<Date>) {
+  return function RangeDay(props: PickersDayProps) {
     const { day, sx, style, ...rest } = props;
     const dayDate = toDate(day);
 

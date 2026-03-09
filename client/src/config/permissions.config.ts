@@ -145,7 +145,7 @@ export function getComponentIdsForPage(pageId: string): string[] {
 
 /** Map dashboard path to pageId. /dashboard/disciplinary-management/:id -> disciplinary-management-details. */
 export function getPageIdFromPath(path: string): string | null {
-  const match = path.match(/^\/dashboard\/?(.*)$/);
+  const match = /^\/dashboard\/?(.*)$/.exec(path);
   if (!match) return null;
   const segment = match[1]?.trim() || '';
   if (!segment) return 'command-center';

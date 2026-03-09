@@ -17,13 +17,13 @@ export function getDefaultCountPeriod(
     lastWeekSaturday && endDates.includes(lastWeekSaturday)
       ? lastWeekSaturday
       : (() => {
-          const sortedEnd = [...endDates].sort();
-          const latestEnd = sortedEnd[sortedEnd.length - 1]!;
+          const sortedEnd = [...endDates].sort((a, b) => a.localeCompare(b));
+          const latestEnd = sortedEnd.at(-1)!;
           return getSaturdayInWeekIfAvailable(latestEnd, endDates) ?? latestEnd;
         })();
 
   const sundayOfEndWeek = getSundayOfWeek(endDate);
-  const startCandidates = startDates.filter((d) => d <= endDate).sort();
+  const startCandidates = startDates.filter((d) => d <= endDate).sort((a, b) => a.localeCompare(b));
   if (startCandidates.length === 0) return { startDate: null, endDate };
 
   // Prefer Sunday of the same week as end; otherwise use last valid start date on or before end
@@ -32,7 +32,7 @@ export function getDefaultCountPeriod(
     startDates.includes(sundayOfEndWeek) &&
     sundayOfEndWeek <= endDate
       ? sundayOfEndWeek
-      : startCandidates[startCandidates.length - 1]!;
+      : startCandidates.at(-1)!;
   return { startDate, endDate };
 }
 

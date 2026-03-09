@@ -4,6 +4,7 @@
  * Dates: yyyy/MM/dd HH:mm:ss UTC
  * Header: AUTH_TOKEN on every request after GetToken.
  */
+import { parseMarketManResponse } from '../utils/marketmanClientHelpers.js';
 
 const MARKETMAN_BASE_URL = 'https://api.marketman.com/v3';
 const TOKEN_PATH = '/buyers/auth/GetToken';
@@ -124,12 +125,7 @@ export async function marketManRequest<T = unknown>(
     });
 
     const text = await res.text();
-    let data: T & { ErrorMessage?: string };
-    try {
-      data = text ? (JSON.parse(text) as T & { ErrorMessage?: string }) : ({} as T & { ErrorMessage?: string });
-    } catch {
-      throw new Error(`MarketMan ${path} returned non-JSON (${res.status}): ${text.slice(0, 150)}`);
-    }
+    const data = parseMarketManResponse<T>(text, res.status, path);
 
     if (res.status === 401 && !lastAttempt401) {
       clearMarketManTokenCache();

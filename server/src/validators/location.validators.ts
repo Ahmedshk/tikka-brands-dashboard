@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const businessStartTimeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+const businessStartTimeRegex = /^([01]?\d|2[0-3]):[0-5]\d$/;
 
 const locationBodySchema = z.object({
   storeName: z.string().min(1, "Store name is required").trim(),

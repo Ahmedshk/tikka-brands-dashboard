@@ -10,6 +10,7 @@ import {
   type MarketManOrder,
   type OrderTrackerPeriodType,
 } from '../services/marketman.service.js';
+import type { OrderTrackerOrderDto } from '../types/inventory.types.js';
 import { NotFoundError } from '../utils/errors.util.js';
 import { assertCanAccessMetrics, parseMetricsQuery } from '../config/kpi-metrics.config.js';
 
@@ -182,14 +183,7 @@ export const getValidCountDatesHandler = async (
   }
 };
 
-export interface OrderTrackerOrderDto {
-  poNumber: string;
-  supplier: string;
-  deliveryDate: string;
-  sentDate: string;
-  status: string;
-  orderDetails: MarketManOrder;
-}
+export type { OrderTrackerOrderDto } from "../types/inventory.types.js";
 
 export const getOrdersHandler = async (
   req: Request,
@@ -227,7 +221,14 @@ export const getOrdersHandler = async (
 
     let results: MarketManOrder[][];
     if (apiType === 'both') {
-      const [range] = ranges;
+      const range = ranges[0];
+      if (!range) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid order tracker period or range.',
+        });
+        return;
+      }
       const [byDelivery, bySent] = await Promise.all([
         getOrdersByDeliveryDate(buyerGuid, range.dateTimeFromUTC, range.dateTimeToUTC),
         getOrdersBySentDate(buyerGuid, range.dateTimeFromUTC, range.dateTimeToUTC),

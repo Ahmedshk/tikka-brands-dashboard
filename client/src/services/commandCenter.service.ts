@@ -2,13 +2,15 @@ import api from "./api.service";
 import { API_ENDPOINTS } from "../utils/constants";
 import { ApiResponse } from "../types";
 
+export type LaborCostStatus = "green" | "red" | null;
+
 export interface CommandCenterKPIsData {
   netSalesToday?: number | null;
   laborCostToday?: number | null;
   laborCostPercentToday?: number | null;
   laborCostGoal?: number;
   laborCostGoalTolerance?: number;
-  laborCostStatus?: "green" | "red" | null;
+  laborCostStatus?: LaborCostStatus;
   reviewRating?: number;
   reviewCount?: number;
 }
@@ -20,7 +22,7 @@ export interface CommandCenterKPIsTodaySlice {
   laborCostPercentToday?: number | null;
   laborCostGoal?: number;
   laborCostGoalTolerance?: number;
-  laborCostStatus?: "green" | "red" | null;
+  laborCostStatus?: LaborCostStatus;
   reviewRating?: number;
   reviewCount?: number;
 }
@@ -32,7 +34,7 @@ export interface CommandCenterKPIsWeekToDateSlice {
   laborCostPercentWeekToDate?: number | null;
   laborCostGoal?: number;
   laborCostGoalTolerance?: number;
-  laborCostStatusWeekToDate?: "green" | "red" | null;
+  laborCostStatusWeekToDate?: LaborCostStatus;
   reviewRating?: number;
   reviewCount?: number;
 }

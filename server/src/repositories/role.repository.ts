@@ -1,17 +1,22 @@
 import { Types } from "mongoose";
 import { RoleModel, RoleDocument } from "../models/role.model.js";
-import { IRole, RoleLocations } from "../types/rbac.types.js";
+import { IRole, RoleLocations, RoleLocationsResponse } from "../types/rbac.types.js";
 
-function toLocationFields(locations: RoleLocations | undefined): {
+function normalizeToLocationIds(locations: RoleLocations | RoleLocationsResponse | undefined): string[] | "all" {
+  if (locations == null || locations === "all") return "all";
+  if (!Array.isArray(locations)) return "all";
+  return locations.map((item) => (typeof item === "string" ? item : item._id));
+}
+
+function toLocationFields(locations: RoleLocations | RoleLocationsResponse | undefined): {
   locationAccess: "all" | "specific";
   locationIds: Types.ObjectId[];
 } {
-  if (locations == null || locations === "all") {
+  const normalized = normalizeToLocationIds(locations);
+  if (normalized === "all") {
     return { locationAccess: "all", locationIds: [] };
   }
-  const ids = Array.isArray(locations)
-    ? locations.map((id) => (typeof id === "string" ? new Types.ObjectId(id) : id))
-    : [];
+  const ids = normalized.map((id) => new Types.ObjectId(id));
   return { locationAccess: "specific", locationIds: ids };
 }
 

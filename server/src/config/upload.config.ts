@@ -1,12 +1,9 @@
 /**
- * Upload type definitions and limits. Add new keys (e.g. 'document') for other file types.
+ * Upload config: limits and folders. Types live in types/upload.types.js.
  */
-export type UploadType = 'profile_image';
+import type { UploadType, UploadTypeConfig } from "../types/upload.types.js";
 
-export interface UploadTypeConfig {
-  maxBytes: number;
-  allowedMimeTypes: string[];
-}
+export type { UploadType, UploadTypeConfig };
 
 export const UPLOAD_CONFIG: Record<UploadType, UploadTypeConfig> = {
   profile_image: {

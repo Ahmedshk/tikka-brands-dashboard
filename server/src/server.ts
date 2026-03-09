@@ -3,6 +3,7 @@ import http from 'node:http';
 import app from './app.js';
 import { connectDatabase } from './config/database.js';
 import { initializeCloudinary } from './config/cloudinary.js';
+import { initializeNodemailer } from './config/nodemailer.js';
 import { RoleService } from './services/role.service.js';
 import { logger } from './utils/logger.util.js';
 
@@ -16,6 +17,7 @@ const startServer = async (): Promise<void> => {
     // Connect to database
     await connectDatabase();
     initializeCloudinary();
+    initializeNodemailer();
     // Ensure Owner (system) role exists
     const roleService = new RoleService();
     await roleService.ensureOwnerRoleExists();

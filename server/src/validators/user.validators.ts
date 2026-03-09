@@ -6,18 +6,20 @@ const paginationSchema = z.object({
 });
 
 export const listUsersQuerySchema = z.object({
-  query: z.object({
-    search: z.string().trim().optional(),
-    roleId: z.string().min(1).optional(),
-    locationId: z.string().min(1).optional(),
-  }).merge(paginationSchema),
+  query: z
+    .object({
+      search: z.string().trim().optional(),
+      roleId: z.string().min(1).optional(),
+      locationId: z.string().min(1).optional(),
+    })
+    .extend(paginationSchema.shape),
 });
 
 export const createUserSchema = z.object({
   body: z.object({
     firstName: z.string().min(1, 'First name is required').trim(),
     lastName: z.string().min(1, 'Last name is required').trim(),
-    email: z.string().email('Invalid email').trim(),
+    email: z.string().trim().pipe(z.email({ message: 'Invalid email' })),
     phone: z.string().trim().optional(),
     squareId: z.string().trim().optional(),
     homebaseId: z.string().trim().optional(),
@@ -34,7 +36,7 @@ export const updateUserSchema = z.object({
   body: z.object({
     firstName: z.string().min(1, 'First name is required').trim().optional(),
     lastName: z.string().min(1, 'Last name is required').trim().optional(),
-    email: z.string().email('Invalid email').trim().optional(),
+    email: z.string().trim().pipe(z.email({ message: 'Invalid email' })).optional(),
     phone: z.string().trim().optional(),
     squareId: z.string().trim().optional(),
     homebaseId: z.string().trim().optional(),

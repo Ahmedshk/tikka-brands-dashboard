@@ -55,7 +55,7 @@ function isSameOrAfter(date: Date, start: Date): boolean {
   return d >= s;
 }
 
-export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPickerProps) {
+export function PeriodPicker({ value, onChange, id, className = '' }: Readonly<PeriodPickerProps>) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const toDisplay = (iso: string) => {
     try {
@@ -150,10 +150,7 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
       return;
     }
 
-    if (!isSameOrAfter(date, currentStart)) {
-      setLocalStart(str);
-      setLocalEnd('');
-    } else {
+    if (isSameOrAfter(date, currentStart)) {
       setLocalEnd(str);
       pickingRef.current = 'start';
       onChange({
@@ -162,6 +159,9 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
         periodEnd: dateIso,
       });
       setAnchorEl(null);
+    } else {
+      setLocalStart(str);
+      setLocalEnd('');
     }
   };
 
@@ -246,7 +246,7 @@ export function PeriodPicker({ value, onChange, id, className = '' }: PeriodPick
                     bgcolor: value.periodType === opt.value ? 'action.selected' : undefined,
                   }}
                 >
-                  <ListItemText primary={opt.label} primaryTypographyProps={{ fontSize: 14 }} />
+                  <ListItemText primary={opt.label} slotProps={{ primary: { style: { fontSize: 14 } } }} />
                 </ListItemButton>
               ))}
             </List>

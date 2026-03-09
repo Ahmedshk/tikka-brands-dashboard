@@ -40,6 +40,15 @@ export interface ComparisonRangeResult {
   endAt: string;
 }
 
+/** Optional arguments for getSalesTrendComparisonRange (custom comparison dates and period type). */
+export interface GetSalesTrendComparisonRangeOptions {
+  customComparisonDate?: string;
+  customComparisonStart?: string;
+  customComparisonEnd?: string;
+  businessStartTime?: string;
+  periodType?: PeriodType;
+}
+
 /** Start of a calendar day in timezone as UTC Date (midnight in that TZ). Exported for TZ-aware monthly bucket iteration. */
 export function getStartOfDayUtc(
   y: number,
@@ -143,226 +152,25 @@ export function getSalesTrendPeriodRange(
   const tz = timezone.trim();
   const { y, m, d } = getTodayInTz(tz);
 
-  if (periodType === "custom" && customStart && customEnd) {
-    const startMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(customStart.trim());
-    const endMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(customEnd.trim());
-    if (!startMatch || !endMatch) {
-      return getSalesTrendPeriodRange("last30days", tz);
-    }
-    const sy = Number.parseInt(startMatch[1]!, 10);
-    const sm = Number.parseInt(startMatch[2]!, 10) - 1;
-    const sd = Number.parseInt(startMatch[3]!, 10);
-    const ey = Number.parseInt(endMatch[1]!, 10);
-    const em = Number.parseInt(endMatch[2]!, 10) - 1;
-    const ed = Number.parseInt(endMatch[3]!, 10);
-    const bizStart = (businessStartTime ?? "00:00").trim();
-    const useBusinessDay = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(bizStart);
-    const endDayIsToday = ey === y && em === m && ed === d;
-    const endOfToday = getEndOfDayUtc(y, m, d, tz);
-
-    let startAt: string;
-    let endAt: string;
-    let displayEndAtIso: string | undefined;
-
-    if (useBusinessDay) {
-      const startRange = getBusinessDayRangeForDate(tz, bizStart, sy, sm, sd);
-      startAt = startRange.startAt;
-      const endRange = getBusinessDayRangeForDate(tz, bizStart, ey, em, ed);
-      displayEndAtIso = endRange.endAt;
-      endAt = endDayIsToday ? new Date().toISOString() : endRange.endAt;
-    } else {
-      startAt = getStartOfDayUtc(sy, sm, sd, tz).toISOString();
-      const endOfEndDay = getEndOfDayUtc(ey, em, ed, tz);
-      displayEndAtIso = endOfEndDay.toISOString();
-      endAt = endDayIsToday
-        ? (new Date().getTime() <= endOfToday.getTime()
-            ? new Date().toISOString()
-            : endOfToday.toISOString())
-        : endOfEndDay.toISOString();
-    }
-
-    const startMs = new Date(startAt).getTime();
-    const endMs = new Date(endAt).getTime();
-    const isSingleDay = sy === ey && sm === em && sd === ed;
-    const days = Math.round((endMs - startMs) / (24 * 60 * 60 * 1000)) + 1;
-    let granularity: Granularity = "daily";
-    if (isSingleDay || days <= 1) granularity = "hourly";
-    else if (days > 90) granularity = "weekly";
-    const withDisplayEnd =
-      displayEndAtIso != null && endDayIsToday
-        ? { displayEndAt: displayEndAtIso }
-        : {};
-    return {
-      startAt,
-      endAt,
-      granularity,
-      ...withDisplayEnd,
-    };
+  if (periodType === "custom" && customStart != null && customEnd != null) {
+    return getCustomPeriodRange(tz, customStart, customEnd, y, m, d, businessStartTime);
   }
 
   switch (periodType) {
-    case "today": {
-      const bizStart = (businessStartTime ?? "00:00").trim();
-      const useBusinessDay = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(bizStart);
-      if (useBusinessDay) {
-        const { startAt, endAt } = getBusinessStartTimeRange(tz, bizStart);
-        return {
-          startAt,
-          endAt: new Date().toISOString(),
-          granularity: "hourly",
-          displayEndAt: endAt,
-        };
-      }
-      const startDate = getStartOfDayUtc(y, m, d, tz);
-      const displayEndDate = getEndOfDayUtc(y, m, d, tz);
-      return {
-        startAt: startDate.toISOString(),
-        endAt: new Date().toISOString(),
-        granularity: "hourly",
-        displayEndAt: displayEndDate.toISOString(),
-      };
-    }
-    case "last7days": {
-      const end = { y, m, d };
-      const start = addDays(end.y, end.m, end.d, -6);
-      const bizStart = (businessStartTime ?? "00:00").trim();
-      if (useBusinessDayBoundaries(businessStartTime)) {
-        const startRange = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
-        const endRange = getBusinessDayRangeForDate(tz, bizStart, end.y, end.m, end.d);
-        return {
-          startAt: startRange.startAt,
-          endAt: endRange.endAt,
-          granularity: "daily",
-        };
-      }
-      const startDate = getStartOfDayUtc(start.y, start.m, start.d, tz);
-      const endDate = getEndOfDayUtc(end.y, end.m, end.d, tz);
-      return {
-        startAt: startDate.toISOString(),
-        endAt: endDate.toISOString(),
-        granularity: "daily",
-      };
-    }
-    case "last30days": {
-      const end = { y, m, d };
-      const start = addDays(end.y, end.m, end.d, -29);
-      const bizStart = (businessStartTime ?? "00:00").trim();
-      if (useBusinessDayBoundaries(businessStartTime)) {
-        const startRange = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
-        const endRange = getBusinessDayRangeForDate(tz, bizStart, end.y, end.m, end.d);
-        return {
-          startAt: startRange.startAt,
-          endAt: endRange.endAt,
-          granularity: "daily",
-        };
-      }
-      const startDate = getStartOfDayUtc(start.y, start.m, start.d, tz);
-      const endDate = getEndOfDayUtc(end.y, end.m, end.d, tz);
-      return {
-        startAt: startDate.toISOString(),
-        endAt: endDate.toISOString(),
-        granularity: "daily",
-      };
-    }
-    case "last52weeks": {
-      const startMonth = new Date(y, m - 12, 1);
-      const startY = startMonth.getFullYear();
-      const startM = startMonth.getMonth();
-      const lastDayOfCurrentMonth = new Date(y, m + 1, 0).getDate();
-      const bizStart = (businessStartTime ?? "00:00").trim();
-      if (useBusinessDayBoundaries(businessStartTime)) {
-        const startRange = getBusinessDayRangeForDate(tz, bizStart, startY, startM, 1);
-        const endRange = getBusinessDayRangeForDate(tz, bizStart, y, m, lastDayOfCurrentMonth);
-        return {
-          startAt: startRange.startAt,
-          endAt: endRange.endAt,
-          granularity: "monthly",
-        };
-      }
-      const startDate = getStartOfDayUtc(startY, startM, 1, tz);
-      const endDate = getEndOfDayUtc(y, m, lastDayOfCurrentMonth, tz);
-      return {
-        startAt: startDate.toISOString(),
-        endAt: endDate.toISOString(),
-        granularity: "monthly",
-      };
-    }
-    case "thisWeek": {
-      const dayOfWeek = getDayOfWeekInTz(y, m, d, tz);
-      const toSunday = dayOfWeek;
-      const start = addDays(y, m, d, -toSunday);
-      const saturday = addDays(start.y, start.m, start.d, 6);
-      const bizStart = (businessStartTime ?? "00:00").trim();
-      if (useBusinessDayBoundaries(businessStartTime)) {
-        const startRange = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
-        const satEndRange = getBusinessDayRangeForDate(tz, bizStart, saturday.y, saturday.m, saturday.d);
-        const now = new Date();
-        const satEndMs = new Date(satEndRange.endAt).getTime();
-        const endAt = now.getTime() <= satEndMs ? now.toISOString() : satEndRange.endAt;
-        return {
-          startAt: startRange.startAt,
-          endAt,
-          granularity: "daily",
-          displayEndAt: satEndRange.endAt,
-        };
-      }
-      const startDate = getStartOfDayUtc(start.y, start.m, start.d, tz);
-      const endDate = getEndOfDayUtc(y, m, d, tz);
-      const displayEndDate = getEndOfDayUtc(saturday.y, saturday.m, saturday.d, tz);
-      return {
-        startAt: startDate.toISOString(),
-        endAt: endDate.toISOString(),
-        granularity: "daily",
-        displayEndAt: displayEndDate.toISOString(),
-      };
-    }
-    case "thisMonth": {
-      const lastDayOfMonth = new Date(y, m + 1, 0).getDate();
-      const bizStart = (businessStartTime ?? "00:00").trim();
-      if (useBusinessDayBoundaries(businessStartTime)) {
-        const startRange = getBusinessDayRangeForDate(tz, bizStart, y, m, 1);
-        const endRange = getBusinessDayRangeForDate(tz, bizStart, y, m, d);
-        const displayEndRange = getBusinessDayRangeForDate(tz, bizStart, y, m, lastDayOfMonth);
-        return {
-          startAt: startRange.startAt,
-          endAt: endRange.endAt,
-          granularity: "daily",
-          displayEndAt: displayEndRange.endAt,
-        };
-      }
-      const startDate = getStartOfDayUtc(y, m, 1, tz);
-      const endDate = getEndOfDayUtc(y, m, d, tz);
-      const displayEndDate = getEndOfDayUtc(y, m, lastDayOfMonth, tz);
-      return {
-        startAt: startDate.toISOString(),
-        endAt: endDate.toISOString(),
-        granularity: "daily",
-        displayEndAt: displayEndDate.toISOString(),
-      };
-    }
-    case "thisYear": {
-      const bizStart = (businessStartTime ?? "00:00").trim();
-      if (useBusinessDayBoundaries(businessStartTime)) {
-        const startRange = getBusinessDayRangeForDate(tz, bizStart, y, 0, 1);
-        const endRange = getBusinessDayRangeForDate(tz, bizStart, y, m, d);
-        const displayEndRange = getBusinessDayRangeForDate(tz, bizStart, y, 11, 31);
-        return {
-          startAt: startRange.startAt,
-          endAt: endRange.endAt,
-          granularity: "monthly",
-          displayEndAt: displayEndRange.endAt,
-        };
-      }
-      const startDate = getStartOfDayUtc(y, 0, 1, tz);
-      const endDate = getEndOfDayUtc(y, m, d, tz);
-      const displayEndDate = getEndOfDayUtc(y, 11, 31, tz);
-      return {
-        startAt: startDate.toISOString(),
-        endAt: endDate.toISOString(),
-        granularity: "monthly",
-        displayEndAt: displayEndDate.toISOString(),
-      };
-    }
+    case "today":
+      return getTodayPeriodRange(tz, y, m, d, businessStartTime);
+    case "last7days":
+      return getLastNDaysPeriodRange(tz, y, m, d, 7, businessStartTime);
+    case "last30days":
+      return getLastNDaysPeriodRange(tz, y, m, d, 30, businessStartTime);
+    case "last52weeks":
+      return getLast52WeeksPeriodRange(tz, y, m, d, businessStartTime);
+    case "thisWeek":
+      return getThisWeekPeriodRange(tz, y, m, d, businessStartTime);
+    case "thisMonth":
+      return getThisMonthPeriodRange(tz, y, m, d, businessStartTime);
+    case "thisYear":
+      return getThisYearPeriodRange(tz, y, m, d, businessStartTime);
     default:
       return getSalesTrendPeriodRange("last30days", tz);
   }
@@ -385,11 +193,247 @@ export function getDatePartsInTz(date: Date, timezone: string): { y: number; m: 
   return { y, m, d };
 }
 
-const BUSINESS_START_REGEX = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+const BUSINESS_START_REGEX = /^([01]?\d|2[0-3]):[0-5]\d$/;
 
 function useBusinessDayBoundaries(businessStartTime?: string): boolean {
   const bizStart = (businessStartTime ?? "00:00").trim();
   return BUSINESS_START_REGEX.test(bizStart);
+}
+
+function getTodayPeriodRange(
+  tz: string,
+  y: number,
+  m: number,
+  d: number,
+  businessStartTime?: string,
+): PeriodRangeResult {
+  const bizStart = (businessStartTime ?? "00:00").trim();
+  if (useBusinessDayBoundaries(businessStartTime)) {
+    const { startAt, endAt } = getBusinessStartTimeRange(tz, bizStart);
+    return { startAt, endAt: new Date().toISOString(), granularity: "hourly", displayEndAt: endAt };
+  }
+  const startDate = getStartOfDayUtc(y, m, d, tz);
+  const displayEndDate = getEndOfDayUtc(y, m, d, tz);
+  return {
+    startAt: startDate.toISOString(),
+    endAt: new Date().toISOString(),
+    granularity: "hourly",
+    displayEndAt: displayEndDate.toISOString(),
+  };
+}
+
+function getLastNDaysPeriodRange(
+  tz: string,
+  y: number,
+  m: number,
+  d: number,
+  n: number,
+  businessStartTime?: string,
+): PeriodRangeResult {
+  const end = { y, m, d };
+  const start = addDays(end.y, end.m, end.d, -(n - 1));
+  const bizStart = (businessStartTime ?? "00:00").trim();
+  if (useBusinessDayBoundaries(businessStartTime)) {
+    const startRange = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
+    const endRange = getBusinessDayRangeForDate(tz, bizStart, end.y, end.m, end.d);
+    return { startAt: startRange.startAt, endAt: endRange.endAt, granularity: "daily" };
+  }
+  const startDate = getStartOfDayUtc(start.y, start.m, start.d, tz);
+  const endDate = getEndOfDayUtc(end.y, end.m, end.d, tz);
+  return { startAt: startDate.toISOString(), endAt: endDate.toISOString(), granularity: "daily" };
+}
+
+function getLast52WeeksPeriodRange(
+  tz: string,
+  y: number,
+  m: number,
+  d: number,
+  businessStartTime?: string,
+): PeriodRangeResult {
+  const startMonth = new Date(y, m - 12, 1);
+  const startY = startMonth.getFullYear();
+  const startM = startMonth.getMonth();
+  const lastDayOfCurrentMonth = new Date(y, m + 1, 0).getDate();
+  const bizStart = (businessStartTime ?? "00:00").trim();
+  if (useBusinessDayBoundaries(businessStartTime)) {
+    const startRange = getBusinessDayRangeForDate(tz, bizStart, startY, startM, 1);
+    const endRange = getBusinessDayRangeForDate(tz, bizStart, y, m, lastDayOfCurrentMonth);
+    return { startAt: startRange.startAt, endAt: endRange.endAt, granularity: "monthly" };
+  }
+  const startDate = getStartOfDayUtc(startY, startM, 1, tz);
+  const endDate = getEndOfDayUtc(y, m, lastDayOfCurrentMonth, tz);
+  return { startAt: startDate.toISOString(), endAt: endDate.toISOString(), granularity: "monthly" };
+}
+
+function getThisWeekPeriodRange(
+  tz: string,
+  y: number,
+  m: number,
+  d: number,
+  businessStartTime?: string,
+): PeriodRangeResult {
+  const dayOfWeek = getDayOfWeekInTz(y, m, d, tz);
+  const toSunday = dayOfWeek;
+  const start = addDays(y, m, d, -toSunday);
+  const saturday = addDays(start.y, start.m, start.d, 6);
+  const bizStart = (businessStartTime ?? "00:00").trim();
+  if (useBusinessDayBoundaries(businessStartTime)) {
+    const startRange = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
+    const satEndRange = getBusinessDayRangeForDate(tz, bizStart, saturday.y, saturday.m, saturday.d);
+    const now = new Date();
+    const satEndMs = new Date(satEndRange.endAt).getTime();
+    const endAt = now.getTime() <= satEndMs ? now.toISOString() : satEndRange.endAt;
+    return { startAt: startRange.startAt, endAt, granularity: "daily", displayEndAt: satEndRange.endAt };
+  }
+  const startDate = getStartOfDayUtc(start.y, start.m, start.d, tz);
+  const endDate = getEndOfDayUtc(y, m, d, tz);
+  const displayEndDate = getEndOfDayUtc(saturday.y, saturday.m, saturday.d, tz);
+  return {
+    startAt: startDate.toISOString(),
+    endAt: endDate.toISOString(),
+    granularity: "daily",
+    displayEndAt: displayEndDate.toISOString(),
+  };
+}
+
+function getThisMonthPeriodRange(
+  tz: string,
+  y: number,
+  m: number,
+  d: number,
+  businessStartTime?: string,
+): PeriodRangeResult {
+  const lastDayOfMonth = new Date(y, m + 1, 0).getDate();
+  const bizStart = (businessStartTime ?? "00:00").trim();
+  if (useBusinessDayBoundaries(businessStartTime)) {
+    const startRange = getBusinessDayRangeForDate(tz, bizStart, y, m, 1);
+    const endRange = getBusinessDayRangeForDate(tz, bizStart, y, m, d);
+    const displayEndRange = getBusinessDayRangeForDate(tz, bizStart, y, m, lastDayOfMonth);
+    return {
+      startAt: startRange.startAt,
+      endAt: endRange.endAt,
+      granularity: "daily",
+      displayEndAt: displayEndRange.endAt,
+    };
+  }
+  const startDate = getStartOfDayUtc(y, m, 1, tz);
+  const endDate = getEndOfDayUtc(y, m, d, tz);
+  const displayEndDate = getEndOfDayUtc(y, m, lastDayOfMonth, tz);
+  return {
+    startAt: startDate.toISOString(),
+    endAt: endDate.toISOString(),
+    granularity: "daily",
+    displayEndAt: displayEndDate.toISOString(),
+  };
+}
+
+function getThisYearPeriodRange(
+  tz: string,
+  y: number,
+  m: number,
+  d: number,
+  businessStartTime?: string,
+): PeriodRangeResult {
+  const bizStart = (businessStartTime ?? "00:00").trim();
+  if (useBusinessDayBoundaries(businessStartTime)) {
+    const startRange = getBusinessDayRangeForDate(tz, bizStart, y, 0, 1);
+    const endRange = getBusinessDayRangeForDate(tz, bizStart, y, m, d);
+    const displayEndRange = getBusinessDayRangeForDate(tz, bizStart, y, 11, 31);
+    return {
+      startAt: startRange.startAt,
+      endAt: endRange.endAt,
+      granularity: "monthly",
+      displayEndAt: displayEndRange.endAt,
+    };
+  }
+  const startDate = getStartOfDayUtc(y, 0, 1, tz);
+  const endDate = getEndOfDayUtc(y, m, d, tz);
+  const displayEndDate = getEndOfDayUtc(y, 11, 31, tz);
+  return {
+    startAt: startDate.toISOString(),
+    endAt: endDate.toISOString(),
+    granularity: "monthly",
+    displayEndAt: displayEndDate.toISOString(),
+  };
+}
+
+interface CustomRangeBoundsParams {
+  tz: string;
+  bizStart: string;
+  start: { y: number; m: number; d: number };
+  end: { y: number; m: number; d: number };
+  endDayIsToday: boolean;
+  endOfToday: Date;
+}
+
+function getCustomRangeBounds(
+  params: CustomRangeBoundsParams,
+): { startAt: string; endAt: string; displayEndAtIso: string } {
+  const { tz, bizStart, start: sy, end: ey, endDayIsToday, endOfToday } = params;
+  const { y: sy_, m: sm, d: sd } = sy;
+  const { y: ey_, m: em, d: ed } = ey;
+  if (BUSINESS_START_REGEX.test(bizStart)) {
+    const startRange = getBusinessDayRangeForDate(tz, bizStart, sy_, sm, sd);
+    const endRange = getBusinessDayRangeForDate(tz, bizStart, ey_, em, ed);
+    const endAt = endDayIsToday ? new Date().toISOString() : endRange.endAt;
+    return { startAt: startRange.startAt, endAt, displayEndAtIso: endRange.endAt };
+  }
+  const startAt = getStartOfDayUtc(sy_, sm, sd, tz).toISOString();
+  const endOfEndDay = getEndOfDayUtc(ey_, em, ed, tz);
+  const displayEndAtIso = endOfEndDay.toISOString();
+  let endAt: string;
+  if (!endDayIsToday) {
+    endAt = endOfEndDay.toISOString();
+  } else if (Date.now() <= endOfToday.getTime()) {
+    endAt = new Date().toISOString();
+  } else {
+    endAt = endOfToday.toISOString();
+  }
+  return { startAt, endAt, displayEndAtIso };
+}
+
+function getCustomPeriodRange(
+  tz: string,
+  customStart: string,
+  customEnd: string,
+  y: number,
+  m: number,
+  d: number,
+  businessStartTime?: string,
+): PeriodRangeResult {
+  const startMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(customStart.trim());
+  const endMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(customEnd.trim());
+  if (!startMatch || !endMatch) {
+    return getLastNDaysPeriodRange(tz, y, m, d, 30, businessStartTime);
+  }
+  const sy = Number.parseInt(startMatch[1]!, 10);
+  const sm = Number.parseInt(startMatch[2]!, 10) - 1;
+  const sd = Number.parseInt(startMatch[3]!, 10);
+  const ey = Number.parseInt(endMatch[1]!, 10);
+  const em = Number.parseInt(endMatch[2]!, 10) - 1;
+  const ed = Number.parseInt(endMatch[3]!, 10);
+  const bizStart = (businessStartTime ?? "00:00").trim();
+  const endDayIsToday = ey === y && em === m && ed === d;
+  const endOfToday = getEndOfDayUtc(y, m, d, tz);
+  const { startAt, endAt, displayEndAtIso } = getCustomRangeBounds({
+    tz,
+    bizStart,
+    start: { y: sy, m: sm, d: sd },
+    end: { y: ey, m: em, d: ed },
+    endDayIsToday,
+    endOfToday,
+  });
+
+  const startMs = new Date(startAt).getTime();
+  const endMs = new Date(endAt).getTime();
+  const isSingleDay = sy === ey && sm === em && sd === ed;
+  const days = Math.round((endMs - startMs) / (24 * 60 * 60 * 1000)) + 1;
+  let granularity: Granularity = "daily";
+  if (isSingleDay || days <= 1) granularity = "hourly";
+  else if (days > 90) granularity = "weekly";
+  const withDisplayEnd =
+    endDayIsToday ? { displayEndAt: displayEndAtIso } : {};
+  return { startAt, endAt, granularity, ...withDisplayEnd };
 }
 
 /** 1-based week number of the month for the week that starts on the given Sunday (calendar date). */
@@ -436,258 +480,301 @@ function getLastWeekOfMonth(
   return { start, end };
 }
 
-/**
- * Get the comparison period range given the primary period range and comparison type.
- * Returns same-length range aligned with comparison option; same granularity as primary.
- * For custom, pass customComparisonStart and customComparisonEnd (both ISO or YYYY-MM-DD).
- * Optional businessStartTime ensures custom comparison uses store business day boundaries.
- * When periodType is "thisWeek", samePeriodPreviousWeek / samePeriodPreviousMonth / priorYear use week-of-month semantics.
- */
-export function getSalesTrendComparisonRange(
+const PERIOD_TYPES_WITH_WEEK_LOGIC = new Set<PeriodType>([
+  "last7days",
+  "last30days",
+  "last52weeks",
+  "thisWeek",
+  "thisMonth",
+  "thisYear",
+  "custom",
+]);
+const COMPARISON_TYPES_WITH_WEEK_LOGIC = new Set<ComparisonType>([
+  "samePeriodPreviousWeek",
+  "samePeriodPreviousMonth",
+  "priorYear",
+  "52WeeksPrior",
+  "year2Before",
+  "year3Before",
+  "year4Before",
+]);
+
+function getComparisonRangeWithWeekLogic(
   comparisonType: ComparisonType,
-  periodStartAt: string,
-  periodEndAt: string,
-  timezone: string,
-  customComparisonDate?: string,
-  customComparisonStart?: string,
-  customComparisonEnd?: string,
-  businessStartTime?: string,
-  periodType?: PeriodType,
-): ComparisonRangeResult | null {
-  if (comparisonType === "none") return null;
+  start: Date,
+  end: Date,
+  tz: string,
+  bizStart: string,
+  useBiz: boolean,
+): ComparisonRangeResult {
+  const startParts = getDatePartsInTz(start, tz);
+  const endParts = getDatePartsInTz(end, tz);
+  const startDayOfWeek = getDayOfWeekInTz(startParts.y, startParts.m, startParts.d, tz);
+  const endDayOfWeek = getDayOfWeekInTz(endParts.y, endParts.m, endParts.d, tz);
+  const startSunday = addDays(startParts.y, startParts.m, startParts.d, -startDayOfWeek);
+  const endSunday = addDays(endParts.y, endParts.m, endParts.d, -endDayOfWeek);
+  const W_start = getWeekOfMonthForSunday(startSunday.y, startSunday.m, startSunday.d, tz);
+  const W_end = getWeekOfMonthForSunday(endSunday.y, endSunday.m, endSunday.d, tz);
 
-  const tz = timezone.trim();
-  const start = new Date(periodStartAt);
-  const end = new Date(periodEndAt);
-  const durationMs = end.getTime() - start.getTime();
-  const bizStart = (businessStartTime ?? "00:00").trim();
-  const useBiz = useBusinessDayBoundaries(businessStartTime);
+  const { prevStartY, prevStartM, prevEndY, prevEndM, targetW_start, targetW_end } =
+    computeWeekLogicTargets(comparisonType, startParts, endParts, W_start, W_end);
 
-  const periodTypesWithWeekLogic: PeriodType[] = [
-    "last7days",
-    "last30days",
-    "last52weeks",
-    "thisWeek",
-    "thisMonth",
-    "thisYear",
-    "custom",
-  ];
-  const comparisonTypesWithWeekLogic: ComparisonType[] = [
-    "samePeriodPreviousWeek",
-    "samePeriodPreviousMonth",
-    "priorYear",
-    "52WeeksPrior",
-    "year2Before",
-    "year3Before",
-    "year4Before",
-  ];
+  const sunStart = getSunStartForWeekLogic(
+    comparisonType,
+    prevStartY,
+    prevStartM,
+    targetW_start,
+    tz,
+  );
+  const sunEnd = getSunEndForWeekLogic(
+    comparisonType,
+    prevEndY,
+    prevEndM,
+    targetW_end,
+    tz,
+  );
+  const compStart = addDays(sunStart.y, sunStart.m, sunStart.d, startDayOfWeek);
+  const compEnd = addDays(sunEnd.y, sunEnd.m, sunEnd.d, endDayOfWeek);
 
-  if (
-    periodType &&
-    periodTypesWithWeekLogic.includes(periodType) &&
-    comparisonTypesWithWeekLogic.includes(comparisonType)
-  ) {
-    const startParts = getDatePartsInTz(start, tz);
-    const endParts = getDatePartsInTz(end, tz);
-    const startDayOfWeek = getDayOfWeekInTz(startParts.y, startParts.m, startParts.d, tz);
-    const endDayOfWeek = getDayOfWeekInTz(endParts.y, endParts.m, endParts.d, tz);
-    const startSunday = addDays(startParts.y, startParts.m, startParts.d, -startDayOfWeek);
-    const endSunday = addDays(endParts.y, endParts.m, endParts.d, -endDayOfWeek);
-    const W_start = getWeekOfMonthForSunday(startSunday.y, startSunday.m, startSunday.d, tz);
-    const W_end = getWeekOfMonthForSunday(endSunday.y, endSunday.m, endSunday.d, tz);
-
-    let prevStartY: number;
-    let prevStartM: number;
-    let prevEndY: number;
-    let prevEndM: number;
-    let targetW_start: number;
-    let targetW_end: number;
-
-    if (comparisonType === "samePeriodPreviousWeek") {
-      prevStartY = startParts.y;
-      prevStartM = startParts.m;
-      prevEndY = endParts.y;
-      prevEndM = endParts.m;
-      targetW_start = W_start;
-      targetW_end = W_end;
-    } else if (comparisonType === "samePeriodPreviousMonth") {
-      prevStartY = startParts.y;
-      prevStartM = startParts.m - 1;
-      if (prevStartM < 0) {
-        prevStartM += 12;
-        prevStartY -= 1;
-      }
-      prevEndY = endParts.y;
-      prevEndM = endParts.m - 1;
-      if (prevEndM < 0) {
-        prevEndM += 12;
-        prevEndY -= 1;
-      }
-      targetW_start = W_start;
-      targetW_end = W_end;
-    } else {
-      const n =
-        comparisonType === "priorYear" || comparisonType === "52WeeksPrior"
-          ? 1
-          : comparisonType === "year2Before"
-            ? 2
-            : comparisonType === "year3Before"
-              ? 3
-              : 4;
-      prevStartY = startParts.y - n;
-      prevStartM = startParts.m;
-      prevEndY = endParts.y - n;
-      prevEndM = endParts.m;
-      targetW_start = W_start;
-      targetW_end = W_end;
-    }
-
-    const getSunStart = (): { y: number; m: number; d: number } => {
-      if (comparisonType === "samePeriodPreviousWeek" && targetW_start <= 1) {
-        const py = prevStartM === 0 ? prevStartY - 1 : prevStartY;
-        const pm = prevStartM === 0 ? 11 : prevStartM - 1;
-        const { start: lastStart } = getLastWeekOfMonth(py, pm, tz);
-        return lastStart;
-      }
-      if (comparisonType === "samePeriodPreviousWeek") {
-        return getSundayOfWeekInMonth(prevStartY, prevStartM, targetW_start - 1, tz);
-      }
-      return getSundayOfWeekInMonth(prevStartY, prevStartM, targetW_start, tz);
-    };
-    const getSunEnd = (): { y: number; m: number; d: number } => {
-      if (comparisonType === "samePeriodPreviousWeek" && targetW_end <= 1) {
-        const py = prevEndM === 0 ? prevEndY - 1 : prevEndY;
-        const pm = prevEndM === 0 ? 11 : prevEndM - 1;
-        const { start: lastStart } = getLastWeekOfMonth(py, pm, tz);
-        return lastStart;
-      }
-      if (comparisonType === "samePeriodPreviousWeek") {
-        return getSundayOfWeekInMonth(prevEndY, prevEndM, targetW_end - 1, tz);
-      }
-      return getSundayOfWeekInMonth(prevEndY, prevEndM, targetW_end, tz);
-    };
-
-    const sunStart = getSunStart();
-    const sunEnd = getSunEnd();
-    const compStart = addDays(sunStart.y, sunStart.m, sunStart.d, startDayOfWeek);
-    const compEnd = addDays(sunEnd.y, sunEnd.m, sunEnd.d, endDayOfWeek);
-
-    if (useBiz) {
-      const startR = getBusinessDayRangeForDate(tz, bizStart, compStart.y, compStart.m, compStart.d);
-      const endR = getBusinessDayRangeForDate(tz, bizStart, compEnd.y, compEnd.m, compEnd.d);
-      return { startAt: startR.startAt, endAt: endR.endAt };
-    }
-    return {
-      startAt: getStartOfDayUtc(compStart.y, compStart.m, compStart.d, tz).toISOString(),
-      endAt: getEndOfDayUtc(compEnd.y, compEnd.m, compEnd.d, tz).toISOString(),
-    };
+  if (useBiz) {
+    const startR = getBusinessDayRangeForDate(tz, bizStart, compStart.y, compStart.m, compStart.d);
+    const endR = getBusinessDayRangeForDate(tz, bizStart, compEnd.y, compEnd.m, compEnd.d);
+    return { startAt: startR.startAt, endAt: endR.endAt };
   }
-
-  if (comparisonType === "custom") {
-    if (customComparisonStart && customComparisonEnd) {
-      const startMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(customComparisonStart.trim());
-      const endMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(customComparisonEnd.trim());
-      if (!startMatch || !endMatch) return null;
-      const sy = Number.parseInt(startMatch[1]!, 10);
-      const sm = Number.parseInt(startMatch[2]!, 10) - 1;
-      const sd = Number.parseInt(startMatch[3]!, 10);
-      const ey = Number.parseInt(endMatch[1]!, 10);
-      const em = Number.parseInt(endMatch[2]!, 10) - 1;
-      const ed = Number.parseInt(endMatch[3]!, 10);
-      const bizStart = (businessStartTime ?? "00:00").trim();
-      const useBusinessDay = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(bizStart);
-      if (useBusinessDay) {
-        const startRange = getBusinessDayRangeForDate(tz, bizStart, sy, sm, sd);
-        const endRange = getBusinessDayRangeForDate(tz, bizStart, ey, em, ed);
-        return { startAt: startRange.startAt, endAt: endRange.endAt };
-      }
-      return {
-        startAt: getStartOfDayUtc(sy, sm, sd, tz).toISOString(),
-        endAt: getEndOfDayUtc(ey, em, ed, tz).toISOString(),
-      };
-    }
-    if (customComparisonDate) {
-      const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(customComparisonDate.trim());
-      if (!match) return null;
-      const refY = Number.parseInt(match[1]!, 10);
-      const refM = Number.parseInt(match[2]!, 10) - 1;
-      const refD = Number.parseInt(match[3]!, 10);
-      const bizStart = (businessStartTime ?? "00:00").trim();
-      const useBusinessDay = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(bizStart);
-      const endRange = useBusinessDay
-        ? getBusinessDayRangeForDate(tz, bizStart, refY, refM, refD)
-        : {
-            startAt: getStartOfDayUtc(refY, refM, refD, tz).toISOString(),
-            endAt: getEndOfDayUtc(refY, refM, refD, tz).toISOString(),
-          };
-      const endMs = new Date(endRange.endAt).getTime();
-      const startMs = endMs - durationMs;
-      return {
-        startAt: new Date(startMs).toISOString(),
-        endAt: endRange.endAt,
-      };
-    }
-    return null;
-  }
-
-  const rangeFromCalendar = (
-    sy: number,
-    sm: number,
-    sd: number,
-    ey: number,
-    em: number,
-    ed: number,
-  ): ComparisonRangeResult => {
-    if (useBiz) {
-      const startR = getBusinessDayRangeForDate(tz, bizStart, sy, sm, sd);
-      const endR = getBusinessDayRangeForDate(tz, bizStart, ey, em, ed);
-      return { startAt: startR.startAt, endAt: endR.endAt };
-    }
-    return {
-      startAt: getStartOfDayUtc(sy, sm, sd, tz).toISOString(),
-      endAt: getEndOfDayUtc(ey, em, ed, tz).toISOString(),
-    };
+  return {
+    startAt: getStartOfDayUtc(compStart.y, compStart.m, compStart.d, tz).toISOString(),
+    endAt: getEndOfDayUtc(compEnd.y, compEnd.m, compEnd.d, tz).toISOString(),
   };
+}
+
+function computeWeekLogicTargets(
+  comparisonType: ComparisonType,
+  startParts: { y: number; m: number; d: number },
+  endParts: { y: number; m: number; d: number },
+  W_start: number,
+  W_end: number,
+): {
+  prevStartY: number;
+  prevStartM: number;
+  prevEndY: number;
+  prevEndM: number;
+  targetW_start: number;
+  targetW_end: number;
+} {
+  if (comparisonType === "samePeriodPreviousWeek") {
+    return {
+      prevStartY: startParts.y,
+      prevStartM: startParts.m,
+      prevEndY: endParts.y,
+      prevEndM: endParts.m,
+      targetW_start: W_start,
+      targetW_end: W_end,
+    };
+  }
+  if (comparisonType === "samePeriodPreviousMonth") {
+    let prevStartM = startParts.m - 1;
+    let prevStartY = startParts.y;
+    if (prevStartM < 0) {
+      prevStartM += 12;
+      prevStartY -= 1;
+    }
+    let prevEndM = endParts.m - 1;
+    let prevEndY = endParts.y;
+    if (prevEndM < 0) {
+      prevEndM += 12;
+      prevEndY -= 1;
+    }
+    return {
+      prevStartY,
+      prevStartM,
+      prevEndY,
+      prevEndM,
+      targetW_start: W_start,
+      targetW_end: W_end,
+    };
+  }
+  let n: number;
+  if (comparisonType === "priorYear" || comparisonType === "52WeeksPrior") n = 1;
+  else if (comparisonType === "year2Before") n = 2;
+  else if (comparisonType === "year3Before") n = 3;
+  else n = 4;
+  return {
+    prevStartY: startParts.y - n,
+    prevStartM: startParts.m,
+    prevEndY: endParts.y - n,
+    prevEndM: endParts.m,
+    targetW_start: W_start,
+    targetW_end: W_end,
+  };
+}
+
+function getSunStartForWeekLogic(
+  comparisonType: ComparisonType,
+  prevStartY: number,
+  prevStartM: number,
+  targetW_start: number,
+  tz: string,
+): { y: number; m: number; d: number } {
+  if (comparisonType === "samePeriodPreviousWeek" && targetW_start <= 1) {
+    const py = prevStartM === 0 ? prevStartY - 1 : prevStartY;
+    const pm = prevStartM === 0 ? 11 : prevStartM - 1;
+    const { start: lastStart } = getLastWeekOfMonth(py, pm, tz);
+    return lastStart;
+  }
+  if (comparisonType === "samePeriodPreviousWeek") {
+    return getSundayOfWeekInMonth(prevStartY, prevStartM, targetW_start - 1, tz);
+  }
+  return getSundayOfWeekInMonth(prevStartY, prevStartM, targetW_start, tz);
+}
+
+function getSunEndForWeekLogic(
+  comparisonType: ComparisonType,
+  prevEndY: number,
+  prevEndM: number,
+  targetW_end: number,
+  tz: string,
+): { y: number; m: number; d: number } {
+  if (comparisonType === "samePeriodPreviousWeek" && targetW_end <= 1) {
+    const py = prevEndM === 0 ? prevEndY - 1 : prevEndY;
+    const pm = prevEndM === 0 ? 11 : prevEndM - 1;
+    const { start: lastStart } = getLastWeekOfMonth(py, pm, tz);
+    return lastStart;
+  }
+  if (comparisonType === "samePeriodPreviousWeek") {
+    return getSundayOfWeekInMonth(prevEndY, prevEndM, targetW_end - 1, tz);
+  }
+  return getSundayOfWeekInMonth(prevEndY, prevEndM, targetW_end, tz);
+}
+
+function getCustomComparisonRange(
+  customComparisonStart: string | undefined,
+  customComparisonEnd: string | undefined,
+  customComparisonDate: string | undefined,
+  tz: string,
+  bizStart: string,
+  durationMs: number,
+): ComparisonRangeResult | null {
+  if (customComparisonStart != null && customComparisonEnd != null) {
+    return getCustomComparisonRangeByStartEnd(
+      customComparisonStart,
+      customComparisonEnd,
+      tz,
+      bizStart,
+    );
+  }
+  if (customComparisonDate != null) {
+    return getCustomComparisonRangeByDate(
+      customComparisonDate,
+      tz,
+      bizStart,
+      durationMs,
+    );
+  }
+  return null;
+}
+
+function getCustomComparisonRangeByStartEnd(
+  customStart: string,
+  customEnd: string,
+  tz: string,
+  bizStart: string,
+): ComparisonRangeResult | null {
+  const startMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(customStart.trim());
+  const endMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(customEnd.trim());
+  if (!startMatch || !endMatch) return null;
+  const sy = Number.parseInt(startMatch[1]!, 10);
+  const sm = Number.parseInt(startMatch[2]!, 10) - 1;
+  const sd = Number.parseInt(startMatch[3]!, 10);
+  const ey = Number.parseInt(endMatch[1]!, 10);
+  const em = Number.parseInt(endMatch[2]!, 10) - 1;
+  const ed = Number.parseInt(endMatch[3]!, 10);
+  if (BUSINESS_START_REGEX.test(bizStart)) {
+    const startRange = getBusinessDayRangeForDate(tz, bizStart, sy, sm, sd);
+    const endRange = getBusinessDayRangeForDate(tz, bizStart, ey, em, ed);
+    return { startAt: startRange.startAt, endAt: endRange.endAt };
+  }
+  return {
+    startAt: getStartOfDayUtc(sy, sm, sd, tz).toISOString(),
+    endAt: getEndOfDayUtc(ey, em, ed, tz).toISOString(),
+  };
+}
+
+function getCustomComparisonRangeByDate(
+  customComparisonDate: string,
+  tz: string,
+  bizStart: string,
+  durationMs: number,
+): ComparisonRangeResult | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(customComparisonDate.trim());
+  if (!match) return null;
+  const refY = Number.parseInt(match[1]!, 10);
+  const refM = Number.parseInt(match[2]!, 10) - 1;
+  const refD = Number.parseInt(match[3]!, 10);
+  const useBusinessDay = BUSINESS_START_REGEX.test(bizStart);
+  const endRange = useBusinessDay
+    ? getBusinessDayRangeForDate(tz, bizStart, refY, refM, refD)
+    : {
+        startAt: getStartOfDayUtc(refY, refM, refD, tz).toISOString(),
+        endAt: getEndOfDayUtc(refY, refM, refD, tz).toISOString(),
+      };
+  const endMs = new Date(endRange.endAt).getTime();
+  const startMs = endMs - durationMs;
+  return {
+    startAt: new Date(startMs).toISOString(),
+    endAt: endRange.endAt,
+  };
+}
+
+function rangeFromCalendar(
+  tz: string,
+  bizStart: string,
+  useBiz: boolean,
+  start: { y: number; m: number; d: number },
+  end: { y: number; m: number; d: number },
+): ComparisonRangeResult {
+  if (useBiz) {
+    const startR = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
+    const endR = getBusinessDayRangeForDate(tz, bizStart, end.y, end.m, end.d);
+    return { startAt: startR.startAt, endAt: endR.endAt };
+  }
+  return {
+    startAt: getStartOfDayUtc(start.y, start.m, start.d, tz).toISOString(),
+    endAt: getEndOfDayUtc(end.y, end.m, end.d, tz).toISOString(),
+  };
+}
+
+function getComparisonRangeFromSwitch(
+  comparisonType: ComparisonType,
+  start: Date,
+  end: Date,
+  tz: string,
+  bizStart: string,
+  useBiz: boolean,
+): ComparisonRangeResult | null {
+  const fromCalendar = (
+    startParts: { y: number; m: number; d: number },
+    endParts: { y: number; m: number; d: number },
+  ) => rangeFromCalendar(tz, bizStart, useBiz, startParts, endParts);
 
   switch (comparisonType) {
     case "1DayPrior": {
       const oneDayMs = 24 * 60 * 60 * 1000;
       const startRef = new Date(start.getTime() - oneDayMs);
       const endRef = new Date(end.getTime() - oneDayMs);
-      const sp = getDatePartsInTz(startRef, tz);
-      const ep = getDatePartsInTz(endRef, tz);
-      return rangeFromCalendar(sp.y, sp.m, sp.d, ep.y, ep.m, ep.d);
+      return fromCalendar(getDatePartsInTz(startRef, tz), getDatePartsInTz(endRef, tz));
     }
     case "samePeriodPreviousWeek": {
       const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
       const startRef = new Date(start.getTime() - oneWeekMs);
       const endRef = new Date(end.getTime() - oneWeekMs);
-      const sp = getDatePartsInTz(startRef, tz);
-      const ep = getDatePartsInTz(endRef, tz);
-      return rangeFromCalendar(sp.y, sp.m, sp.d, ep.y, ep.m, ep.d);
+      return fromCalendar(getDatePartsInTz(startRef, tz), getDatePartsInTz(endRef, tz));
     }
     case "samePeriodPreviousMonth": {
       const startParts = getDatePartsInTz(start, tz);
       const endParts = getDatePartsInTz(end, tz);
-      let newSy = startParts.y;
-      let newSm = startParts.m - 1;
-      if (newSm < 0) {
-        newSm += 12;
-        newSy -= 1;
-      }
-      const startMaxDay = new Date(newSy, newSm + 1, 0).getDate();
-      const newSd = Math.min(startParts.d, startMaxDay);
-
-      let newEy = endParts.y;
-      let newEm = endParts.m - 1;
-      if (newEm < 0) {
-        newEm += 12;
-        newEy -= 1;
-      }
-      const endMaxDay = new Date(newEy, newEm + 1, 0).getDate();
-      const newEd = Math.min(endParts.d, endMaxDay);
-
-      return rangeFromCalendar(newSy, newSm, newSd, newEy, newEm, newEd);
+      const startDate = prevMonthDate(startParts.y, startParts.m, startParts.d);
+      const endDate = prevMonthDate(endParts.y, endParts.m, endParts.d);
+      return fromCalendar(startDate, endDate);
     }
     case "priorYear": {
       const startParts = getDatePartsInTz(start, tz);
@@ -696,17 +783,14 @@ export function getSalesTrendComparisonRange(
       const targetEndY = endParts.y - 1;
       const endLastDay = new Date(targetEndY, endParts.m + 1, 0).getDate();
       const targetEndD = Math.min(endParts.d, endLastDay);
-      return rangeFromCalendar(
-        targetStartY,
-        startParts.m,
-        startParts.d,
-        targetEndY,
-        endParts.m,
-        targetEndD,
+      return fromCalendar(
+        { y: targetStartY, m: startParts.m, d: startParts.d },
+        { y: targetEndY, m: endParts.m, d: targetEndD },
       );
     }
     case "52WeeksPrior": {
       const durationDays = (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000);
+      const fiftyTwoWeeksMs = 52 * 7 * 24 * 60 * 60 * 1000;
       let startRef: Date;
       let endRef: Date;
       if (durationDays > 360) {
@@ -715,23 +799,109 @@ export function getSalesTrendComparisonRange(
         endRef = new Date(end);
         endRef.setUTCMonth(endRef.getUTCMonth() - 12);
       } else {
-        const fiftyTwoWeeksMs = 52 * 7 * 24 * 60 * 60 * 1000;
         startRef = new Date(start.getTime() - fiftyTwoWeeksMs);
         endRef = new Date(end.getTime() - fiftyTwoWeeksMs);
       }
-      const sp = getDatePartsInTz(startRef, tz);
-      const ep = getDatePartsInTz(endRef, tz);
-      return rangeFromCalendar(sp.y, sp.m, sp.d, ep.y, ep.m, ep.d);
+      return fromCalendar(getDatePartsInTz(startRef, tz), getDatePartsInTz(endRef, tz));
     }
     case "year2Before":
     case "year3Before":
     case "year4Before": {
       const parts = getDatePartsInTz(end, tz);
-      const n = comparisonType === "year2Before" ? 2 : comparisonType === "year3Before" ? 3 : 4;
+      let n: number;
+      if (comparisonType === "year2Before") n = 2;
+      else if (comparisonType === "year3Before") n = 3;
+      else n = 4;
       const targetYear = parts.y - n;
-      return rangeFromCalendar(targetYear, 0, 1, targetYear, 11, 31);
+      return fromCalendar(
+        { y: targetYear, m: 0, d: 1 },
+        { y: targetYear, m: 11, d: 31 },
+      );
     }
     default:
       return null;
   }
+}
+
+function prevMonthDate(
+  y: number,
+  m: number,
+  d: number,
+): { y: number; m: number; d: number } {
+  let newM = m - 1;
+  let newY = y;
+  if (newM < 0) {
+    newM += 12;
+    newY -= 1;
+  }
+  const maxDay = new Date(newY, newM + 1, 0).getDate();
+  return { y: newY, m: newM, d: Math.min(d, maxDay) };
+}
+
+/**
+ * Get the comparison period range given the primary period range and comparison type.
+ * Returns same-length range aligned with comparison option; same granularity as primary.
+ * For custom, pass customComparisonStart and customComparisonEnd in options (both ISO or YYYY-MM-DD).
+ * Optional businessStartTime in options ensures custom comparison uses store business day boundaries.
+ * When periodType in options is "thisWeek", samePeriodPreviousWeek / samePeriodPreviousMonth / priorYear use week-of-month semantics.
+ */
+export function getSalesTrendComparisonRange(
+  comparisonType: ComparisonType,
+  periodStartAt: string,
+  periodEndAt: string,
+  timezone: string,
+  options: GetSalesTrendComparisonRangeOptions = {},
+): ComparisonRangeResult | null {
+  if (comparisonType === "none") return null;
+
+  const {
+    customComparisonDate,
+    customComparisonStart,
+    customComparisonEnd,
+    businessStartTime,
+    periodType,
+  } = options;
+
+  const tz = timezone.trim();
+  const start = new Date(periodStartAt);
+  const end = new Date(periodEndAt);
+  const durationMs = end.getTime() - start.getTime();
+  const bizStart = (businessStartTime ?? "00:00").trim();
+  const useBiz = useBusinessDayBoundaries(businessStartTime);
+
+  const useWeekLogic =
+    periodType != null &&
+    PERIOD_TYPES_WITH_WEEK_LOGIC.has(periodType) &&
+    COMPARISON_TYPES_WITH_WEEK_LOGIC.has(comparisonType);
+
+  if (useWeekLogic) {
+    return getComparisonRangeWithWeekLogic(
+      comparisonType,
+      start,
+      end,
+      tz,
+      bizStart,
+      useBiz,
+    );
+  }
+
+  if (comparisonType === "custom") {
+    return getCustomComparisonRange(
+      customComparisonStart,
+      customComparisonEnd,
+      customComparisonDate,
+      tz,
+      bizStart,
+      durationMs,
+    );
+  }
+
+  return getComparisonRangeFromSwitch(
+    comparisonType,
+    start,
+    end,
+    tz,
+    bizStart,
+    useBiz,
+  );
 }

@@ -131,7 +131,7 @@ export class GoalService {
 
     const defaultVal: IGoalValues = {
       ...defaultGoalValues,
-      ...(doc.default ?? legacyValues ?? {}),
+      ...(doc.default ?? legacyValues),
     };
 
     return {

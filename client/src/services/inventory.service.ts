@@ -80,7 +80,7 @@ export interface GetOrdersParams {
 
 /** Normalize date from server (yyyy/MM/dd) to client format (yyyy-MM-dd). */
 function normalizeDateToClient(serverDate: string): string {
-  return serverDate.replace(/\//g, '-');
+  return serverDate.replaceAll('/', '-');
 }
 
 export const inventoryService = {

@@ -5,6 +5,11 @@ import type { RoleRow } from '../../types/rbac.types';
 import type { UserRow } from '../../types/userManagement.types';
 import { ConfirmDialog } from '../modal/ConfirmDialog';
 import { FilterSelect } from '../common/FilterSelect';
+import {
+  validateAddUserForm,
+  resolveProfileImagePublicId,
+  getSaveErrorMessage,
+} from '../../utils/addUserModalHelpers';
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 const PROFILE_IMAGE_ACCEPT = 'image/jpeg,image/jpg,image/webp,image/png';
@@ -18,7 +23,7 @@ export interface AddUserModalProps {
   initialUser?: UserRow | null;
 }
 
-export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: AddUserModalProps) {
+export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: Readonly<AddUserModalProps>) {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
@@ -100,33 +105,24 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: A
   };
 
   const handleSubmit = async (invite: boolean) => {
-    const trimmedFirst = firstName.trim();
-    const trimmedLast = lastName.trim();
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedFirst || !trimmedLast) {
-      onError?.('First name and last name are required.');
+    const validation = validateAddUserForm(firstName, lastName, email);
+    if ('error' in validation) {
+      onError?.(validation.error);
       return;
     }
-    if (!trimmedEmail) {
-      onError?.('Email is required.');
-      return;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmedEmail)) {
-      onError?.('Please enter a valid email address.');
-      return;
-    }
+    const { trimmedFirst, trimmedLast, trimmedEmail } = validation;
+
     setSaving(true);
     try {
-      let profileImagePublicId: string | null | undefined = undefined;
-      if (profileImageFile) {
-        const { profileImagePublicId: id } = await userService.uploadProfileImage(profileImageFile);
-        profileImagePublicId = id;
-      } else if (isEdit && removeProfileImage) {
-        profileImagePublicId = null;
-      } else if (isEdit && pendingProfileImagePublicId) {
-        profileImagePublicId = pendingProfileImagePublicId;
-      }
+      const profileImagePublicId = await resolveProfileImagePublicId(
+        userService.uploadProfileImage,
+        {
+          profileImageFile,
+          isEdit,
+          removeProfileImage,
+          pendingProfileImagePublicId,
+        }
+      );
 
       if (isEdit && initialUser?._id) {
         await userService.updateUser(initialUser._id, {
@@ -139,8 +135,6 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: A
           roleId: roleId.trim() || null,
           ...(profileImagePublicId !== undefined && { profileImagePublicId }),
         });
-        onSaved();
-        onClose();
       } else {
         await userService.createUser({
           firstName: trimmedFirst,
@@ -153,11 +147,11 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: A
           invite,
           ...(profileImagePublicId != null && profileImagePublicId !== '' && { profileImagePublicId }),
         });
-        onSaved();
-        onClose();
       }
+      onSaved();
+      onClose();
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : 'Failed to save user');
+      onError?.(getSaveErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -165,14 +159,33 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: A
 
   if (!open) return null;
 
+  let profileAvatarContent: React.ReactNode;
+  if (profileImagePreview) {
+    profileAvatarContent = <img src={profileImagePreview} alt="" className="w-full h-full object-cover" />;
+  } else if (currentProfileImageUrl && !removeProfileImage) {
+    profileAvatarContent = <img src={currentProfileImageUrl} alt="" className="w-full h-full object-cover" />;
+  } else {
+    profileAvatarContent = (
+      <span className="text-gray-400 text-lg font-medium">
+        {(firstName.trim() || initialUser?.firstName)?.[0]?.toUpperCase() ?? '?'}
+      </span>
+    );
+  }
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      open
+      onCancel={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 w-full max-w-none max-h-none m-0 border-0 bg-black/50 backdrop:bg-black/50"
       aria-labelledby="add-user-title"
     >
-      <div className="bg-card-background rounded-xl shadow-lg border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <button
+        type="button"
+        className="absolute inset-0 w-full h-full cursor-default"
+        onClick={onClose}
+        aria-label="Close modal"
+      />
+      <div className="relative bg-card-background rounded-xl shadow-lg border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 id="add-user-title" className="text-lg font-semibold text-primary">
             {isEdit ? 'Edit User' : 'Add User'}
@@ -181,23 +194,16 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: A
         <div className="px-6 py-4 overflow-y-auto flex-1 space-y-4">
           {/* Profile image first */}
           <div>
-            <label className="block text-sm font-medium text-primary mb-1">
+            <label htmlFor="user-profile-image" className="block text-sm font-medium text-primary mb-1">
               Profile image (optional, max 2 MB, JPEG/PNG/WebP)
             </label>
             <div className="flex items-center gap-3 flex-wrap">
               <div className="w-14 h-14 rounded-full border border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
-                {profileImagePreview ? (
-                  <img src={profileImagePreview} alt="" className="w-full h-full object-cover" />
-                ) : currentProfileImageUrl && !removeProfileImage ? (
-                  <img src={currentProfileImageUrl} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-gray-400 text-lg font-medium">
-                    {(firstName.trim() || initialUser?.firstName)?.[0]?.toUpperCase() ?? '?'}
-                  </span>
-                )}
+                {profileAvatarContent}
               </div>
               <div className="flex flex-col gap-1">
                 <input
+                  id="user-profile-image"
                   ref={fileInputRef}
                   type="file"
                   accept={PROFILE_IMAGE_ACCEPT}
@@ -374,6 +380,6 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: A
           isLoading={saving}
         />
       )}
-    </div>
+    </dialog>
   );
 }

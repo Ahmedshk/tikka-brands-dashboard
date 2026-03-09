@@ -41,7 +41,7 @@ export function Dropdown({
   disabled = false,
   triggerLabel,
   onOpenChange,
-}: DropdownProps) {
+}: Readonly<DropdownProps>) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -88,11 +88,11 @@ export function Dropdown({
         disabled={disabled}
         className={`${triggerBaseClass} ${!selectedOption && triggerLabel == null ? 'text-secondary' : ''}`}
         aria-label={ariaLabel}
-        aria-haspopup="listbox"
+        aria-haspopup="menu"
         aria-expanded={open}
       >
         <span className="truncate">
-          {triggerLabel != null ? triggerLabel : displayLabel}
+          {triggerLabel ?? displayLabel}
         </span>
         <svg
           className={`w-4 h-4 shrink-0 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}
@@ -105,16 +105,17 @@ export function Dropdown({
         </svg>
       </button>
       {open && (
-        <ul
-          role="listbox"
+        <div
+          role="menu"
           className={`${listBaseClass} ${listPositionClass}`}
+          aria-label={ariaLabel}
         >
           {allowEmpty && (
-            <li>
+            <div role="none">
               <button
                 type="button"
-                role="option"
-                aria-selected={value === ''}
+                role="menuitem"
+                aria-current={value === '' ? 'true' : undefined}
                 onClick={() => {
                   onChange('');
                   setOpen(false);
@@ -123,14 +124,14 @@ export function Dropdown({
               >
                 {placeholder}
               </button>
-            </li>
+            </div>
           )}
           {options.map((opt) => (
-            <li key={opt.value}>
+            <div key={opt.value} role="none">
               <button
                 type="button"
-                role="option"
-                aria-selected={value === opt.value}
+                role="menuitem"
+                aria-current={value === opt.value ? 'true' : undefined}
                 onClick={() => {
                   onChange(opt.value);
                   setOpen(false);
@@ -144,9 +145,9 @@ export function Dropdown({
                   </span>
                 )}
               </button>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );

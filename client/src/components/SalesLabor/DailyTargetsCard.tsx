@@ -32,15 +32,15 @@ export const DailyTargetsCard = ({ items }: DailyTargetsCardProps) => {
       <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1 text-[10px] md:text-xs 2xl:text-sm text-secondary mb-5">
         <span className="flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: TREND_POSITIVE }} aria-hidden />
-          On Track
+          <span>On Track</span>
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: TREND_PENDING }} aria-hidden />
-          Caution
+          <span>Caution</span>
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: TREND_NEGATIVE }} aria-hidden />
-          Needs Attention
+          <span>Needs Attention</span>
         </span>
       </div>
       {items.map((item) => {
@@ -58,11 +58,14 @@ export const DailyTargetsCard = ({ items }: DailyTargetsCardProps) => {
         const displayPercent = item.target === 0
           ? 0
           : Math.min(100, Math.round((item.actual / item.target) * 100));
-        const barColor = withinTolerance
-          ? TREND_PENDING
-          : isUnfavorable
-            ? TREND_NEGATIVE
-            : TREND_POSITIVE;
+        let barColor: string;
+        if (withinTolerance) {
+          barColor = TREND_PENDING;
+        } else if (isUnfavorable) {
+          barColor = TREND_NEGATIVE;
+        } else {
+          barColor = TREND_POSITIVE;
+        }
 
         return (
           <div key={item.label}>
