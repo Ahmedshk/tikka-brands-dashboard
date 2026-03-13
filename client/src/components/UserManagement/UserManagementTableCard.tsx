@@ -25,6 +25,20 @@ function getInitial(name: string | undefined): string {
   return trimmed[0]?.toUpperCase() ?? '?';
 }
 
+function hasModifiedPermissionsOrLocations(row: UserRow): boolean {
+  const hasPermissionOverrides =
+    row.permissionOverrides?.type === 'custom' &&
+    Array.isArray(row.permissionOverrides.pages) &&
+    row.permissionOverrides.pages.length > 0;
+  const hasPermissionRemovals =
+    row.permissionRemovals?.type === 'custom' &&
+    Array.isArray(row.permissionRemovals.pages) &&
+    row.permissionRemovals.pages.length > 0;
+  const hasLocationOverrides = Array.isArray(row.locationOverrides) && row.locationOverrides.length > 0;
+  const hasLocationRemovals = Array.isArray(row.locationRemovals) && row.locationRemovals.length > 0;
+  return hasPermissionOverrides || hasPermissionRemovals || hasLocationOverrides || hasLocationRemovals;
+}
+
 export interface UserManagementTableCardProps {
   rows: UserRow[];
   onAddUser?: () => void;
@@ -70,8 +84,14 @@ function UserRowCard({
         <p className="text-xs text-gray-600 mt-1 truncate" title={row.email}>
           <span className="font-medium">Email:</span> {row.email}
         </p>
-        <p className="text-xs text-gray-600 mt-0.5">
-          <span className="font-medium">Role:</span> {row.role ?? 'Role unassigned'}
+        <p className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-1">
+          <span className="font-medium">Role:</span>
+          <span>{row.role ?? 'Role unassigned'}</span>
+          {hasModifiedPermissionsOrLocations(row) && (
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-200 text-gray-700">
+              Modified
+            </span>
+          )}
         </p>
         <p className="text-xs text-gray-600 mt-0.5">
           <span className="font-medium">Status:</span>{' '}
@@ -179,8 +199,17 @@ export const UserManagementTableCard = ({
                     </div>
                   </td>
                   <td className="w-[25%] px-4 lg:px-6 py-3 lg:py-4 text-primary truncate text-center" title={row.email}>{row.email}</td>
-                  <td className="w-[20%] px-4 lg:px-6 py-3 lg:py-4 truncate text-center" title={row.role ?? 'Role unassigned'}>
-                    {row.role ?? 'Role unassigned'}
+                  <td className="w-[20%] px-4 lg:px-6 py-3 lg:py-4 text-center">
+                    <div className="flex flex-wrap items-center justify-center gap-1">
+                      <span className="truncate" title={row.role ?? 'Role unassigned'}>
+                        {row.role ?? 'Role unassigned'}
+                      </span>
+                      {hasModifiedPermissionsOrLocations(row) && (
+                        <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-200 text-gray-700 shrink-0">
+                          Modified
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="w-[15%] px-4 lg:px-6 py-3 lg:py-4 text-center">
                     <span className={statusPillClass[row.status]}>{row.status}</span>

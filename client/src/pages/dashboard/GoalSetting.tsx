@@ -7,7 +7,7 @@ import { Spinner } from '../../components/common/Spinner';
 import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
 import { goalService } from '../../services/goal.service';
 import { locationService } from '../../services/location.service';
-import type { GoalSetting as GoalSettingType, GoalValues, GoalDayOfWeek, FutureWeekGoals, Goal, GoalSource, Location } from '../../types';
+import type { GoalSetting as GoalSettingType, GoalValues, GoalDayOfWeek, FutureWeekGoals, Goal, GoalSource, LocationListItem } from '../../types';
 import { RootState } from '../../store/store';
 import AdminAndSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
 import {
@@ -34,8 +34,8 @@ import { GoalSettingMainContent } from '../../components/GoalSetting/GoalSetting
 export const GoalSetting = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   /** Location selected on this page for viewing/editing goals; independent of navbar location. */
-  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
-  const [locations, setLocations] = useState<Location[]>([]);
+  const [selectedLocation, setSelectedLocation] = useState<LocationListItem | null>(null);
+  const [locations, setLocations] = useState<LocationListItem[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>('default');
   const [defaultGoals, setDefaultGoals] = useState<GoalValues>({ ...DEFAULT_GOAL_VALUES });
@@ -54,7 +54,7 @@ export const GoalSetting = () => {
   const [addWeekAnchorEl, setAddWeekAnchorEl] = useState<HTMLElement | null>(null);
   /** When user tries to switch tab or location with unsaved changes, store the pending action here. */
   const [pendingTab, setPendingTab] = useState<TabId | null>(null);
-  const [pendingLocation, setPendingLocation] = useState<Location | null>(null);
+  const [pendingLocation, setPendingLocation] = useState<LocationListItem | null>(null);
 
   const hasUnsavedChanges = useMemo(() => {
     if (!selectedLocation?._id || loading) return false;

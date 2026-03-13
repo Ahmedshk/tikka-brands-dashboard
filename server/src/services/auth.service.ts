@@ -162,6 +162,12 @@ export class AuthService {
         "name" in err &&
         (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError");
       if (isJwtError) {
+        const errName = (err as { name?: string }).name ?? "Unknown";
+        const errMessage = (err as { message?: string }).message ?? "";
+        logger.warn("Refresh token JWT verification failed", {
+          errName,
+          errMessage,
+        });
         if (process.env.NODE_ENV === "development") {
           try {
             verifyAccessToken(token);

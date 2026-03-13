@@ -1,16 +1,19 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/common/Layout';
 import { RBACTableCard, AddEditRoleModal } from '../../components/RBAC';
 import type { RoleRow } from '../../types/rbac.types';
 import { roleService } from '../../services/role.service';
 import AdminSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
+import { FaSitemap } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { Spinner } from '../../components/common/Spinner';
 
 const PAGE_SIZE = 10;
 
 export const RBACManagement = () => {
+  const navigate = useNavigate();
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,15 +103,26 @@ export const RBACManagement = () => {
             <AdminSettingsIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
             RBAC Management
           </h2>
-          <button
-            type="button"
-            onClick={openAdd}
-            className="flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity cursor-pointer"
-            title="Add new role"
-          >
-            <AddIcon className="w-4 h-4 shrink-0" aria-hidden />
-            Add Role
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigate('/dashboard/rbac-management/hierarchy')}
+              className="flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 text-primary rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:bg-gray-50 transition-colors cursor-pointer"
+              title="Manage role hierarchy"
+            >
+              <FaSitemap className="w-4 h-4 shrink-0" aria-hidden />
+              Manage Hierarchy
+            </button>
+            <button
+              type="button"
+              onClick={openAdd}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity cursor-pointer"
+              title="Add new role"
+            >
+              <AddIcon className="w-4 h-4 shrink-0" aria-hidden />
+              Add Role
+            </button>
+          </div>
         </div>
 
         {error && (

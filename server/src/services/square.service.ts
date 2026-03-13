@@ -225,7 +225,10 @@ function isPaidOrder(order: SquareOrder): boolean {
   );
 }
 
-/** True if order is paid and not CANCELED; use for net sales and order count. */
+/**
+ * True if order is paid and not CANCELED; use for net sales and discount/refund aggregation.
+ * For transaction/order count we only include orders with positive net sales (see orderCount and countByKey below).
+ */
 function isOrderCountedForNetSales(order: SquareOrder): boolean {
   return isPaidOrder(order) && order.state !== "CANCELED";
 }
@@ -326,12 +329,14 @@ function getOrderStatsFromOrders(orders: SquareOrder[]): OrderStatsInRange {
 
   for (const order of orders) {
     const countedForNetSales = isOrderCountedForNetSales(order);
+    const netCents = orderNetSalesCents(order);
     const refundCents = moneyToCents(order.return_amounts?.total_money);
     const hasRefunds = refundCents > 0;
 
     if (countedForNetSales) {
-      stats.orderCount += 1;
-      stats.netSalesCents += orderNetSalesCents(order);
+      // Transaction count = orders with positive net sales (matches Square "Net sales" order count).
+      if (netCents > 0) stats.orderCount += 1;
+      stats.netSalesCents += netCents;
       stats.totalDiscountCents += moneyToCents(
         order.net_amounts?.discount_money,
       );
@@ -815,15 +820,16 @@ export async function getOrderTimeSeriesInRange(
   );
   for (const order of orders) {
     if (!isOrderCountedForNetSales(order)) continue;
+    const netCents = orderNetSalesCents(order);
     const key = getBucketKeyForDate(
       new Date(order.created_at ?? ""),
       timezone,
       granularity,
     );
     if (!key || netSalesByKey[key] === undefined) continue;
-    netSalesByKey[key] =
-      (netSalesByKey[key] ?? 0) + orderNetSalesCents(order) / 100;
-    countByKey[key] = (countByKey[key] ?? 0) + 1;
+    netSalesByKey[key] = (netSalesByKey[key] ?? 0) + netCents / 100;
+    // Transaction count = orders with positive net sales (matches Square "Net sales" order count).
+    if (netCents > 0) countByKey[key] = (countByKey[key] ?? 0) + 1;
   }
 
   const netSales = keys.map((k) => netSalesByKey[k] ?? 0);

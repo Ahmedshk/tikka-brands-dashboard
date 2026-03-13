@@ -317,3 +317,100 @@ export function buildEmptyHourlyBreakdownData(
     laborCostPercentPerHour: new Array(24).fill(null),
   };
 }
+
+// --- Sales by category helpers ---
+
+export interface SalesByCategoryQueryParams {
+  locationId: string;
+  periodType: string;
+  periodStart: string | undefined;
+  periodEnd: string | undefined;
+  comparisonType: string;
+  comparisonDate: string | undefined;
+  comparisonStart: string | undefined;
+  comparisonEnd: string | undefined;
+}
+
+export function parseSalesByCategoryQuery(
+  query: Record<string, unknown>
+): SalesByCategoryQueryParams {
+  return {
+    locationId:
+      typeof query.locationId === "string" ? query.locationId : "",
+    periodType: (query.periodType as string) || "last30days",
+    periodStart:
+      typeof query.periodStart === "string" ? query.periodStart : undefined,
+    periodEnd:
+      typeof query.periodEnd === "string" ? query.periodEnd : undefined,
+    comparisonType: (query.comparisonType as string) || "priorYear",
+    comparisonDate:
+      typeof query.comparisonDate === "string"
+        ? query.comparisonDate
+        : undefined,
+    comparisonStart:
+      typeof query.comparisonStart === "string"
+        ? query.comparisonStart
+        : undefined,
+    comparisonEnd:
+      typeof query.comparisonEnd === "string" ? query.comparisonEnd : undefined,
+  };
+}
+
+export interface SalesByCategoryResult {
+  categories: Array<{ name: string; netSalesCents: number }>;
+  totalNetSalesCents: number;
+}
+
+export interface SalesByCategoryResponseData {
+  current: {
+    categories: Array<{ label: string; netSales: number }>;
+    totalNetSales: number;
+  };
+  comparison: {
+    categories: Array<{ label: string; netSales: number }>;
+    totalNetSales: number;
+  };
+  periodRange: { startAt: string; endAt: string };
+  comparisonRange: { startAt: string; endAt: string } | null;
+}
+
+export function buildSalesByCategoryResponseData(
+  currentResult: SalesByCategoryResult,
+  comparisonResult: SalesByCategoryResult,
+  periodStartAt: string,
+  periodEndAt: string,
+  comparisonRange: { startAt: string; endAt: string } | null
+): SalesByCategoryResponseData {
+  const allNames = new Set<string>();
+  for (const c of currentResult.categories) allNames.add(c.name);
+  for (const c of comparisonResult.categories) allNames.add(c.name);
+  const currentByName = new Map(
+    currentResult.categories.map((c) => [c.name, c.netSalesCents])
+  );
+  const comparisonByName = new Map(
+    comparisonResult.categories.map((c) => [c.name, c.netSalesCents])
+  );
+  const merged = Array.from(allNames)
+    .map((name) => ({
+      label: name,
+      netSales: (currentByName.get(name) ?? 0) / 100,
+      comparisonNetSales: (comparisonByName.get(name) ?? 0) / 100,
+    }))
+    .sort((a, b) => b.netSales - a.netSales);
+
+  return {
+    current: {
+      categories: merged.map(({ label, netSales }) => ({ label, netSales })),
+      totalNetSales: currentResult.totalNetSalesCents / 100,
+    },
+    comparison: {
+      categories: merged.map(({ label, comparisonNetSales }) => ({
+        label,
+        netSales: comparisonNetSales,
+      })),
+      totalNetSales: comparisonResult.totalNetSalesCents / 100,
+    },
+    periodRange: { startAt: periodStartAt, endAt: periodEndAt },
+    comparisonRange,
+  };
+}

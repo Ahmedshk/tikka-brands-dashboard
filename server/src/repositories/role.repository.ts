@@ -22,15 +22,21 @@ function toLocationFields(locations: RoleLocations | RoleLocationsResponse | und
 
 export class RoleRepository {
   async create(data: Omit<IRole, "_id" | "createdAt" | "updatedAt">): Promise<RoleDocument> {
-    const { locations, ...rest } = data;
+    const { locations, reportsTo, reportsToRole: _, ...rest } = data;
     const { locationAccess, locationIds } = toLocationFields(locations);
-    const role = new RoleModel({ ...rest, locationAccess, locationIds });
+    const role = new RoleModel({
+      ...rest,
+      locationAccess,
+      locationIds,
+      reportsTo: reportsTo ? new Types.ObjectId(reportsTo) : null,
+    });
     return await role.save();
   }
 
   async findById(id: string): Promise<RoleDocument | null> {
     return await RoleModel.findById(id)
       .populate("locationIds", "storeName")
+      .populate("reportsTo", "name")
       .lean()
       .exec() as RoleDocument | null;
   }
@@ -38,6 +44,7 @@ export class RoleRepository {
   async findByName(name: string): Promise<RoleDocument | null> {
     return await RoleModel.findOne({ name: name.trim() })
       .populate("locationIds", "storeName")
+      .populate("reportsTo", "name")
       .lean()
       .exec() as RoleDocument | null;
   }
@@ -47,6 +54,15 @@ export class RoleRepository {
     return await RoleModel.find(query)
       .sort({ createdAt: -1 })
       .populate("locationIds", "storeName")
+      .populate("reportsTo", "name")
+      .lean()
+      .exec() as RoleDocument[];
+  }
+
+  async findByReportsTo(parentId: string): Promise<RoleDocument[]> {
+    return await RoleModel.find({ reportsTo: new Types.ObjectId(parentId) })
+      .populate("locationIds", "storeName")
+      .populate("reportsTo", "name")
       .lean()
       .exec() as RoleDocument[];
   }
@@ -55,20 +71,39 @@ export class RoleRepository {
     id: string,
     data: Partial<Omit<IRole, "_id" | "isSystem">>
   ): Promise<RoleDocument | null> {
-    const { isSystem: _, locations, ...rest } = data as Partial<IRole>;
+    const { isSystem: _, locations, reportsTo, reportsToRole: _r, ...rest } = data as Partial<IRole>;
     const update: Record<string, unknown> = { ...rest };
     if (locations !== undefined) {
       const { locationAccess, locationIds } = toLocationFields(locations);
       update.locationAccess = locationAccess;
       update.locationIds = locationIds;
     }
+    if (reportsTo !== undefined) {
+      update.reportsTo = reportsTo ? new Types.ObjectId(reportsTo) : null;
+    }
     return await RoleModel.findByIdAndUpdate(id, update, {
       new: true,
       runValidators: true,
     })
       .populate("locationIds", "storeName")
+      .populate("reportsTo", "name")
       .lean()
       .exec() as RoleDocument | null;
+  }
+
+  async bulkUpdateReportsTo(
+    mappings: Array<{ roleId: string; reportsTo: string | null }>
+  ): Promise<void> {
+    if (mappings.length === 0) return;
+    const ops = mappings.map((m) => ({
+      updateOne: {
+        filter: { _id: new Types.ObjectId(m.roleId) },
+        update: {
+          $set: { reportsTo: m.reportsTo ? new Types.ObjectId(m.reportsTo) : null },
+        },
+      },
+    }));
+    await RoleModel.bulkWrite(ops);
   }
 
   async deleteById(id: string): Promise<boolean> {

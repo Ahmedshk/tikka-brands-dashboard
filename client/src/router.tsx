@@ -12,6 +12,7 @@ import { DisciplinaryManagementDetails } from './pages/dashboard/DisciplinaryMan
 import { CalendarEvents } from './pages/dashboard/CalendarEvents';
 import { UserManagement } from './pages/dashboard/UserManagement';
 import { RBACManagement } from './pages/dashboard/RBACManagement';
+import { ManageHierarchy } from './pages/dashboard/ManageHierarchy';
 import { GoalSetting } from './pages/dashboard/GoalSetting';
 import { LocationManagement } from './pages/dashboard/LocationManagement';
 import { NoAccess } from './pages/dashboard/NoAccess';
@@ -174,6 +175,17 @@ export const router = createBrowserRouter([
       <ErrorBoundary>
         <ProtectedRoute>
           <RBACManagement />
+        </ProtectedRoute>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/dashboard/rbac-management/hierarchy',
+    element: (
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <ManageHierarchy />
         </ProtectedRoute>
       </ErrorBoundary>
     ),

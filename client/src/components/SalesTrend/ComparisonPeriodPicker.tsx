@@ -476,39 +476,60 @@ export function ComparisonPeriodPicker({
                 </div>
               </div>
             </LocalizationProvider>
-            {isCustom && (
-              <div className="flex flex-row gap-2 w-full">
-                <TextField
-                  size="small"
-                  label="Start date"
-                  value={localStart}
-                  onChange={(e) => setLocalStart(e.target.value)}
-                  onBlur={handleStartBlur}
-                  placeholder={DATE_DISPLAY_FORMAT}
-                  fullWidth
-                />
-                {autoEndDate ? (
+            <div className="flex flex-row gap-2 w-full">
+              {isCustom ? (
+                <>
                   <TextField
                     size="small"
-                    label="End date (auto)"
-                    value={localEnd}
+                    label="Start date"
+                    value={localStart}
+                    onChange={(e) => setLocalStart(e.target.value)}
+                    onBlur={handleStartBlur}
+                    placeholder={DATE_DISPLAY_FORMAT}
+                    fullWidth
+                  />
+                  {autoEndDate ? (
+                    <TextField
+                      size="small"
+                      label="End date (auto)"
+                      value={localEnd}
+                      placeholder={DATE_DISPLAY_FORMAT}
+                      slotProps={{ input: { readOnly: true } }}
+                      fullWidth
+                    />
+                  ) : (
+                    <TextField
+                      size="small"
+                      label="End date"
+                      value={localEnd}
+                      onChange={(e) => setLocalEnd(e.target.value)}
+                      onBlur={handleEndBlur}
+                      placeholder={DATE_DISPLAY_FORMAT}
+                      fullWidth
+                    />
+                  )}
+                </>
+              ) : (
+                <>
+                  <TextField
+                    size="small"
+                    label="Start date"
+                    value=""
                     placeholder={DATE_DISPLAY_FORMAT}
                     slotProps={{ input: { readOnly: true } }}
                     fullWidth
                   />
-                ) : (
                   <TextField
                     size="small"
                     label="End date"
-                    value={localEnd}
-                    onChange={(e) => setLocalEnd(e.target.value)}
-                    onBlur={handleEndBlur}
+                    value=""
                     placeholder={DATE_DISPLAY_FORMAT}
+                    slotProps={{ input: { readOnly: true } }}
                     fullWidth
                   />
-                )}
-              </div>
-            )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </Popover>

@@ -5,7 +5,7 @@ import { Spinner } from '../../components/common/Spinner';
 import { LocationModal } from '../../components/modal/LocationModal';
 import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
 import { locationService } from '../../services/location.service';
-import type { Location } from '../../types';
+import type { Location, LocationListItem } from '../../types';
 import { CiImageOn } from 'react-icons/ci';
 import AdminAndSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
@@ -15,13 +15,13 @@ import DeleteIcon from '@assets/icons/delete.svg?react';
 const PAGE_SIZE = 10;
 
 export const LocationManagement = () => {
-  const [locations, setLocations] = useState<Location[]>([]);
+  const [locations, setLocations] = useState<LocationListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editLocation, setEditLocation] = useState<Location | null>(null);
-  const [locationToDelete, setLocationToDelete] = useState<Location | null>(null);
+  const [locationToDelete, setLocationToDelete] = useState<LocationListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
@@ -58,12 +58,17 @@ export const LocationManagement = () => {
     setModalOpen(true);
   };
 
-  const openEditModal = (loc: Location) => {
-    setEditLocation(loc);
-    setModalOpen(true);
+  const openEditModal = async (loc: LocationListItem) => {
+    try {
+      const full = await locationService.getById(loc._id);
+      setEditLocation(full);
+      setModalOpen(true);
+    } catch {
+      globalThis.alert('Failed to load location details.');
+    }
   };
 
-  const openDeleteConfirm = (loc: Location) => setLocationToDelete(loc);
+  const openDeleteConfirm = (loc: LocationListItem) => setLocationToDelete(loc);
 
   const handleConfirmDelete = async () => {
     if (!locationToDelete) return;
@@ -134,14 +139,8 @@ export const LocationManagement = () => {
                           </span>
                           <span className="truncate">{loc.storeName}</span>
                         </p>
-                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2" title={loc.address}>
-                          {loc.address}
-                        </p>
                         <p className="text-xs text-gray-600 mt-1" title={loc.timezone}>
                           <span className="font-medium">Timezone:</span> {loc.timezone}
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          <span className="font-medium">Business start time:</span> {loc.businessStartTime}
                         </p>
                       </div>
                       <div className="flex items-center justify-end gap-0 sm:gap-2">
@@ -186,7 +185,7 @@ export const LocationManagement = () => {
                       const rowBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                       return (
                         <tr key={loc._id} className={rowBg}>
-                          <td className="w-[20%] px-4 lg:px-6 py-3 lg:py-4">
+                          <td className="w-[40%] px-4 lg:px-6 py-3 lg:py-4">
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="w-8 h-8 flex items-center justify-center shrink-0 text-gray-400">
                                 {loc.logoDataUrl ? (
@@ -198,9 +197,7 @@ export const LocationManagement = () => {
                               <span className="text-xs 2xl:text-sm text-primary truncate" title={loc.storeName}>{loc.storeName}</span>
                             </div>
                           </td>
-                          <td className="w-[35%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.address}>{loc.address}</td>
-                          <td className="w-[22%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.timezone}>{loc.timezone}</td>
-                          <td className="w-[13%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary">{loc.businessStartTime}</td>
+                          <td className="w-[40%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.timezone}>{loc.timezone}</td>
                           <td className="px-4 lg:px-6 py-3 lg:py-4 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <button
@@ -247,12 +244,7 @@ export const LocationManagement = () => {
       <LocationModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSaved={(updatedLocation) => {
-          if (updatedLocation) {
-            setLocations((prev) =>
-              prev.map((loc) => (loc._id === updatedLocation._id ? updatedLocation : loc))
-            );
-          }
+        onSaved={() => {
           fetchLocations();
         }}
         editLocation={editLocation}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { Location, Logo } from '../../types';
 import {
   DEFAULT_BUSINESS_START_TIME,
@@ -148,8 +149,8 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
 
   const submitButtonLabel = isEdit ? 'Update' : 'Add Location';
 
-  return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+  return createPortal(
+    <div className="modal-full-viewport z-[300] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
       <div ref={modalContentRef} className="relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-card-background rounded-xl shadow-lg border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-secondary mb-6">
@@ -210,6 +211,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
           />
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

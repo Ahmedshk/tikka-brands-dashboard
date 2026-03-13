@@ -63,11 +63,12 @@ export interface AddEditRoleFormSetters {
   setLocationsMode: (v: 'all' | 'none' | 'specific') => void;
   setLocations: (v: RoleLocations) => void;
   setNameTouched: (v: boolean) => void;
+  setReportsTo: (v: string | null) => void;
 }
 
 /** Sync form state from initialRole; call when open/initialRole/isDuplicate change. */
 export function applyInitialFormState(
-  initialRole: { roleName: string; description?: string; permissions: RolePermissions; locations?: RoleLocationsResponse } | null,
+  initialRole: { roleName: string; description?: string; permissions: RolePermissions; locations?: RoleLocationsResponse; reportsTo?: string | null } | null,
   isDuplicate: boolean,
   setters: AddEditRoleFormSetters
 ): void {
@@ -78,12 +79,14 @@ export function applyInitialFormState(
     setters.setPermissionsMode('all');
     setters.setLocationsMode('all');
     setters.setLocations('all');
+    setters.setReportsTo(null);
     return;
   }
   setters.setName(isDuplicate ? `Copy of ${initialRole.roleName}` : initialRole.roleName);
   setters.setDescription(initialRole.description ?? '');
   setters.setPermissions(initialRole.permissions);
   setters.setPermissionsMode(getPermissionsModeFromPermissions(initialRole.permissions));
+  setters.setReportsTo(isDuplicate ? null : initialRole.reportsTo ?? null);
   const locs = normalizeLocationsToIds(initialRole.locations);
   if (locs === 'all') {
     setters.setLocationsMode('all');
@@ -136,9 +139,7 @@ function applyComponentDeselect(
   if (entry == null) return;
   const comps = entry.components ?? allIds;
   const next = comps.filter((c) => c !== componentId);
-  if (next.length > 0) {
-    rest.push({ pageId, pageLabel, components: next });
-  }
+  rest.push({ pageId, pageLabel, components: next });
 }
 
 /** Compute next permissions when toggling a single page component. Returns unchanged permissions if not custom. */

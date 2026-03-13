@@ -89,6 +89,10 @@ export const RBACTableCard = ({
                       </span>
                     )}
                   </p>
+                  <p className="text-xs text-secondary">
+                    <span className="font-medium text-primary">Reports To:</span>{' '}
+                    {row.reportsToRoleName ?? '---'}
+                  </p>
                   <div className="text-xs text-secondary">
                     <span className="font-medium text-primary">Locations:</span>
                     <div className="mt-0.5 flex flex-col gap-0.5">
@@ -145,10 +149,13 @@ export const RBACTableCard = ({
           <table className="w-full border-collapse table-fixed min-w-[32rem] text-[10px] md:text-xs 2xl:text-sm">
             <thead>
               <tr className="bg-button-primary text-white">
-                <th className="w-[25%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">
+                <th className="w-[20%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">
                   Role
                 </th>
-                <th className="w-[45%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">
+                <th className="w-[15%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">
+                  Reports To
+                </th>
+                <th className="w-[35%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">
                   Locations
                 </th>
                 <th className="w-[15%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">
@@ -169,7 +176,7 @@ export const RBACTableCard = ({
                     key={row.id ?? `${row.roleName}-${index}`}
                     className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}
                   >
-                    <td className="w-[25%] px-4 lg:px-6 py-3 lg:py-4">
+                    <td className="w-[20%] px-4 lg:px-6 py-3 lg:py-4">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-medium text-primary truncate" title={row.roleName}>
                           {row.roleName}
@@ -186,7 +193,12 @@ export const RBACTableCard = ({
                         )}
                       </div>
                     </td>
-                    <td className="w-[45%] px-4 lg:px-6 py-3 lg:py-4 text-secondary align-top">
+                    <td className="w-[15%] px-4 lg:px-6 py-3 lg:py-4 text-secondary align-middle">
+                      <span className="truncate block" title={row.reportsToRoleName ?? undefined}>
+                        {row.reportsToRoleName ?? '---'}
+                      </span>
+                    </td>
+                    <td className="w-[35%] px-4 lg:px-6 py-3 lg:py-4 text-secondary align-top">
                       <div className="flex flex-col gap-0.5">
                         {getLocationLines(row.locations).map((line) => (
                           <span key={line} className="block break-words">

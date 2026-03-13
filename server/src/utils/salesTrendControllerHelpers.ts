@@ -22,6 +22,7 @@ import {
   getSalesTrendPeriodRange,
   getSalesTrendComparisonRange,
   getStartOfDayUtc,
+  getCalendarDayCountInRange,
 } from "../utils/salesTrendDateRange.util.js";
 import type { TimeRange } from "../utils/businessHours.util.js";
 
@@ -765,10 +766,9 @@ export async function getSalesTrendKpiData(
   );
   const comparisonRange = comparison ? { startAt: comparison.startAt, endAt: comparison.endAt } : null;
 
-  const currentBuckets = getOrderedBucketsAndLabels(dataRange, ctx.timezone, seriesGranularity, { periodType });
-  const numDaysCurrent = currentBuckets.keys.length;
+  const numDaysCurrent = getCalendarDayCountInRange(dataRange, ctx.timezone);
   const numDaysComparison = comparisonRange
-    ? getOrderedBucketsAndLabels(comparisonRange, ctx.timezone, seriesGranularity, { periodType }).keys.length
+    ? getCalendarDayCountInRange(comparisonRange, ctx.timezone)
     : 0;
 
   let totalNetSalesCurrent = 0;

@@ -7,7 +7,7 @@ import toast from "react-hot-toast";
 import { API_BASE_URL, API_ENDPOINTS } from "../utils/constants";
 import { ApiResponse } from "../types";
 import { store } from "../store/store";
-import { clearUser } from "../store/slices/auth.slice";
+import { clearUser, updateUserContext } from "../store/slices/auth.slice";
 
 function getErrorMessage(error: AxiosError<ApiResponse>): string {
   const message = error.response?.data?.message;
@@ -53,9 +53,14 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor: on 401 try refresh once, then retry or clear session
+// Response interceptor: on 401 try refresh once, then retry or clear session.
+// Also apply meta.user from authenticated responses so role/permission changes take effect without refresh.
 api.interceptors.response.use(
   (response) => {
+    const metaUser = response?.data?.meta?.user;
+    if (metaUser != null) {
+      store.dispatch(updateUserContext(metaUser));
+    }
     return response;
   },
   async (error: AxiosError<ApiResponse>) => {

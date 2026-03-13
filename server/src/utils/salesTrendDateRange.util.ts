@@ -193,6 +193,33 @@ export function getDatePartsInTz(date: Date, timezone: string): { y: number; m: 
   return { y, m, d };
 }
 
+/** Number of calendar days (in the given timezone) covered by the range. Used for KPI numDays so single-day ranges yield 1. */
+export function getCalendarDayCountInRange(
+  range: { startAt: string; endAt: string },
+  timezone: string,
+): number {
+  const start = new Date(range.startAt);
+  const end = new Date(range.endAt);
+  const startParts = getDatePartsInTz(start, timezone);
+  const endParts = getDatePartsInTz(end, timezone);
+  let count = 0;
+  let y = startParts.y;
+  let m = startParts.m;
+  let d = startParts.d;
+  while (
+    y < endParts.y ||
+    (y === endParts.y && m < endParts.m) ||
+    (y === endParts.y && m === endParts.m && d <= endParts.d)
+  ) {
+    count += 1;
+    const next = addDays(y, m, d, 1);
+    y = next.y;
+    m = next.m;
+    d = next.d;
+  }
+  return count;
+}
+
 const BUSINESS_START_REGEX = /^([01]?\d|2[0-3]):[0-5]\d$/;
 
 function useBusinessDayBoundaries(businessStartTime?: string): boolean {

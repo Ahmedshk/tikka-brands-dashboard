@@ -181,12 +181,72 @@ export function hasAccessToAnyPage(
 
 const FULL_PAGE_COMPONENT_ID = 'full-page';
 
+type RolePermissions = import('../types/rbac.types').RolePermissions;
+type PagePermission = import('../types/rbac.types').PagePermission;
+
+/**
+ * Compute effective permissions (permissions + overrides − removals) so component visibility
+ * respects user-specific removals and overrides (e.g. when role is "all" but user has only some components).
+ */
+export function getEffectivePermissions(
+  permissions: RolePermissions | undefined,
+  permissionOverrides: RolePermissions | null | undefined,
+  permissionRemovals: RolePermissions | null | undefined
+): RolePermissions | undefined {
+  if (!permissions) return undefined;
+  const removalPages = permissionRemovals?.type === 'custom' ? permissionRemovals.pages ?? [] : [];
+  const overridePages = permissionOverrides?.type === 'custom' ? permissionOverrides.pages ?? [] : [];
+
+  const isPageFullyRemoved = (pageId: string): boolean => {
+    const entry = removalPages.find((p) => p.pageId === pageId);
+    return entry != null && (entry.components == null || entry.components.length === 0);
+  };
+
+  const getEffectivePage = (pageId: string, pageLabel: string, allComponentIds: string[]): PagePermission | null => {
+    if (isPageFullyRemoved(pageId)) return null;
+    const removalEntry = removalPages.find((p) => p.pageId === pageId);
+    const toRemove = new Set(removalEntry?.components ?? []);
+
+    let baseComponents: string[];
+    if (permissions.type === 'all') {
+      const overridePage = overridePages.find((p) => p.pageId === pageId);
+      baseComponents = (overridePage?.components?.length ? [...overridePage.components] : [...allComponentIds]) as string[];
+    } else {
+      const page = permissions.pages?.find((p) => p.pageId === pageId);
+      if (!page) return null;
+      baseComponents = (page.components?.length ? [...page.components] : [...allComponentIds]) as string[];
+    }
+    const effective = baseComponents.filter((c) => !toRemove.has(c));
+    return { pageId, pageLabel, components: effective };
+  };
+
+  if (permissions.type === 'all') {
+    if (removalPages.length === 0 && overridePages.length === 0) return { type: 'all' };
+    const pages: PagePermission[] = [];
+    for (const config of PERMISSION_PAGES) {
+      const allIds = config.components.map((c) => c.id);
+      const effectivePage = getEffectivePage(config.pageId, config.pageLabel, allIds);
+      if (effectivePage != null) pages.push(effectivePage);
+    }
+    return { type: 'custom', pages };
+  }
+
+  const pages: PagePermission[] = [];
+  for (const page of permissions.pages ?? []) {
+    const config = PERMISSION_PAGES.find((p) => p.pageId === page.pageId);
+    const allIds = config?.components.map((c) => c.id) ?? [];
+    const effectivePage = getEffectivePage(page.pageId, page.pageLabel ?? page.pageId, allIds);
+    if (effectivePage != null) pages.push(effectivePage);
+  }
+  return { type: 'custom', pages };
+}
+
 /**
  * Check if permissions allow access to a specific component on a page.
  * Use to conditionally render and fetch only for allowed components.
  */
 export function canAccessComponent(
-  permissions: import('../types/rbac.types').RolePermissions | undefined,
+  permissions: RolePermissions | undefined,
   pageId: string,
   componentId: string
 ): boolean {

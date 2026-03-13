@@ -1,4 +1,5 @@
 import { useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Spinner } from '../common/Spinner';
 
 export interface ConfirmDialogProps {
@@ -71,11 +72,11 @@ export const ConfirmDialog = ({
       ? 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500'
       : 'bg-button-primary text-white hover:opacity-90 focus:ring-button-primary';
 
-  return (
+  return createPortal(
     <dialog
       ref={dialogRef}
       onCancel={handleCancel}
-      className="fixed inset-0 z-[300] m-0 h-screen w-screen min-h-screen min-w-full max-w-none max-h-none bg-transparent border-0 p-4 outline-none hidden open:grid place-items-center [&::backdrop]:bg-black/50"
+      className="modal-full-viewport z-[300] m-0 bg-transparent border-0 p-4 outline-none hidden open:grid place-items-center [&::backdrop]:bg-black/50"
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-message"
     >
@@ -114,6 +115,7 @@ export const ConfirmDialog = ({
         </button>
       </div>
       </div>
-    </dialog>
+    </dialog>,
+    document.body
   );
 };

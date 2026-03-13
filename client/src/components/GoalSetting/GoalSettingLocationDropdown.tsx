@@ -2,18 +2,18 @@ import React from 'react';
 import { Dropdown } from '../common/Dropdown';
 import { Spinner } from '../common/Spinner';
 import LocationIcon from '@assets/icons/location.svg?react';
-import type { Location } from '../../types';
+import type { LocationListItem } from '../../types';
 
 export interface GoalSettingLocationDropdownProps {
-  locations: Location[];
+  locations: LocationListItem[];
   locationsLoading: boolean;
-  selectedLocation: Location | null;
+  selectedLocation: LocationListItem | null;
   hasUnsavedChanges: boolean;
-  onSelectLocation: (loc: Location) => void;
-  onPendingLocation: (loc: Location) => void;
+  onSelectLocation: (loc: LocationListItem) => void;
+  onPendingLocation: (loc: LocationListItem) => void;
 }
 
-function getPlaceholder(locationsLoading: boolean, locations: Location[]): string {
+function getPlaceholder(locationsLoading: boolean, locations: LocationListItem[]): string {
   if (locationsLoading) return 'Loading...';
   if (locations.length === 0) return 'No locations';
   return 'Select location';
@@ -25,8 +25,8 @@ function TriggerLabel({
   selectedLocation,
 }: Readonly<{
   locationsLoading: boolean;
-  locations: Location[];
-  selectedLocation: Location | null;
+  locations: LocationListItem[];
+  selectedLocation: LocationListItem | null;
 }>) {
   if (locationsLoading) {
     return (
@@ -37,9 +37,7 @@ function TriggerLabel({
     );
   }
   if (selectedLocation != null) {
-    const title = selectedLocation.address
-      ? `${selectedLocation.storeName} – ${selectedLocation.address}`
-      : selectedLocation.storeName;
+    const title = selectedLocation.storeName;
     return (
       <span
         className="font-semibold text-secondary text-sm md:text-base 2xl:text-lg truncate"
@@ -68,7 +66,6 @@ export function GoalSettingLocationDropdown({
       options={locations.map((loc) => ({
         value: loc._id,
         label: loc.storeName,
-        secondaryLabel: loc.address,
       }))}
       value={selectedLocation?._id ?? ''}
       onChange={(id) => {

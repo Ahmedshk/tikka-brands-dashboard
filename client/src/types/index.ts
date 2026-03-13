@@ -17,8 +17,14 @@ export interface User {
   role: UserRole;
   /** Resolved from Role; used for nav and route guards. */
   permissions?: RolePermissions;
+  /** User's additive overrides (needed to compute effective permissions when role is 'all'). */
+  permissionOverrides?: RolePermissions | null;
+  /** Pages/components removed for this user (used with permissions + overrides for visibility). */
+  permissionRemovals?: RolePermissions | null;
   /** Resolved from Role.locations: 'all' or list of location IDs the user can access. */
   allowedLocationIds?: 'all' | string[];
+  /** Location IDs removed for this user (narrower than role's locations). */
+  locationRemovals?: string[] | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -38,6 +44,8 @@ export interface ApiResponse<T = unknown> {
     path: string;
     message: string;
   }>;
+  /** Set by backend on authenticated responses so the client can reflect role/permission changes without refresh. */
+  meta?: { user?: Partial<User> };
 }
 
 export interface Logo {
@@ -48,6 +56,15 @@ export interface Logo {
   updatedAt?: string;
 }
 
+/** Minimal location from list API (no sensitive address/IDs). */
+export interface LocationListItem {
+  _id: string;
+  storeName: string;
+  timezone: string;
+  logoDataUrl?: string;
+}
+
+/** Full location (from get-by-id, create, update). */
 export interface Location {
   _id: string;
   storeName: string;

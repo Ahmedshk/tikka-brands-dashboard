@@ -5,7 +5,7 @@ import { RootState } from '../../store/store';
 import { setCurrentLocation, getStoredLocationId } from '../../store/slices/location.slice';
 import { locationService } from '../../services/location.service';
 import { useAuth } from '../../hooks/useAuth';
-import type { Location } from '../../types';
+import type { LocationListItem } from '../../types';
 import { Spinner } from './Spinner';
 import { Dropdown } from './Dropdown';
 import LocationIcon from '@assets/icons/location.svg?react';
@@ -41,11 +41,11 @@ export const Navbar = () => {
   const { logout } = useAuth();
   const user = useSelector((state: RootState) => state.auth.user);
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
-  const [locations, setLocations] = useState<Location[]>([]);
+  const [locations, setLocations] = useState<LocationListItem[]>([]);
   const hideLocationSelector =
     pathname === LOCATION_MANAGEMENT_PATH ||
     pathname === USER_MANAGEMENT_PATH ||
-    pathname === RBAC_MANAGEMENT_PATH ||
+    pathname.startsWith(RBAC_MANAGEMENT_PATH) ||
     pathname === GOAL_SETTING_PATH;
   const [locationsLoading, setLocationsLoading] = useState(true);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
@@ -53,10 +53,16 @@ export const Navbar = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const notificationCount = 2; // Placeholder count
 
-  // Fetch locations and sync current location from storage or first location
+  // Fetch locations and sync current location from storage or first location.
+  // Refetch when user's allowed locations change (e.g. after admin changes role) so dropdown updates.
+  const allowedLocationIdsKey = Array.isArray(user?.allowedLocationIds)
+    ? user.allowedLocationIds.join(',')
+    : user?.allowedLocationIds ?? '';
+  const locationRemovalsKey = (user?.locationRemovals ?? []).join(',');
   useEffect(() => {
     const controller = new AbortController();
     (async () => {
+      setLocationsLoading(true);
       try {
         const data = await locationService.getAll({ signal: controller.signal });
         if (controller.signal.aborted) return;
@@ -75,7 +81,7 @@ export const Navbar = () => {
       }
     })();
     return () => controller.abort();
-  }, [dispatch]);
+  }, [dispatch, allowedLocationIdsKey, locationRemovalsKey]);
 
   // Keep current location in sync if it was removed from list (e.g. deleted elsewhere)
   useEffect(() => {
@@ -155,8 +161,9 @@ export const Navbar = () => {
       </>
     );
   } else if (currentLocation) {
+    const title = currentLocation.storeName;
     locationTriggerContent = (
-      <span className="text-xs md:text-sm 2xl:text-base text-primary truncate" title={`${currentLocation.storeName} – ${currentLocation.address}`}>
+      <span className="text-xs md:text-sm 2xl:text-base text-primary truncate" title={title}>
         {currentLocation.storeName}
       </span>
     );
@@ -179,7 +186,7 @@ export const Navbar = () => {
         {!hideLocationSelector && (
           <div className="min-w-0 flex-1 w-full lg:flex-initial lg:max-w-md xl:max-w-xl">
             <Dropdown
-              options={locations.map((loc) => ({ value: loc._id, label: loc.storeName, secondaryLabel: loc.address }))}
+              options={locations.map((loc) => ({ value: loc._id, label: loc.storeName }))}
               value={currentLocation?._id ?? ''}
               onChange={(id) => {
                 const loc = locations.find((l) => l._id === id);

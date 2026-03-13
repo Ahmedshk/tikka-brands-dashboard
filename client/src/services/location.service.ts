@@ -1,12 +1,12 @@
 import api from "./api.service";
 import { API_ENDPOINTS } from "../utils/constants";
 import { ApiResponse } from "../types";
-import type { Location } from "../types";
+import type { Location, LocationListItem } from "../types";
 
 const BASE = API_ENDPOINTS.LOCATIONS;
 
 export interface LocationsPaginatedResponse {
-  locations: Location[];
+  locations: LocationListItem[];
   total: number;
   page: number;
   limit: number;
@@ -14,10 +14,10 @@ export interface LocationsPaginatedResponse {
 }
 
 export const locationService = {
-  async getAll(options?: { signal?: AbortSignal }): Promise<Location[]> {
+  async getAll(options?: { signal?: AbortSignal }): Promise<LocationListItem[]> {
     const res = await api.get<
       ApiResponse<{
-        locations: Location[];
+        locations: LocationListItem[];
         total: number;
         page: number;
         limit: number;
@@ -36,7 +36,7 @@ export const locationService = {
   ): Promise<LocationsPaginatedResponse> {
     const res = await api.get<
       ApiResponse<{
-        locations: Location[];
+        locations: LocationListItem[];
         total: number;
         page: number;
         limit: number;

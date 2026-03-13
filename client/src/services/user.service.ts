@@ -2,6 +2,7 @@ import api from './api.service';
 import { API_ENDPOINTS } from '../utils/constants';
 import { ApiResponse } from '../types';
 import type { UserRow } from '../types/userManagement.types';
+import type { RolePermissions } from '../types/rbac.types';
 
 const BASE = API_ENDPOINTS.USERS;
 
@@ -20,6 +21,10 @@ interface ApiUser {
   isActive?: boolean;
   invitationSentAt?: string | null;
   profileImageUrl?: string | null;
+  permissionOverrides?: RolePermissions | null;
+  locationOverrides?: string[] | null;
+  permissionRemovals?: RolePermissions | null;
+  locationRemovals?: string[] | null;
 }
 
 /** Use plain fields; if API sent Mongoose doc, data may be in _doc. */
@@ -40,6 +45,10 @@ function pickUser(u: ApiUser): ApiUser {
       isActive: d.isActive as boolean | undefined,
       invitationSentAt: d.invitationSentAt as string | null | undefined,
       profileImageUrl: d.profileImageUrl as string | null | undefined,
+      permissionOverrides: (d.permissionOverrides as RolePermissions | null | undefined) ?? undefined,
+      locationOverrides: (d.locationOverrides as string[] | null | undefined) ?? undefined,
+      permissionRemovals: (d.permissionRemovals as RolePermissions | null | undefined) ?? undefined,
+      locationRemovals: (d.locationRemovals as string[] | null | undefined) ?? undefined,
     };
   }
   return u;
@@ -77,6 +86,10 @@ function toUserRow(u: ApiUser): UserRow {
     isActive,
     invitationSentAt: d.invitationSentAt ?? null,
     profileImageUrl: d.profileImageUrl ?? null,
+    permissionOverrides: d.permissionOverrides ?? null,
+    locationOverrides: d.locationOverrides ?? null,
+    permissionRemovals: d.permissionRemovals ?? null,
+    locationRemovals: d.locationRemovals ?? null,
   };
 }
 
@@ -122,6 +135,10 @@ export interface UpdateUserPayload {
   roleId?: string | null;
   isActive?: boolean;
   profileImagePublicId?: string | null;
+  permissionOverrides?: RolePermissions | null;
+  locationOverrides?: string[] | null;
+  permissionRemovals?: RolePermissions | null;
+  locationRemovals?: string[] | null;
 }
 
 export interface SyncFromSquareResult {

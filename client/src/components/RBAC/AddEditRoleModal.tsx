@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useSelector } from 'react-redux';
 import type { RoleRow, RolePermissions, RoleLocations, PagePermission } from '../../types/rbac.types';
-import type { Location } from '../../types';
+import type { LocationListItem } from '../../types';
 import { RootState } from '../../store/store';
 import { roleService } from '../../services/role.service';
 import { locationService } from '../../services/location.service';
@@ -11,6 +12,11 @@ import {
   RBAC_PAGE_ID,
 } from '../../utils/addEditRoleModalHelpers';
 import { AddEditRoleModalBody } from './AddEditRoleModalBody';
+
+interface RoleOption {
+  id: string;
+  name: string;
+}
 
 export interface AddEditRoleModalProps {
   open: boolean;
@@ -40,10 +46,12 @@ export function AddEditRoleModal({
   const [locationsMode, setLocationsMode] = useState<'all' | 'none' | 'specific'>('all');
   const [locations, setLocations] = useState<RoleLocations>('all');
   const [permissionsMode, setPermissionsMode] = useState<'all' | 'none' | 'custom'>('all');
-  const [locationsList, setLocationsList] = useState<Location[]>([]);
+  const [locationsList, setLocationsList] = useState<LocationListItem[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameTouched, setNameTouched] = useState(false);
+  const [reportsTo, setReportsTo] = useState<string | null>(null);
+  const [availableRoles, setAvailableRoles] = useState<RoleOption[]>([]);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -82,6 +90,7 @@ export function AddEditRoleModal({
       setLocationsMode,
       setLocations,
       setNameTouched,
+      setReportsTo,
     });
   }, [open, initialRole, isDuplicate]);
 
@@ -93,7 +102,20 @@ export function AddEditRoleModal({
       .then(setLocationsList)
       .catch(() => setLocationsList([]))
       .finally(() => setLocationsLoading(false));
-  }, [open]);
+
+    roleService
+      .list(true)
+      .then((roles) => {
+        const editingId = isEdit ? initialRole?.id : null;
+        setAvailableRoles(
+          roles
+            .filter((r) => r.id != null && r.id !== editingId && r.isSystem !== true)
+            .map((r) => ({ id: r.id!, name: r.roleName }))
+            .sort((a, b) => a.name.localeCompare(b.name))
+        );
+      })
+      .catch(() => setAvailableRoles([]));
+  }, [open, isEdit, initialRole?.id]);
 
   const handlePermissionsModeChange = (mode: 'all' | 'none' | 'custom') => {
     setPermissionsMode(mode);
@@ -137,6 +159,7 @@ export function AddEditRoleModal({
         description: description.trim() || undefined,
         permissions,
         locations: payloadLocations,
+        reportsTo,
       };
       if (isEdit && initialRole?.id) {
         const updated = await roleService.update(initialRole.id, payload);
@@ -157,10 +180,10 @@ export function AddEditRoleModal({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <dialog
       ref={dialogRef}
-      className="fixed inset-0 z-50 m-0 grid h-screen w-full max-w-none max-h-none place-items-center border-0 bg-transparent p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
+      className="modal-full-viewport z-50 m-0 grid place-items-center border-0 bg-transparent p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
       aria-labelledby="add-edit-role-title"
       onClose={onClose}
     >
@@ -193,8 +216,12 @@ export function AddEditRoleModal({
           saving={saving}
           onClose={onClose}
           onSubmit={handleSubmit}
+          reportsTo={reportsTo}
+          setReportsTo={setReportsTo}
+          availableRoles={availableRoles}
         />
       </div>
-    </dialog>
+    </dialog>,
+    document.body
   );
 }

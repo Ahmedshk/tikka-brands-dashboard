@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { Location } from '../../types';
+import type { LocationListItem } from '../../types';
 
 const STORAGE_KEY = 'tikka_current_location_id';
 
@@ -21,7 +21,7 @@ function setStoredLocationId(id: string | null) {
 }
 
 interface LocationState {
-  currentLocation: Location | null;
+  currentLocation: LocationListItem | null;
 }
 
 const initialState: LocationState = {
@@ -32,7 +32,7 @@ const locationSlice = createSlice({
   name: 'location',
   initialState,
   reducers: {
-    setCurrentLocation: (state, action: PayloadAction<Location | null>) => {
+    setCurrentLocation: (state, action: PayloadAction<LocationListItem | null>) => {
       state.currentLocation = action.payload;
       setStoredLocationId(action.payload?._id ?? null);
     },

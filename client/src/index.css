@@ -1,6 +1,18 @@
 @import "tailwindcss";
 @config "../tailwind.config.ts";
 
+/* Ensure modal overlays cover the full viewport (sidebar, scrollbars, etc.) */
+@layer components {
+  .modal-full-viewport {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-width: 100vw !important;
+    min-height: 100vh !important;
+  }
+}
+
 @layer base {
   body {
     @apply font-primary text-primary;
@@ -190,4 +202,73 @@
 /* Sales Trend chart: Comparison series = dashed line */
 .MuiLineElement-series-comparison {
   stroke-dasharray: 6 4;
+}
+
+/* ── Hierarchy Tree Connectors ── */
+.hierarchy-tree-children {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 24px;
+}
+
+/* Vertical line from parent center down to the horizontal rail */
+.hierarchy-tree-children::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 24px;
+  background: #cbd5e1;
+  z-index: 1;
+}
+
+.hierarchy-tree-child {
+  position: relative;
+  padding: 24px 12px 0;
+}
+
+/* Vertical stub from horizontal rail down to each child node */
+.hierarchy-tree-child::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 24px;
+  background: #cbd5e1;
+}
+
+/* Horizontal rail segment across each child's width */
+.hierarchy-tree-child::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #cbd5e1;
+}
+
+/* First child: rail starts at center */
+.hierarchy-tree-child:first-child::after {
+  left: 50%;
+}
+
+/* Last child: rail ends at center */
+.hierarchy-tree-child:last-child::after {
+  right: 50%;
+}
+
+/* Only child: no horizontal rail */
+.hierarchy-tree-child:only-child::after {
+  display: none;
+}
+
+/* Drag feedback */
+.hierarchy-tree-node [draggable="true"] {
+  touch-action: none;
 }

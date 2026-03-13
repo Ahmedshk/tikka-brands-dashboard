@@ -1,3 +1,5 @@
+import { createElement, type ReactNode } from 'react';
+
 export interface ValidatedUserForm {
   trimmedFirst: string;
   trimmedLast: string;
@@ -60,4 +62,24 @@ export async function resolveProfileImagePublicId(
  */
 export function getSaveErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'Failed to save user';
+}
+
+/**
+ * Returns the profile avatar content for the add/edit user modal: preview image, current URL image, or initial letter.
+ */
+export function getProfileAvatarContent(
+  profileImagePreview: string | null,
+  currentProfileImageUrl: string | null,
+  removeProfileImage: boolean,
+  firstName: string,
+  initialUserFirstName?: string
+): ReactNode {
+  if (profileImagePreview) {
+    return createElement('img', { src: profileImagePreview, alt: '', className: 'w-full h-full object-cover' });
+  }
+  if (currentProfileImageUrl && !removeProfileImage) {
+    return createElement('img', { src: currentProfileImageUrl, alt: '', className: 'w-full h-full object-cover' });
+  }
+  const initial = (firstName.trim() || initialUserFirstName)?.[0]?.toUpperCase() ?? '?';
+  return createElement('span', { className: 'text-gray-400 text-lg font-medium' }, initial);
 }

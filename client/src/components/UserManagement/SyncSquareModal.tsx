@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { userService, type SyncFromSquareResult } from '../../services/user.service';
 import { locationService } from '../../services/location.service';
-import type { Location } from '../../types';
+import type { LocationListItem } from '../../types';
 
 export interface SyncSquareModalProps {
   open: boolean;
@@ -11,7 +12,7 @@ export interface SyncSquareModalProps {
 }
 
 export function SyncSquareModal({ open, onClose, onSynced, onError }: Readonly<SyncSquareModalProps>) {
-  const [locations, setLocations] = useState<Location[]>([]);
+  const [locations, setLocations] = useState<LocationListItem[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [syncing, setSyncing] = useState(false);
 
@@ -40,11 +41,11 @@ export function SyncSquareModal({ open, onClose, onSynced, onError }: Readonly<S
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <dialog
       open
       onCancel={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 w-full max-w-none max-h-none m-0 border-0 bg-black/50 backdrop:bg-black/50"
+      className="modal-full-viewport z-50 flex items-center justify-center p-4 m-0 border-0 bg-black/50 backdrop:bg-black/50"
       aria-labelledby="sync-square-title"
     >
       <button
@@ -98,6 +99,7 @@ export function SyncSquareModal({ open, onClose, onSynced, onError }: Readonly<S
           </button>
         </div>
       </div>
-    </dialog>
+    </dialog>,
+    document.body
   );
 }

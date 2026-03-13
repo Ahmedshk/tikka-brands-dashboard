@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { format, parse } from 'date-fns';
+import { format, parse, subDays, startOfWeek, startOfMonth, startOfYear } from 'date-fns';
 import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -42,6 +42,37 @@ function parseDateSafe(s: string | undefined): Date | null {
   if (!s) return null;
   const d = parse(s, DATE_DISPLAY_FORMAT, new Date());
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Display range (MM/dd/yy) for non-custom period types, for read-only field hint. */
+function getDisplayRangeForPeriodType(periodType: SalesTrendPeriodType): { start: string; end: string } {
+  const today = new Date();
+  const end = format(today, DATE_DISPLAY_FORMAT);
+  switch (periodType) {
+    case 'today':
+      return { start: end, end };
+    case 'last7days':
+      return { start: format(subDays(today, 6), DATE_DISPLAY_FORMAT), end };
+    case 'last30days':
+      return { start: format(subDays(today, 29), DATE_DISPLAY_FORMAT), end };
+    case 'last52weeks':
+      return { start: format(subDays(today, 363), DATE_DISPLAY_FORMAT), end };
+    case 'thisWeek': {
+      const weekStart = startOfWeek(today, { weekStartsOn: 0 });
+      return { start: format(weekStart, DATE_DISPLAY_FORMAT), end };
+    }
+    case 'thisMonth': {
+      const monthStart = startOfMonth(today);
+      return { start: format(monthStart, DATE_DISPLAY_FORMAT), end };
+    }
+    case 'thisYear': {
+      const yearStart = startOfYear(today);
+      return { start: format(yearStart, DATE_DISPLAY_FORMAT), end };
+    }
+    case 'custom':
+    default:
+      return { start: '', end: '' };
+  }
 }
 
 function formatDateToISO(d: Date): string {
@@ -274,28 +305,52 @@ export function PeriodPicker({ value, onChange, id, className = '' }: Readonly<P
                 </div>
               </div>
             </LocalizationProvider>
-            {isCustom && (
-              <div className="flex flex-row gap-2 w-full">
-                <TextField
-                  size="small"
-                  label="Start date"
-                  value={localStart}
-                  onChange={(e) => setLocalStart(e.target.value)}
-                  onBlur={handleStartBlur}
-                  placeholder={DATE_DISPLAY_FORMAT}
-                  fullWidth
-                />
-                <TextField
-                  size="small"
-                  label="End date"
-                  value={localEnd}
-                  onChange={(e) => setLocalEnd(e.target.value)}
-                  onBlur={handleEndBlur}
-                  placeholder={DATE_DISPLAY_FORMAT}
-                  fullWidth
-                />
-              </div>
-            )}
+            <div className="flex flex-row gap-2 w-full">
+              {isCustom ? (
+                <>
+                  <TextField
+                    size="small"
+                    label="Start date"
+                    value={localStart}
+                    onChange={(e) => setLocalStart(e.target.value)}
+                    onBlur={handleStartBlur}
+                    placeholder={DATE_DISPLAY_FORMAT}
+                    fullWidth
+                  />
+                  <TextField
+                    size="small"
+                    label="End date"
+                    value={localEnd}
+                    onChange={(e) => setLocalEnd(e.target.value)}
+                    onBlur={handleEndBlur}
+                    placeholder={DATE_DISPLAY_FORMAT}
+                    fullWidth
+                  />
+                </>
+              ) : (
+                (() => {
+                  const { start, end } = getDisplayRangeForPeriodType(value.periodType);
+                  return (
+                    <>
+                      <TextField
+                        size="small"
+                        label="Start date"
+                        value={start}
+                        slotProps={{ input: { readOnly: true } }}
+                        fullWidth
+                      />
+                      <TextField
+                        size="small"
+                        label="End date"
+                        value={end}
+                        slotProps={{ input: { readOnly: true } }}
+                        fullWidth
+                      />
+                    </>
+                  );
+                })()
+              )}
+            </div>
           </div>
         </div>
       </Popover>

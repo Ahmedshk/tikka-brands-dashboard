@@ -9,7 +9,10 @@ import {
   getEndOfDayUtc,
   getDatePartsInTz,
 } from "../utils/salesTrendDateRange.util.js";
-import type { GetSalesTrendComparisonRangeOptions } from "../utils/salesTrendDateRange.util.js";
+import type {
+  GetSalesTrendComparisonRangeOptions,
+  PeriodType,
+} from "../utils/salesTrendDateRange.util.js";
 import {
   parseSalesTrendQuery,
   parseSalesTrendKpiQuery,
@@ -39,6 +42,8 @@ import {
   fetchHourlyLaborCostPerHour,
   computeLaborCostPercentPerHour,
   buildEmptyHourlyBreakdownData,
+  parseSalesByCategoryQuery,
+  buildSalesByCategoryResponseData,
   type LocationForSalesLabor,
 } from "../utils/salesLaborControllerHelpers.js";
 
@@ -63,9 +68,9 @@ export const getSalesLaborKPIs = async (
       req.user!.permissionOverrides ?? null
     );
     const effectivePermissions =
-      effectivePage != null
-        ? { type: "custom" as const, pages: [effectivePage] }
-        : undefined;
+      effectivePage == null
+        ? undefined
+        : { type: "custom" as const, pages: [effectivePage] };
     const allMetricIds = getAllMetricIdsForPage("sales-labor-detail");
     const allowedMetrics = effectivePermissions
       ? filterAllowedMetrics(effectivePermissions, "sales-labor-detail", allMetricIds)
@@ -283,30 +288,8 @@ export const getSalesByCategory = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const locationId =
-      typeof req.query.locationId === "string" ? req.query.locationId : "";
-    const periodType = (req.query.periodType as string) || "last30days";
-    const periodStart =
-      typeof req.query.periodStart === "string"
-        ? req.query.periodStart
-        : undefined;
-    const periodEnd =
-      typeof req.query.periodEnd === "string" ? req.query.periodEnd : undefined;
-    const comparisonType = (req.query.comparisonType as string) || "priorYear";
-    const comparisonDate =
-      typeof req.query.comparisonDate === "string"
-        ? req.query.comparisonDate
-        : undefined;
-    const comparisonStart =
-      typeof req.query.comparisonStart === "string"
-        ? req.query.comparisonStart
-        : undefined;
-    const comparisonEnd =
-      typeof req.query.comparisonEnd === "string"
-        ? req.query.comparisonEnd
-        : undefined;
-
-    const withCreds = await locationService.getByIdWithCredentials(locationId);
+    const params = parseSalesByCategoryQuery(req.query as Record<string, unknown>);
+    const withCreds = await locationService.getByIdWithCredentials(params.locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");
     }
@@ -315,21 +298,21 @@ export const getSalesByCategory = async (
     const businessStartTime = location.businessStartTime?.trim() ?? "00:00";
 
     const period = getSalesTrendPeriodRange(
-      periodType as Parameters<typeof getSalesTrendPeriodRange>[0],
+      params.periodType as Parameters<typeof getSalesTrendPeriodRange>[0],
       timezone,
-      periodStart,
-      periodEnd,
+      params.periodStart,
+      params.periodEnd,
       businessStartTime,
     );
     const comparisonOptions: GetSalesTrendComparisonRangeOptions = {
       businessStartTime,
     };
-    if (comparisonDate !== undefined) comparisonOptions.customComparisonDate = comparisonDate;
-    if (comparisonStart !== undefined) comparisonOptions.customComparisonStart = comparisonStart;
-    if (comparisonEnd !== undefined) comparisonOptions.customComparisonEnd = comparisonEnd;
-    if (periodType !== undefined) comparisonOptions.periodType = periodType as GetSalesTrendComparisonRangeOptions["periodType"];
+    if (params.comparisonDate !== undefined) comparisonOptions.customComparisonDate = params.comparisonDate;
+    if (params.comparisonStart !== undefined) comparisonOptions.customComparisonStart = params.comparisonStart;
+    if (params.comparisonEnd !== undefined) comparisonOptions.customComparisonEnd = params.comparisonEnd;
+    if (params.periodType !== undefined) comparisonOptions.periodType = params.periodType as PeriodType;
     const comparison = getSalesTrendComparisonRange(
-      comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
+      params.comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
       period.startAt,
       period.endAt,
       timezone,
@@ -349,63 +332,23 @@ export const getSalesByCategory = async (
 
     if (squareLocationId) {
       const [current, comp] = await Promise.all([
-        getNetSalesByCategoryInRange(
-          squareLocationId,
-          dataRange,
-          squareOptions,
-        ),
+        getNetSalesByCategoryInRange(squareLocationId, dataRange, squareOptions),
         comparisonRange
-          ? getNetSalesByCategoryInRange(
-              squareLocationId,
-              comparisonRange,
-              squareOptions,
-            )
+          ? getNetSalesByCategoryInRange(squareLocationId, comparisonRange, squareOptions)
           : Promise.resolve({ categories: [], totalNetSalesCents: 0 }),
       ]);
       currentResult = current;
       comparisonResult = comp;
     }
 
-    const allNames = new Set<string>();
-    for (const c of currentResult.categories) allNames.add(c.name);
-    for (const c of comparisonResult.categories) allNames.add(c.name);
-    const currentByName = new Map(
-      currentResult.categories.map((c) => [c.name, c.netSalesCents]),
+    const data = buildSalesByCategoryResponseData(
+      currentResult,
+      comparisonResult,
+      period.startAt,
+      period.endAt,
+      comparisonRange,
     );
-    const comparisonByName = new Map(
-      comparisonResult.categories.map((c) => [c.name, c.netSalesCents]),
-    );
-
-    const merged = Array.from(allNames)
-      .map((name) => ({
-        label: name,
-        netSales:
-          (currentByName.get(name) ?? 0) / 100,
-        comparisonNetSales:
-          (comparisonByName.get(name) ?? 0) / 100,
-      }))
-      .sort((a, b) => b.netSales - a.netSales);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        current: {
-          categories: merged.map(({ label, netSales }) => ({ label, netSales })),
-          totalNetSales: currentResult.totalNetSalesCents / 100,
-        },
-        comparison: {
-          categories: merged.map(({ label, comparisonNetSales }) => ({
-            label,
-            netSales: comparisonNetSales,
-          })),
-          totalNetSales: comparisonResult.totalNetSalesCents / 100,
-        },
-        periodRange: { startAt: period.startAt, endAt: period.endAt },
-        comparisonRange: comparisonRange
-          ? { startAt: comparisonRange.startAt, endAt: comparisonRange.endAt }
-          : null,
-      },
-    });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
   }

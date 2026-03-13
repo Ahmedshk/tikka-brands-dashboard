@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { OrderTrackerOrder } from '../../services/inventory.service';
 
 function formatCurrency(v: number): string {
@@ -52,10 +53,10 @@ export const OrderDetailModal = ({
     totalDisplay = formatCurrency(details.PriceTotalWithVAT);
   }
 
-  return (
+  return createPortal(
     <dialog
       ref={dialogRef}
-      className="fixed inset-0 z-[310] m-0 grid h-screen w-screen min-h-screen min-w-full max-w-none max-h-none place-items-center bg-transparent border-0 p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
+      className="modal-full-viewport z-[310] m-0 grid place-items-center bg-transparent border-0 p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
       aria-labelledby="order-detail-modal-title"
       onClose={onClose}
     >
@@ -257,6 +258,7 @@ export const OrderDetailModal = ({
           </div>
         </div>
       </div>
-    </dialog>
+    </dialog>,
+    document.body
   );
 };

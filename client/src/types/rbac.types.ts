@@ -35,4 +35,8 @@ export interface RoleRow {
   locations?: RoleLocationsResponse;
   isSystem?: boolean;
   isActive?: boolean;
+  /** Parent role ID this role reports to. Null/undefined = top-level. */
+  reportsTo?: string | null;
+  /** Parent role display name (populated from API). */
+  reportsToRoleName?: string | null;
 }

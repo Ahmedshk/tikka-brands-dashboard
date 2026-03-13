@@ -7,7 +7,7 @@ import { userService } from '../../services/user.service';
 import { roleService } from '../../services/role.service';
 import { locationService } from '../../services/location.service';
 import type { RoleRow } from '../../types/rbac.types';
-import type { Location } from '../../types';
+import type { LocationListItem } from '../../types';
 import AdminSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
 import SyncIcon from '@assets/icons/sync.svg?react';
@@ -21,7 +21,7 @@ const PAGE_SIZE = 10;
 export const UserManagement = () => {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<RoleRow[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
+  const [locations, setLocations] = useState<LocationListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleIdFilter, setRoleIdFilter] = useState('');

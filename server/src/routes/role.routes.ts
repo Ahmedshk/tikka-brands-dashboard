@@ -5,6 +5,7 @@ import {
   createRole,
   updateRole,
   deleteRole,
+  updateHierarchy,
 } from "../controllers/role.controller.js";
 import { validate } from "../utils/zod.util.js";
 import {
@@ -13,6 +14,7 @@ import {
   updateRoleSchema,
   getRoleParamsSchema,
   deleteRoleParamsSchema,
+  updateHierarchySchema,
 } from "../validators/role.validators.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { attachUserContext } from "../middleware/user-context.middleware.js";
@@ -25,6 +27,7 @@ router.use(attachUserContext);
 router.use(requirePermission('rbac-management'));
 
 router.get("/", validate(listRolesQuerySchema), listRoles);
+router.put("/hierarchy", validate(updateHierarchySchema), updateHierarchy);
 router.get("/:id", validate(getRoleParamsSchema), getRole);
 router.post("/", validate(createRoleSchema), createRole);
 router.put("/:id", validate(updateRoleSchema), updateRole);

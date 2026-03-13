@@ -1,6 +1,6 @@
 import type { RoleRow, RolePermissions, RoleLocations } from '../../types/rbac.types';
 import { PERMISSION_PAGES } from '../../config/permissions.config';
-import type { Location } from '../../types';
+import type { LocationListItem } from '../../types';
 import {
   FULL_PAGE_COMPONENT_ID,
   hasPageInCustom,
@@ -22,7 +22,7 @@ export interface AddEditRoleModalBodyProps {
   setLocationsMode: (v: 'all' | 'none' | 'specific') => void;
   locations: RoleLocations;
   setLocations: (v: RoleLocations) => void;
-  locationsList: Location[];
+  locationsList: LocationListItem[];
   locationsLoading: boolean;
   nameTouched: boolean;
   setNameTouched: (v: boolean) => void;
@@ -32,6 +32,9 @@ export interface AddEditRoleModalBodyProps {
   saving: boolean;
   onClose: () => void;
   onSubmit: (e: React.FormEvent) => void;
+  reportsTo: string | null;
+  setReportsTo: (v: string | null) => void;
+  availableRoles: Array<{ id: string; name: string }>;
 }
 
 function setPageSelectAll(
@@ -91,6 +94,9 @@ export function AddEditRoleModalBody(props: Readonly<AddEditRoleModalBodyProps>)
     saving,
     onClose,
     onSubmit,
+    reportsTo: _reportsTo,
+    setReportsTo: _setReportsTo,
+    availableRoles: _availableRoles,
   } = props;
 
   const customPages = permissions.type === 'custom' ? permissions.pages : [];
@@ -175,6 +181,29 @@ export function AddEditRoleModalBody(props: Readonly<AddEditRoleModalBodyProps>)
             placeholder="Describe what this role is for"
           />
         </div>
+
+        {/* Reports To -- commented out; hierarchy is managed from Manage Hierarchy page.
+        {!(isEdit && initialRole?.isSystem === true) && (
+          <div className="pt-2 border-t border-gray-200">
+            <h3 className="text-sm font-medium text-primary mb-2">Reports To</h3>
+            <p className="text-xs text-secondary mb-2">
+              Select the role this role reports to in the hierarchy. Leave as "None" for a top-level role.
+            </p>
+            <select
+              value={reportsTo ?? ''}
+              onChange={(e) => setReportsTo(e.target.value || null)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary text-sm bg-white"
+            >
+              <option value="">None (Top-level)</option>
+              {availableRoles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        */}
 
         <div className="pt-2 border-t border-gray-200">
           <h3 className="text-sm font-medium text-primary mb-2">Locations</h3>

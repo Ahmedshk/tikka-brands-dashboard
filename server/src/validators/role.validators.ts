@@ -43,6 +43,7 @@ export const createRoleSchema = z.object({
     description: z.string().trim().optional(),
     permissions: rolePermissionsSchema,
     locations: roleLocationsSchema.optional().default("all"),
+    reportsTo: z.string().nullable().optional(),
   }),
 });
 
@@ -55,5 +56,17 @@ export const updateRoleSchema = z.object({
     description: z.string().trim().optional(),
     permissions: rolePermissionsSchema.optional(),
     locations: roleLocationsSchema.optional(),
+    reportsTo: z.string().nullable().optional(),
+  }),
+});
+
+export const updateHierarchySchema = z.object({
+  body: z.object({
+    mappings: z.array(
+      z.object({
+        roleId: z.string().min(1),
+        reportsTo: z.string().nullable(),
+      }),
+    ),
   }),
 });

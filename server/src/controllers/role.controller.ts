@@ -45,14 +45,32 @@ export const getRole = async (
   }
 };
 
+export const updateHierarchy = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { mappings } = req.body;
+    const roles = await roleService.updateHierarchy(mappings);
+    res.status(200).json({
+      success: true,
+      message: "Hierarchy updated successfully",
+      data: { roles },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createRole = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { name, description, permissions, locations } = req.body;
-    const role = await roleService.create({ name, description, permissions, locations });
+    const { name, description, permissions, locations, reportsTo } = req.body;
+    const role = await roleService.create({ name, description, permissions, locations, reportsTo });
     res.status(201).json({
       success: true,
       message: "Role created successfully",
@@ -74,12 +92,13 @@ export const updateRole = async (
       res.status(400).json({ success: false, message: "Invalid role id" });
       return;
     }
-    const { name, description, permissions, locations } = req.body;
+    const { name, description, permissions, locations, reportsTo } = req.body;
     const role = await roleService.update(id, {
       name,
       description,
       permissions,
       locations,
+      reportsTo,
     });
     if (!role) {
       throw new NotFoundError("Role not found");

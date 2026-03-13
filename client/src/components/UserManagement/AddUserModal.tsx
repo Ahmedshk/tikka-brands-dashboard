@@ -1,15 +1,21 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { userService } from '../../services/user.service';
 import { roleService } from '../../services/role.service';
-import type { RoleRow } from '../../types/rbac.types';
+import { locationService } from '../../services/location.service';
+import type { RoleRow, RolePermissions, RoleLocationsResponse } from '../../types/rbac.types';
 import type { UserRow } from '../../types/userManagement.types';
+import type { LocationListItem } from '../../types';
 import { ConfirmDialog } from '../modal/ConfirmDialog';
 import { FilterSelect } from '../common/FilterSelect';
+import { EditUserOverridesSection } from './EditUserOverridesSection';
 import {
   validateAddUserForm,
   resolveProfileImagePublicId,
   getSaveErrorMessage,
+  getProfileAvatarContent,
 } from '../../utils/addUserModalHelpers';
+import { normalizeLocationsToIds } from '../../utils/addEditRoleModalHelpers';
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 const PROFILE_IMAGE_ACCEPT = 'image/jpeg,image/jpg,image/webp,image/png';
@@ -38,9 +44,27 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
   const [pendingProfileImagePublicId, setPendingProfileImagePublicId] = useState<string | null>(null);
   const [removeProfileImage, setRemoveProfileImage] = useState(false);
   const [showInviteConfirm, setShowInviteConfirm] = useState(false);
+  const [permissionOverrides, setPermissionOverrides] = useState<RolePermissions | null>(null);
+  const [permissionRemovals, setPermissionRemovals] = useState<RolePermissions | null>(null);
+  const [locationOverrides, setLocationOverrides] = useState<string[]>([]);
+  const [locationRemovals, setLocationRemovals] = useState<string[]>([]);
+  const [locations, setLocations] = useState<LocationListItem[]>([]);
+  const [additionalLocationsOpen, setAdditionalLocationsOpen] = useState(false);
+  const [additionalPermissionsOpen, setAdditionalPermissionsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isEdit = Boolean(initialUser?._id);
+  const selectedRole = roleId ? roles.find((r) => r.id === roleId) : null;
+  const roleLocationIdSet = useMemo(() => {
+    if (!selectedRole?.locations || !locations.length) return new Set<string>();
+    const locs = selectedRole.locations as RoleLocationsResponse | undefined;
+    const toId = (l: { _id?: string }) => (l._id == null ? '' : String(l._id));
+    const allIds = locations.map(toId).filter(Boolean);
+    if (locs == null || locs === 'all') return new Set(allIds);
+    if (!Array.isArray(locs)) return new Set(allIds);
+    const ids = normalizeLocationsToIds(locs);
+    return ids === 'all' ? new Set(allIds) : new Set(ids.map(String));
+  }, [selectedRole, locations]);
   const currentProfileImageUrl = initialUser?.profileImageUrl ?? null;
 
   useEffect(() => {
@@ -53,6 +77,20 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
       setSquareId(initialUser.squareId ?? '');
       setHomebaseId(initialUser.homebaseId ?? '');
       setRoleId(initialUser.roleId ?? '');
+      const overrides = initialUser.permissionOverrides;
+      if (overrides?.type === 'custom' && Array.isArray(overrides.pages) && overrides.pages.length > 0) {
+        setPermissionOverrides(overrides);
+      } else {
+        setPermissionOverrides(null);
+      }
+      setLocationOverrides(initialUser.locationOverrides ?? []);
+      const removals = initialUser.permissionRemovals;
+      if (removals?.type === 'custom' && Array.isArray(removals.pages) && removals.pages.length > 0) {
+        setPermissionRemovals(removals);
+      } else {
+        setPermissionRemovals(null);
+      }
+      setLocationRemovals(initialUser.locationRemovals ?? []);
     } else {
       setFirstName('');
       setLastName('');
@@ -61,12 +99,19 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
       setSquareId('');
       setHomebaseId('');
       setRoleId('');
+      setPermissionOverrides(null);
+      setPermissionRemovals(null);
+      setLocationOverrides([]);
+      setLocationRemovals([]);
     }
     setProfileImageFile(null);
     setProfileImagePreview(null);
     setPendingProfileImagePublicId(null);
     setRemoveProfileImage(false);
+    setAdditionalLocationsOpen(false);
+    setAdditionalPermissionsOpen(false);
     roleService.list().then(setRoles).catch(() => setRoles([]));
+    locationService.getAll().then(setLocations).catch(() => setLocations([]));
   }, [open, initialUser]);
 
   useEffect(() => {
@@ -134,6 +179,10 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
           homebaseId: homebaseId.trim() || undefined,
           roleId: roleId.trim() || null,
           ...(profileImagePublicId !== undefined && { profileImagePublicId }),
+          permissionOverrides: permissionOverrides ?? null,
+          permissionRemovals: permissionRemovals ?? null,
+          locationOverrides: locationOverrides.length ? locationOverrides : null,
+          locationRemovals: locationRemovals.length ? locationRemovals : null,
         });
       } else {
         await userService.createUser({
@@ -159,24 +208,19 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
 
   if (!open) return null;
 
-  let profileAvatarContent: React.ReactNode;
-  if (profileImagePreview) {
-    profileAvatarContent = <img src={profileImagePreview} alt="" className="w-full h-full object-cover" />;
-  } else if (currentProfileImageUrl && !removeProfileImage) {
-    profileAvatarContent = <img src={currentProfileImageUrl} alt="" className="w-full h-full object-cover" />;
-  } else {
-    profileAvatarContent = (
-      <span className="text-gray-400 text-lg font-medium">
-        {(firstName.trim() || initialUser?.firstName)?.[0]?.toUpperCase() ?? '?'}
-      </span>
-    );
-  }
+  const profileAvatarContent = getProfileAvatarContent(
+    profileImagePreview,
+    currentProfileImageUrl,
+    removeProfileImage,
+    firstName,
+    initialUser?.firstName
+  );
 
-  return (
+  return createPortal(
     <dialog
       open
       onCancel={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 w-full max-w-none max-h-none m-0 border-0 bg-black/50 backdrop:bg-black/50"
+      className="modal-full-viewport z-50 flex items-center justify-center p-4 m-0 border-0 bg-black/50 backdrop:bg-black/50"
       aria-labelledby="add-user-title"
     >
       <button
@@ -325,6 +369,27 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
               openAbove={true}
             />
           </div>
+
+          {isEdit && (
+            <EditUserOverridesSection
+              additionalLocationsOpen={additionalLocationsOpen}
+              setAdditionalLocationsOpen={setAdditionalLocationsOpen}
+              additionalPermissionsOpen={additionalPermissionsOpen}
+              setAdditionalPermissionsOpen={setAdditionalPermissionsOpen}
+              locations={locations}
+              roleLocationIdSet={roleLocationIdSet}
+              locationOverrides={locationOverrides}
+              setLocationOverrides={setLocationOverrides}
+              locationRemovals={locationRemovals}
+              setLocationRemovals={setLocationRemovals}
+              permissionOverrides={permissionOverrides}
+              setPermissionOverrides={setPermissionOverrides}
+              permissionRemovals={permissionRemovals}
+              setPermissionRemovals={setPermissionRemovals}
+              roleId={roleId}
+              roles={roles}
+            />
+          )}
         </div>
         <div className="px-6 py-4 border-t border-gray-200 flex flex-wrap justify-end gap-2">
           <button
@@ -380,6 +445,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
           isLoading={saving}
         />
       )}
-    </dialog>
+    </dialog>,
+    document.body
   );
 }

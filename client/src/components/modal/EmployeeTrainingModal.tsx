@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Pagination } from '../common/Pagination';
 import type { EmployeeTrainingRow } from '../../types/trainingReviews.types';
 import ViewIcon from '@assets/icons/view.svg?react';
@@ -86,10 +87,10 @@ export const EmployeeTrainingModal = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <dialog
       ref={dialogRef}
-      className="fixed inset-0 z-[300] m-0 grid h-screen w-screen min-h-screen min-w-full max-w-none max-h-none place-items-center bg-transparent border-0 p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
+      className="modal-full-viewport z-[300] m-0 grid place-items-center bg-transparent border-0 p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
       aria-labelledby="employee-training-modal-title"
       onClose={onClose}
     >
@@ -192,6 +193,7 @@ export const EmployeeTrainingModal = ({
           </div>
         </div>
       </div>
-    </dialog>
+    </dialog>,
+    document.body
   );
 };

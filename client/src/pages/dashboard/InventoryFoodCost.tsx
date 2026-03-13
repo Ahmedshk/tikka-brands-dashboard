@@ -82,6 +82,7 @@ export const InventoryFoodCost = () => {
     if (canKpiPending) m.push('pendingOrdersCount');
     if (canCostOfGoods) {
       m.push('foodCostPercent', 'theoreticalUsage', 'theoreticalUsagePercent');
+      // Actual Usage ($) in the gauge comes from currentFoodCost; request it when user has the gauge
       if (!m.includes('currentFoodCost')) m.push('currentFoodCost');
     }
     if (canVariance) m.push('varianceItems');

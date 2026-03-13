@@ -27,6 +27,10 @@ export interface IRole {
   locations: RoleLocations | RoleLocationsResponse;
   isSystem: boolean;
   isActive: boolean;
+  /** Parent role this role reports to (ObjectId string). Null = top-level. */
+  reportsTo?: string | null;
+  /** Populated parent role info (response only). */
+  reportsToRole?: { _id: string; name: string } | null;
   /** Reserved for future: notification types assigned to this role. */
   notificationTypes?: string[];
   createdAt?: Date;

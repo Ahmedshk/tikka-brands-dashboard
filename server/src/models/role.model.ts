@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, Types } from "mongoose";
 import { IRole } from "../types/rbac.types.js";
 
 export interface RoleDocument
-  extends Omit<IRole, "_id" | "createdAt" | "updatedAt" | "locations">,
+  extends Omit<IRole, "_id" | "createdAt" | "updatedAt" | "locations" | "reportsTo" | "reportsToRole">,
     Document {
   _id: Types.ObjectId;
   createdAt: Date;
@@ -11,6 +11,8 @@ export interface RoleDocument
   locationAccess: "all" | "specific";
   /** Refs to Location; only used when locationAccess === 'specific'. */
   locationIds: Types.ObjectId[];
+  /** Parent role this role reports to. Null = top-level. */
+  reportsTo: Types.ObjectId | null;
 }
 
 const pagePermissionSchema = new Schema(
@@ -66,6 +68,11 @@ const roleSchema = new Schema<RoleDocument>(
         ref: "Location",
       },
     ],
+    reportsTo: {
+      type: Schema.Types.ObjectId,
+      ref: "Role",
+      default: null,
+    },
     notificationTypes: {
       type: [String],
       default: undefined,
