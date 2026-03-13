@@ -13,5 +13,6 @@ export * from "./logo.types.js";
 export * from "./mailer.types.js";
 export * from "./rbac.types.js";
 export * from "./salesLabor.types.js";
+export * from "./training.types.js";
 export * from "./upload.types.js";
 export * from "./user.types.js";

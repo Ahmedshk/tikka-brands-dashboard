@@ -6,7 +6,8 @@ import { CommandCenter } from './pages/dashboard/CommandCenter';
 import { SalesLaborDetails } from './pages/dashboard/SalesLaborDetails';
 import { SalesTrendReports } from './pages/dashboard/SalesTrendReports';
 import { InventoryFoodCost } from './pages/dashboard/InventoryFoodCost';
-import { TrainingReviews } from './pages/dashboard/TrainingReviews';
+import { TrainingManagement } from './pages/dashboard/TrainingManagement';
+import { ReviewsManagement } from './pages/dashboard/ReviewsManagement';
 import { DisciplinaryManagement } from './pages/dashboard/DisciplinaryManagement';
 import { DisciplinaryManagementDetails } from './pages/dashboard/DisciplinaryManagementDetails';
 import { CalendarEvents } from './pages/dashboard/CalendarEvents';
@@ -110,14 +111,30 @@ export const router = createBrowserRouter([
     errorElement: <ErrorPage />,
   },
   {
-    path: '/dashboard/training-reviews',
+    path: '/dashboard/training-management',
     element: (
       <ErrorBoundary>
         <ProtectedRoute>
-          <TrainingReviews />
+          <TrainingManagement />
         </ProtectedRoute>
       </ErrorBoundary>
     ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/dashboard/reviews-management',
+    element: (
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <ReviewsManagement />
+        </ProtectedRoute>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/dashboard/training-reviews',
+    element: <Navigate to="/dashboard/reviews-management" replace />,
     errorElement: <ErrorPage />,
   },
   {
@@ -144,7 +161,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/dashboard/team-hr',
-    element: <Navigate to="/dashboard/training-reviews" replace />,
+    element: <Navigate to="/dashboard/reviews-management" replace />,
     errorElement: <ErrorPage />,
   },
   {

@@ -77,17 +77,26 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     ],
   },
   {
-    pageId: 'training-reviews',
-    pageLabel: 'Training & Reviews',
+    pageId: 'training-management',
+    pageLabel: 'Training Management',
+    components: [
+      FULL_PAGE_ACCESS,
+      { id: 'kpi-office-staff', label: 'Office Staff' },
+      { id: 'kpi-training-completion', label: 'Training Completion' },
+      { id: 'employee-training', label: 'Employee Training' },
+      { id: 'trainings', label: 'Trainings' },
+    ],
+  },
+  {
+    pageId: 'reviews-management',
+    pageLabel: 'Reviews Management',
     components: [
       FULL_PAGE_ACCESS,
       { id: 'kpi-office-staff', label: 'Office Staff' },
       { id: 'kpi-reviews-due', label: 'Reviews Due' },
-      { id: 'kpi-training-completion', label: 'Training Completion' },
       { id: 'staff-list', label: 'Staff List' },
       { id: 'review-tracker-chart', label: 'Review Tracker Chart' },
       { id: 'recently-completed-reviews', label: 'Recently Completed Reviews' },
-      { id: 'employee-training', label: 'Employee Training' },
     ],
   },
   {

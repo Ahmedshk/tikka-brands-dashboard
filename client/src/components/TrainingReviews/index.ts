@@ -6,3 +6,5 @@ export { RecentlyCompletedReviewsCard } from './RecentlyCompletedReviewsCard';
 export type { RecentlyCompletedReviewsCardProps } from './RecentlyCompletedReviewsCard';
 export { EmployeeTrainingCard } from './EmployeeTrainingCard';
 export type { EmployeeTrainingCardProps } from './EmployeeTrainingCard';
+export { TrainingsCard } from './TrainingsCard';
+export type { TrainingsCardProps } from './TrainingsCard';

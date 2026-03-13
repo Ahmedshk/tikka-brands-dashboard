@@ -1,9 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserService } from '../services/user.service.js';
-import { NotFoundError } from '../utils/errors.util.js';
-import { getSecureUrl } from '../config/cloudinary.js';
+import { NotFoundError, ValidationError } from '../utils/errors.util.js';
+import { getSecureUrl, getSecureDocumentUrl } from '../config/cloudinary.js';
 
 const userService = new UserService();
+
+const TRAINING_FOLDER_PREFIX = 'tikka_brands/training/';
 
 /**
  * GET /api/proxy/image/:userId
@@ -44,6 +46,46 @@ export const proxyProfileImage = async (
       ETag: `"${Buffer.from(user.profileImagePublicId).toString('base64')}"`,
       'Access-Control-Allow-Origin': '*',
       'Cross-Origin-Resource-Policy': 'cross-origin',
+    });
+    res.send(buffer);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/proxy/document?publicId=...&resourceType=raw|image
+ * Fetches a document from Cloudinary and streams it. Auth required.
+ * publicId must start with tikka_brands/training/ to avoid leaking other assets.
+ */
+export const proxyDocument = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const publicId = typeof req.query.publicId === 'string' ? req.query.publicId.trim() : '';
+    if (!publicId) {
+      throw new ValidationError('publicId is required');
+    }
+    if (!publicId.startsWith(TRAINING_FOLDER_PREFIX)) {
+      throw new ValidationError('Invalid document');
+    }
+    const resourceType =
+      req.query.resourceType === 'image' ? 'image' : 'raw';
+    const cloudinaryUrl = getSecureDocumentUrl(publicId, resourceType);
+    const docResponse = await fetch(cloudinaryUrl);
+    if (!docResponse.ok) {
+      throw new NotFoundError('Document not found');
+    }
+    const buffer = Buffer.from(await docResponse.arrayBuffer());
+    const contentType = docResponse.headers.get('content-type') ?? 'application/octet-stream';
+    const contentDisposition = docResponse.headers.get('content-disposition') ?? 'inline';
+    res.set({
+      'Content-Type': contentType,
+      'Content-Length': buffer.length.toString(),
+      'Cache-Control': 'private, max-age=86400',
+      'Content-Disposition': contentDisposition,
     });
     res.send(buffer);
   } catch (error) {

@@ -23,22 +23,38 @@ export function getCloudinaryConfigured(): boolean {
   return isConfigured();
 }
 
+const IMAGE_MIMES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
+
 /**
  * Upload a file buffer to Cloudinary. Uses base64 data URI.
  * @param file - buffer and mimetype
  * @param folder - e.g. tikka_brands/profile_image
+ * @param options - optional resource_type; defaults to 'image' for image mimes, 'raw' otherwise
  */
 export async function uploadToCloudinary(
   file: { buffer: Buffer; mimetype: string },
-  folder: string
+  folder: string,
+  options?: { resource_type?: 'image' | 'raw' | 'auto' }
 ): Promise<UploadToCloudinaryResult> {
   if (!isConfigured()) {
     throw new Error('Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.');
   }
   const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+  const resourceType =
+    options?.resource_type === 'auto'
+      ? IMAGE_MIMES.has(file.mimetype)
+        ? 'image'
+        : 'raw'
+      : options?.resource_type ?? (IMAGE_MIMES.has(file.mimetype) ? 'image' : 'raw');
   const result = await cloudinary.uploader.upload(dataUri, {
     folder,
-    resource_type: 'image',
+    resource_type: resourceType,
   });
   return {
     public_id: result.public_id,
@@ -72,5 +88,20 @@ export function getSecureUrl(
     secure: true,
     fetch_format: options?.fetch_format ?? 'auto',
     quality: options?.quality ?? 'auto',
+  });
+}
+
+/**
+ * Build the secure URL for a document (image or raw) by public_id (for proxy fetch).
+ * Use resourceType so Cloudinary serves the correct asset type.
+ */
+export function getSecureDocumentUrl(
+  publicId: string,
+  resourceType: 'image' | 'raw' = 'raw'
+): string {
+  return cloudinary.url(publicId, {
+    secure: true,
+    resource_type: resourceType,
+    ...(resourceType === 'image' && { fetch_format: 'auto', quality: 'auto' }),
   });
 }

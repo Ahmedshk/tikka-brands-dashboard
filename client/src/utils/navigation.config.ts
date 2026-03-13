@@ -45,8 +45,13 @@ export const navigationConfig: NavigationConfig = [
     allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
     children: [
       {
-        label: 'Training & Reviews',
-        path: '/dashboard/training-reviews',
+        label: 'Training Management',
+        path: '/dashboard/training-management',
+        allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
+      },
+      {
+        label: 'Reviews Management',
+        path: '/dashboard/reviews-management',
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
       },
       {

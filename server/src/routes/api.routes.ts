@@ -8,8 +8,11 @@ import salesLaborRoutes from "./salesLabor.routes.js";
 import inventoryRoutes from "./inventory.routes.js";
 import roleRoutes from "./role.routes.js";
 import userRoutes from "./user.routes.js";
+import trainingRoutes from "./training.routes.js";
 import { healthCheck } from "../controllers/health.controller.js";
-import { proxyProfileImage } from "../controllers/proxy.controller.js";
+import { proxyProfileImage, proxyDocument } from "../controllers/proxy.controller.js";
+import { authenticate } from "../middleware/auth.middleware.js";
+import { attachUserContext } from "../middleware/user-context.middleware.js";
 
 const router = Router();
 
@@ -18,6 +21,9 @@ router.get("/health", healthCheck);
 
 // Proxy image (no auth so img src works)
 router.get("/proxy/image/:userId", proxyProfileImage);
+
+// Proxy document (auth required)
+router.get("/proxy/document", authenticate, attachUserContext, proxyDocument);
 
 // Auth routes
 router.use("/auth", authRoutes);
@@ -45,5 +51,8 @@ router.use("/sales-labor", salesLaborRoutes);
 
 // Inventory & Food Cost KPIs (auth + role required)
 router.use("/inventory", inventoryRoutes);
+
+// Training management (auth + training-management permission required)
+router.use("/trainings", trainingRoutes);
 
 export default router;

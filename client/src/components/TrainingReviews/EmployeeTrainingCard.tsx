@@ -2,7 +2,6 @@ import type { EmployeeTrainingRow } from '../../types/trainingReviews.types';
 import ViewIcon from '@assets/icons/view.svg?react';
 import EditIcon from '@assets/icons/edit.svg?react';
 import DeleteIcon from '@assets/icons/delete.svg?react';
-import UploadIcon from '@assets/icons/upload.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
@@ -47,7 +46,6 @@ export interface EmployeeTrainingCardProps {
   onView?: (row: EmployeeTrainingRow, index: number) => void;
   onEdit?: (row: EmployeeTrainingRow, index: number) => void;
   onDelete?: (row: EmployeeTrainingRow, index: number) => void;
-  onUploadTrainingFile?: () => void;
   onAssignTraining?: () => void;
   onViewAll?: () => void;
 }
@@ -57,7 +55,6 @@ export const EmployeeTrainingCard = ({
   onView,
   onEdit,
   onDelete,
-  onUploadTrainingFile,
   onAssignTraining,
   onViewAll,
 }: EmployeeTrainingCardProps) => {
@@ -74,6 +71,7 @@ export const EmployeeTrainingCard = ({
             <thead>
               <tr className="text-left text-secondary border-b border-gray-200">
                 <th className="pb-3 pr-4 pl-2 font-semibold">Employee Name</th>
+                <th className="pb-3 pr-4 font-semibold">Role</th>
                 <th className="pb-3 pr-4 font-semibold">Training</th>
                 <th className="pb-3 pr-4 font-semibold">Progress</th>
                 <th className="pb-3 pr-4 font-semibold text-center">Status</th>
@@ -87,6 +85,7 @@ export const EmployeeTrainingCard = ({
                   className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}
                 >
                   <td className="py-3 pr-4 pl-2">{row.assignTo}</td>
+                  <td className="py-3 pr-4">{row.role}</td>
                   <td className="py-3 pr-4">{row.trainingName}</td>
                   <td className="py-3 pr-4">
                     <ProgressSegments row={row} keyPrefix={`${row.trainingName}-${row.assignTo}-${index}`} />
@@ -134,15 +133,6 @@ export const EmployeeTrainingCard = ({
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onUploadTrainingFile}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-gray-50 transition-colors"
-              title="Upload training file"
-            >
-              <UploadIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" aria-hidden />
-              Upload Training File
-            </button>
             <button
               type="button"
               onClick={onAssignTraining}
