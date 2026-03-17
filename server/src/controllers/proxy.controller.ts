@@ -5,7 +5,7 @@ import { getSecureUrl, getSecureDocumentUrl } from '../config/cloudinary.js';
 
 const userService = new UserService();
 
-const TRAINING_FOLDER_PREFIX = 'tikka_brands/training/';
+const ALLOWED_DOC_PREFIXES = ['tikka_brands/training/', 'employee_training/'];
 
 /**
  * GET /api/proxy/image/:userId
@@ -54,9 +54,10 @@ export const proxyProfileImage = async (
 };
 
 /**
- * GET /api/proxy/document?publicId=...&resourceType=raw|image
+ * GET /api/proxy/document?publicId=...&resourceType=raw|image&filename=...
  * Fetches a document from Cloudinary and streams it. Auth required.
  * publicId must start with tikka_brands/training/ to avoid leaking other assets.
+ * Optional filename: used for Content-Disposition so downloads open with correct extension (e.g. report.docx).
  */
 export const proxyDocument = async (
   req: Request,
@@ -68,11 +69,13 @@ export const proxyDocument = async (
     if (!publicId) {
       throw new ValidationError('publicId is required');
     }
-    if (!publicId.startsWith(TRAINING_FOLDER_PREFIX)) {
+    if (!ALLOWED_DOC_PREFIXES.some((prefix) => publicId.startsWith(prefix))) {
       throw new ValidationError('Invalid document');
     }
     const resourceType =
       req.query.resourceType === 'image' ? 'image' : 'raw';
+    const suggestedFilename =
+      typeof req.query.filename === 'string' ? req.query.filename.trim() : '';
     const cloudinaryUrl = getSecureDocumentUrl(publicId, resourceType);
     const docResponse = await fetch(cloudinaryUrl);
     if (!docResponse.ok) {
@@ -80,7 +83,13 @@ export const proxyDocument = async (
     }
     const buffer = Buffer.from(await docResponse.arrayBuffer());
     const contentType = docResponse.headers.get('content-type') ?? 'application/octet-stream';
-    const contentDisposition = docResponse.headers.get('content-disposition') ?? 'inline';
+    const safeFilename =
+      suggestedFilename && /^[\w\s.-]+\.\w+$/.test(suggestedFilename)
+        ? suggestedFilename
+        : null;
+    const contentDisposition = safeFilename
+      ? `inline; filename="${safeFilename.replace(/"/g, '\\"')}"`
+      : (docResponse.headers.get('content-disposition') ?? 'inline');
     res.set({
       'Content-Type': contentType,
       'Content-Length': buffer.length.toString(),

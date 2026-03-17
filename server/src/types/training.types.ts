@@ -4,13 +4,19 @@
 export interface ITrainingModuleFile {
   publicId: string;
   resourceType: 'image' | 'raw';
+  /** Original filename at upload (optional, for display). */
+  filename?: string;
+  /** File format/extension from Cloudinary or upload (e.g. docx, xlsx, pdf) for correct download. */
+  format?: string;
 }
 
 /**
- * Training module (subdocument): name + array of module files.
+ * Training module (subdocument): name, duration in days, and array of module files.
  */
 export interface ITrainingModule {
   name: string;
+  /** Duration in number of days (required). */
+  duration: number;
   moduleFiles: ITrainingModuleFile[];
 }
 

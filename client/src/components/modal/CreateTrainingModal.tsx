@@ -1,16 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import UploadIcon from '@assets/icons/upload.svg?react';
-import { roleService } from '../../services/role.service';
-import { trainingService } from '../../services/training.service';
+import ViewIcon from '@assets/icons/view.svg?react';
+import {
+  trainingService,
+  type TrainingModulePayload,
+  type TrainingModuleFilePayload,
+} from '../../services/training.service';
 import type { Training } from '../../types/trainingReviews.types';
-import type { RoleRow } from '../../types/rbac.types';
 import {
   validateCreateTrainingForm,
   TRAINING_DOCUMENT_ACCEPT,
+  openFileInNewTab,
+  getDocumentFormatFromFile,
   type CreateTrainingModuleForm,
   type CreateTrainingModuleFileForm,
 } from '../../utils/createTrainingModalHelpers';
+import { DocumentTypeThumbnail } from './DocumentTypeThumbnail';
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -26,6 +32,7 @@ const initialModuleFile = (): CreateTrainingModuleFileForm => ({
 const initialModule = (): CreateTrainingModuleForm => ({
   id: newId('module'),
   name: '',
+  duration: 1,
   moduleFiles: [],
 });
 
@@ -66,10 +73,6 @@ export const CreateTrainingModal = ({
   const [trainingName, setTrainingName] = useState('');
   const [modules, setModules] = useState<CreateTrainingModuleForm[]>(() => [initialModule()]);
   const [modulesExpanded, setModulesExpanded] = useState<Record<string, boolean>>({});
-  const [assignToRolesMode, setAssignToRolesMode] = useState<'none' | 'all' | 'specific'>('none');
-  const [assignedRoleIds, setAssignedRoleIds] = useState<string[]>([]);
-  const [rolesList, setRolesList] = useState<RoleRow[]>([]);
-  const [rolesLoading, setRolesLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [validation, setValidation] = useState<ReturnType<typeof validateCreateTrainingForm> | null>(null);
@@ -90,23 +93,11 @@ export const CreateTrainingModal = ({
       setTrainingName('');
       setModules([initialModule()]);
       setModulesExpanded({});
-      setAssignToRolesMode('none');
-      setAssignedRoleIds([]);
       setError('');
       setValidation(null);
     } else {
       dialogRef.current?.close();
     }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    setRolesLoading(true);
-    roleService
-      .list(true)
-      .then(setRolesList)
-      .catch(() => setRolesList([]))
-      .finally(() => setRolesLoading(false));
   }, [isOpen]);
 
   useEffect(() => {
@@ -156,6 +147,7 @@ export const CreateTrainingModal = ({
       file,
       publicId: null,
       resourceType: null,
+      filename: file.name,
     }));
     setModules((prev) =>
       prev.map((m) =>
@@ -188,34 +180,35 @@ export const CreateTrainingModal = ({
     setSubmitting(true);
     try {
       const trainingNameTrimmed = trainingName.trim();
-      const payloadModules: Array<{ name: string; moduleFiles: Array<{ publicId: string; resourceType: 'image' | 'raw' }> }> = [];
+      const payloadModules: TrainingModulePayload[] = [];
 
       for (const mod of modules) {
-        const moduleFiles: Array<{ publicId: string; resourceType: 'image' | 'raw' }> = [];
+        const moduleFiles: TrainingModuleFilePayload[] = [];
         for (const mf of mod.moduleFiles) {
           if (mf.file) {
             const up = await trainingService.uploadDocument(mf.file, trainingNameTrimmed);
-            moduleFiles.push({ publicId: up.publicId, resourceType: up.resourceType });
+            moduleFiles.push({
+              publicId: up.publicId,
+              resourceType: up.resourceType,
+              ...(up.filename && { filename: up.filename }),
+              ...(up.format && { format: up.format }),
+            });
           } else if (mf.publicId && mf.resourceType) {
-            moduleFiles.push({ publicId: mf.publicId, resourceType: mf.resourceType });
+            moduleFiles.push({
+              publicId: mf.publicId,
+              resourceType: mf.resourceType,
+              ...(mf.filename && { filename: mf.filename }),
+              ...(mf.format && { format: mf.format }),
+            });
           }
         }
-        payloadModules.push({ name: mod.name.trim(), moduleFiles });
-      }
-
-      let assignToRoles: 'all' | string[] | undefined;
-      if (assignToRolesMode === 'all') {
-        assignToRoles = 'all';
-      } else if (assignToRolesMode === 'specific' && assignedRoleIds.length > 0) {
-        assignToRoles = assignedRoleIds;
-      } else {
-        assignToRoles = undefined;
+        const durationDays = Math.max(1, Number(mod.duration) || 1);
+        payloadModules.push({ name: mod.name.trim(), duration: durationDays, moduleFiles });
       }
 
       const training = await trainingService.create({
         name: trainingNameTrimmed,
         modules: payloadModules,
-        ...(assignToRoles != null && { assignToRoles }),
       });
       onCreated?.(training);
       onClose();
@@ -274,84 +267,6 @@ export const CreateTrainingModal = ({
                 {validation?.trainingNameError && (
                   <p className="mt-1 text-xs text-red-600">{validation.trainingNameError}</p>
                 )}
-              </div>
-
-              <div className="pt-2 border-t border-gray-200">
-                <h3 className="text-sm font-medium text-primary mb-2">Assign to roles</h3>
-                <p className="text-xs text-secondary mb-2">
-                  Assign this training to none, all roles, or only selected ones.
-                </p>
-                <div className="flex flex-col gap-2">
-                  <label className="flex items-center gap-2 text-sm text-primary">
-                    <input
-                      type="radio"
-                      name="assign-to-roles-mode"
-                      checked={assignToRolesMode === 'none'}
-                      onChange={() => {
-                        setAssignToRolesMode('none');
-                        setAssignedRoleIds([]);
-                      }}
-                      className="rounded-full border-gray-300"
-                    />
-                    <span>None</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-primary">
-                    <input
-                      type="radio"
-                      name="assign-to-roles-mode"
-                      checked={assignToRolesMode === 'all'}
-                      onChange={() => {
-                        setAssignToRolesMode('all');
-                        setAssignedRoleIds([]);
-                      }}
-                      className="rounded-full border-gray-300"
-                    />
-                    <span>All roles</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-primary">
-                    <input
-                      type="radio"
-                      name="assign-to-roles-mode"
-                      checked={assignToRolesMode === 'specific'}
-                      onChange={() => setAssignToRolesMode('specific')}
-                      className="rounded-full border-gray-300"
-                    />
-                    <span>Specific roles</span>
-                  </label>
-                  {assignToRolesMode === 'specific' && (
-                    <div className="pl-6 mt-1 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-white">
-                      {rolesLoading && <p className="text-xs text-secondary">Loading roles…</p>}
-                      {!rolesLoading && rolesList.length === 0 && (
-                        <p className="text-xs text-secondary">No roles available.</p>
-                      )}
-                      {!rolesLoading && rolesList.length > 0 && (
-                        <div className="flex flex-col gap-1">
-                          {rolesList.map((role) => {
-                            const checked = assignedRoleIds.includes(role.id);
-                            return (
-                              <label
-                                key={role.id}
-                                className="flex items-center gap-2 text-sm text-secondary cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => {
-                                    setAssignedRoleIds((prev) =>
-                                      checked ? prev.filter((id) => id !== role.id) : [...prev, role.id]
-                                    );
-                                  }}
-                                  className="rounded border-gray-300"
-                                />
-                                <span>{role.roleName}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
               </div>
 
               <div>
@@ -419,6 +334,35 @@ export const CreateTrainingModal = ({
                               )}
                             </div>
                             <div>
+                              <label htmlFor={`module-duration-${mod.id}`} className="block text-xs font-medium text-primary mb-1">
+                                Duration (days)
+                              </label>
+                              <input
+                                id={`module-duration-${mod.id}`}
+                                type="number"
+                                min={1}
+                                value={mod.duration === 0 ? '' : (mod.duration ?? 1)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'e' || e.key === 'E' || e.key === '-' || e.key === '.') e.preventDefault();
+                                }}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  if (raw === '') {
+                                    updateModule(mod.id, { duration: 0 });
+                                    return;
+                                  }
+                                  const n = Number.parseInt(raw, 10);
+                                  updateModule(mod.id, {
+                                    duration: Number.isNaN(n) || n < 1 ? 0 : n,
+                                  });
+                                }}
+                                className="w-full rounded border border-gray-200 px-2 py-1.5 text-sm text-primary"
+                              />
+                              {validation?.moduleErrors?.[index]?.durationError && (
+                                <p className="mt-0.5 text-xs text-red-600">{validation.moduleErrors[index].durationError}</p>
+                              )}
+                            </div>
+                            <div>
                               <div className="flex items-center justify-between mb-2">
                                 <span className="text-xs font-medium text-primary">Module files</span>
                                 <input
@@ -453,9 +397,7 @@ export const CreateTrainingModal = ({
                                         {isImageFile(mf.file) ? (
                                           <FilePreviewThumbnail file={mf.file} />
                                         ) : (
-                                          <div className="w-12 h-12 rounded bg-gray-100 border border-gray-200 flex items-center justify-center flex-shrink-0">
-                                            <span className="text-gray-400 text-xs font-medium">DOC</span>
-                                          </div>
+                                          <DocumentTypeThumbnail format={getDocumentFormatFromFile(mf.file)} />
                                         )}
                                         <span
                                           className="text-sm text-primary truncate min-w-0 flex-1"
@@ -463,14 +405,25 @@ export const CreateTrainingModal = ({
                                         >
                                           {mf.file.name}
                                         </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => removeModuleFile(mod.id, mf.id)}
-                                          className="p-1.5 text-red-600 hover:bg-red-50 rounded shrink-0"
-                                          aria-label="Remove file"
-                                        >
-                                          <span className="text-lg leading-none" aria-hidden>×</span>
-                                        </button>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <button
+                                            type="button"
+                                            onClick={() => openFileInNewTab(mf.file!)}
+                                            className="p-1.5 text-primary hover:bg-gray-100 rounded"
+                                            aria-label="View file"
+                                            title="View file"
+                                          >
+                                            <ViewIcon className="w-4 h-4" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => removeModuleFile(mod.id, mf.id)}
+                                            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                                            aria-label="Remove file"
+                                          >
+                                            <span className="text-lg leading-none" aria-hidden>×</span>
+                                          </button>
+                                        </div>
                                       </li>
                                     ) : null
                                   )}

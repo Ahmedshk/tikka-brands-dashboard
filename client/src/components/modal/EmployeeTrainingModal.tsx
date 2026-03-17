@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Pagination } from '../common/Pagination';
 import type { EmployeeTrainingRow } from '../../types/trainingReviews.types';
+import { getModuleSegmentStatuses } from '../../utils/trainingProgressUtils';
 import ViewIcon from '@assets/icons/view.svg?react';
 import EditIcon from '@assets/icons/edit.svg?react';
 import DeleteIcon from '@assets/icons/delete.svg?react';
@@ -13,6 +14,13 @@ const statusClass: Record<EmployeeTrainingRow['status'], string> = {
   Pending: 'text-pending font-medium',
 };
 
+const SEGMENT_COLORS: Record<'green' | 'yellow' | 'red' | 'gray', string> = {
+  green: '#5DC54F',
+  yellow: '#FDB90E',
+  red: '#DC2626',
+  gray: '#E5E7EB',
+};
+
 const SEGMENTS_PER_LINE = 5;
 
 function ProgressSegments({ row, keyPrefix }: { readonly row: EmployeeTrainingRow; readonly keyPrefix: string }) {
@@ -21,14 +29,19 @@ function ProgressSegments({ row, keyPrefix }: { readonly row: EmployeeTrainingRo
   for (let i = 0; i < total; i += SEGMENTS_PER_LINE) {
     lines.push(Array.from({ length: Math.min(SEGMENTS_PER_LINE, total - i) }, (_, j) => i + j));
   }
-  const filledColor = row.status === 'Complete' ? '#5DC54F' : '#FDB90E';
+  const segmentStatuses: ('green' | 'yellow' | 'red' | 'gray')[] =
+    row.moduleDurations?.length > 0 && row.moduleProgress?.length > 0
+      ? getModuleSegmentStatuses(row.assignedAt, row.moduleDurations, row.moduleProgress)
+      : Array.from({ length: total }, (_, i) =>
+          (row.completedModules > i ? 'green' : 'gray') as 'green' | 'gray'
+        );
   return (
     <div className="flex flex-col gap-1 justify-start">
       {lines.map((lineIndices) => (
         <div key={`${keyPrefix}-${lineIndices[0]}`} className="flex gap-0.5 h-2 shrink-0">
           {lineIndices.map((i) => {
-            const isFilled = row.totalModules > 0 && i < row.completedModules;
-            const backgroundColor = row.totalModules > 0 && isFilled ? filledColor : '#E5E7EB';
+            const status = segmentStatuses[i];
+            const backgroundColor = status ? SEGMENT_COLORS[status] : SEGMENT_COLORS.gray;
             return (
               <div
                 key={`${keyPrefix}-seg-${i}`}
@@ -131,7 +144,7 @@ export const EmployeeTrainingModal = ({
                     const globalIndex = start + index;
                     return (
                       <tr
-                        key={`${row.trainingName}-${row.assignTo}-${globalIndex}`}
+                        key={row.assignmentId ?? `${row.trainingName}-${row.assignTo}-${globalIndex}`}
                         className={globalIndex % 2 === 1 ? 'bg-[#F3F5F7]' : ''}
                       >
                         <td className="py-3 pr-4 pl-2">{row.assignTo}</td>
@@ -140,7 +153,7 @@ export const EmployeeTrainingModal = ({
                         <td className="py-3 pr-4">
                           <ProgressSegments
                             row={row}
-                            keyPrefix={`${row.trainingName}-${row.assignTo}-${globalIndex}`}
+                            keyPrefix={row.assignmentId ?? `${row.trainingName}-${row.assignTo}-${globalIndex}`}
                           />
                         </td>
                         <td className="py-3 pr-4 text-center">

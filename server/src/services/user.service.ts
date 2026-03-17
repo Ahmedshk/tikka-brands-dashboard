@@ -72,6 +72,38 @@ function roleLocationIdStrings(role: { locationIds?: unknown[] }): string[] {
   return locationIds.map(locationIdEntryToString).filter(Boolean);
 }
 
+/** Extract location id strings from a user doc field (ObjectIds or strings). */
+function userLocationIdStrings(arr: unknown[] | null | undefined): string[] {
+  const list = arr ?? [];
+  return list.map(locationIdEntryToString).filter(Boolean);
+}
+
+/**
+ * Whether a user has access to a given location when considering role locations,
+ * locationOverrides, and locationRemovals. Used for list filtering so results match
+ * the effective locations (role ∪ overrides) \ removals.
+ */
+function userHasAccessToLocation(
+  roleLocationAccess: string,
+  roleLocationIdStrings: string[],
+  locationId: string,
+  locationOverrides: unknown[] | null | undefined,
+  locationRemovals: unknown[] | null | undefined,
+): boolean {
+  const removalSet = new Set(userLocationIdStrings(locationRemovals as unknown[]));
+  if (removalSet.has(locationId)) return false;
+
+  const isRoleAll =
+    roleLocationAccess !== "specific" || roleLocationIdStrings.length === 0;
+  if (isRoleAll) return true;
+
+  const baseSet = new Set(roleLocationIdStrings);
+  const overrideStrings = userLocationIdStrings(locationOverrides as unknown[]);
+  for (const id of overrideStrings) baseSet.add(id);
+  for (const id of removalSet) baseSet.delete(id);
+  return baseSet.has(locationId);
+}
+
 export interface CreateUserPayload {
   firstName: string;
   lastName: string;
@@ -291,14 +323,23 @@ export class UserService {
       }
     }
 
-    // Include users whose assigned role has access to the selected location (role "all" = access to every location)
+    // Include users whose effective locations (role ∪ overrides \ removals) include the selected location
     const filtered = docs.filter((doc) => {
       if (!doc.roleId) return false;
       const rid = String(doc.roleId);
       const r = roleMap.get(rid);
       if (!r) return false;
-      if (r.locationAccess === "all") return true;
-      return r.locationIdStrings.includes(locationId);
+      const docWithOverrides = doc as UserDocument & {
+        locationOverrides?: unknown[];
+        locationRemovals?: unknown[];
+      };
+      return userHasAccessToLocation(
+        r.locationAccess,
+        r.locationIdStrings,
+        locationId,
+        docWithOverrides.locationOverrides,
+        docWithOverrides.locationRemovals,
+      );
     });
 
     const total = filtered.length;
@@ -312,6 +353,58 @@ export class UserService {
       page,
       pageSize,
     };
+  }
+
+  /**
+   * Returns user IDs that have access to the given location (same role/location logic as getUsers).
+   * Used by training assignment list to filter assignments by navbar location.
+   */
+  async getUserIdsWithAccessToLocation(locationId: string): Promise<string[]> {
+    if (!locationId || locationId.trim() === "") return [];
+    const docs = await this.userRepository.findWithFilters({});
+    const locId = locationId.trim();
+    const roleIdStrings = [
+      ...new Set(
+        docs
+          .map((d) => d.roleId)
+          .filter(Boolean)
+          .map(String),
+      ),
+    ];
+    const roleMap = new Map<
+      string,
+      { locationAccess: string; locationIdStrings: string[] }
+    >();
+    for (const rid of roleIdStrings) {
+      const role = await this.roleRepository.findById(rid);
+      if (role) {
+        const locationAccess = (
+          (role as { locationAccess?: string }).locationAccess ?? "all"
+        ).toLowerCase();
+        const locationIdStrings = roleLocationIdStrings(
+          role as { locationIds?: unknown[] },
+        );
+        roleMap.set(rid, { locationAccess, locationIdStrings });
+      }
+    }
+    const filtered = docs.filter((doc) => {
+      if (!doc.roleId) return false;
+      const rid = String(doc.roleId);
+      const r = roleMap.get(rid);
+      if (!r) return false;
+      const docWithOverrides = doc as UserDocument & {
+        locationOverrides?: unknown[];
+        locationRemovals?: unknown[];
+      };
+      return userHasAccessToLocation(
+        r.locationAccess,
+        r.locationIdStrings,
+        locId,
+        docWithOverrides.locationOverrides,
+        docWithOverrides.locationRemovals,
+      );
+    });
+    return filtered.map((d) => toIdString(d._id) ?? "").filter(Boolean);
   }
 
   async updateUser(

@@ -161,3 +161,17 @@ export function isAncestorOf(
   const ancestors = getAncestorRoleIds(targetRoleId, roles);
   return ancestors.includes(actorRoleId);
 }
+
+/**
+ * True if the actor (assigner/editor) is allowed to manage the trainee:
+ * actor's role must be a strict ascendant (ancestor) of trainee's role.
+ * Same-level users cannot see, assign, or edit each other's trainings.
+ */
+export function canManageTrainee(
+  actorRoleId: string,
+  traineeRoleId: string,
+  roles: HierarchyRole[]
+): boolean {
+  if (actorRoleId === traineeRoleId) return false;
+  return isAncestorOf(actorRoleId, traineeRoleId, roles);
+}

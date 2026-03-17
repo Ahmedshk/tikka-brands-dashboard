@@ -23,6 +23,7 @@ export function getCloudinaryConfigured(): boolean {
   return isConfigured();
 }
 
+/** MIME types uploaded as Cloudinary resource_type 'image'. PDF/Word/Excel are 'raw'. */
 const IMAGE_MIMES = new Set([
   'image/jpeg',
   'image/jpg',
@@ -59,20 +60,24 @@ export async function uploadToCloudinary(
   return {
     public_id: result.public_id,
     secure_url: result.secure_url ?? '',
+    format: (result as { format?: string }).format,
   };
 }
 
 /**
  * Delete an asset from Cloudinary by public_id.
  * Logs and ignores errors (e.g. 404) so callers can still throw the original error.
+ * @param resourceType - 'image' (default) or 'raw'; must match how the asset was uploaded.
  */
-export async function deleteFromCloudinary(publicId: string): Promise<void> {
+export async function deleteFromCloudinary(
+  publicId: string,
+  resourceType: 'image' | 'raw' = 'image'
+): Promise<void> {
   if (!isConfigured()) return;
   try {
-    await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
   } catch (err) {
     console.error('[Cloudinary] deleteFromCloudinary failed for', publicId, err);
-    // Optionally rethrow; plan says "log and swallow" for create-failure cleanup
   }
 }
 

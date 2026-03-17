@@ -3,11 +3,12 @@ import { uploadToCloudinary } from '../config/cloudinary.js';
 import { CLOUDINARY_FOLDERS } from '../config/upload.config.js';
 import { TrainingService } from '../services/training.service.js';
 import { ValidationError } from '../utils/errors.util.js';
-import { slugifyTrainingName } from '../utils/training.util.js';
+import { slugifyTrainingName, getFileFormat } from '../utils/training.util.js';
 import { uploadTrainingDocumentMulter } from '../middleware/upload-training.middleware.js';
 
 const trainingService = new TrainingService();
 
+/** MIME types treated as image for delivery. PDF/Word/Excel are raw. */
 const IMAGE_MIMES = new Set([
   'image/jpeg',
   'image/jpg',
@@ -65,9 +66,16 @@ export const uploadTrainingDocument = async (
       { resource_type: 'auto' }
     );
     const resourceType = getResourceType(file.mimetype);
+    const format =
+      result.format ?? getFileFormat(file.originalname, file.mimetype);
     res.status(200).json({
       success: true,
-      data: { publicId: result.public_id, resourceType },
+      data: {
+        publicId: result.public_id,
+        resourceType,
+        filename: file.originalname || undefined,
+        format: format || undefined,
+      },
     });
   } catch (error) {
     next(error);
@@ -96,6 +104,61 @@ export const listTrainings = async (
   try {
     const trainings = await trainingService.list();
     res.status(200).json({ success: true, data: { trainings } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTrainingById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const training = await trainingService.getById(id);
+    if (!training) {
+      res.status(404).json({ success: false, message: 'Training not found' });
+      return;
+    }
+    res.status(200).json({ success: true, data: { training } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateTraining = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { name, modules, assignToRoles } = req.body;
+    const training = await trainingService.update(id, { name, modules, assignToRoles });
+    if (!training) {
+      res.status(404).json({ success: false, message: 'Training not found' });
+      return;
+    }
+    res.status(200).json({ success: true, data: { training } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteTraining = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const deleted = await trainingService.delete(id);
+    if (!deleted) {
+      res.status(404).json({ success: false, message: 'Training not found' });
+      return;
+    }
+    res.status(200).json({ success: true, data: { deleted: true } });
   } catch (error) {
     next(error);
   }

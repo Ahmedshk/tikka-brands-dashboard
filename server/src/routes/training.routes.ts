@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { validate } from '../utils/zod.util.js';
-import { createTrainingSchema } from '../validators/training.validators.js';
+import {
+  createTrainingSchema,
+  updateTrainingSchema,
+  getTrainingByIdSchema,
+  deleteTrainingSchema,
+} from '../validators/training.validators.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { attachUserContext } from '../middleware/user-context.middleware.js';
 import { requirePermission } from '../middleware/rbac.middleware.js';
@@ -9,7 +14,11 @@ import {
   uploadTrainingDocument,
   createTraining,
   listTrainings,
+  getTrainingById,
+  updateTraining,
+  deleteTraining,
 } from '../controllers/training.controller.js';
+import trainingAssignmentRoutes from './trainingAssignment.routes.js';
 
 const router = Router();
 
@@ -24,5 +33,9 @@ router.post(
 );
 router.post('/', validate(createTrainingSchema), createTraining);
 router.get('/', listTrainings);
+router.use('/assignments', trainingAssignmentRoutes);
+router.get('/:id', validate(getTrainingByIdSchema), getTrainingById);
+router.put('/:id', validate(updateTrainingSchema), updateTraining);
+router.delete('/:id', validate(deleteTrainingSchema), deleteTraining);
 
 export default router;

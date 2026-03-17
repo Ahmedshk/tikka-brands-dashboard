@@ -5,6 +5,8 @@ const trainingModuleFileSchema = new Schema<ITrainingModuleFile>(
   {
     publicId: { type: String, required: true, trim: true },
     resourceType: { type: String, enum: ['image', 'raw'], required: true },
+    filename: { type: String, required: false, trim: true },
+    format: { type: String, required: false, trim: true },
   },
   { _id: false }
 );
@@ -12,6 +14,7 @@ const trainingModuleFileSchema = new Schema<ITrainingModuleFile>(
 const trainingModuleSchema = new Schema<ITrainingModule>(
   {
     name: { type: String, required: true, trim: true },
+    duration: { type: Number, required: true, min: 1, integer: true },
     moduleFiles: {
       type: [trainingModuleFileSchema],
       default: [],

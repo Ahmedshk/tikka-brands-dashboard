@@ -81,7 +81,8 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     pageLabel: 'Training Management',
     components: [
       FULL_PAGE_ACCESS,
-      { id: 'kpi-office-staff', label: 'Office Staff' },
+      { id: 'kpi-office-staff', label: 'Staff in Training' },
+      { id: 'kpi-trainings-overdue', label: 'Trainings Overdue' },
       { id: 'kpi-training-completion', label: 'Training Completion' },
       { id: 'employee-training', label: 'Employee Training' },
       { id: 'trainings', label: 'Trainings' },
