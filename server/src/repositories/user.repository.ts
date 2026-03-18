@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import { UserModel, UserDocument } from '../models/user.model.js';
 import { IUser } from '../types/user.types.js';
 
@@ -26,6 +27,9 @@ export class UserRepository {
   async findWithFilters(filters: {
     search?: string;
     roleId?: string;
+    roleIds?: string[];
+    excludeUserIds?: string[];
+    showArchived?: boolean;
   }): Promise<UserDocument[]> {
     const query = this.buildListQuery(filters);
     return await UserModel.find(query).sort({ createdAt: -1 }).lean().exec();
@@ -33,7 +37,7 @@ export class UserRepository {
 
   /** Paginated list with same filters; returns docs and total count. */
   async findWithFiltersPaginated(
-    filters: { search?: string; roleId?: string },
+    filters: { search?: string; roleId?: string; roleIds?: string[]; excludeUserIds?: string[]; showArchived?: boolean },
     options: { page: number; pageSize: number }
   ): Promise<{ docs: UserDocument[]; total: number }> {
     const query = this.buildListQuery(filters);
@@ -49,10 +53,18 @@ export class UserRepository {
     return { docs, total };
   }
 
-  private buildListQuery(filters: { search?: string; roleId?: string }): Record<string, unknown> {
+  private buildListQuery(filters: { search?: string; roleId?: string; roleIds?: string[]; excludeUserIds?: string[]; showArchived?: boolean }): Record<string, unknown> {
     const query: Record<string, unknown> = {};
-    if (filters.roleId) {
+    if (filters.roleIds && filters.roleIds.length > 0) {
+      query.roleId = { $in: filters.roleIds };
+    } else if (filters.roleId) {
       query.roleId = filters.roleId;
+    }
+    if (filters.excludeUserIds && filters.excludeUserIds.length > 0) {
+      query._id = { $nin: filters.excludeUserIds.map((id) => new Types.ObjectId(id)) };
+    }
+    if (!filters.showArchived) {
+      query['homebaseData.job.archived_at'] = { $in: [null, undefined] };
     }
     const searchTerm = filters.search?.trim();
     if (searchTerm) {
@@ -83,6 +95,10 @@ export class UserRepository {
 
   async findBySquareId(squareId: string): Promise<UserDocument | null> {
     return await UserModel.findOne({ squareId: squareId.trim() }).lean().exec() as UserDocument | null;
+  }
+
+  async findByHomebaseId(homebaseId: string): Promise<UserDocument | null> {
+    return await UserModel.findOne({ "homebaseData.id": homebaseId.trim() }).lean().exec() as UserDocument | null;
   }
 
   async findByInvitationToken(token: string): Promise<UserDocument | null> {

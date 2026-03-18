@@ -18,7 +18,22 @@ const statusPillClass: Record<UserStatus, string> = {
   Active: 'rounded-full px-2 py-0.5 text-[8px] md:text-[10px] 2xl:text-xs font-medium bg-[rgba(93,197,79,0.2)] text-primary',
   Pending: 'rounded-full px-2 py-0.5 text-[8px] md:text-[10px] 2xl:text-xs font-medium bg-[rgba(253,185,14,0.2)] text-primary',
   Suspended: 'rounded-full px-2 py-0.5 text-[8px] md:text-[10px] 2xl:text-xs font-medium bg-[rgba(253,185,14,0.2)] text-primary',
+  Terminated: 'rounded-full px-2 py-0.5 text-[8px] md:text-[10px] 2xl:text-xs font-medium bg-[rgba(220,38,38,0.15)] text-red-700',
 };
+
+function formatMountainDate(isoString: string | null | undefined): string {
+  if (!isoString) return '—';
+  try {
+    return new Date(isoString).toLocaleDateString('en-US', {
+      timeZone: 'America/Denver',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  } catch {
+    return '—';
+  }
+}
 
 function getInitial(name: string | undefined): string {
   const trimmed = (name ?? '').trim();
@@ -83,6 +98,9 @@ function UserRowCard({
         </p>
         <p className="text-xs text-gray-600 mt-1 truncate" title={row.email}>
           <span className="font-medium">Email:</span> {row.email}
+        </p>
+        <p className="text-xs text-gray-600 mt-0.5">
+          <span className="font-medium">Start Date:</span> {formatMountainDate(row.homebaseData?.created_at ?? row.createdAt)}
         </p>
         <p className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-1">
           <span className="font-medium">Role:</span>
@@ -163,10 +181,11 @@ export const UserManagementTableCard = ({
           <table className="w-full border-collapse table-fixed min-w-[32rem] text-[10px] md:text-xs 2xl:text-sm">
             <thead>
               <tr className="bg-button-primary text-white">
-                <th className="w-[20%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">Name</th>
-                <th className="w-[25%] text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4 text-center">Email</th>
-                <th className="w-[20%] text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4 text-center">Role</th>
-                <th className="w-[15%] text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4 text-center">Status</th>
+                <th className="w-[18%] text-left text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4">Name</th>
+                <th className="w-[22%] text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4 text-center">Email</th>
+                <th className="w-[12%] text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4 text-center">Start Date</th>
+                <th className="w-[16%] text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4 text-center">Role</th>
+                <th className="w-[12%] text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4 text-center">Status</th>
                 <th className="text-xs 2xl:text-sm font-semibold px-4 lg:px-6 py-3 lg:py-4 text-center">Actions</th>
               </tr>
             </thead>
@@ -179,7 +198,7 @@ export const UserManagementTableCard = ({
                   key={row._id}
                   className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}
                 >
-                  <td className="w-[20%] px-4 lg:px-6 py-3 lg:py-4">
+                  <td className="w-[18%] px-4 lg:px-6 py-3 lg:py-4">
                     <div className="flex items-center gap-2">
                       {row.profileImageUrl ? (
                         <img
@@ -198,8 +217,9 @@ export const UserManagementTableCard = ({
                       <span className="font-medium text-primary truncate" title={displayName}>{displayName}</span>
                     </div>
                   </td>
-                  <td className="w-[25%] px-4 lg:px-6 py-3 lg:py-4 text-primary truncate text-center" title={row.email}>{row.email}</td>
-                  <td className="w-[20%] px-4 lg:px-6 py-3 lg:py-4 text-center">
+                  <td className="w-[22%] px-4 lg:px-6 py-3 lg:py-4 text-primary truncate text-center" title={row.email}>{row.email}</td>
+                  <td className="w-[12%] px-4 lg:px-6 py-3 lg:py-4 text-primary text-center">{formatMountainDate(row.homebaseData?.created_at ?? row.createdAt)}</td>
+                  <td className="w-[16%] px-4 lg:px-6 py-3 lg:py-4 text-center">
                     <div className="flex flex-wrap items-center justify-center gap-1">
                       <span className="truncate" title={row.role ?? 'Role unassigned'}>
                         {row.role ?? 'Role unassigned'}
@@ -211,7 +231,7 @@ export const UserManagementTableCard = ({
                       )}
                     </div>
                   </td>
-                  <td className="w-[15%] px-4 lg:px-6 py-3 lg:py-4 text-center">
+                  <td className="w-[12%] px-4 lg:px-6 py-3 lg:py-4 text-center">
                     <span className={statusPillClass[row.status]}>{row.status}</span>
                   </td>
                   <td className="px-4 lg:px-6 py-3 lg:py-4 text-center">

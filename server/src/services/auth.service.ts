@@ -92,6 +92,15 @@ export class AuthService {
       );
     }
 
+    // Block archived Homebase employees
+    const archivedAt = (user as unknown as { homebaseData?: { job?: { archived_at?: string | null } } })
+      .homebaseData?.job?.archived_at;
+    if (archivedAt != null && archivedAt !== "") {
+      throw new UnauthorizedError(
+        "Your account has been archived. Please contact an administrator."
+      );
+    }
+
     // First login: set status to active
     if (user.status === "pending") {
       await this.userRepository.updateById(user._id.toString(), { status: "active" });

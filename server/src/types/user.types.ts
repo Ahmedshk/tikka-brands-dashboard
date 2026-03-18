@@ -11,6 +11,28 @@ export enum UserRole {
 
 export type UserStatus = 'pending' | 'active';
 
+/** Homebase job object stored on user (all fields from API except pin). */
+export interface HomebaseJob {
+  id: number;
+  level?: string | null;
+  default_role?: string | null;
+  pos_partner_id?: string | null;
+  payroll_id?: string | null;
+  wage_rate?: number | null;
+  wage_type?: string | null;
+  roles?: unknown[];
+  archived_at?: string | null;
+  location_uuid?: string | null;
+}
+
+/** All Homebase-sourced fields stored in one object to avoid clashing with existing user fields. */
+export interface HomebaseData {
+  id: string;
+  job?: HomebaseJob | null;
+  created_at?: Date | null;
+  updated_at?: Date | null;
+}
+
 export interface IUser {
   _id?: string;
   email: string;
@@ -31,7 +53,8 @@ export interface IUser {
   invitationTokenExpiresAt?: Date;
   phone?: string;
   squareId?: string;
-  homebaseId?: string;
+  /** Homebase employee data (id, job, created_at, updated_at). Used for sync and lookup. */
+  homebaseData?: HomebaseData | null;
   /** Cloudinary public_id for profile image; never expose raw URL to client. */
   profileImagePublicId?: string | null;
   /** Additive permission overrides (extra pages/components on top of role). Only type 'custom' or null. */

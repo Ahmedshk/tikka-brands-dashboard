@@ -12,12 +12,18 @@ import {
 } from "../utils/errors.util.js";
 import { sendInvitationEmail } from "./mailer.service.js";
 import { searchTeamMembers } from "./square.service.js";
+import { getEmployeesForLocation } from "./homebase.service.js";
 import { deleteFromCloudinary } from "../config/cloudinary.js";
 import {
   normalizeTeamMember,
   buildSyncUpdatePayload,
   buildSyncCreatePayload,
 } from "../utils/syncFromSquareHelpers.js";
+import {
+  normalizeHomebaseEmployee,
+  buildHomebaseSyncUpdatePayload,
+  buildHomebaseSyncCreatePayload,
+} from "../utils/syncFromHomebaseHelpers.js";
 
 const OWNER_ROLE_NAME = UserRole.OWNER;
 const SALT_ROUNDS = 10;
@@ -110,12 +116,19 @@ export interface CreateUserPayload {
   email: string;
   phone?: string;
   squareId?: string;
-  homebaseId?: string;
+  homebaseData?: import('../types/user.types.js').HomebaseData | null;
   roleId?: string | null;
   profileImagePublicId?: string | null;
 }
 
 export interface SyncFromSquareResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+}
+
+export interface SyncFromHomebaseResult {
   created: number;
   updated: number;
   skipped: number;
@@ -179,7 +192,7 @@ export class UserService {
 
     const phone = payload.phone?.trim();
     const squareId = payload.squareId?.trim();
-    const homebaseId = payload.homebaseId?.trim();
+    const homebaseData = payload.homebaseData;
     const profileImagePublicId = payload.profileImagePublicId?.trim();
     const doc = await this.userRepository.create({
       email: payload.email.trim().toLowerCase(),
@@ -192,7 +205,7 @@ export class UserService {
       status: "pending",
       ...(phone !== undefined && phone !== "" && { phone }),
       ...(squareId !== undefined && squareId !== "" && { squareId }),
-      ...(homebaseId !== undefined && homebaseId !== "" && { homebaseId }),
+      ...((homebaseData?.id ?? "") !== "" && homebaseData != null && { homebaseData }),
       ...(profileImagePublicId !== undefined &&
         profileImagePublicId !== "" && { profileImagePublicId }),
     });
@@ -258,7 +271,10 @@ export class UserService {
   async getUsers(filters?: {
     search?: string;
     roleId?: string;
+    roleIds?: string[];
+    excludeUserIds?: string[];
     locationId?: string;
+    showArchived?: boolean;
     page?: number;
     pageSize?: number;
   }): Promise<{
@@ -272,11 +288,16 @@ export class UserService {
     const pageSize = Math.min(100, Math.max(1, filters?.pageSize ?? 10));
 
     if (!filters?.locationId || filters.locationId.trim() === "") {
-      const filterParams: { search?: string; roleId?: string } = {};
+      const filterParams: { search?: string; roleId?: string; roleIds?: string[]; excludeUserIds?: string[]; showArchived?: boolean } = {};
       if (filters?.search !== undefined && filters.search !== "")
         filterParams.search = filters.search;
-      if (filters?.roleId !== undefined && filters.roleId !== "")
+      if (filters?.roleIds && filters.roleIds.length > 0)
+        filterParams.roleIds = filters.roleIds;
+      else if (filters?.roleId !== undefined && filters.roleId !== "")
         filterParams.roleId = filters.roleId;
+      if (filters?.excludeUserIds && filters.excludeUserIds.length > 0)
+        filterParams.excludeUserIds = filters.excludeUserIds;
+      filterParams.showArchived = filters?.showArchived ?? false;
       const { docs, total } =
         await this.userRepository.findWithFiltersPaginated(filterParams, {
           page,
@@ -291,11 +312,16 @@ export class UserService {
       };
     }
 
-    const listFilterParams: { search?: string; roleId?: string } = {};
+    const listFilterParams: { search?: string; roleId?: string; roleIds?: string[]; excludeUserIds?: string[]; showArchived?: boolean } = {};
     if (filters?.search !== undefined && filters.search !== "")
       listFilterParams.search = filters.search;
-    if (filters?.roleId !== undefined && filters.roleId !== "")
+    if (filters?.roleIds && filters.roleIds.length > 0)
+      listFilterParams.roleIds = filters.roleIds;
+    else if (filters?.roleId !== undefined && filters.roleId !== "")
       listFilterParams.roleId = filters.roleId;
+    if (filters?.excludeUserIds && filters.excludeUserIds.length > 0)
+      listFilterParams.excludeUserIds = filters.excludeUserIds;
+    listFilterParams.showArchived = filters?.showArchived ?? false;
     const docs = await this.userRepository.findWithFilters(listFilterParams);
     const locationId = filters.locationId.trim();
     const roleIdStrings = [
@@ -323,9 +349,10 @@ export class UserService {
       }
     }
 
-    // Include users whose effective locations (role ∪ overrides \ removals) include the selected location
+    // Include users whose effective locations (role ∪ overrides \ removals) include the selected location,
+    // and also include users with no role (e.g. synced-from-Homebase) so they appear in the list and can be assigned a role.
     const filtered = docs.filter((doc) => {
-      if (!doc.roleId) return false;
+      if (!doc.roleId) return true;
       const rid = String(doc.roleId);
       const r = roleMap.get(rid);
       if (!r) return false;
@@ -558,6 +585,70 @@ export class UserService {
     return result;
   }
 
+  async syncFromHomebase(locationId: string): Promise<SyncFromHomebaseResult> {
+    const withCreds =
+      await this.locationService.getByIdWithCredentials(locationId);
+    if (!withCreds) {
+      throw new NotFoundError("Location not found");
+    }
+    const { location, homebaseApiKey } = withCreds;
+    const homebaseLocationId = location.homebaseLocationId?.trim();
+    if (!homebaseLocationId || !homebaseApiKey) {
+      throw new ForbiddenError(
+        "Location does not have Homebase credentials configured.",
+      );
+    }
+
+    const employees = await getEmployeesForLocation(
+      homebaseLocationId,
+      homebaseApiKey,
+    );
+
+    const result: SyncFromHomebaseResult = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: [],
+    };
+
+    for (const emp of employees) {
+      const normalized = normalizeHomebaseEmployee(emp);
+      if (!normalized) {
+        result.skipped++;
+        continue;
+      }
+
+      try {
+        const existing = await this.resolveExistingUserForHomebase(normalized);
+        if (existing) {
+          const updatePayload = buildHomebaseSyncUpdatePayload(
+            normalized,
+            existing,
+          );
+          await this.userRepository.updateById(
+            existing._id.toString(),
+            updatePayload,
+          );
+          result.updated++;
+        } else {
+          const hashedPassword = await bcrypt.hash(
+            randomPassword(),
+            SALT_ROUNDS,
+          );
+          await this.userRepository.create(
+            buildHomebaseSyncCreatePayload(normalized, hashedPassword),
+          );
+          result.created++;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        result.errors.push(`${normalized.email}: ${msg}`);
+      }
+    }
+
+    return result;
+  }
+
   /** Find existing user by squareId or email; returns null if none. */
   private async resolveExistingUser(normalized: {
     email: string;
@@ -570,5 +661,18 @@ export class UserService {
     const existingByEmail =
       await this.userRepository.findByEmail(normalized.email);
     return existingBySquare ?? existingByEmail ?? null;
+  }
+
+  /** Find existing user by homebaseData.id or email; returns null if none. */
+  private async resolveExistingUserForHomebase(normalized: {
+    email: string;
+    homebaseData: { id: string };
+  }): Promise<UserDocument | null> {
+    const existingByHomebase = await this.userRepository.findByHomebaseId(
+      normalized.homebaseData.id,
+    );
+    const existingByEmail =
+      await this.userRepository.findByEmail(normalized.email);
+    return existingByHomebase ?? existingByEmail ?? null;
   }
 }

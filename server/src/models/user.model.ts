@@ -56,13 +56,36 @@ const userSchema = new Schema<UserDocument>(
     invitationTokenExpiresAt: { type: Date, default: undefined },
     phone: { type: String, trim: true, default: undefined },
     squareId: { type: String, trim: true, default: undefined },
-    homebaseId: { type: String, trim: true, default: undefined },
+    homebaseData: {
+      type: {
+        id: { type: String, required: true, trim: true },
+        job: {
+          type: {
+            id: Number,
+            level: String,
+            default_role: String,
+            pos_partner_id: String,
+            payroll_id: String,
+            wage_rate: Schema.Types.Mixed,
+            wage_type: String,
+            roles: [Schema.Types.Mixed],
+            archived_at: String,
+            location_uuid: String,
+          },
+          _id: false,
+        },
+        created_at: Date,
+        updated_at: Date,
+      },
+      _id: false,
+      default: undefined,
+    },
     profileImagePublicId: { type: String, trim: true, default: undefined },
     permissionOverrides: {
       type: {
         type: String,
         enum: ['custom'],
-        required: true,
+        required: false,
       },
       pages: [
         {
@@ -82,7 +105,7 @@ const userSchema = new Schema<UserDocument>(
       type: {
         type: String,
         enum: ['custom'],
-        required: true,
+        required: false,
       },
       pages: [
         {

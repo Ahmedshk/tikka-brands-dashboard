@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { trainingService } from '../../services/training.service';
 import { userService } from '../../services/user.service';
@@ -35,10 +35,16 @@ export const AssignTrainingModal = ({
   const [employees, setEmployees] = useState<UserRow[]>([]);
   const [loadingTrainings, setLoadingTrainings] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [loadingMoreEmployees, setLoadingMoreEmployees] = useState(false);
+  const employeePageRef = useRef(1);
+  const [hasMoreEmployees, setHasMoreEmployees] = useState(false);
   const [selectedTrainingId, setSelectedTrainingId] = useState<string | null>(null);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const employeeListRef = useRef<HTMLUListElement>(null);
+  const fetchingMoreRef = useRef(false);
+  const hasMoreRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -67,23 +73,93 @@ export const AssignTrainingModal = ({
     }
   }, [isOpen]);
 
+  const PAGE_SIZE = 10;
+
+  const roleIdsArray = useMemo(
+    () => Array.from(allowedRoleIds),
+    [allowedRoleIds],
+  );
+
   useEffect(() => {
-    if (isOpen && step === 'employees' && locationId) {
+    if (isOpen && step === 'employees' && locationId && roleIdsArray.length > 0) {
+      setEmployees([]);
+      employeePageRef.current = 1;
+      setHasMoreEmployees(false);
+      hasMoreRef.current = false;
+      fetchingMoreRef.current = false;
       setLoadingEmployees(true);
       userService
-        .listUsers({ locationId, pageSize: 100 })
+        .listUsers({
+          locationId,
+          roleIds: roleIdsArray,
+          excludeAssignedTrainingId: selectedTrainingId ?? undefined,
+          pageSize: PAGE_SIZE,
+          page: 1,
+        })
         .then((res) => {
-          const list = res.users;
-          if (allowedRoleIds.size === 0) {
-            setEmployees([]);
-            return;
-          }
-          setEmployees(list.filter((u) => u.roleId != null && allowedRoleIds.has(u.roleId)));
+          const more = res.pagination.page < res.pagination.totalPages;
+          setEmployees(res.users);
+          setHasMoreEmployees(more);
+          hasMoreRef.current = more;
+          employeePageRef.current = 1;
         })
         .catch(() => setEmployees([]))
-        .finally(() => setLoadingEmployees(false));
+        .finally(() => {
+          setLoadingEmployees(false);
+          scheduleAutoLoad();
+        });
     }
-  }, [isOpen, step, locationId, allowedRoleIds]);
+  }, [isOpen, step, locationId, roleIdsArray, selectedTrainingId]);
+
+  const loadMoreRef = useRef<() => void>(() => {});
+
+  const scheduleAutoLoad = useCallback(() => {
+    requestAnimationFrame(() => {
+      const el = employeeListRef.current;
+      if (!el || !hasMoreRef.current || fetchingMoreRef.current) return;
+      if (el.scrollHeight <= el.clientHeight + 50) {
+        loadMoreRef.current();
+      }
+    });
+  }, []);
+
+  const loadMoreEmployees = useCallback(() => {
+    if (!locationId || fetchingMoreRef.current || !hasMoreRef.current) return;
+    fetchingMoreRef.current = true;
+    const nextPage = employeePageRef.current + 1;
+    setLoadingMoreEmployees(true);
+    userService
+      .listUsers({
+        locationId,
+        roleIds: roleIdsArray,
+        excludeAssignedTrainingId: selectedTrainingId ?? undefined,
+        pageSize: PAGE_SIZE,
+        page: nextPage,
+      })
+      .then((res) => {
+        const more = res.pagination.page < res.pagination.totalPages;
+        setEmployees((prev) => [...prev, ...res.users]);
+        setHasMoreEmployees(more);
+        hasMoreRef.current = more;
+        employeePageRef.current = nextPage;
+      })
+      .catch(() => {})
+      .finally(() => {
+        fetchingMoreRef.current = false;
+        setLoadingMoreEmployees(false);
+        scheduleAutoLoad();
+      });
+  }, [locationId, roleIdsArray, selectedTrainingId, scheduleAutoLoad]);
+
+  loadMoreRef.current = loadMoreEmployees;
+
+  const handleEmployeeScroll = useCallback(() => {
+    const el = employeeListRef.current;
+    if (!el || !hasMoreRef.current || fetchingMoreRef.current) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 50) {
+      loadMoreEmployees();
+    }
+  }, [loadMoreEmployees]);
 
   const toggleUser = (userId: string) => {
     setSelectedUserIds((prev) => {
@@ -92,6 +168,16 @@ export const AssignTrainingModal = ({
       else next.add(userId);
       return next;
     });
+  };
+
+  const allSelected = employees.length > 0 && employees.every((u) => selectedUserIds.has(u._id));
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelectedUserIds(new Set());
+    } else {
+      setSelectedUserIds(new Set(employees.map((u) => u._id)));
+    }
   };
 
   const handleNext = () => {
@@ -216,7 +302,21 @@ export const AssignTrainingModal = ({
                       if (allowedRoleIds.size === 0) return <p className="text-secondary text-sm">You can only assign training to users who report to your role. No eligible employees.</p>;
                       if (employees.length === 0) return <p className="text-secondary text-sm">No employees in your hierarchy at this location.</p>;
                       return (
-                        <ul className="space-y-1 max-h-56 overflow-y-auto">
+                        <>
+                        <label className="flex items-center gap-2 cursor-pointer px-2 py-1 mb-1 rounded hover:bg-gray-100 border-b border-gray-200">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={toggleAll}
+                          />
+                          <span className="text-primary text-sm font-medium">
+                            {allSelected ? 'Unselect All' : 'Select All'}
+                          </span>
+                          <span className="text-secondary text-xs ml-auto">
+                            {selectedUserIds.size}/{employees.length}
+                          </span>
+                        </label>
+                        <ul ref={employeeListRef} onScroll={handleEmployeeScroll} className="space-y-1 max-h-56 overflow-y-auto">
                           {employees.map((u) => (
                             <li key={u._id}>
                               <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-gray-100">
@@ -230,7 +330,13 @@ export const AssignTrainingModal = ({
                               </label>
                             </li>
                           ))}
+                          {hasMoreEmployees && (
+                            <li className="flex justify-center py-2">
+                              {loadingMoreEmployees && <Spinner size="sm" className="text-button-primary" />}
+                            </li>
+                          )}
                         </ul>
+                        </>
                       );
                     })()}
                   </>

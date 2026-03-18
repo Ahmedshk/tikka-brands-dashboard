@@ -1,7 +1,29 @@
 import type { RolePermissions } from './rbac.types';
 
-/** Display status: Pending (invited, not logged in), Active (logged in), Suspended (deactivated). */
-export type UserStatus = 'Pending' | 'Active' | 'Suspended';
+/** Homebase job object (all fields from API except pin). */
+export interface HomebaseJob {
+  id: number;
+  level?: string | null;
+  default_role?: string | null;
+  pos_partner_id?: string | null;
+  payroll_id?: string | null;
+  wage_rate?: number | null;
+  wage_type?: string | null;
+  roles?: unknown[];
+  archived_at?: string | null;
+  location_uuid?: string | null;
+}
+
+/** All Homebase-sourced fields stored in one object. */
+export interface HomebaseData {
+  id: string;
+  job?: HomebaseJob | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** Display status: Pending (invited, not logged in), Active (logged in), Suspended (deactivated), Terminated (homebase archived). */
+export type UserStatus = 'Pending' | 'Active' | 'Suspended' | 'Terminated';
 
 export interface UserRow {
   _id: string;
@@ -11,7 +33,7 @@ export interface UserRow {
   email: string;
   phone?: string;
   squareId?: string;
-  homebaseId?: string;
+  homebaseData?: HomebaseData | null;
   /** Role display name; empty/null = "Role unassigned". */
   role: string | null;
   roleId?: string | null;
@@ -29,4 +51,5 @@ export interface UserRow {
   permissionRemovals?: RolePermissions | null;
   /** Location IDs removed from (role locations ∪ overrides) for this user. */
   locationRemovals?: string[] | null;
+  createdAt?: string | null;
 }

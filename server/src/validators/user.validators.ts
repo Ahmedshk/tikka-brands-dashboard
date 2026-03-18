@@ -10,7 +10,10 @@ export const listUsersQuerySchema = z.object({
     .object({
       search: z.string().trim().optional(),
       roleId: z.string().min(1).optional(),
+      roleIds: z.string().min(1).optional(),
       locationId: z.string().min(1).optional(),
+      excludeAssignedTrainingId: z.string().min(1).optional(),
+      showArchived: z.enum(['true', 'false']).optional(),
     })
     .extend(paginationSchema.shape),
 });
@@ -77,6 +80,12 @@ export const resendInviteParamsSchema = z.object({
 });
 
 export const syncFromSquareSchema = z.object({
+  body: z.object({
+    locationId: z.string().min(1, 'Location ID is required'),
+  }),
+});
+
+export const syncFromHomebaseSchema = z.object({
   body: z.object({
     locationId: z.string().min(1, 'Location ID is required'),
   }),

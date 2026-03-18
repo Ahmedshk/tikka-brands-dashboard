@@ -4,6 +4,7 @@ import DeleteIcon from '@assets/icons/delete.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
+const CARD_DISPLAY_LIMIT = 8;
 
 export interface TrainingsCardProps {
   trainings: Training[];
@@ -14,6 +15,9 @@ export interface TrainingsCardProps {
 }
 
 export const TrainingsCard = ({ trainings, onEdit, onDelete, onCreate, onViewAll }: TrainingsCardProps) => {
+  const displayTrainings = trainings.slice(0, CARD_DISPLAY_LIMIT);
+  const hasMore = trainings.length > CARD_DISPLAY_LIMIT;
+
   return (
     <div className={`${cardClass} flex flex-col h-full min-h-0`}>
       <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2 flex items-center flex-shrink-0">
@@ -31,7 +35,7 @@ export const TrainingsCard = ({ trainings, onEdit, onDelete, onCreate, onViewAll
               </tr>
             </thead>
             <tbody className="text-primary">
-              {trainings.map((training, index) => (
+              {displayTrainings.map((training, index) => (
                 <tr
                   key={training.id}
                   className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}
@@ -79,7 +83,7 @@ export const TrainingsCard = ({ trainings, onEdit, onDelete, onCreate, onViewAll
                 Create
               </button>
             )}
-            {onViewAll != null && (
+            {onViewAll != null && hasMore && (
               <button
                 type="button"
                 onClick={onViewAll}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Layout } from '../../components/common/Layout';
-import { UserManagementTableCard, AddUserModal, SyncSquareModal } from '../../components/UserManagement';
+import { UserManagementTableCard, AddUserModal, SyncHomebaseModal } from '../../components/UserManagement';
 import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
 import type { UserRow } from '../../types/userManagement.types';
 import { userService } from '../../services/user.service';
@@ -32,7 +32,8 @@ export const UserManagement = () => {
   const [userToResendInvite, setUserToResendInvite] = useState<UserRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [sendingInvite, setSendingInvite] = useState(false);
-  const [syncSquareOpen, setSyncSquareOpen] = useState(false);
+  const [syncHomebaseOpen, setSyncHomebaseOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const [pagination, setPagination] = useState({
     totalItems: 0,
@@ -49,6 +50,7 @@ export const UserManagement = () => {
           search: search.trim() || undefined,
           roleId: roleIdFilter.trim() || undefined,
           locationId: locationIdFilter.trim() || undefined,
+          showArchived: showArchived || undefined,
           page: requestedPage,
           pageSize: PAGE_SIZE,
         });
@@ -62,7 +64,7 @@ export const UserManagement = () => {
         setLoading(false);
       }
     },
-    [search, roleIdFilter, locationIdFilter]
+    [search, roleIdFilter, locationIdFilter, showArchived]
   );
 
   // Refetch from backend when search or filters change (resets to page 1)
@@ -77,7 +79,7 @@ export const UserManagement = () => {
 
   const handleSyncSynced = (result: { created: number; updated: number }) => {
     fetchUsers(1);
-    toast.success(`Synced from Square: ${result.created} created, ${result.updated} updated.`);
+    toast.success(`Synced from Homebase: ${result.created} created, ${result.updated} updated.`);
   };
 
   const handleEdit = (row: UserRow) => {
@@ -137,11 +139,11 @@ export const UserManagement = () => {
           <div className="flex w-full sm:w-auto flex-row gap-2 sm:flex-wrap sm:items-center">
             <button
               type="button"
-              onClick={() => setSyncSquareOpen(true)}
+              onClick={() => setSyncHomebaseOpen(true)}
               className="w-[55%] min-w-0 sm:w-auto sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-gray-300 bg-white text-secondary text-xs md:text-sm 2xl:text-base font-medium hover:bg-gray-50 transition-colors"
             >
               <SyncIcon className="w-4 h-4 shrink-0" aria-hidden />
-              <span className="truncate">Sync from Square</span>
+              <span className="truncate">Sync from Homebase</span>
             </button>
             <button
               type="button"
@@ -171,6 +173,15 @@ export const UserManagement = () => {
             />
           </div>
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-2 md:gap-3 sm:shrink-0">
+            <label className="flex items-center gap-1.5 text-xs md:text-sm text-primary whitespace-nowrap cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+                className="accent-button-primary w-3.5 h-3.5"
+              />
+              Show terminated
+            </label>
             <div className="w-full sm:w-24 md:w-52 lg:w-60 xl:w-74 2xl:w-80 min-w-0">
               <FilterSelect
                 value={locationIdFilter}
@@ -245,9 +256,9 @@ export const UserManagement = () => {
             isLoading={sendingInvite}
           />
         )}
-        <SyncSquareModal
-          open={syncSquareOpen}
-          onClose={() => setSyncSquareOpen(false)}
+        <SyncHomebaseModal
+          open={syncHomebaseOpen}
+          onClose={() => setSyncHomebaseOpen(false)}
           onSynced={handleSyncSynced}
           onError={(msg) => toast.error(msg)}
         />

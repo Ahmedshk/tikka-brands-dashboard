@@ -33,6 +33,18 @@ export const authenticate = async (
 
     const decoded = verifyAccessToken(token);
     const user = await userRepository.findById(decoded.userId);
+
+    // Block archived Homebase employees from using the system
+    const archivedAt = (user as unknown as { homebaseData?: { job?: { archived_at?: string | null } } })
+      ?.homebaseData?.job?.archived_at;
+    if (archivedAt != null && archivedAt !== '') {
+      res.status(403).json({
+        success: false,
+        message: 'Your account has been archived. Please contact an administrator.',
+      });
+      return;
+    }
+
     // Resolve role from user's current roleId (DB) so permission overrides are merged with the correct role
     let role: Awaited<ReturnType<RoleRepository['findById']>> = null;
     if (user?.roleId) {

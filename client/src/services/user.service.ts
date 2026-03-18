@@ -14,7 +14,7 @@ interface ApiUser {
   email?: string;
   phone?: string;
   squareId?: string;
-  homebaseId?: string;
+  homebaseData?: import('../types/userManagement.types').HomebaseData | null;
   role?: string | null;
   roleId?: string | null;
   status?: 'pending' | 'active';
@@ -25,6 +25,7 @@ interface ApiUser {
   locationOverrides?: string[] | null;
   permissionRemovals?: RolePermissions | null;
   locationRemovals?: string[] | null;
+  createdAt?: string | null;
 }
 
 /** Use plain fields; if API sent Mongoose doc, data may be in _doc. */
@@ -38,7 +39,7 @@ function pickUser(u: ApiUser): ApiUser {
       email: d.email as string,
       phone: d.phone as string | undefined,
       squareId: d.squareId as string | undefined,
-      homebaseId: d.homebaseId as string | undefined,
+      homebaseData: d.homebaseData as import('../types/userManagement.types').HomebaseData | null | undefined,
       role: (d.role as string | null) ?? null,
       roleId: (d.roleId as string | null) ?? null,
       status: d.status as 'pending' | 'active' | undefined,
@@ -49,6 +50,7 @@ function pickUser(u: ApiUser): ApiUser {
       locationOverrides: (d.locationOverrides as string[] | null | undefined) ?? undefined,
       permissionRemovals: (d.permissionRemovals as RolePermissions | null | undefined) ?? undefined,
       locationRemovals: (d.locationRemovals as string[] | null | undefined) ?? undefined,
+      createdAt: (d.createdAt as string | null | undefined) ?? undefined,
     };
   }
   return u;
@@ -63,8 +65,12 @@ function toUserRow(u: ApiUser): UserRow {
   const name = [firstName, lastName].filter(Boolean).join(' ').trim() || email;
   const isActive = d.isActive !== false;
   const statusVal = d.status ?? 'active';
-  let status: 'Suspended' | 'Pending' | 'Active';
-  if (!isActive) {
+  const archivedAt = d.homebaseData?.job?.archived_at;
+  const isArchived = archivedAt != null && archivedAt !== '';
+  let status: 'Suspended' | 'Pending' | 'Active' | 'Terminated';
+  if (isArchived) {
+    status = 'Terminated';
+  } else if (!isActive) {
     status = 'Suspended';
   } else if (statusVal === 'pending') {
     status = 'Pending';
@@ -79,7 +85,7 @@ function toUserRow(u: ApiUser): UserRow {
     email,
     phone: d.phone,
     squareId: d.squareId,
-    homebaseId: d.homebaseId,
+    homebaseData: d.homebaseData ?? null,
     role: d.role ?? null,
     roleId: d.roleId ?? null,
     status,
@@ -90,13 +96,17 @@ function toUserRow(u: ApiUser): UserRow {
     locationOverrides: d.locationOverrides ?? null,
     permissionRemovals: d.permissionRemovals ?? null,
     locationRemovals: d.locationRemovals ?? null,
+    createdAt: d.createdAt ?? null,
   };
 }
 
 export interface ListUsersParams {
   search?: string;
   roleId?: string;
+  roleIds?: string[];
   locationId?: string;
+  excludeAssignedTrainingId?: string;
+  showArchived?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -119,7 +129,7 @@ export interface CreateUserPayload {
   email: string;
   phone?: string;
   squareId?: string;
-  homebaseId?: string;
+  homebaseData?: import('../types/userManagement.types').HomebaseData | null;
   roleId?: string | null;
   invite?: boolean;
   profileImagePublicId?: string | null;
@@ -131,7 +141,7 @@ export interface UpdateUserPayload {
   email?: string;
   phone?: string;
   squareId?: string;
-  homebaseId?: string;
+  homebaseData?: import('../types/userManagement.types').HomebaseData | null;
   roleId?: string | null;
   isActive?: boolean;
   profileImagePublicId?: string | null;
@@ -148,6 +158,13 @@ export interface SyncFromSquareResult {
   errors: string[];
 }
 
+export interface SyncFromHomebaseResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+}
+
 export const userService = {
   async listUsers(params?: ListUsersParams): Promise<ListUsersResult> {
     const res = await api.get<
@@ -156,7 +173,10 @@ export const userService = {
         pagination: { totalItems: number; totalPages: number; page: number; pageSize: number };
       }>
     >(BASE, {
-      params: params ?? {},
+      params: {
+        ...params,
+        roleIds: params?.roleIds?.join(','),
+      },
     });
     if (!res.data.success || !res.data.data?.users) {
       throw new Error(res.data.message ?? 'Failed to fetch users');
@@ -210,6 +230,16 @@ export const userService = {
     });
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? 'Failed to sync from Square');
+    }
+    return res.data.data;
+  },
+
+  async syncFromHomebase(locationId: string): Promise<SyncFromHomebaseResult> {
+    const res = await api.post<ApiResponse<SyncFromHomebaseResult>>(`${BASE}/sync-homebase`, {
+      locationId,
+    });
+    if (!res.data.success || res.data.data == null) {
+      throw new Error(res.data.message ?? 'Failed to sync from Homebase');
     }
     return res.data.data;
   },

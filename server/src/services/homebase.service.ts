@@ -12,7 +12,11 @@ import {
 import { aggregateTimecardsIntoBuckets } from "../utils/homebaseTimeSeriesHelpers.js";
 
 const HOMEBASE_BASE = "https://api.joinhomebase.com";
+/** Origin for public API; use with full path /api/public/... to avoid URL() dropping path. */
+const HOMEBASE_PUBLIC_ORIGIN = "https://app.joinhomebase.com";
 const PER_PAGE = 100;
+/** Homebase public API caps employees per page at 100 (see response header per-page). */
+const EMPLOYEES_PER_PAGE = 100;
 
 export interface HomebaseTimecardLabor {
   wage_type?: string;
@@ -46,6 +50,33 @@ export interface HomebaseTimecard {
   clock_in?: string;
   clock_out?: string | null;
   [key: string]: unknown;
+}
+
+/** Homebase employee job (API shape; we exclude pin when storing). */
+export interface HomebaseEmployeeJob {
+  id: number;
+  level?: string | null;
+  default_role?: string | null;
+  pin?: string;
+  pos_partner_id?: string | null;
+  payroll_id?: string | null;
+  wage_rate?: number | null;
+  wage_type?: string | null;
+  roles?: unknown[];
+  archived_at?: string | null;
+  location_uuid?: string | null;
+}
+
+/** Homebase employee from GET /locations/{uuid}/employees. */
+export interface HomebaseEmployee {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email?: string | null;
+  phone?: string | null;
+  job?: HomebaseEmployeeJob | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 function getApiKey(): string | undefined {
@@ -99,6 +130,103 @@ async function homebaseFetch(
   }
 
   return res;
+}
+
+/**
+ * Fetch from Homebase public API (e.g. employees). Requires apiKey (location's key).
+ */
+async function homebasePublicFetch(
+  path: string,
+  searchParams: Record<string, string>,
+  apiKey: string,
+): Promise<Response> {
+  const key = apiKey?.trim();
+  if (!key) {
+    throw new Error("Homebase API key is required for employees endpoint");
+  }
+
+  const fullPath = path.startsWith("/")
+    ? `/api/public${path}`
+    : `/api/public/${path}`;
+  const url = new URL(fullPath, HOMEBASE_PUBLIC_ORIGIN);
+  Object.entries(searchParams).forEach(([k, v]) => url.searchParams.set(k, v));
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      Accept: "application/vnd.homebase-v1+json",
+    },
+  });
+
+  if (res.status === 429) {
+    const body = await res.text();
+    throw new Error(`Homebase API rate limit exceeded: ${body || "429"}`);
+  }
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(
+      `Homebase API error ${res.status}: ${body || res.statusText}`,
+    );
+  }
+
+  return res;
+}
+
+/**
+ * Fetch all employees for a location (paginated; includes archived).
+ * Uses GET /locations/{location_uuid}/employees with page, per_page, with_archived.
+ * apiKey must be the location's Homebase API key.
+ */
+export async function getEmployeesForLocation(
+  locationUuid: string,
+  apiKey: string,
+): Promise<HomebaseEmployee[]> {
+  const all: HomebaseEmployee[] = [];
+  const uuid = locationUuid.trim();
+  if (!uuid) return all;
+
+  let page = 1;
+
+  while (true) {
+    const res = await homebasePublicFetch(
+      `/locations/${encodeURIComponent(uuid)}/employees`,
+      {
+        page: String(page),
+        per_page: String(EMPLOYEES_PER_PAGE),
+        with_archived: "true",
+      },
+      apiKey,
+    );
+
+    const raw = (await res.json()) as unknown;
+    let data: HomebaseEmployee[] = [];
+    if (Array.isArray(raw)) {
+      data = raw;
+    } else if (raw && typeof raw === "object") {
+      const obj = raw as Record<string, unknown>;
+      if (Array.isArray(obj.data)) data = obj.data as HomebaseEmployee[];
+      else if (Array.isArray(obj.employees)) data = obj.employees as HomebaseEmployee[];
+      else {
+        const firstArray = Object.values(obj).find((v) => Array.isArray(v));
+        if (firstArray) data = firstArray as HomebaseEmployee[];
+      }
+    }
+
+    if (data.length === 0 && page === 1) {
+      return all;
+    }
+
+    all.push(...data);
+
+    if (data.length < EMPLOYEES_PER_PAGE) {
+      break;
+    }
+    page += 1;
+  }
+
+  return all;
 }
 
 /**
@@ -284,7 +412,9 @@ export async function getLaborAndHoursTimeSeriesInRange(
     range,
     timezone,
     granularity,
-    options?.periodType == null ? undefined : { periodType: options.periodType },
+    options?.periodType == null
+      ? undefined
+      : { periodType: options.periodType },
   );
   const laborCostByKey: Record<string, number> = {};
   const hoursByKey: Record<string, number> = {};

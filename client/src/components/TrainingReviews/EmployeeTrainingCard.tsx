@@ -10,7 +10,14 @@ const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 o
 const statusClass: Record<EmployeeTrainingRow['status'], string> = {
   Complete: 'text-positive font-medium',
   Pending: 'text-pending font-medium',
+  NotStarted: 'text-secondary font-medium',
 };
+
+function statusLabel(status: EmployeeTrainingRow['status']): string {
+  if (status === 'Complete') return 'Complete';
+  if (status === 'NotStarted') return 'Not Started';
+  return 'In Progress';
+}
 
 const SEGMENT_COLORS: Record<'green' | 'yellow' | 'red' | 'gray', string> = {
   green: '#5DC54F',
@@ -20,6 +27,7 @@ const SEGMENT_COLORS: Record<'green' | 'yellow' | 'red' | 'gray', string> = {
 };
 
 const SEGMENTS_PER_LINE = 5;
+const CARD_DISPLAY_LIMIT = 8;
 
 function ProgressSegments({ row, keyPrefix }: { readonly row: EmployeeTrainingRow; readonly keyPrefix: string }) {
   const total = Math.max(1, row.totalModules);
@@ -73,6 +81,9 @@ export const EmployeeTrainingCard = ({
   onAssignTraining,
   onViewAll,
 }: EmployeeTrainingCardProps) => {
+  const displayRows = rows.slice(0, CARD_DISPLAY_LIMIT);
+  const hasMore = rows.length > CARD_DISPLAY_LIMIT;
+
   return (
     <div className={`${cardClass} flex flex-col h-full min-h-0`}>
       <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2 flex items-center flex-shrink-0">
@@ -94,7 +105,7 @@ export const EmployeeTrainingCard = ({
               </tr>
             </thead>
             <tbody className="text-primary">
-              {rows.map((row, index) => (
+              {displayRows.map((row, index) => (
                 <tr
                   key={row.assignmentId ?? `${row.trainingName}-${row.assignTo}-${index}`}
                   className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}
@@ -107,7 +118,7 @@ export const EmployeeTrainingCard = ({
                   </td>
                   <td className="py-3 pr-4 text-center">
                     <span className={statusClass[row.status]}>
-                      {row.status === 'Complete' ? 'Complete' : 'In Progress'}
+                      {statusLabel(row.status)}
                     </span>
                   </td>
                   <td className="py-3 pr-2">
@@ -158,7 +169,7 @@ export const EmployeeTrainingCard = ({
               Assign Training
             </button>
           </div>
-          {onViewAll != null && (
+          {onViewAll != null && hasMore && (
             <button
               type="button"
               onClick={onViewAll}

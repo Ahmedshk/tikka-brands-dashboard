@@ -22,7 +22,7 @@ function toEmployeeTrainingRow(item: {
   role: string;
   completedModules: number;
   totalModules: number;
-  status: 'Complete' | 'Pending';
+  status: 'Complete' | 'Pending' | 'NotStarted';
   moduleDurations?: number[];
   moduleProgress?: ModuleProgressListItem[];
 }): EmployeeTrainingRow {

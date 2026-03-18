@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { listUsers, createUser, updateUser, deleteUser, resendInvite, syncFromSquare, uploadProfileImage } from '../controllers/user.controller.js';
+import { listUsers, createUser, updateUser, deleteUser, resendInvite, syncFromSquare, syncFromHomebase, uploadProfileImage } from '../controllers/user.controller.js';
 import { validate } from '../utils/zod.util.js';
 import {
   listUsersQuerySchema,
@@ -8,6 +8,7 @@ import {
   deleteUserParamsSchema,
   resendInviteParamsSchema,
   syncFromSquareSchema,
+  syncFromHomebaseSchema,
 } from '../validators/user.validators.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { attachUserContext } from '../middleware/user-context.middleware.js';
@@ -46,6 +47,7 @@ router.post('/upload-profile-image', handleUploadError, uploadProfileImage);
 router.put('/:id', validate(updateUserSchema), updateUser);
 router.delete('/:id', validate(deleteUserParamsSchema), deleteUser);
 router.post('/sync-square', validate(syncFromSquareSchema), syncFromSquare);
+router.post('/sync-homebase', validate(syncFromHomebaseSchema), syncFromHomebase);
 router.post('/:id/resend-invite', validate(resendInviteParamsSchema), resendInvite);
 
 export default router;

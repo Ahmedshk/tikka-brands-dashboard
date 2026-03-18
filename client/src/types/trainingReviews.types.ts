@@ -43,7 +43,7 @@ export interface EmployeeTrainingRow {
   role: string;
   /** 0–100 or computed from completedModules/totalModules */
   progress: number;
-  status: 'Complete' | 'Pending';
+  status: 'Complete' | 'Pending' | 'NotStarted';
   completedModules: number;
   totalModules: number;
   assignedAt: string;

@@ -12,7 +12,14 @@ const PAGE_SIZE = 10;
 const statusClass: Record<EmployeeTrainingRow['status'], string> = {
   Complete: 'text-positive font-medium',
   Pending: 'text-pending font-medium',
+  NotStarted: 'text-secondary font-medium',
 };
+
+function statusLabel(status: EmployeeTrainingRow['status']): string {
+  if (status === 'Complete') return 'Complete';
+  if (status === 'NotStarted') return 'Not Started';
+  return 'In Progress';
+}
 
 const SEGMENT_COLORS: Record<'green' | 'yellow' | 'red' | 'gray', string> = {
   green: '#5DC54F',
@@ -158,7 +165,7 @@ export const EmployeeTrainingModal = ({
                         </td>
                         <td className="py-3 pr-4 text-center">
                           <span className={statusClass[row.status]}>
-                            {row.status === 'Complete' ? 'Complete' : 'In Progress'}
+                            {statusLabel(row.status)}
                           </span>
                         </td>
                         <td className="py-3 pr-2">

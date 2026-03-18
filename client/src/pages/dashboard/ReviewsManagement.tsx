@@ -21,7 +21,7 @@ const reviewsKPIItems = [
     id: 'kpi-office-staff' as const,
     title: 'Office Staff',
     value: '36',
-    accentColor: 'green' as const,
+    accentColor: 'blue' as const,
     rightIcon: <OfficeStaffIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
   },
   {
@@ -108,7 +108,7 @@ export const ReviewsManagement = () => {
             <div className="min-h-0 flex flex-col">
               <RecentlyCompletedReviewsCard
                 items={mockRecentlyCompletedReviews}
-                onView={() => {}}
+                onView={() => { }}
                 onViewAll={() => setRecentlyCompletedModalOpen(true)}
               />
             </div>
@@ -125,7 +125,7 @@ export const ReviewsManagement = () => {
         isOpen={recentlyCompletedModalOpen}
         onClose={() => setRecentlyCompletedModalOpen(false)}
         items={mockRecentlyCompletedReviews}
-        onView={() => {}}
+        onView={() => { }}
       />
     </Layout>
   );

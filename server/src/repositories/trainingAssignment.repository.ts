@@ -31,6 +31,28 @@ export class TrainingAssignmentRepository {
     return await TrainingAssignmentModel.findById(id).lean().exec() as TrainingAssignmentDocument | null;
   }
 
+  async findByTrainingId(trainingId: string): Promise<TrainingAssignmentDocument[]> {
+    return await TrainingAssignmentModel.find({
+      trainingId: new Types.ObjectId(trainingId),
+    })
+      .select('userId')
+      .lean()
+      .exec() as TrainingAssignmentDocument[];
+  }
+
+  async findByTrainingAndUsers(
+    trainingId: string,
+    userIds: string[],
+  ): Promise<TrainingAssignmentDocument[]> {
+    if (userIds.length === 0) return [];
+    return await TrainingAssignmentModel.find({
+      trainingId: new Types.ObjectId(trainingId),
+      userId: { $in: userIds.map((id) => new Types.ObjectId(id)) },
+    })
+      .lean()
+      .exec() as TrainingAssignmentDocument[];
+  }
+
   async findByUserIdIn(userIds: string[]): Promise<TrainingAssignmentDocument[]> {
     if (userIds.length === 0) return [];
     const objectIds = userIds

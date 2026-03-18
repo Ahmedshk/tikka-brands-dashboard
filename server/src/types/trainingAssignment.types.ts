@@ -57,7 +57,7 @@ export interface IAssignmentListItem {
   role: string;
   completedModules: number;
   totalModules: number;
-  status: 'Complete' | 'Pending';
+  status: 'Complete' | 'Pending' | 'NotStarted';
   /** Per-module duration in days (for segment on-track coloring). */
   moduleDurations: number[];
   /** Per-module progress (for segment on-track coloring). */

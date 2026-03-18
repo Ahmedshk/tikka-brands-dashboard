@@ -35,7 +35,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [squareId, setSquareId] = useState('');
-  const [homebaseId, setHomebaseId] = useState('');
+  const [homebaseDataId, setHomebaseDataId] = useState('');
   const [roleId, setRoleId] = useState<string>('');
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [saving, setSaving] = useState(false);
@@ -75,7 +75,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
       setPhone(initialUser.phone ?? '');
       setEmail(initialUser.email ?? '');
       setSquareId(initialUser.squareId ?? '');
-      setHomebaseId(initialUser.homebaseId ?? '');
+      setHomebaseDataId(initialUser.homebaseData?.id ?? '');
       setRoleId(initialUser.roleId ?? '');
       const overrides = initialUser.permissionOverrides;
       if (overrides?.type === 'custom' && Array.isArray(overrides.pages) && overrides.pages.length > 0) {
@@ -97,7 +97,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
       setPhone('');
       setEmail('');
       setSquareId('');
-      setHomebaseId('');
+      setHomebaseDataId('');
       setRoleId('');
       setPermissionOverrides(null);
       setPermissionRemovals(null);
@@ -176,7 +176,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
           email: trimmedEmail,
           phone: phone.trim() || undefined,
           squareId: squareId.trim() || undefined,
-          homebaseId: homebaseId.trim() || undefined,
+          homebaseData: homebaseDataId.trim() ? { id: homebaseDataId.trim() } : undefined,
           roleId: roleId.trim() || null,
           ...(profileImagePublicId !== undefined && { profileImagePublicId }),
           permissionOverrides: permissionOverrides ?? null,
@@ -191,7 +191,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
           email: trimmedEmail,
           phone: phone.trim() || undefined,
           squareId: squareId.trim() || undefined,
-          homebaseId: homebaseId.trim() || undefined,
+          homebaseData: homebaseDataId.trim() ? { id: homebaseDataId.trim() } : undefined,
           roleId: roleId.trim() || null,
           invite,
           ...(profileImagePublicId != null && profileImagePublicId !== '' && { profileImagePublicId }),
@@ -350,8 +350,8 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
             <input
               id="user-homebase-id"
               type="text"
-              value={homebaseId}
-              onChange={(e) => setHomebaseId(e.target.value)}
+              value={homebaseDataId}
+              onChange={(e) => setHomebaseDataId(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
               placeholder="Homebase ID"
             />

@@ -87,7 +87,7 @@ export class TrainingAssignmentService {
   async createAssignments(
     payload: ICreateAssignmentsPayload,
     assignedBy?: string
-  ): Promise<{ created: number }> {
+  ): Promise<{ created: number; skipped: number }> {
     const { trainingId, userIds } = payload;
     if (!userIds?.length) {
       throw new ValidationError('userIds must be a non-empty array.');
@@ -99,6 +99,20 @@ export class TrainingAssignmentService {
     for (const uid of userIds) {
       await this.assertCanManageTrainee(assignedBy, uid);
     }
+
+    const existingAssignments = await this.assignmentRepository.findByTrainingAndUsers(
+      trainingId,
+      userIds,
+    );
+    const alreadyAssignedUserIds = new Set(
+      existingAssignments.map((a) => toIdStr(a.userId)),
+    );
+    const newUserIds = userIds.filter((uid) => !alreadyAssignedUserIds.has(uid));
+
+    if (newUserIds.length === 0) {
+      return { created: 0, skipped: userIds.length };
+    }
+
     const moduleCount = training.modules?.length ?? 0;
     const progress = buildInitialModuleProgress(moduleCount);
     const assignedAt = new Date();
@@ -112,7 +126,7 @@ export class TrainingAssignmentService {
       assignedBy?: Types.ObjectId;
       moduleProgress: IModuleProgressEntry[];
     }> = [];
-    for (const uid of userIds) {
+    for (const uid of newUserIds) {
       const user = await this.userService.getUserById(uid);
       if (!user) {
         throw new ValidationError(`User not found: ${uid}`);
@@ -133,7 +147,7 @@ export class TrainingAssignmentService {
       toCreate.push(entry);
     }
     const created = await this.assignmentRepository.createMany(toCreate);
-    return { created: created.length };
+    return { created: created.length, skipped: alreadyAssignedUserIds.size };
   }
 
   async listByLocationId(locationId: string): Promise<IAssignmentListItem[]> {
@@ -168,13 +182,18 @@ export class TrainingAssignmentService {
       const training = trainingMap.get(trainingId);
       const user = userMap.get(userId);
       const totalModules = training?.modules?.length ?? 0;
-      const completedModules = (a.moduleProgress ?? []).filter(
-        (p) => p.status === 'completed'
-      ).length;
+      const progress = a.moduleProgress ?? [];
+      const completedModules = progress.filter((p) => p.status === 'completed').length;
+      const allNotStarted =
+        totalModules > 0 &&
+        progress.length >= totalModules &&
+        progress.every((p) => !p.status || p.status === 'not_started');
       const status =
         totalModules > 0 && completedModules >= totalModules
           ? 'Complete'
-          : 'Pending';
+          : allNotStarted
+            ? 'NotStarted'
+            : 'Pending';
       const assignTo = user
         ? [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email
         : '—';

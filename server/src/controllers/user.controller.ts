@@ -1,10 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserService } from '../services/user.service.js';
+import { TrainingAssignmentRepository } from '../repositories/trainingAssignment.repository.js';
 import { NotFoundError, ValidationError } from '../utils/errors.util.js';
 import { uploadToCloudinary, deleteFromCloudinary } from '../config/cloudinary.js';
 import { PROFILE_IMAGE_FOLDER } from '../middleware/upload-profile.middleware.js';
 
 const userService = new UserService();
+const assignmentRepository = new TrainingAssignmentRepository();
 
 function toUserDTO(
   req: Request,
@@ -15,7 +17,7 @@ function toUserDTO(
     email?: string;
     phone?: string;
     squareId?: string;
-    homebaseId?: string;
+    homebaseData?: import('../types/user.types.js').HomebaseData | null;
     role?: string | null;
     roleId?: string | null;
     isActive?: boolean;
@@ -59,7 +61,7 @@ function toUserDTO(
     email: user.email,
     phone: user.phone,
     squareId: user.squareId,
-    homebaseId: user.homebaseId,
+    homebaseData: user.homebaseData ?? null,
     role: user.role ?? null,
     roleId: user.roleId ?? null,
     isActive: user.isActive ?? true,
@@ -83,13 +85,24 @@ export const listUsers = async (
   try {
     const search = req.query.search as string | undefined;
     const roleId = req.query.roleId as string | undefined;
+    const roleIdsRaw = req.query.roleIds as string | undefined;
     const locationId = req.query.locationId as string | undefined;
+    const excludeAssignedTrainingId = req.query.excludeAssignedTrainingId as string | undefined;
+    const showArchived = req.query.showArchived === 'true';
     const page = req.query.page == null ? undefined : Number(req.query.page);
     const pageSize = req.query.pageSize == null ? undefined : Number(req.query.pageSize);
-    const filters: { search?: string; roleId?: string; locationId?: string; page?: number; pageSize?: number } = {};
+    const filters: { search?: string; roleId?: string; roleIds?: string[]; excludeUserIds?: string[]; locationId?: string; showArchived?: boolean; page?: number; pageSize?: number } = {};
     if (typeof search === 'string') filters.search = search;
-    if (typeof roleId === 'string') filters.roleId = roleId;
+    if (typeof roleIdsRaw === 'string' && roleIdsRaw.trim() !== '')
+      filters.roleIds = roleIdsRaw.split(',').map((s) => s.trim()).filter(Boolean);
+    else if (typeof roleId === 'string') filters.roleId = roleId;
     if (typeof locationId === 'string') filters.locationId = locationId;
+    if (typeof excludeAssignedTrainingId === 'string' && excludeAssignedTrainingId.trim() !== '') {
+      const existing = await assignmentRepository.findByTrainingId(excludeAssignedTrainingId.trim());
+      const assignedIds = existing.map((a) => String(a.userId));
+      if (assignedIds.length > 0) filters.excludeUserIds = assignedIds;
+    }
+    filters.showArchived = showArchived;
     if (typeof page === 'number') filters.page = page;
     if (typeof pageSize === 'number') filters.pageSize = pageSize;
     const result = await userService.getUsers(filters);
@@ -118,7 +131,7 @@ export const createUser = async (
 ): Promise<void> => {
   const profileImagePublicId = req.body.profileImagePublicId as string | undefined | null;
   try {
-    const { firstName, lastName, email, phone, squareId, homebaseId, roleId, invite } = req.body;
+    const { firstName, lastName, email, phone, squareId, homebaseData, roleId, invite } = req.body;
     const user = await userService.createUser(
       {
         firstName,
@@ -126,7 +139,7 @@ export const createUser = async (
         email,
         phone,
         squareId,
-        homebaseId,
+        homebaseData: homebaseData ?? null,
         roleId: roleId || null,
         profileImagePublicId: profileImagePublicId ?? null,
       },
@@ -183,7 +196,7 @@ export const updateUser = async (
       email,
       phone,
       squareId,
-      homebaseId,
+      homebaseData,
       roleId,
       isActive,
       profileImagePublicId,
@@ -198,7 +211,7 @@ export const updateUser = async (
       email,
       phone,
       squareId,
-      homebaseId,
+      ...(homebaseData !== undefined && { homebaseData }),
       roleId: roleId ?? undefined,
       isActive,
       profileImagePublicId: profileImagePublicId ?? undefined,
@@ -247,6 +260,23 @@ export const syncFromSquare = async (
   try {
     const { locationId } = req.body;
     const result = await userService.syncFromSquare(locationId);
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const syncFromHomebase = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { locationId } = req.body;
+    const result = await userService.syncFromHomebase(locationId);
     res.status(200).json({
       success: true,
       data: result,
