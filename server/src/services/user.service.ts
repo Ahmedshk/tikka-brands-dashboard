@@ -706,7 +706,7 @@ export class UserService {
     const doc = await this.userRepository.updateById(id, { isTerminated: true });
     if (!doc) return null;
 
-    const TERMINAL_STATUSES = ["cycle_complete", "checkin_60_done"];
+    const TERMINAL_STATUSES = ["cycle_complete", "checkin_60_complete", "checkin_60_done"];
     await ReviewCycleModel.updateMany(
       { employeeId: id, status: { $nin: TERMINAL_STATUSES } },
       { $set: { status: "cycle_complete" as const } },

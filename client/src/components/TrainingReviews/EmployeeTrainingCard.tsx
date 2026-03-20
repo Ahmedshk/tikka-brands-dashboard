@@ -1,4 +1,5 @@
 import type { EmployeeTrainingRow } from '../../types/trainingReviews.types';
+import { Spinner } from '../common/Spinner';
 import { getModuleSegmentStatuses } from '../../utils/trainingProgressUtils';
 import ViewIcon from '@assets/icons/view.svg?react';
 import EditIcon from '@assets/icons/edit.svg?react';
@@ -66,6 +67,8 @@ function ProgressSegments({ row, keyPrefix }: { readonly row: EmployeeTrainingRo
 
 export interface EmployeeTrainingCardProps {
   rows: EmployeeTrainingRow[];
+  /** When true, shows a centered spinner in the card body (header unchanged). */
+  loading?: boolean;
   onView?: (row: EmployeeTrainingRow, index: number) => void;
   onEdit?: (row: EmployeeTrainingRow, index: number) => void;
   onDelete?: (row: EmployeeTrainingRow, index: number) => void;
@@ -75,6 +78,7 @@ export interface EmployeeTrainingCardProps {
 
 export const EmployeeTrainingCard = ({
   rows,
+  loading = false,
   onView,
   onEdit,
   onDelete,
@@ -92,6 +96,11 @@ export const EmployeeTrainingCard = ({
         </h3>
       </div>
       <div className="p-5 flex flex-col flex-1 min-h-0 overflow-hidden">
+        {loading ? (
+          <div className="flex flex-1 min-h-[200px] items-center justify-center" aria-busy="true">
+            <Spinner size="lg" className="text-button-primary" />
+          </div>
+        ) : (
         <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
           <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
             <thead>
@@ -157,6 +166,8 @@ export const EmployeeTrainingCard = ({
             </tbody>
           </table>
         </div>
+        )}
+        {!loading && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
           <div className="flex flex-wrap gap-2">
             <button
@@ -180,6 +191,7 @@ export const EmployeeTrainingCard = ({
             </button>
           )}
         </div>
+        )}
       </div>
     </div>
   );

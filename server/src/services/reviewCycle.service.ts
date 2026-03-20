@@ -14,6 +14,7 @@ import { getDescendantRoleIds } from "../utils/roleHierarchy.util.js";
 import {
   addPeriod, diffPeriod,
   CYCLE_LENGTH, getNotifyBeforeDue, FORM_BEFORE_DUE, NEXT_CYCLE_OFFSET, isTestMode,
+  TEST_MODE_DUE_MINUTES_FROM_NOW,
 } from "../utils/reviewTimings.js";
 import type { HierarchyRole } from "../utils/roleHierarchy.util.js";
 import type { ReviewCycleStatus, QuestionResponse } from "../types/reviewCycle.types.js";
@@ -33,13 +34,13 @@ const SELF_REVIEW_TOKEN_STALLED_UNITS = 90;
 export class ReviewCycleService {
   /**
    * Calculate the next review reference date for an employee.
-   * In test mode: due in 10 minutes so notifyDate75 is 5 minutes from now.
+   * In test mode: due in 10 minutes so notifyDate75 is 9 minutes from now (1 minute before due).
    * In production: finds the nearest future 90-day multiple from their start date.
    */
   private computeNextReferenceDate(startDate: Date): Date {
     const now = new Date();
     if (isTestMode()) {
-      return addPeriod(now, 10);
+      return addPeriod(now, TEST_MODE_DUE_MINUTES_FROM_NOW);
     }
     const unitsSinceStart = diffPeriod(now, startDate);
     if (unitsSinceStart < 0) return startDate;
@@ -356,6 +357,34 @@ export class ReviewCycleService {
   }
 
   /**
+   * Keep only users whose effective locations (role + overrides − removals) include the navbar location.
+   * Users with role "all locations" are included for any location.
+   */
+  private async filterEmployeeIdsByNavbarLocation(employeeIds: string[], locationId: string): Promise<string[]> {
+    const loc = String(locationId).trim();
+    if (!loc || employeeIds.length === 0) return [];
+
+    const users = await UserModel.find({ _id: { $in: employeeIds } })
+      .select("_id roleId locationOverrides locationRemovals")
+      .lean();
+    if (users.length === 0) return [];
+
+    const allRoles = await RoleModel.find().select("_id locationAccess locationIds").lean();
+    const roleCache = new Map(allRoles.map((r) => [r._id.toString(), r]));
+
+    const out: string[] = [];
+    for (const emp of users) {
+      const empRole = roleCache.get(emp.roleId?.toString() ?? "");
+      if (!empRole) continue;
+      const empLocs = this.resolveEmployeeLocations(emp, empRole as { locationAccess?: string; locationIds?: unknown[] });
+      if (empLocs === "all" || empLocs.includes(loc)) {
+        out.push(emp._id.toString());
+      }
+    }
+    return out;
+  }
+
+  /**
    * Returns employee IDs visible to the given actor, filtered by:
    * 1. Role hierarchy: employees whose roleId is a descendant of the actor's roleId
    * 2. Location access: employees that share at least one location with the actor
@@ -516,7 +545,7 @@ export class ReviewCycleService {
     const managerId = await this.getManagerForEmployee(employeeId);
     if (managerId) {
       cycle.reviewedByManagerId = managerId as unknown as typeof cycle.reviewedByManagerId;
-      cycle.status = "manager_review_pending";
+      cycle.status = "manager_review_due";
       await cycle.save();
 
       const managerUser = await UserModel.findById(managerId).select("firstName").lean();
@@ -546,7 +575,7 @@ export class ReviewCycleService {
     const cycle = await ReviewCycleModel.findById(cycleId);
     if (!cycle) throw new AppError("Review cycle not found", 404);
 
-    const validStatuses: ReviewCycleStatus[] = ["manager_review_pending", "manager_review_past_due"];
+    const validStatuses: ReviewCycleStatus[] = ["manager_review_due", "manager_review_pending", "manager_review_past_due"];
     if (!validStatuses.includes(cycle.status)) {
       throw new AppError(`Cannot complete manager review in status: ${cycle.status}`, 400);
     }
@@ -578,14 +607,18 @@ export class ReviewCycleService {
   private async advanceReviewCycleToDirectorAfterManagerSubmit(cycleId: string): Promise<void> {
     const cycle = await ReviewCycleModel.findById(cycleId);
     if (!cycle) return;
-    if (cycle.status === "director_approval_pending" || cycle.status === "director_approval_past_due") return;
+    if (
+      cycle.status === "director_approval_due" ||
+      cycle.status === "director_approval_pending" ||
+      cycle.status === "director_approval_past_due"
+    ) return;
     if (cycle.status !== "manager_review_submitted") return;
 
     const directorId = await this.getDirectorForEmployee(cycle.employeeId.toString());
     if (!directorId) return;
 
     cycle.approvedByDirectorId = directorId as unknown as typeof cycle.approvedByDirectorId;
-    cycle.status = "director_approval_pending";
+    cycle.status = "director_approval_due";
     await cycle.save();
 
     const directorUser = await UserModel.findById(directorId).select("firstName").lean();
@@ -617,7 +650,11 @@ export class ReviewCycleService {
     if (!review) throw new AppError("Complete your review first, then submit to director", 400);
     if (String(review.managerId) !== String(managerId)) throw new AppError("Not your review", 403);
 
-    if (cycle.status === "director_approval_pending" || cycle.status === "director_approval_past_due") {
+    if (
+      cycle.status === "director_approval_due" ||
+      cycle.status === "director_approval_pending" ||
+      cycle.status === "director_approval_past_due"
+    ) {
       return review;
     }
 
@@ -627,7 +664,7 @@ export class ReviewCycleService {
       return review;
     }
 
-    const validStatuses: ReviewCycleStatus[] = ["manager_review_pending", "manager_review_past_due"];
+    const validStatuses: ReviewCycleStatus[] = ["manager_review_due", "manager_review_pending", "manager_review_past_due"];
     if (!validStatuses.includes(cycle.status)) {
       throw new AppError(`Cannot submit manager review in status: ${cycle.status}`, 400);
     }
@@ -661,7 +698,7 @@ export class ReviewCycleService {
     const cycle = await ReviewCycleModel.findById(cycleId);
     if (!cycle) throw new AppError("Review cycle not found", 404);
 
-    const validStatuses: ReviewCycleStatus[] = ["manager_review_pending", "manager_review_past_due"];
+    const validStatuses: ReviewCycleStatus[] = ["manager_review_due", "manager_review_pending", "manager_review_past_due"];
     if (!validStatuses.includes(cycle.status)) {
       throw new AppError(`Cannot update manager review in status: ${cycle.status}`, 400);
     }
@@ -697,7 +734,7 @@ export class ReviewCycleService {
     const cycle = await ReviewCycleModel.findById(cycleId);
     if (!cycle) throw new AppError("Review cycle not found", 404);
 
-    const validStatuses: ReviewCycleStatus[] = ["director_approval_pending", "director_approval_past_due"];
+    const validStatuses: ReviewCycleStatus[] = ["director_approval_due", "director_approval_pending", "director_approval_past_due"];
     if (!validStatuses.includes(cycle.status)) {
       throw new AppError(`Cannot approve in status: ${cycle.status}`, 400);
     }
@@ -710,7 +747,7 @@ export class ReviewCycleService {
     await cycle.save();
 
     if (cycle.reviewedByManagerId) {
-      cycle.status = "sharing_pending";
+      cycle.status = "sharing_due";
       await cycle.save();
 
       const mgrId = cycle.reviewedByManagerId.toString();
@@ -738,7 +775,7 @@ export class ReviewCycleService {
     const cycle = await ReviewCycleModel.findById(cycleId);
     if (!cycle) throw new AppError("Review cycle not found", 404);
 
-    const validStatuses: ReviewCycleStatus[] = ["director_approval_pending", "director_approval_past_due"];
+    const validStatuses: ReviewCycleStatus[] = ["director_approval_due", "director_approval_pending", "director_approval_past_due"];
     if (!validStatuses.includes(cycle.status)) {
       throw new AppError(`Cannot reject in status: ${cycle.status}`, 400);
     }
@@ -795,7 +832,7 @@ export class ReviewCycleService {
     const cycle = await ReviewCycleModel.findById(cycleId);
     if (!cycle) throw new AppError("Review cycle not found", 404);
 
-    const validStatuses: ReviewCycleStatus[] = ["sharing_pending", "sharing_past_due", "approved"];
+    const validStatuses: ReviewCycleStatus[] = ["sharing_due", "sharing_pending", "sharing_past_due", "approved"];
     if (!validStatuses.includes(cycle.status)) {
       throw new AppError(`Cannot complete in status: ${cycle.status}`, 400);
     }
@@ -844,10 +881,10 @@ export class ReviewCycleService {
 
     if (period === "30") {
       cycle.checkIn30Id = checkIn._id;
-      cycle.status = "checkin_30_done";
+      cycle.status = "checkin_30_complete";
     } else {
       cycle.checkIn60Id = checkIn._id;
-      cycle.status = "checkin_60_done";
+      cycle.status = "checkin_60_complete";
     }
     await cycle.save();
 
@@ -875,11 +912,11 @@ export class ReviewCycleService {
 
     const [total, dueCount, pastDueCount, inProgress, completedThisQuarter] = await Promise.all([
       ReviewCycleModel.countDocuments(filter),
-      ReviewCycleModel.countDocuments({ ...filter, status: { $in: ["self_review_due", "manager_review_pending", "director_approval_pending", "checkin_30_due", "checkin_60_due"] } }),
+      ReviewCycleModel.countDocuments({ ...filter, status: { $in: ["self_review_due", "manager_review_due", "manager_review_pending", "director_approval_due", "director_approval_pending", "sharing_due", "checkin_30_due", "checkin_60_due"] } }),
       ReviewCycleModel.countDocuments({ ...filter, status: { $regex: /past_due/ } }),
       ReviewCycleModel.countDocuments({
         ...filter,
-        status: { $nin: ["cycle_complete", "cycle_superseded", "completed", "checkin_60_done"] },
+        status: { $nin: ["cycle_complete", "cycle_superseded", "completed", "checkin_60_complete", "checkin_60_done"] },
       }),
       ReviewCycleModel.countDocuments({
         ...filter,
@@ -897,6 +934,8 @@ export class ReviewCycleService {
     pastOnly?: boolean;
     page?: number;
     limit?: number;
+    /** When set (navbar location), only cycles for employees assigned this location on role + overrides. */
+    locationId?: string;
   }) {
     const { page = 1, limit = 20 } = query;
     const filter: Record<string, unknown> = {};
@@ -904,13 +943,34 @@ export class ReviewCycleService {
     if (query.pastOnly) filter.status = { $in: REVIEW_CYCLE_PAST_STATUSES };
     else if (query.status) filter.status = query.status;
 
+    const locationId = query.locationId?.trim();
+
+    let employeeIdFilter: string[] | null = null;
+
     if (query.userId) {
-      filter.employeeId = query.userId;
+      employeeIdFilter = [query.userId];
     } else {
-      const visibleIds = await this.getVisibleEmployeeIds(query.actorUserId ?? null);
-      if (visibleIds !== null) {
-        filter.employeeId = { $in: visibleIds };
+      employeeIdFilter = await this.getVisibleEmployeeIds(query.actorUserId ?? null);
+    }
+
+    if (locationId) {
+      if (employeeIdFilter !== null) {
+        if (employeeIdFilter.length === 0) {
+          return { cycles: [], total: 0 };
+        }
+        employeeIdFilter = await this.filterEmployeeIdsByNavbarLocation(employeeIdFilter, locationId);
+      } else {
+        const distinctRaw = await ReviewCycleModel.distinct("employeeId", { ...filter });
+        const distinctIds = distinctRaw.map((id) => String(id));
+        employeeIdFilter = await this.filterEmployeeIdsByNavbarLocation(distinctIds, locationId);
       }
+      if (employeeIdFilter.length === 0) {
+        return { cycles: [], total: 0 };
+      }
+    }
+
+    if (employeeIdFilter !== null) {
+      filter.employeeId = { $in: employeeIdFilter };
     }
 
     const [cycles, total] = await Promise.all([

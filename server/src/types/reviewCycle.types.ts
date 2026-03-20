@@ -8,21 +8,26 @@ export const REVIEW_CYCLE_STATUSES = [
   "self_review_late",
   "self_review_past_due",
   "self_review_submitted",
+  "manager_review_due",
   "manager_review_pending",
   "manager_review_past_due",
   "manager_review_submitted",
+  "director_approval_due",
   "director_approval_pending",
   "director_approval_past_due",
   "approved",
   "rejected",
+  "sharing_due",
   "sharing_pending",
   "sharing_past_due",
   "completed",
   "checkin_30_due",
   "checkin_30_past_due",
+  "checkin_30_complete",
   "checkin_30_done",
   "checkin_60_due",
   "checkin_60_past_due",
+  "checkin_60_complete",
   "checkin_60_done",
   "cycle_complete",
   "cycle_superseded",
@@ -36,12 +41,16 @@ export const REVIEW_CYCLE_TERMINAL_FOR_NEW_CYCLE: ReviewCycleStatus[] = [
   "cycle_superseded",
 ];
 
-/** Ended / archived cycles suitable for the Past Reviews list. */
+/**
+ * Cycles for the Past Reviews list only after the 60-day check-in is done (or cycle ended).
+ * `completed` = final review + action plan done but check-ins may still be due — keep in active list.
+ */
 export const REVIEW_CYCLE_PAST_STATUSES: ReviewCycleStatus[] = [
   "cycle_complete",
   "cycle_superseded",
   "rejected",
-  "completed",
+  "checkin_60_complete",
+  "checkin_60_done",
 ];
 
 export interface QuestionResponse {

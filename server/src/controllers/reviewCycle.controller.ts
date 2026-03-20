@@ -22,8 +22,19 @@ export async function getCycles(req: Request, res: Response, next: NextFunction)
     const status = req.query.status as string | undefined;
     const userId = req.query.employeeId as string | undefined;
     const pastOnly = req.query.pastOnly === "true" || req.query.pastOnly === "1";
+    const locationIdRaw = req.query.locationId;
+    const locationId =
+      typeof locationIdRaw === "string" && locationIdRaw.trim() !== "" ? locationIdRaw.trim() : undefined;
     const actorUserId = req.user?.userId;
-    const result = await service.getCycles({ actorUserId, userId, status, pastOnly, page, limit });
+    const result = await service.getCycles({
+      pastOnly,
+      page,
+      limit,
+      ...(actorUserId != null && actorUserId !== "" ? { actorUserId } : {}),
+      ...(userId != null && userId !== "" ? { userId } : {}),
+      ...(status != null && status !== "" ? { status } : {}),
+      ...(locationId != null ? { locationId } : {}),
+    });
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 }

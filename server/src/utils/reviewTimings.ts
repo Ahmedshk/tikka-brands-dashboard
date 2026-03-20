@@ -2,10 +2,21 @@ import { addDays, addMinutes, differenceInDays, differenceInMinutes } from "date
 
 export const isTestMode = (): boolean => process.env.REVIEW_TEST_MODE === "true";
 
+/** Minutes from now for dueDate90 when creating a cycle in test mode (must match reviewCycle.service). */
+export const TEST_MODE_DUE_MINUTES_FROM_NOW = 10;
+/** Minutes from cycle creation until notifyDate75 in test mode (was 5). */
+export const TEST_MODE_NOTIFY_MINUTES_FROM_START = 1;
+
 export const CYCLE_LENGTH = 90;
 export const NOTIFY_BEFORE_DUE = -15;
-/** In test mode: 5 minutes before due; otherwise NOTIFY_BEFORE_DUE (-15 days). */
-export const getNotifyBeforeDue = (): number => (isTestMode() ? -5 : NOTIFY_BEFORE_DUE);
+/**
+ * Days before dueDate90 for the 75-day-style notification (prod).
+ * In test mode: minutes before due such that notify fires TEST_MODE_NOTIFY_MINUTES_FROM_START after creation.
+ */
+export const getNotifyBeforeDue = (): number =>
+  isTestMode()
+    ? -(TEST_MODE_DUE_MINUTES_FROM_NOW - TEST_MODE_NOTIFY_MINUTES_FROM_START)
+    : NOTIFY_BEFORE_DUE;
 export const FORM_BEFORE_DUE = -5;
 export const LATE_AFTER_DUE = 1;
 export const PAST_DUE_AFTER_DUE = 2;
@@ -16,14 +27,14 @@ export const CHECKIN_30 = 30;
 export const CHECKIN_30_PAST_DUE = 35;
 export const CHECKIN_60 = 60;
 export const CHECKIN_60_PAST_DUE = 65;
-/** In test mode: 5 units (minutes); otherwise CHECKIN_30. */
-export const getCheckin30 = (): number => (isTestMode() ? 5 : CHECKIN_30);
-/** In test mode: 10 units (minutes); otherwise CHECKIN_30_PAST_DUE. */
-export const getCheckin30PastDue = (): number => (isTestMode() ? 10 : CHECKIN_30_PAST_DUE);
-/** In test mode: 5 units (minutes); otherwise CHECKIN_60. */
-export const getCheckin60 = (): number => (isTestMode() ? 5 : CHECKIN_60);
-/** In test mode: 10 units (minutes); otherwise CHECKIN_60_PAST_DUE. */
-export const getCheckin60PastDue = (): number => (isTestMode() ? 10 : CHECKIN_60_PAST_DUE);
+/** In test mode: 1 minute after final review complete; otherwise CHECKIN_30 (days). */
+export const getCheckin30 = (): number => (isTestMode() ? 1 : CHECKIN_30);
+/** In test mode: 2 minutes (1 min grace after 30-day due); otherwise CHECKIN_30_PAST_DUE. */
+export const getCheckin30PastDue = (): number => (isTestMode() ? 2 : CHECKIN_30_PAST_DUE);
+/** In test mode: 1 minute after final review complete (same origin as prod: completedAt); otherwise CHECKIN_60 (days). */
+export const getCheckin60 = (): number => (isTestMode() ? 1 : CHECKIN_60);
+/** In test mode: 2 minutes (1 min grace after 60-day due); otherwise CHECKIN_60_PAST_DUE. */
+export const getCheckin60PastDue = (): number => (isTestMode() ? 2 : CHECKIN_60_PAST_DUE);
 export const NEXT_CYCLE_OFFSET = 90;
 
 /**

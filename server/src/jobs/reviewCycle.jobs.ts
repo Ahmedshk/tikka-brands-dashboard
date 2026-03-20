@@ -172,7 +172,7 @@ async function processCheckInCycle(
     return;
   }
 
-  if (cycle.status === "checkin_30_done" && unitsSinceComplete >= getCheckin60()) {
+  if ((cycle.status === "checkin_30_complete" || cycle.status === "checkin_30_done") && unitsSinceComplete >= getCheckin60()) {
     await transitionCheckIn(cycleId, "checkin_60_due", managerId);
     return;
   }
@@ -221,7 +221,7 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
     logger.info("Job: review:check-manager-deadline - running");
 
     const cycles = await ReviewCycleModel.find({
-      status: { $in: ["manager_review_pending", "manager_review_past_due"] },
+      status: { $in: ["manager_review_due", "manager_review_pending", "manager_review_past_due"] },
       selfReviewId: { $ne: null },
     }).populate("selfReviewId", "submittedAt").lean();
 
@@ -232,7 +232,7 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
       if (!selfReview?.submittedAt) continue;
 
       const unitsSinceSubmission = diffPeriod(now, new Date(selfReview.submittedAt));
-      if (unitsSinceSubmission >= MANAGER_DEADLINE && cycle.status === "manager_review_pending") {
+      if (unitsSinceSubmission >= MANAGER_DEADLINE && (cycle.status === "manager_review_due" || cycle.status === "manager_review_pending")) {
         await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "manager_review_past_due" } });
         if (cycle.reviewedByManagerId) {
           const managerId = cycle.reviewedByManagerId.toString();
@@ -259,7 +259,7 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
     logger.info("Job: review:check-director-deadline - running");
 
     const cycles = await ReviewCycleModel.find({
-      status: { $in: ["director_approval_pending", "director_approval_past_due"] },
+      status: { $in: ["director_approval_due", "director_approval_pending", "director_approval_past_due"] },
       managerReviewId: { $ne: null },
     }).populate("managerReviewId", "submittedAt").lean();
 
@@ -270,7 +270,7 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
       if (!mgrReview?.submittedAt) continue;
 
       const unitsSince = diffPeriod(now, new Date(mgrReview.submittedAt));
-      if (unitsSince >= DIRECTOR_DEADLINE && cycle.status === "director_approval_pending") {
+      if (unitsSince >= DIRECTOR_DEADLINE && (cycle.status === "director_approval_due" || cycle.status === "director_approval_pending")) {
         await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "director_approval_past_due" } });
         if (cycle.approvedByDirectorId) {
           const directorId = cycle.approvedByDirectorId.toString();
@@ -297,7 +297,7 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
     logger.info("Job: review:check-sharing-deadline - running");
 
     const cycles = await ReviewCycleModel.find({
-      status: { $in: ["sharing_pending", "sharing_past_due", "approved"] },
+      status: { $in: ["sharing_due", "sharing_pending", "sharing_past_due", "approved"] },
       directorDecision: "approved",
     }).lean();
 
@@ -305,13 +305,13 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
       if (await cancelCycleIfTerminated(cycle._id, cycle.employeeId.toString())) continue;
 
       if (cycle.status === "approved") {
-        await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "sharing_pending" } });
+        await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "sharing_due" } });
         continue;
       }
 
       const approvedAt = cycle.updatedAt;
       const unitsSince = diffPeriod(now, approvedAt);
-      if (unitsSince >= SHARING_DEADLINE && cycle.status === "sharing_pending") {
+      if (unitsSince >= SHARING_DEADLINE && (cycle.status === "sharing_due" || cycle.status === "sharing_pending")) {
         await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "sharing_past_due" } });
         if (cycle.reviewedByManagerId) {
           const managerId = cycle.reviewedByManagerId.toString();
@@ -348,7 +348,7 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
     logger.info("Job: review:check-checkin-deadlines - running");
 
     const completedCycles = await ReviewCycleModel.find({
-      status: { $in: ["completed", "checkin_30_due", "checkin_30_past_due", "checkin_30_done", "checkin_60_due", "checkin_60_past_due"] },
+      status: { $in: ["completed", "checkin_30_due", "checkin_30_past_due", "checkin_30_complete", "checkin_30_done", "checkin_60_due", "checkin_60_past_due"] },
       completedAt: { $ne: null },
     }).lean();
 

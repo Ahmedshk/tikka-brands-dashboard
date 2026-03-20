@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import ViewIcon from "@assets/icons/view.svg?react";
@@ -9,6 +9,7 @@ import { DocumentTypeThumbnail } from "./DocumentTypeThumbnail";
 import { getDocumentFormatFromApiModuleFile } from "../../utils/createTrainingModalHelpers";
 import {
   getStageStatuses,
+  getStageStatusesFromSnapshot,
   getStageStatusColor,
   getStatusColor,
   getStatusLabel,
@@ -65,7 +66,6 @@ export const PastReviewDetailModal = ({ isOpen, onClose, cycleId, viewType = "pa
 
   useEffect(() => {
     if (isOpen) dialogRef.current?.showModal();
-    else dialogRef.current?.close();
   }, [isOpen]);
 
   useEffect(() => {
@@ -93,7 +93,13 @@ export const PastReviewDetailModal = ({ isOpen, onClose, cycleId, viewType = "pa
 
   const cycle = snapshot?.cycle;
   const status = cycle?.status as ReviewCycleStatus | undefined;
-  const stages = status ? getStageStatuses(status) : null;
+  const stages = useMemo(() => {
+    if (!cycle || !snapshot) return null;
+    if (cycle.status === "cycle_superseded") {
+      return getStageStatusesFromSnapshot(snapshot);
+    }
+    return getStageStatuses(cycle.status as ReviewCycleStatus);
+  }, [cycle, snapshot]);
   const emp = cycle && typeof cycle.employeeId === "object" ? cycle.employeeId : null;
   const employeeName = emp ? `${emp.firstName} ${emp.lastName}`.trim() : "Employee";
   const employeeRole = emp?.role?.trim() || "—";
@@ -121,49 +127,62 @@ export const PastReviewDetailModal = ({ isOpen, onClose, cycleId, viewType = "pa
     return /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(rawUrl);
   };
 
+  const handleClose = () => {
+    dialogRef.current?.close();
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
   return createPortal(
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      className="backdrop:bg-black/50 rounded-2xl shadow-xl w-full max-w-5xl p-0 m-auto"
+      className="modal-full-viewport z-[300] m-0 grid place-items-center bg-transparent border-0 p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
+      aria-labelledby="past-review-detail-modal-title"
     >
-      <div className="p-6">
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
-            <h2 className="text-lg font-semibold text-primary">{viewType === "active" ? "Employee review" : "Past review"}</h2>
-            {cycle && (
-              <p className="text-sm text-secondary mt-1">
-                <span className="font-semibold text-primary">{employeeName}</span>
-                <span>{` · ${employeeRole}`}</span>
-                {cycle.cycleNumber != null ? <span>{` · Cycle #${cycle.cycleNumber}`}</span> : null}
-              </p>
-            )}
-            {status && (
-              <span
-                className={`inline-block mt-2 px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(status)}`}
-              >
-                {getStatusLabel(status)}
-              </span>
-            )}
+      <div className="relative w-full min-w-0 max-w-full md:max-w-5xl">
+        <button
+          type="button"
+          onClick={handleClose}
+          className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Close"
+          title="Close"
+        >
+          <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
+        </button>
+        <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+          <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
+            <h2 id="past-review-detail-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+              {viewType === "active" ? "Employee Review" : "Past Review"}
+            </h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl cursor-pointer shrink-0"
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <Spinner size="lg" className="text-button-primary" />
-          </div>
-        ) : !snapshot || !cycle ? (
-          <p className="text-sm text-gray-500 py-8 text-center">No data</p>
-        ) : (
-          <div className="max-h-[70vh] overflow-y-auto pr-2 space-y-6">
+          <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden border-x border-gray-200">
+            {cycle ? (
+              <div className="px-5 pt-4 pb-3 border-b border-gray-200 flex-shrink-0 bg-card-background">
+                <p className="text-sm text-secondary">
+                  <span className="font-semibold text-primary">{employeeName}</span>
+                  <span>{` · ${employeeRole}`}</span>
+                  {cycle.cycleNumber != null ? <span>{` · Cycle #${cycle.cycleNumber}`}</span> : null}
+                </p>
+                {status ? (
+                  <span
+                    className={`inline-block mt-2 px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(status)}`}
+                  >
+                    {getStatusLabel(status)}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 pt-4 pb-5 md:[scrollbar-gutter:stable]">
+              {loading ? (
+                <div className="flex justify-center py-16">
+                  <Spinner size="lg" className="text-button-primary" />
+                </div>
+              ) : !snapshot || !cycle ? (
+                <p className="text-sm text-gray-500 py-8 text-center">No data</p>
+              ) : (
+                <div className="space-y-6">
             {stages && (
               <section className="border border-gray-200 rounded-lg p-4 bg-gray-50/80">
                 <h3 className="text-xs font-semibold text-secondary uppercase tracking-wide mb-3">Stages</h3>
@@ -485,8 +504,11 @@ export const PastReviewDetailModal = ({ isOpen, onClose, cycleId, viewType = "pa
                 <p className="mt-1">Completed {new Date(cycle.completedAt).toLocaleString()}</p>
               )}
             </section>
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </dialog>,
     document.body,

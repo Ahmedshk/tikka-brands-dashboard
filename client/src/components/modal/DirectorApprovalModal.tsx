@@ -42,11 +42,10 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
   const [salaryIncrement, setSalaryIncrement] = useState("");
   const [decision, setDecision] = useState<"approve" | "reject" | null>(null);
 
-  const canDecide = ["manager_review_submitted", "director_approval_pending", "director_approval_past_due"].includes(status);
+  const canDecide = ["manager_review_submitted", "director_approval_due", "director_approval_pending", "director_approval_past_due"].includes(status);
 
   useEffect(() => {
     if (isOpen) dialogRef.current?.showModal();
-    else dialogRef.current?.close();
   }, [isOpen]);
 
   useEffect(() => {
@@ -107,18 +106,44 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
     </div>
   );
 
-  return createPortal(
-    <dialog ref={dialogRef} onClose={onClose} className="backdrop:bg-black/50 rounded-2xl shadow-xl w-full max-w-4xl p-0 m-auto">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-primary">Director Review & Approval</h2>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl cursor-pointer">✕</button>
-        </div>
+  const handleClose = () => {
+    dialogRef.current?.close();
+    onClose();
+  };
 
-        {loading ? (
-          <div className="flex justify-center py-12"><Spinner size="lg" className="text-button-primary" /></div>
-        ) : (
-          <div className="max-h-[65vh] overflow-y-auto pr-2 space-y-6">
+  if (!isOpen) return null;
+
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      onClose={onClose}
+      className="modal-full-viewport z-[300] m-0 grid place-items-center bg-transparent border-0 p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
+      aria-labelledby="director-approval-modal-title"
+    >
+      <div className="relative w-full min-w-0 max-w-full md:max-w-4xl">
+        <button
+          type="button"
+          onClick={handleClose}
+          className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Close"
+          title="Close"
+        >
+          <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
+        </button>
+        <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+          <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
+            <h2 id="director-approval-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+              Director Review & Approval
+            </h2>
+          </div>
+          <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden border-x border-gray-200">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 pt-4 pb-4 md:[scrollbar-gutter:stable]">
+              {loading ? (
+                <div className="flex justify-center py-12">
+                  <Spinner size="lg" className="text-button-primary" />
+                </div>
+              ) : (
+                <div className="space-y-6 pb-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Self Review */}
               <section className="bg-blue-50/50 rounded-lg p-4">
@@ -222,24 +247,37 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
                 </div>
               </section>
             )}
-          </div>
-        )}
+                </div>
+              )}
+            </div>
 
-        {!loading && (
-          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer">Close</button>
-            {canDecide && decision && (
-              <button type="button" onClick={handleSubmit} disabled={submitting}
-                className={`px-6 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer ${
-                  decision === "approve" ? "bg-green-600" : "bg-red-600"
-                }`}>
-                {submitting && "Submitting..."}
-                {!submitting && decision === "approve" && "Approve Review"}
-                {!submitting && decision === "reject" && "Reject Review"}
-              </button>
+            {!loading && (
+              <div className="flex-shrink-0 flex justify-end gap-3 px-5 py-4 border-t border-gray-200 bg-card-background">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer"
+                >
+                  Close
+                </button>
+                {canDecide && decision ? (
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className={`px-6 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer ${
+                      decision === "approve" ? "bg-green-600" : "bg-red-600"
+                    }`}
+                  >
+                    {submitting ? "Submitting..." : null}
+                    {!submitting && decision === "approve" ? "Approve Review" : null}
+                    {!submitting && decision === "reject" ? "Reject Review" : null}
+                  </button>
+                ) : null}
+              </div>
             )}
           </div>
-        )}
+        </div>
       </div>
     </dialog>,
     document.body,

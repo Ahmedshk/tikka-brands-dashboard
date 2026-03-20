@@ -39,39 +39,54 @@ export const TrainingManagement = () => {
   const [trainingToDelete, setTrainingToDelete] = useState<Training | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [trainings, setTrainings] = useState<Training[]>([]);
+  const [trainingsLoading, setTrainingsLoading] = useState(true);
   const [assignmentRows, setAssignmentRows] = useState<EmployeeTrainingRow[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(() => Boolean(currentLocation?._id));
 
   const refreshTrainings = () => {
-    trainingService.list().then(setTrainings).catch(() => {});
+    setTrainingsLoading(true);
+    trainingService
+      .list()
+      .then(setTrainings)
+      .catch(() => {})
+      .finally(() => setTrainingsLoading(false));
   };
 
   const refreshAssignments = () => {
     if (!currentLocation?._id) {
       setAssignmentRows([]);
+      setAssignmentsLoading(false);
       return;
     }
+    setAssignmentsLoading(true);
     trainingAssignmentService
       .listAssignments(currentLocation._id)
       .then(setAssignmentRows)
-      .catch(() => setAssignmentRows([]));
+      .catch(() => setAssignmentRows([]))
+      .finally(() => setAssignmentsLoading(false));
   };
 
   useEffect(() => {
+    setTrainingsLoading(true);
     trainingService
       .list()
       .then((list) => setTrainings(list))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setTrainingsLoading(false));
   }, []);
 
   useEffect(() => {
     if (!currentLocation?._id) {
       setAssignmentRows([]);
+      setAssignmentsLoading(false);
       return;
     }
+    setAssignmentsLoading(true);
     trainingAssignmentService
       .listAssignments(currentLocation._id)
       .then(setAssignmentRows)
-      .catch(() => setAssignmentRows([]));
+      .catch(() => setAssignmentRows([]))
+      .finally(() => setAssignmentsLoading(false));
   }, [currentLocation?._id]);
 
   const canStaffInTraining = useCanAccessComponent(PAGE_ID, 'kpi-office-staff');
@@ -154,6 +169,7 @@ export const TrainingManagement = () => {
                 )}
                 <EmployeeTrainingCard
                   rows={filteredAssignmentRows}
+                  loading={Boolean(currentLocation?._id) && (assignmentsLoading || hierarchyLoading)}
                   onAssignTraining={() => setAssignTrainingModalOpen(true)}
                   onViewAll={() => setEmployeeTrainingModalOpen(true)}
                   onView={(row) => setViewAssignmentId(row.assignmentId)}
@@ -166,6 +182,7 @@ export const TrainingManagement = () => {
               <div className={canEmployeeTraining ? 'lg:col-span-1 min-h-0 flex flex-col' : 'min-h-0 flex flex-col'}>
                 <TrainingsCard
                   trainings={trainings}
+                  loading={trainingsLoading}
                   onEdit={(training) => setEditTrainingId(training.id)}
                   onDelete={(training) => setTrainingToDelete(training)}
                   onCreate={() => setCreateTrainingModalOpen(true)}

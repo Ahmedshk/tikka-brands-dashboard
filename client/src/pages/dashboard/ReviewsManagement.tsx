@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSelector } from "react-redux";
 import toast from "react-hot-toast";
 import { Layout } from "../../components/common/Layout";
-import { CommandCenterKPICards } from "../../components/CommandCenter";
+import { Spinner } from "../../components/common/Spinner";
+import { Pagination } from "../../components/common/Pagination";
 import {
   ReviewTrackerCard,
   type ReviewTrackerDonut,
@@ -27,12 +28,12 @@ import type {
 } from "../../types/review.types";
 import type { RootState } from "../../store/store";
 import TeamHrIcon from "@assets/icons/team_and_hr.svg?react";
-import OfficeStaffIcon from "@assets/icons/office_staff.svg?react";
-import ReviewsDueIcon from "@assets/icons/reviews_due.svg?react";
 import ViewIcon from "@assets/icons/view.svg?react";
 import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
 
 const PAGE_ID = "reviews-management";
+const CARD_ROW_LIMIT = 5;
+const MODAL_PAGE_SIZE = 10;
 
 type ModalType =
   | { kind: "self-review"; cycle: ReviewCycle }
@@ -46,24 +47,24 @@ const SELF_REVIEW_STATUSES = new Set<ReviewCycleStatus>([
   "form_available_85", "self_review_due", "self_review_late", "self_review_past_due",
 ]);
 const MANAGER_REVIEW_STATUSES = new Set<ReviewCycleStatus>([
-  "self_review_submitted", "manager_review_pending", "manager_review_past_due",
+  "self_review_submitted", "manager_review_due", "manager_review_pending", "manager_review_past_due",
 ]);
 const DIRECTOR_STATUSES = new Set<ReviewCycleStatus>([
-  "manager_review_submitted", "director_approval_pending", "director_approval_past_due",
+  "manager_review_submitted", "director_approval_due", "director_approval_pending", "director_approval_past_due",
 ]);
 const SHARING_STATUSES = new Set<ReviewCycleStatus>([
-  "approved", "sharing_pending", "sharing_past_due",
+  "approved", "sharing_due", "sharing_pending", "sharing_past_due",
 ]);
 const CHECKIN_30_STATUSES = new Set<ReviewCycleStatus>(["checkin_30_due", "checkin_30_past_due"]);
 const CHECKIN_60_STATUSES = new Set<ReviewCycleStatus>(["checkin_60_due", "checkin_60_past_due"]);
 
 const STAGE_LABELS = {
   selfReview: ["Upcoming", "75-Day Notice Sent", "Form Available", "Due", "Late", "Past due", "Complete"],
-  managerReview: ["—", "Pending", "Past due", "Complete"],
-  directorReview: ["—", "Pending", "Past due", "Approved", "Rejected", "Complete"],
-  finalReview: ["—", "Pending", "Past due", "Complete"],
-  checkin30: ["—", "Due", "Past due", "Done"],
-  checkin60: ["—", "Due", "Past due", "Done"],
+  managerReview: ["—", "Due", "Past due", "Complete"],
+  directorReview: ["—", "Due", "Past due", "Complete"],
+  finalReview: ["—", "Due", "Past due", "Complete"],
+  checkin30: ["—", "Due", "Past due", "Complete"],
+  checkin60: ["—", "Due", "Past due", "Complete"],
 } as const;
 const STAGE_TITLES: Record<keyof typeof STAGE_LABELS, string> = {
   selfReview: "Self Review",
@@ -73,15 +74,27 @@ const STAGE_TITLES: Record<keyof typeof STAGE_LABELS, string> = {
   checkin30: "30 Day Check-in",
   checkin60: "60 Day Check-in",
 };
-const getTrackerColor = (label: string): string => {
+const getTrackerColorDefault = (label: string): string => {
   if (label === "—") return "#9CA3AF";
   if (label === "Past due" || label === "Late" || label === "Rejected") return "#EF4444";
   if (label === "Due" || label === "Pending" || label === "Form Available" || label === "Upcoming" || label === "75-Day Notice Sent") return "#FBC52A";
   if (label === "Complete" || label === "Done" || label === "Approved") return "#5DC54F";
   return "#9CA3AF";
 };
+const getSelfReviewTrackerColor = (label: string): string => {
+  if (label === "Complete") return "#22C55E"; // green
+  if (label === "Past due") return "#EF4444"; // red
+  if (label === "Late") return "#F59E0B"; // yellow
+  if (label === "Due") return "#FBC52A"; // yellow (consistent with other Due labels)
+  if (label === "Form Available") return "#06B6D4"; // cyan
+  if (label === "Upcoming") return "#94A3B8"; // slate
+  if (label === "75-Day Notice Sent") return "#EC4899"; // pink
+  if (label === "—") return "#6B7280"; // gray
+  return "#9CA3AF";
+};
+/** Excluded from “Review cycles” until 60-day check-in is finished (`cycle_complete` / terminal). */
 const CLOSED_CYCLE_STATUSES = new Set<ReviewCycleStatus>([
-  "completed",
+  "checkin_60_complete",
   "checkin_60_done",
   "cycle_complete",
   "cycle_superseded",
@@ -99,9 +112,11 @@ export const ReviewsManagement = () => {
   const [modal, setModal] = useState<ModalType>(null);
   const [pastDetailCycleId, setPastDetailCycleId] = useState<string | null>(null);
   const [detailViewType, setDetailViewType] = useState<"past" | "active">("past");
+  const [showAllReviewCycles, setShowAllReviewCycles] = useState(false);
+  const [showAllPastReviews, setShowAllPastReviews] = useState(false);
+  const [reviewCyclesPage, setReviewCyclesPage] = useState(1);
+  const [pastReviewsPage, setPastReviewsPage] = useState(1);
 
-  const canOfficeStaff = useCanAccessComponent(PAGE_ID, "kpi-office-staff");
-  const canReviewsDue = useCanAccessComponent(PAGE_ID, "kpi-reviews-due");
   const canStaffList = useCanAccessComponent(PAGE_ID, "staff-list");
   const canReviewTracker = useCanAccessComponent(PAGE_ID, "review-tracker-chart");
 
@@ -138,15 +153,28 @@ export const ReviewsManagement = () => {
   const isManager = settings?.managerRoleIds.some(matchesRole) ?? false;
   const isDirector = settings?.directorRoleIds.some(matchesRole) ?? false;
 
-  const dueCount = useMemo(
-    () => cycles.filter((c) => c.status.includes("due") || c.status.includes("pending") || c.status.includes("late")).length,
-    [cycles],
-  );
-  const totalCount = cycles.length;
   const activeCycles = useMemo(
     () => cycles.filter((c) => !CLOSED_CYCLE_STATUSES.has(c.status)),
     [cycles],
   );
+  const activeCyclesPreview = useMemo(
+    () => activeCycles.slice(0, CARD_ROW_LIMIT),
+    [activeCycles],
+  );
+  const pastCyclesPreview = useMemo(
+    () => pastCycles.slice(0, CARD_ROW_LIMIT),
+    [pastCycles],
+  );
+  const reviewCyclesTotalPages = Math.max(1, Math.ceil(activeCycles.length / MODAL_PAGE_SIZE));
+  const pastReviewsTotalPages = Math.max(1, Math.ceil(pastCycles.length / MODAL_PAGE_SIZE));
+  const reviewCyclesPageRows = useMemo(() => {
+    const start = (reviewCyclesPage - 1) * MODAL_PAGE_SIZE;
+    return activeCycles.slice(start, start + MODAL_PAGE_SIZE);
+  }, [activeCycles, reviewCyclesPage]);
+  const pastReviewsPageRows = useMemo(() => {
+    const start = (pastReviewsPage - 1) * MODAL_PAGE_SIZE;
+    return pastCycles.slice(start, start + MODAL_PAGE_SIZE);
+  }, [pastCycles, pastReviewsPage]);
   const trackerDonuts: ReviewTrackerDonut[] = useMemo(() => {
     type StageKey = keyof typeof STAGE_LABELS;
     const stageKeys = Object.keys(STAGE_LABELS) as StageKey[];
@@ -159,7 +187,14 @@ export const ReviewsManagement = () => {
     activeCycles.forEach((cycle) => {
       const stages = getStageStatuses(cycle.status);
       stageKeys.forEach((stageKey) => {
-        const label = stages[stageKey];
+        const rawLabel = stages[stageKey];
+        const label =
+          stageKey === "directorReview" && (rawLabel === "Approved" || rawLabel === "Rejected")
+            ? "Complete"
+            : (stageKey === "managerReview" || stageKey === "directorReview" || stageKey === "finalReview") &&
+              rawLabel === "Pending"
+              ? "Due"
+              : rawLabel;
         countsByStage[stageKey][label] = (countsByStage[stageKey][label] ?? 0) + 1;
       });
     });
@@ -172,30 +207,10 @@ export const ReviewsManagement = () => {
         id: `${stageKey}-${label}`,
         label,
         count: countsByStage[stageKey][label] ?? 0,
-        color: getTrackerColor(label),
+        color: stageKey === "selfReview" ? getSelfReviewTrackerColor(label) : getTrackerColorDefault(label),
       })),
     }));
   }, [activeCycles]);
-
-  const kpiItems = useMemo(() => {
-    const items: { title: string; value: string; accentColor: "blue" | "gold"; rightIcon: React.ReactNode }[] = [];
-    if (canOfficeStaff)
-      items.push({
-        title: "Staff in Review",
-        value: String(totalCount),
-        accentColor: "blue",
-        rightIcon: <OfficeStaffIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      });
-    if (canReviewsDue)
-      items.push({
-        title: "Reviews Due",
-        value: String(dueCount),
-        accentColor: "gold",
-        rightIcon: <ReviewsDueIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      });
-    return items;
-  }, [canOfficeStaff, canReviewsDue, totalCount, dueCount]);
-
 
   const openAction = (cycle: ReviewCycle) => {
     const s = cycle.status;
@@ -238,38 +253,501 @@ export const ReviewsManagement = () => {
           )}
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-button-primary" />
-          </div>
-        ) : (
-          <>
-            {kpiItems.length > 0 && <CommandCenterKPICards items={kpiItems} />}
+            {canReviewTracker && trackerDonuts.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6 items-stretch">
+                {trackerDonuts.map((donut) => (
+                  <div key={donut.id} className="min-h-0 flex flex-col">
+                    <ReviewTrackerCard donut={donut} loading={loading} />
+                  </div>
+                ))}
+              </div>
+            )}
 
-            {/* Active cycles table */}
-            {activeCycles.length > 0 && (
-              <div className="bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden mb-6">
-                <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2">
-                  <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">Review Cycles</h3>
+            <div className="mb-6">
+                <div className="min-h-0 flex flex-col">
+                  <div className="bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden flex flex-col h-full min-h-0">
+                    <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2">
+                      <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">Review Cycles</h3>
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                      {loading ? (
+                        <div className="flex flex-1 min-h-[220px] items-center justify-center px-5 py-12" aria-busy="true">
+                          <Spinner size="lg" className="text-button-primary" />
+                        </div>
+                      ) : activeCycles.length === 0 ? (
+                        <div className="flex flex-1 min-h-[200px] items-center justify-center px-5 py-12">
+                          <div className="text-center text-gray-400">
+                            <p className="text-lg font-medium">No review cycles found</p>
+                            <p className="text-sm mt-1">Review cycles will appear here once employees are enrolled.</p>
+                          </div>
+                        </div>
+                      ) : (
+                      <>
+                      {/* Mobile: card list (matches User Management pattern) */}
+                      <div className="md:hidden divide-y divide-gray-200 overflow-y-auto min-h-0 flex-1">
+                        {activeCyclesPreview.map((c, i) => {
+                          const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                          const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
+                          const isOwner = user?.role === "Owner";
+                          const canViewProgress =
+                            currentUserId != null && (isOwner || isDirector || employeeId === currentUserId);
+                          const canOpenAction =
+                            (isEmployee && SELF_REVIEW_STATUSES.has(c.status)) ||
+                            (isManager && MANAGER_REVIEW_STATUSES.has(c.status)) ||
+                            (isDirector && DIRECTOR_STATUSES.has(c.status)) ||
+                            (isManager && SHARING_STATUSES.has(c.status)) ||
+                            (isManager && CHECKIN_30_STATUSES.has(c.status)) ||
+                            (isManager && CHECKIN_60_STATUSES.has(c.status)) ||
+                            (isManager && (c.status === "upcoming" || c.status === "notification_sent_75" || c.status === "form_available_85"));
+                          const stages = getStageStatuses(c.status);
+                          const badge = (label: string) => (
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStageStatusColor(label)}`}>
+                              {label}
+                            </span>
+                          );
+                          const name = emp ? `${emp.firstName} ${emp.lastName}` : "—";
+                          const cardBg = i % 2 === 0 ? "bg-white" : "bg-gray-50/50";
+                          return (
+                            <div key={c._id} className={`${cardBg} px-4 py-4 flex flex-col gap-3`}>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-primary truncate" title={name}>
+                                  {name}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-1">
+                                  <span className="font-medium">Cycle:</span> #{c.cycleNumber}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-0.5">
+                                  <span className="font-medium">Start date:</span>{" "}
+                                  {new Date(c.referenceDate).toLocaleDateString()}
+                                </p>
+                                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-gray-600">
+                                  <p className="flex flex-wrap items-center gap-1 min-w-0">
+                                    <span className="font-medium shrink-0">Self:</span> {badge(stages.selfReview)}
+                                  </p>
+                                  <p className="flex flex-wrap items-center gap-1 min-w-0">
+                                    <span className="font-medium shrink-0">Manager:</span> {badge(stages.managerReview)}
+                                  </p>
+                                  <p className="flex flex-wrap items-center gap-1 min-w-0">
+                                    <span className="font-medium shrink-0">DO:</span> {badge(stages.directorReview)}
+                                  </p>
+                                  <p className="flex flex-wrap items-center gap-1 min-w-0">
+                                    <span className="font-medium shrink-0">Final:</span> {badge(stages.finalReview)}
+                                  </p>
+                                  <p className="flex flex-wrap items-center gap-1 min-w-0">
+                                    <span className="font-medium shrink-0">30d:</span> {badge(stages.checkin30)}
+                                  </p>
+                                  <p className="flex flex-wrap items-center gap-1 min-w-0">
+                                    <span className="font-medium shrink-0">60d:</span> {badge(stages.checkin60)}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-end gap-2">
+                                {canViewProgress && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDetailViewType("active");
+                                      setPastDetailCycleId(c._id);
+                                    }}
+                                    className="p-2 text-primary hover:bg-gray-200 rounded transition-colors"
+                                    aria-label="View cycle progress"
+                                    title="View cycle progress"
+                                  >
+                                    <ViewIcon className="w-4 h-4" />
+                                  </button>
+                                )}
+                                {canOpenAction && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openAction(c)}
+                                    className="px-3 py-1.5 text-xs font-medium bg-button-primary text-white rounded-md hover:opacity-90 cursor-pointer"
+                                  >
+                                    Open
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {/* Desktop: table */}
+                      <div className="hidden md:block p-5 overflow-x-auto flex-1 min-h-0">
+                        <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm min-w-[800px]">
+                          <thead>
+                            <tr className="text-left text-secondary border-b border-gray-200">
+                              <th className="pb-3 pr-2 pl-2 font-semibold">Employee</th>
+                              <th className="pb-3 pr-2 font-semibold text-center">Cycle</th>
+                              <th className="pb-3 pr-2 font-semibold text-center">Start Date</th>
+                              <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">Self Review</th>
+                              <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">Manager Review</th>
+                              <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">DO Review</th>
+                              <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">Final Review</th>
+                              <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">30 Day Check-in</th>
+                              <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">60 Day Check-in</th>
+                              <th className="pb-3 pr-2 font-semibold text-center">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-primary">
+                            {activeCyclesPreview.map((c, i) => {
+                              const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                              const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
+                              const isOwner = user?.role === "Owner";
+                              const canViewProgress =
+                                currentUserId != null && (isOwner || isDirector || employeeId === currentUserId);
+                              const canOpenAction =
+                                (isEmployee && SELF_REVIEW_STATUSES.has(c.status)) ||
+                                (isManager && MANAGER_REVIEW_STATUSES.has(c.status)) ||
+                                (isDirector && DIRECTOR_STATUSES.has(c.status)) ||
+                                (isManager && SHARING_STATUSES.has(c.status)) ||
+                                (isManager && CHECKIN_30_STATUSES.has(c.status)) ||
+                                (isManager && CHECKIN_60_STATUSES.has(c.status)) ||
+                                (isManager && (c.status === "upcoming" || c.status === "notification_sent_75" || c.status === "form_available_85"));
+                              const stages = getStageStatuses(c.status);
+                              const badge = (label: string) => (
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStageStatusColor(label)}`}>
+                                  {label}
+                                </span>
+                              );
+                              return (
+                                <tr key={c._id} className={i % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
+                                  <td className="py-3 pr-2 pl-2">
+                                    {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
+                                  </td>
+                                  <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
+                                  <td className="py-3 pr-2 text-center whitespace-nowrap">
+                                    {new Date(c.referenceDate).toLocaleDateString()}
+                                  </td>
+                                  <td className="py-3 pr-2 text-center">{badge(stages.selfReview)}</td>
+                                  <td className="py-3 pr-2 text-center">{badge(stages.managerReview)}</td>
+                                  <td className="py-3 pr-2 text-center">{badge(stages.directorReview)}</td>
+                                  <td className="py-3 pr-2 text-center">{badge(stages.finalReview)}</td>
+                                  <td className="py-3 pr-2 text-center">{badge(stages.checkin30)}</td>
+                                  <td className="py-3 pr-2 text-center">{badge(stages.checkin60)}</td>
+                                  <td className="py-3 pr-2 text-center">
+                                    <div className="inline-flex items-center justify-center gap-2">
+                                      {canViewProgress && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setDetailViewType("active");
+                                            setPastDetailCycleId(c._id);
+                                          }}
+                                          className="p-1.5 text-button-primary hover:bg-blue-50 rounded cursor-pointer"
+                                          aria-label="View cycle progress"
+                                          title="View cycle progress"
+                                        >
+                                          <ViewIcon className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                      {canOpenAction && (
+                                        <button
+                                          type="button"
+                                          onClick={() => openAction(c)}
+                                          className="px-3 py-1 text-xs bg-button-primary text-white rounded-md hover:opacity-90 cursor-pointer"
+                                        >
+                                          Open
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      </>
+                      )}
+                    </div>
+                    {!loading && activeCycles.length > 0 && (
+                    <div className="px-5 pb-5 flex justify-end flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReviewCyclesPage(1);
+                          setShowAllReviewCycles(true);
+                        }}
+                        className="text-sm font-medium text-quaternary hover:underline bg-transparent border-0 cursor-pointer p-0"
+                        title="View all"
+                      >
+                        View All
+                      </button>
+                    </div>
+                    )}
+                  </div>
                 </div>
-                <div className="p-5 overflow-x-auto">
+              </div>
+
+            {canStaffList && (
+              <div className="grid grid-cols-1 gap-6 mb-6 items-stretch">
+                <div className="min-h-0 flex flex-col">
+                  <div className="bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden flex flex-col h-full min-h-0">
+                    <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2 flex-shrink-0">
+                      <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">Past Reviews</h3>
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                      {loading ? (
+                        <div className="flex flex-1 min-h-[220px] items-center justify-center px-5 py-12" aria-busy="true">
+                          <Spinner size="lg" className="text-button-primary" />
+                        </div>
+                      ) : pastCycles.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-8 px-5 flex-1 flex items-center justify-center min-h-[200px]">
+                          No Past Review cycles yet.
+                        </p>
+                      ) : (
+                        <>
+                          {/* Mobile: card list (matches User Management pattern) */}
+                          <div className="md:hidden divide-y divide-gray-200 overflow-y-auto min-h-0">
+                            {pastCyclesPreview.map((c, i) => {
+                              const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                              const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
+                              const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
+                              const name = emp ? `${emp.firstName} ${emp.lastName}` : "—";
+                              const cardBg = i % 2 === 0 ? "bg-white" : "bg-gray-50/50";
+                              return (
+                                <div key={c._id} className={`${cardBg} px-4 py-4 flex flex-col gap-3`}>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-primary truncate" title={name}>
+                                      {name}
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-1">
+                                      <span className="font-medium">Cycle:</span> #{c.cycleNumber}
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-1">
+                                      <span className="font-medium">Status:</span>
+                                      <span
+                                        className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}
+                                      >
+                                        {getStatusLabel(c.status)}
+                                      </span>
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-0.5">
+                                      <span className="font-medium">Period:</span> {periodStart} – {periodEnd}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDetailViewType("past");
+                                        setPastDetailCycleId(c._id);
+                                      }}
+                                      className="p-2 text-primary hover:bg-gray-200 rounded transition-colors"
+                                      aria-label="View Past Review"
+                                      title="View Past Review"
+                                    >
+                                      <ViewIcon className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* Desktop: table */}
+                          <div className="hidden md:block p-5 overflow-x-auto flex-1 min-h-0">
+                            <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm min-w-[520px]">
+                              <thead>
+                                <tr className="text-left text-secondary border-b border-gray-200">
+                                  <th className="pb-3 pr-2 pl-2 font-semibold">Employee</th>
+                                  <th className="pb-3 pr-2 font-semibold text-center">Cycle</th>
+                                  <th className="pb-3 pr-2 font-semibold text-center">Status</th>
+                                  <th className="pb-3 pr-2 font-semibold text-center">Period</th>
+                                  <th className="pb-3 pr-2 font-semibold text-center">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="text-primary">
+                                {pastCyclesPreview.map((c, i) => {
+                                  const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                                  const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
+                                  const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
+                                  return (
+                                    <tr key={c._id} className={i % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
+                                      <td className="py-3 pr-2 pl-2">
+                                        {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
+                                      </td>
+                                      <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
+                                      <td className="py-3 pr-2 text-center">
+                                        <span
+                                          className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}
+                                        >
+                                          {getStatusLabel(c.status)}
+                                        </span>
+                                      </td>
+                                      <td className="py-3 pr-2 text-center whitespace-nowrap">
+                                        {periodStart} - {periodEnd}
+                                      </td>
+                                      <td className="py-3 pr-2 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setDetailViewType("past");
+                                            setPastDetailCycleId(c._id);
+                                          }}
+                                          className="p-1.5 text-button-primary hover:bg-blue-50 rounded cursor-pointer"
+                                          aria-label="View Past Review"
+                                          title="View Past Review"
+                                        >
+                                          <ViewIcon className="w-4 h-4" />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {!loading && pastCycles.length > 0 && (
+                    <div className="px-5 pb-5 flex justify-end flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPastReviewsPage(1);
+                          setShowAllPastReviews(true);
+                        }}
+                        className="text-sm font-medium text-quaternary hover:underline bg-transparent border-0 cursor-pointer p-0"
+                        title="View all"
+                      >
+                        View All
+                      </button>
+                    </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+      </div>
+
+      {showAllReviewCycles && (
+        <div className="fixed inset-0 z-[300] grid place-items-center bg-black/50 p-4">
+          <div className="relative w-full max-w-6xl">
+            <button
+              type="button"
+              onClick={() => setShowAllReviewCycles(false)}
+              className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-primary"
+              aria-label="Close"
+              title="Close"
+            >
+              <span className="text-xl leading-none">×</span>
+            </button>
+            <div className="max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+              <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
+                <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">All Review Cycles</h3>
+              </div>
+              <div className="flex-1 min-h-0 overflow-hidden border-x border-gray-200 flex flex-col">
+                <div className="md:hidden flex-1 min-h-0 overflow-y-auto divide-y divide-gray-200">
+                  {reviewCyclesPageRows.map((c, i) => {
+                    const globalIndex = (reviewCyclesPage - 1) * MODAL_PAGE_SIZE + i;
+                    const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                    const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
+                    const isOwner = user?.role === "Owner";
+                    const canViewProgress =
+                      currentUserId != null && (isOwner || isDirector || employeeId === currentUserId);
+                    const canOpenAction =
+                      (isEmployee && SELF_REVIEW_STATUSES.has(c.status)) ||
+                      (isManager && MANAGER_REVIEW_STATUSES.has(c.status)) ||
+                      (isDirector && DIRECTOR_STATUSES.has(c.status)) ||
+                      (isManager && SHARING_STATUSES.has(c.status)) ||
+                      (isManager && CHECKIN_30_STATUSES.has(c.status)) ||
+                      (isManager && CHECKIN_60_STATUSES.has(c.status)) ||
+                      (isManager && (c.status === "upcoming" || c.status === "notification_sent_75" || c.status === "form_available_85"));
+                    const stages = getStageStatuses(c.status);
+                    const badge = (label: string) => (
+                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStageStatusColor(label)}`}>
+                        {label}
+                      </span>
+                    );
+                    const name = emp ? `${emp.firstName} ${emp.lastName}` : "—";
+                    const cardBg = globalIndex % 2 === 0 ? "bg-white" : "bg-gray-50/50";
+                    return (
+                      <div key={c._id} className={`${cardBg} px-4 py-4 flex flex-col gap-3`}>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-primary truncate" title={name}>
+                            {name}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-1">
+                            <span className="font-medium">Cycle:</span> #{c.cycleNumber}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-0.5">
+                            <span className="font-medium">Start date:</span>{" "}
+                            {new Date(c.referenceDate).toLocaleDateString()}
+                          </p>
+                          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-gray-600">
+                            <p className="flex flex-wrap items-center gap-1 min-w-0">
+                              <span className="font-medium shrink-0">Self:</span> {badge(stages.selfReview)}
+                            </p>
+                            <p className="flex flex-wrap items-center gap-1 min-w-0">
+                              <span className="font-medium shrink-0">Manager:</span> {badge(stages.managerReview)}
+                            </p>
+                            <p className="flex flex-wrap items-center gap-1 min-w-0">
+                              <span className="font-medium shrink-0">DO:</span> {badge(stages.directorReview)}
+                            </p>
+                            <p className="flex flex-wrap items-center gap-1 min-w-0">
+                              <span className="font-medium shrink-0">Final:</span> {badge(stages.finalReview)}
+                            </p>
+                            <p className="flex flex-wrap items-center gap-1 min-w-0">
+                              <span className="font-medium shrink-0">30d:</span> {badge(stages.checkin30)}
+                            </p>
+                            <p className="flex flex-wrap items-center gap-1 min-w-0">
+                              <span className="font-medium shrink-0">60d:</span> {badge(stages.checkin60)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                          {canViewProgress && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDetailViewType("active");
+                                setPastDetailCycleId(c._id);
+                                setShowAllReviewCycles(false);
+                              }}
+                              className="p-2 text-primary hover:bg-gray-200 rounded transition-colors"
+                              aria-label="View cycle progress"
+                              title="View cycle progress"
+                            >
+                              <ViewIcon className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canOpenAction && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openAction(c);
+                                setShowAllReviewCycles(false);
+                              }}
+                              className="px-3 py-1.5 text-xs font-medium bg-button-primary text-white rounded-md hover:opacity-90 cursor-pointer"
+                            >
+                              Open
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="hidden md:block flex-1 min-h-0 overflow-auto px-5 pt-4">
                   <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm min-w-[800px]">
                     <thead>
                       <tr className="text-left text-secondary border-b border-gray-200">
                         <th className="pb-3 pr-2 pl-2 font-semibold">Employee</th>
                         <th className="pb-3 pr-2 font-semibold text-center">Cycle</th>
-                        <th className="pb-3 pr-2 font-semibold text-center">Due Date</th>
+                        <th className="pb-3 pr-2 font-semibold text-center">Start Date</th>
                         <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">Self Review</th>
                         <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">Manager Review</th>
                         <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">DO Review</th>
                         <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">Final Review</th>
-                        <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">30 Day Plan</th>
-                        <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">60 Day Plan</th>
+                        <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">30 Day Check-in</th>
+                        <th className="pb-3 pr-2 font-semibold text-center whitespace-nowrap">60 Day Check-in</th>
                         <th className="pb-3 pr-2 font-semibold text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="text-primary">
-                      {activeCycles.map((c, i) => {
+                      {reviewCyclesPageRows.map((c, i) => {
+                        const globalIndex = (reviewCyclesPage - 1) * MODAL_PAGE_SIZE + i;
                         const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                         const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
                         const isOwner = user?.role === "Owner";
@@ -290,13 +768,11 @@ export const ReviewsManagement = () => {
                           </span>
                         );
                         return (
-                          <tr key={c._id} className={i % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
-                            <td className="py-3 pr-2 pl-2">
-                              {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
-                            </td>
+                          <tr key={c._id} className={globalIndex % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
+                            <td className="py-3 pr-2 pl-2">{emp ? `${emp.firstName} ${emp.lastName}` : "—"}</td>
                             <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
                             <td className="py-3 pr-2 text-center whitespace-nowrap">
-                              {new Date(c.dueDate90).toLocaleDateString()}
+                              {new Date(c.referenceDate).toLocaleDateString()}
                             </td>
                             <td className="py-3 pr-2 text-center">{badge(stages.selfReview)}</td>
                             <td className="py-3 pr-2 text-center">{badge(stages.managerReview)}</td>
@@ -309,10 +785,11 @@ export const ReviewsManagement = () => {
                                 {canViewProgress && (
                                   <button
                                     type="button"
-                                      onClick={() => {
-                                        setDetailViewType("active");
-                                        setPastDetailCycleId(c._id);
-                                      }}
+                                    onClick={() => {
+                                      setDetailViewType("active");
+                                      setPastDetailCycleId(c._id);
+                                      setShowAllReviewCycles(false);
+                                    }}
                                     className="p-1.5 text-button-primary hover:bg-blue-50 rounded cursor-pointer"
                                     aria-label="View cycle progress"
                                     title="View cycle progress"
@@ -323,7 +800,10 @@ export const ReviewsManagement = () => {
                                 {canOpenAction && (
                                   <button
                                     type="button"
-                                    onClick={() => openAction(c)}
+                                    onClick={() => {
+                                      openAction(c);
+                                      setShowAllReviewCycles(false);
+                                    }}
                                     className="px-3 py-1 text-xs bg-button-primary text-white rounded-md hover:opacity-90 cursor-pointer"
                                   >
                                     Open
@@ -338,98 +818,143 @@ export const ReviewsManagement = () => {
                   </table>
                 </div>
               </div>
-            )}
+              <Pagination
+                currentPage={reviewCyclesPage}
+                totalPages={reviewCyclesTotalPages}
+                totalItems={activeCycles.length}
+                pageSize={MODAL_PAGE_SIZE}
+                onPageChange={setReviewCyclesPage}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
-            {(canStaffList || canReviewTracker) && (
-              <div
-                className={
-                  canStaffList && canReviewTracker
-                    ? "grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 items-stretch"
-                    : "grid grid-cols-1 gap-6 mb-6 items-stretch"
-                }
-              >
-                {canStaffList && (
-                  <div className={canReviewTracker ? "lg:col-span-2 min-h-0 flex flex-col" : "min-h-0 flex flex-col"}>
-                    <div className="bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden flex flex-col h-full min-h-0">
-                      <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2 flex-shrink-0">
-                        <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">Past reviews</h3>
-                      </div>
-                      <div className="p-5 overflow-x-auto flex-1 min-h-0">
-                        {pastCycles.length === 0 ? (
-                          <p className="text-sm text-gray-500 text-center py-8">No past review cycles yet.</p>
-                        ) : (
-                          <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm min-w-[640px]">
-                            <thead>
-                              <tr className="text-left text-secondary border-b border-gray-200">
-                                <th className="pb-3 pr-2 pl-2 font-semibold">Employee</th>
-                                <th className="pb-3 pr-2 font-semibold text-center">Cycle</th>
-                                <th className="pb-3 pr-2 font-semibold text-center">Status</th>
-                                <th className="pb-3 pr-2 font-semibold text-center">Due date</th>
-                                <th className="pb-3 pr-2 font-semibold text-center">Updated</th>
-                                <th className="pb-3 pr-2 font-semibold text-center">Action</th>
-                              </tr>
-                            </thead>
-                            <tbody className="text-primary">
-                              {pastCycles.map((c, i) => {
-                                const emp = typeof c.employeeId === "object" ? c.employeeId : null;
-                                return (
-                                  <tr key={c._id} className={i % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
-                                    <td className="py-3 pr-2 pl-2">
-                                      {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
-                                    </td>
-                                    <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
-                                    <td className="py-3 pr-2 text-center">
-                                      <span
-                                        className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}
-                                      >
-                                        {getStatusLabel(c.status)}
-                                      </span>
-                                    </td>
-                                    <td className="py-3 pr-2 text-center whitespace-nowrap">
-                                      {c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—"}
-                                    </td>
-                                    <td className="py-3 pr-2 text-center whitespace-nowrap">
-                                      {c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : "—"}
-                                    </td>
-                                    <td className="py-3 pr-2 text-center">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setDetailViewType("past");
-                                          setPastDetailCycleId(c._id);
-                                        }}
-                                        className="px-3 py-1 text-xs bg-button-primary text-white rounded-md hover:opacity-90 cursor-pointer"
-                                      >
-                                        View
-                                      </button>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {canReviewTracker && (
-                  <div className={canStaffList ? "lg:col-span-1 min-h-0 flex flex-col" : "min-h-0 flex flex-col"}>
-                    <ReviewTrackerCard donuts={trackerDonuts} />
-                  </div>
-                )}
+      {showAllPastReviews && (
+        <div className="fixed inset-0 z-[300] grid place-items-center bg-black/50 p-4">
+          <div className="relative w-full max-w-4xl">
+            <button
+              type="button"
+              onClick={() => setShowAllPastReviews(false)}
+              className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-primary"
+              aria-label="Close"
+              title="Close"
+            >
+              <span className="text-xl leading-none">×</span>
+            </button>
+            <div className="max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+              <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
+                <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">All Past Reviews</h3>
               </div>
-            )}
-
-            {activeCycles.length === 0 && (
-              <div className="text-center py-16 text-gray-400">
-                <p className="text-lg font-medium">No review cycles found</p>
-                <p className="text-sm mt-1">Review cycles will appear here once employees are enrolled.</p>
+              <div className="flex-1 min-h-0 overflow-hidden border-x border-gray-200 flex flex-col">
+                <div className="md:hidden flex-1 min-h-0 overflow-y-auto divide-y divide-gray-200">
+                  {pastReviewsPageRows.map((c, i) => {
+                    const globalIndex = (pastReviewsPage - 1) * MODAL_PAGE_SIZE + i;
+                    const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                    const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
+                    const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
+                    const name = emp ? `${emp.firstName} ${emp.lastName}` : "—";
+                    const cardBg = globalIndex % 2 === 0 ? "bg-white" : "bg-gray-50/50";
+                    return (
+                      <div key={c._id} className={`${cardBg} px-4 py-4 flex flex-col gap-3`}>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-primary truncate" title={name}>
+                            {name}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-1">
+                            <span className="font-medium">Cycle:</span> #{c.cycleNumber}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-1">
+                            <span className="font-medium">Status:</span>
+                            <span
+                              className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}
+                            >
+                              {getStatusLabel(c.status)}
+                            </span>
+                          </p>
+                          <p className="text-xs text-gray-600 mt-0.5">
+                            <span className="font-medium">Period:</span> {periodStart} – {periodEnd}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailViewType("past");
+                              setPastDetailCycleId(c._id);
+                              setShowAllPastReviews(false);
+                            }}
+                            className="p-2 text-primary hover:bg-gray-200 rounded transition-colors"
+                            aria-label="View Past Review"
+                            title="View Past Review"
+                          >
+                            <ViewIcon className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="hidden md:block flex-1 min-h-0 overflow-auto px-5 pt-4">
+                  <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm min-w-[520px]">
+                    <thead>
+                      <tr className="text-left text-secondary border-b border-gray-200">
+                        <th className="pb-3 pr-2 pl-2 font-semibold">Employee</th>
+                        <th className="pb-3 pr-2 font-semibold text-center">Cycle</th>
+                        <th className="pb-3 pr-2 font-semibold text-center">Status</th>
+                        <th className="pb-3 pr-2 font-semibold text-center">Period</th>
+                        <th className="pb-3 pr-2 font-semibold text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-primary">
+                      {pastReviewsPageRows.map((c, i) => {
+                        const globalIndex = (pastReviewsPage - 1) * MODAL_PAGE_SIZE + i;
+                        const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                        const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
+                        const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
+                        return (
+                          <tr key={c._id} className={globalIndex % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
+                            <td className="py-3 pr-2 pl-2">{emp ? `${emp.firstName} ${emp.lastName}` : "—"}</td>
+                            <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
+                            <td className="py-3 pr-2 text-center">
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}>
+                                {getStatusLabel(c.status)}
+                              </span>
+                            </td>
+                            <td className="py-3 pr-2 text-center whitespace-nowrap">{periodStart} - {periodEnd}</td>
+                            <td className="py-3 pr-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDetailViewType("past");
+                                  setPastDetailCycleId(c._id);
+                                  setShowAllPastReviews(false);
+                                }}
+                                className="p-1.5 text-button-primary hover:bg-blue-50 rounded cursor-pointer"
+                                aria-label="View Past Review"
+                                title="View Past Review"
+                              >
+                                <ViewIcon className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            )}
-          </>
-        )}
-      </div>
+              <Pagination
+                currentPage={pastReviewsPage}
+                totalPages={pastReviewsTotalPages}
+                totalItems={pastCycles.length}
+                pageSize={MODAL_PAGE_SIZE}
+                onPageChange={setPastReviewsPage}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {modal?.kind === "self-review" && (

@@ -66,7 +66,6 @@ export const CheckInModal = ({ isOpen, onClose, cycleId, period, status, onSubmi
 
   useEffect(() => {
     if (isOpen) dialogRef.current?.showModal();
-    else dialogRef.current?.close();
   }, [isOpen]);
 
   useEffect(() => {
@@ -144,18 +143,44 @@ export const CheckInModal = ({ isOpen, onClose, cycleId, period, status, onSubmi
     .map((item, idx) => ({ ...item, _planIndex: idx }))
     .filter((i) => i.period === period);
 
-  return createPortal(
-    <dialog ref={dialogRef} onClose={onClose} className="backdrop:bg-black/50 rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden p-0 m-auto">
-      <div className="p-6 flex flex-col">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-primary">{period}-Day Check-in</h2>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl cursor-pointer">✕</button>
-        </div>
+  const handleClose = () => {
+    dialogRef.current?.close();
+    onClose();
+  };
 
+  if (!isOpen) return null;
+
+  const checkInTitleId = "check-in-modal-title";
+
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      onClose={onClose}
+      className="modal-full-viewport z-[300] m-0 grid place-items-center bg-transparent border-0 p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
+      aria-labelledby={checkInTitleId}
+    >
+      <div className="relative w-full min-w-0 max-w-full md:max-w-4xl">
+        <button
+          type="button"
+          onClick={handleClose}
+          className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Close"
+          title="Close"
+        >
+          <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
+        </button>
+        <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+          <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
+            <h2 id={checkInTitleId} className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+              {period}-Day Check-in
+            </h2>
+          </div>
+          <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden border-x border-gray-200">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 pt-4 pb-4 md:[scrollbar-gutter:stable]">
         {loading ? (
           <div className="flex justify-center py-12"><Spinner size="lg" className="text-button-primary" /></div>
         ) : (
-          <div className="max-h-[calc(90vh-12rem)] overflow-y-auto pr-2 space-y-6">
+          <div className="space-y-6 pb-2">
             {/* Action Plan Items */}
             {periodItems.length > 0 && (
               <section className="bg-amber-50/50 rounded-lg p-4">
@@ -377,18 +402,21 @@ export const CheckInModal = ({ isOpen, onClose, cycleId, period, status, onSubmi
             </section>
           </div>
         )}
+            </div>
 
-        {!loading && (
-          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer">Close</button>
+            {loading ? null : (
+              <div className="flex-shrink-0 flex flex-wrap justify-end gap-3 px-5 py-4 border-t border-gray-200 bg-card-background">
+            <button type="button" onClick={handleClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer">Close</button>
             {canSubmit && (
               <button type="button" onClick={handleSubmit} disabled={submitting}
                 className="px-6 py-2 bg-button-primary text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer">
                 {submitting ? "Submitting..." : `Submit ${period}-Day Check-in`}
               </button>
             )}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </dialog>,
     document.body,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { reviewService } from "../../services/review.service";
@@ -29,11 +29,10 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
   ]);
   const [step, setStep] = useState<"review" | "action-plan">("review");
 
-  const canAct = (["approved", "sharing_pending", "sharing_past_due"] as ReviewCycleStatus[]).includes(cycle.status);
+  const canAct = (["approved", "sharing_due", "sharing_pending", "sharing_past_due"] as ReviewCycleStatus[]).includes(cycle.status);
 
   useEffect(() => {
     if (isOpen) dialogRef.current?.showModal();
-    else dialogRef.current?.close();
   }, [isOpen]);
 
   useEffect(() => {
@@ -96,128 +95,186 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
     </div>
   );
 
-  return createPortal(
-    <dialog ref={dialogRef} onClose={onClose} className="backdrop:bg-black/50 rounded-2xl shadow-xl w-full max-w-4xl p-0 m-auto">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-primary">
-            {step === "review" ? "Review Summary" : "Action Plan"}
-          </h2>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl cursor-pointer">✕</button>
-        </div>
+  const handleClose = () => {
+    dialogRef.current?.close();
+    onClose();
+  };
 
-        {cycle.salaryIncrement != null && cycle.salaryIncrement > 0 && (
-          <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2 mb-4">
-            <span className="text-sm font-medium text-green-700">
-              Merit Increase: {cycle.salaryIncrement}%
-            </span>
-            {cycle.directorComments && (
-              <p className="text-xs text-green-600 mt-1">{cycle.directorComments}</p>
+  const modalTitle = step === "review" ? "Review Summary" : "Action Plan";
+
+  let mainContent: ReactNode;
+  if (loading) {
+    mainContent = (
+      <div className="flex justify-center py-12">
+        <Spinner size="lg" className="text-button-primary" />
+      </div>
+    );
+  } else if (step === "review") {
+    mainContent = (
+      <div className="space-y-6 pb-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <section className="bg-blue-50/50 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-blue-700 mb-3 uppercase tracking-wide">Self-Review</h3>
+            {selfReview ? renderResponses(selfReview.responses) : <p className="text-sm text-gray-400 italic">Not available</p>}
+          </section>
+          <section className="bg-green-50/50 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-green-700 mb-3 uppercase tracking-wide">Manager Review</h3>
+            {managerReview ? renderResponses(managerReview.responses) : <p className="text-sm text-gray-400 italic">Not available</p>}
+          </section>
+        </div>
+      </div>
+    );
+  } else {
+    mainContent = (
+      <div className="space-y-6 pb-2">
+        {PERIODS.map((period) => (
+          <section key={period} className="border border-gray-100 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-700">{period}-Day Actions</h3>
+              {canAct ? (
+                <button
+                  type="button"
+                  onClick={() => handleAddItem(period)}
+                  className="text-xs text-button-primary hover:underline cursor-pointer"
+                >
+                  + Add Item
+                </button>
+              ) : null}
+            </div>
+            {actionItems.filter((i) => i.period === period).map((item) => {
+              const idx = actionItems.indexOf(item);
+              return (
+                <div key={idx} className="grid grid-cols-12 gap-2 items-start">
+                  <textarea
+                    value={item.description}
+                    onChange={(e) => handleItemChange(idx, "description", e.target.value)}
+                    disabled={!canAct}
+                    rows={2}
+                    placeholder="Action item description"
+                    className="col-span-6 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20 disabled:bg-gray-50"
+                  />
+                  <input
+                    type="text"
+                    value={item.currentScore ?? ""}
+                    onChange={(e) => handleItemChange(idx, "currentScore", e.target.value)}
+                    disabled={!canAct}
+                    placeholder="Current"
+                    className="col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none disabled:bg-gray-50"
+                  />
+                  <input
+                    type="text"
+                    value={item.targetScore ?? ""}
+                    onChange={(e) => handleItemChange(idx, "targetScore", e.target.value)}
+                    disabled={!canAct}
+                    placeholder="Target"
+                    className="col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none disabled:bg-gray-50"
+                  />
+                  {canAct ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveItem(idx)}
+                      className="col-span-2 text-red-400 hover:text-red-600 text-sm cursor-pointer pt-2"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </section>
+        ))}
+      </div>
+    );
+  }
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      onClose={onClose}
+      className="modal-full-viewport z-[300] m-0 grid place-items-center bg-transparent border-0 p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
+      aria-labelledby="review-sharing-modal-title"
+    >
+      <div className="relative w-full min-w-0 max-w-full md:max-w-4xl">
+        <button
+          type="button"
+          onClick={handleClose}
+          className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Close"
+          title="Close"
+        >
+          <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
+        </button>
+        <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+          <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
+            <h2 id="review-sharing-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+              {modalTitle}
+            </h2>
+          </div>
+          <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden border-x border-gray-200">
+            {cycle.salaryIncrement != null && cycle.salaryIncrement > 0 && (
+              <div className="px-5 pt-4 flex-shrink-0">
+                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2">
+                  <span className="text-sm font-medium text-green-700">
+                    Merit Increase: {cycle.salaryIncrement}%
+                  </span>
+                  {cycle.directorComments ? (
+                    <p className="text-xs text-green-600 mt-1">{cycle.directorComments}</p>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 pt-4 pb-4 md:[scrollbar-gutter:stable]">
+              {mainContent}
+            </div>
+
+            {loading ? null : (
+              <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-gray-200 bg-card-background">
+                <div className="min-w-0">
+                  {step === "action-plan" ? (
+                    <button
+                      type="button"
+                      onClick={() => setStep("review")}
+                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer"
+                    >
+                      ← Back to Review
+                    </button>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap justify-end gap-3 ml-auto">
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  {canAct && step === "review" ? (
+                    <button
+                      type="button"
+                      onClick={() => setStep("action-plan")}
+                      className="px-6 py-2 bg-button-primary text-white rounded-lg text-sm font-medium hover:opacity-90 cursor-pointer"
+                    >
+                      Create Action Plan →
+                    </button>
+                  ) : null}
+                  {canAct && step === "action-plan" ? (
+                    <button
+                      type="button"
+                      onClick={handleSaveAndComplete}
+                      disabled={submitting}
+                      className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                    >
+                      {submitting ? "Saving..." : "Save Action Plan & Complete Review"}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
             )}
           </div>
-        )}
-
-        {loading && (
-          <div className="flex justify-center py-12"><Spinner size="lg" className="text-button-primary" /></div>
-        )}
-        {!loading && step === "review" && (
-          <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <section className="bg-blue-50/50 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-blue-700 mb-3 uppercase tracking-wide">Self-Review</h3>
-                {selfReview ? renderResponses(selfReview.responses) : <p className="text-sm text-gray-400 italic">Not available</p>}
-              </section>
-              <section className="bg-green-50/50 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-green-700 mb-3 uppercase tracking-wide">Manager Review</h3>
-                {managerReview ? renderResponses(managerReview.responses) : <p className="text-sm text-gray-400 italic">Not available</p>}
-              </section>
-            </div>
-          </div>
-        )}
-        {!loading && step === "action-plan" && (
-          <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-6">
-            {PERIODS.map((period) => (
-              <section key={period} className="border border-gray-100 rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-700">{period}-Day Actions</h3>
-                  {canAct && (
-                    <button type="button" onClick={() => handleAddItem(period)}
-                      className="text-xs text-button-primary hover:underline cursor-pointer">
-                      + Add Item
-                    </button>
-                  )}
-                </div>
-                {actionItems.filter((i) => i.period === period).map((item) => {
-                  const idx = actionItems.indexOf(item);
-                  return (
-                    <div key={idx} className="grid grid-cols-12 gap-2 items-start">
-                      <textarea
-                        value={item.description}
-                        onChange={(e) => handleItemChange(idx, "description", e.target.value)}
-                        disabled={!canAct}
-                        rows={2}
-                        placeholder="Action item description"
-                        className="col-span-6 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20 disabled:bg-gray-50"
-                      />
-                      <input
-                        type="text"
-                        value={item.currentScore ?? ""}
-                        onChange={(e) => handleItemChange(idx, "currentScore", e.target.value)}
-                        disabled={!canAct}
-                        placeholder="Current"
-                        className="col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none disabled:bg-gray-50"
-                      />
-                      <input
-                        type="text"
-                        value={item.targetScore ?? ""}
-                        onChange={(e) => handleItemChange(idx, "targetScore", e.target.value)}
-                        disabled={!canAct}
-                        placeholder="Target"
-                        className="col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none disabled:bg-gray-50"
-                      />
-                      {canAct && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItem(idx)}
-                          className="col-span-2 text-red-400 hover:text-red-600 text-sm cursor-pointer pt-2"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </section>
-            ))}
-          </div>
-        )}
-
-        {!loading && (
-          <div className="flex justify-between mt-6 pt-4 border-t border-gray-100">
-            <div>
-              {step === "action-plan" && (
-                <button type="button" onClick={() => setStep("review")} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer">
-                  ← Back to Review
-                </button>
-              )}
-            </div>
-            <div className="flex gap-3">
-              <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer">Close</button>
-              {canAct && step === "review" && (
-                <button type="button" onClick={() => setStep("action-plan")}
-                  className="px-6 py-2 bg-button-primary text-white rounded-lg text-sm font-medium hover:opacity-90 cursor-pointer">
-                  Create Action Plan →
-                </button>
-              )}
-              {canAct && step === "action-plan" && (
-                <button type="button" onClick={handleSaveAndComplete} disabled={submitting}
-                  className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer">
-                  {submitting ? "Saving..." : "Save Action Plan & Complete Review"}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     </dialog>,
     document.body,

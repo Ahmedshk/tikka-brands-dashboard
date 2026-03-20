@@ -1,4 +1,5 @@
 import type { Training } from '../../types/trainingReviews.types';
+import { Spinner } from '../common/Spinner';
 import EditIcon from '@assets/icons/edit.svg?react';
 import DeleteIcon from '@assets/icons/delete.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
@@ -8,13 +9,15 @@ const CARD_DISPLAY_LIMIT = 8;
 
 export interface TrainingsCardProps {
   trainings: Training[];
+  /** When true, shows a centered spinner in the card body (header unchanged). */
+  loading?: boolean;
   onEdit?: (training: Training, index: number) => void;
   onDelete?: (training: Training, index: number) => void;
   onCreate?: () => void;
   onViewAll?: () => void;
 }
 
-export const TrainingsCard = ({ trainings, onEdit, onDelete, onCreate, onViewAll }: TrainingsCardProps) => {
+export const TrainingsCard = ({ trainings, loading = false, onEdit, onDelete, onCreate, onViewAll }: TrainingsCardProps) => {
   const displayTrainings = trainings.slice(0, CARD_DISPLAY_LIMIT);
   const hasMore = trainings.length > CARD_DISPLAY_LIMIT;
 
@@ -24,6 +27,11 @@ export const TrainingsCard = ({ trainings, onEdit, onDelete, onCreate, onViewAll
         <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">Trainings</h3>
       </div>
       <div className="p-5 flex flex-col flex-1 min-h-0 overflow-hidden">
+        {loading ? (
+          <div className="flex flex-1 min-h-[200px] items-center justify-center" aria-busy="true">
+            <Spinner size="lg" className="text-button-primary" />
+          </div>
+        ) : (
         <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
           <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
             <thead>
@@ -70,7 +78,8 @@ export const TrainingsCard = ({ trainings, onEdit, onDelete, onCreate, onViewAll
             </tbody>
           </table>
         </div>
-        {(onCreate != null || onViewAll != null) && (
+        )}
+        {!loading && (onCreate != null || onViewAll != null) && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
             {onCreate != null && (
               <button
