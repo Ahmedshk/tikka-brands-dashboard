@@ -5,7 +5,14 @@ import { getSecureUrl, getSecureDocumentUrl } from '../config/cloudinary.js';
 
 const userService = new UserService();
 
-const ALLOWED_DOC_PREFIXES = ['tikka_brands/training/', 'employee_training/'];
+const ALLOWED_DOC_PREFIXES = [
+  'tikka_brands/training/',
+  'tikka_brands/employee_training/',
+  'tikka_brands/employee_reviews/',
+  // Legacy prefixes kept for backward compatibility with previously uploaded assets.
+  'employee_training/',
+  'employee-reviews/',
+];
 
 /**
  * GET /api/proxy/image/:userId

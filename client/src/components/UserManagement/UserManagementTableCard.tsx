@@ -1,8 +1,9 @@
+import { useState, useRef, useEffect } from 'react';
 import type { UserRow, UserStatus } from '../../types/userManagement.types';
 import { Pagination } from '../common/Pagination';
 import EditIcon from '@assets/icons/edit.svg?react';
-import DeleteIcon from '@assets/icons/delete.svg?react';
 import { FaPaperPlane } from 'react-icons/fa';
+import { BsThreeDotsVertical } from 'react-icons/bs';
 
 export interface UserManagementTableCardPagination {
   currentPage: number;
@@ -58,23 +59,122 @@ export interface UserManagementTableCardProps {
   rows: UserRow[];
   onAddUser?: () => void;
   onEdit?: (row: UserRow, index: number) => void;
-  onDelete?: (row: UserRow, index: number) => void;
+  onTerminate?: (row: UserRow) => void;
   onResendInvite?: (row: UserRow) => void;
+  onStartReviewCycle?: (row: UserRow) => void;
   pagination?: UserManagementTableCardPagination;
+}
+
+
+function RowActionsMenu({
+  row,
+  index,
+  onEdit,
+  onTerminate,
+  onResendInvite,
+  onStartReviewCycle,
+  compact,
+}: Readonly<{
+  row: UserRow;
+  index: number;
+  onEdit?: (row: UserRow, index: number) => void;
+  onTerminate?: (row: UserRow) => void;
+  onResendInvite?: (row: UserRow) => void;
+  onStartReviewCycle?: (row: UserRow) => void;
+  compact?: boolean;
+}>) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const btnSize = compact ? 'p-1.5' : 'p-2.5';
+  const iconSize = compact
+    ? 'w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5'
+    : 'w-4 h-4';
+
+  return (
+    <div className="flex items-center gap-1 md:gap-2">
+      {row.status === 'Pending' && onResendInvite && (
+        <button
+          type="button"
+          onClick={() => onResendInvite(row)}
+          className={`${btnSize} text-primary hover:bg-gray-200 rounded transition-colors`}
+          aria-label={row.invitationSentAt ? 'Resend invitation' : 'Send invitation'}
+          title={row.invitationSentAt ? 'Resend invitation' : 'Send invitation'}
+        >
+          <FaPaperPlane className={iconSize} />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => onEdit?.(row, index)}
+        className={`${btnSize} text-primary hover:bg-gray-200 rounded transition-colors`}
+        aria-label="Edit"
+        title="Edit user"
+      >
+        <EditIcon className={iconSize} />
+      </button>
+      <div className="relative" ref={menuRef}>
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className={`${btnSize} text-primary hover:bg-gray-200 rounded transition-colors`}
+          aria-label="More actions"
+          title="More actions"
+          aria-haspopup="true"
+          aria-expanded={open}
+        >
+          <BsThreeDotsVertical className={iconSize} />
+        </button>
+        {open && (
+          <div className="absolute right-0 top-full mt-1 z-50 min-w-[10rem] bg-white rounded-lg shadow-lg border border-gray-200 py-1">
+            {row.status !== 'Terminated' && !row.hasActiveReviewCycle && onStartReviewCycle && (
+              <button
+                type="button"
+                onClick={() => { setOpen(false); onStartReviewCycle(row); }}
+                className="w-full text-left px-4 py-2 text-sm text-primary hover:bg-gray-50 transition-colors"
+              >
+                Start review cycle
+              </button>
+            )}
+            {row.status !== 'Terminated' && onTerminate && (
+              <button
+                type="button"
+                onClick={() => { setOpen(false); onTerminate(row); }}
+                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+              >
+                Terminate
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function UserRowCard({
   row,
   index,
   onEdit,
-  onDelete,
+  onTerminate,
   onResendInvite,
+  onStartReviewCycle,
 }: Readonly<{
   row: UserRow;
   index: number;
   onEdit?: (row: UserRow, index: number) => void;
-  onDelete?: (row: UserRow, index: number) => void;
+  onTerminate?: (row: UserRow) => void;
   onResendInvite?: (row: UserRow) => void;
+  onStartReviewCycle?: (row: UserRow) => void;
 }>) {
   const displayName =
     (row.name ?? [row.firstName, row.lastName].filter(Boolean).join(' ').trim()) || row.email || '—';
@@ -100,7 +200,7 @@ function UserRowCard({
           <span className="font-medium">Email:</span> {row.email}
         </p>
         <p className="text-xs text-gray-600 mt-0.5">
-          <span className="font-medium">Start Date:</span> {formatMountainDate(row.homebaseData?.created_at ?? row.createdAt)}
+          <span className="font-medium">Start Date:</span> {formatMountainDate(row.startDate ?? row.homebaseData?.created_at ?? row.createdAt)}
         </p>
         <p className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-1">
           <span className="font-medium">Role:</span>
@@ -116,36 +216,15 @@ function UserRowCard({
           <span className={statusPillClass[row.status]}>{row.status}</span>
         </p>
       </div>
-      <div className="flex items-center justify-end gap-1">
-        {row.status === 'Pending' && onResendInvite && (
-          <button
-            type="button"
-            onClick={() => onResendInvite(row)}
-            className="p-2.5 text-primary hover:bg-gray-200 rounded-lg transition-colors touch-manipulation"
-            aria-label={row.invitationSentAt ? 'Resend invitation' : 'Send invitation'}
-            title={row.invitationSentAt ? 'Resend invitation' : 'Send invitation'}
-          >
-            <FaPaperPlane className="w-4 h-4" />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => onEdit?.(row, index)}
-          className="p-2.5 text-primary hover:bg-gray-200 rounded-lg transition-colors touch-manipulation"
-          aria-label="Edit"
-          title="Edit user"
-        >
-          <EditIcon className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete?.(row, index)}
-          className="p-2.5 text-primary hover:bg-gray-200 rounded-lg transition-colors touch-manipulation"
-          aria-label="Delete"
-          title="Delete user"
-        >
-          <DeleteIcon className="w-4 h-4" />
-        </button>
+      <div className="flex items-center justify-end">
+        <RowActionsMenu
+          row={row}
+          index={index}
+          onEdit={onEdit}
+          onTerminate={onTerminate}
+          onResendInvite={onResendInvite}
+          onStartReviewCycle={onStartReviewCycle}
+        />
       </div>
     </div>
   );
@@ -155,8 +234,9 @@ export const UserManagementTableCard = ({
   rows,
   onAddUser: _onAddUser,
   onEdit,
-  onDelete,
+  onTerminate,
   onResendInvite,
+  onStartReviewCycle,
   pagination,
 }: UserManagementTableCardProps) => {
   return (
@@ -170,8 +250,9 @@ export const UserManagementTableCard = ({
               row={row}
               index={index}
               onEdit={onEdit}
-              onDelete={onDelete}
+              onTerminate={onTerminate}
               onResendInvite={onResendInvite}
+              onStartReviewCycle={onStartReviewCycle}
             />
           ))}
         </div>
@@ -218,7 +299,7 @@ export const UserManagementTableCard = ({
                     </div>
                   </td>
                   <td className="w-[22%] px-4 lg:px-6 py-3 lg:py-4 text-primary truncate text-center" title={row.email}>{row.email}</td>
-                  <td className="w-[12%] px-4 lg:px-6 py-3 lg:py-4 text-primary text-center">{formatMountainDate(row.homebaseData?.created_at ?? row.createdAt)}</td>
+                  <td className="w-[12%] px-4 lg:px-6 py-3 lg:py-4 text-primary text-center">{formatMountainDate(row.startDate ?? row.homebaseData?.created_at ?? row.createdAt)}</td>
                   <td className="w-[16%] px-4 lg:px-6 py-3 lg:py-4 text-center">
                     <div className="flex flex-wrap items-center justify-center gap-1">
                       <span className="truncate" title={row.role ?? 'Role unassigned'}>
@@ -235,36 +316,16 @@ export const UserManagementTableCard = ({
                     <span className={statusPillClass[row.status]}>{row.status}</span>
                   </td>
                   <td className="px-4 lg:px-6 py-3 lg:py-4 text-center">
-                    <div className="flex items-center justify-center gap-1 md:gap-2">
-                      {row.status === 'Pending' && onResendInvite && (
-                        <button
-                          type="button"
-                          onClick={() => onResendInvite(row)}
-                          className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors"
-                          aria-label={row.invitationSentAt ? 'Resend invitation' : 'Send invitation'}
-                          title={row.invitationSentAt ? 'Resend invitation' : 'Send invitation'}
-                        >
-                          <FaPaperPlane className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => onEdit?.(row, index)}
-                        className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors"
-                        aria-label="Edit"
-                        title="Edit user"
-                      >
-                        <EditIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDelete?.(row, index)}
-                        className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors"
-                        aria-label="Delete"
-                        title="Delete user"
-                      >
-                        <DeleteIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
-                      </button>
+                    <div className="flex items-center justify-center">
+                      <RowActionsMenu
+                        row={row}
+                        index={index}
+                        onEdit={onEdit}
+                        onTerminate={onTerminate}
+                        onResendInvite={onResendInvite}
+                        onStartReviewCycle={onStartReviewCycle}
+                        compact
+                      />
                     </div>
                   </td>
                 </tr>

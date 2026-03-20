@@ -29,7 +29,7 @@ export const StaffListCard = ({ rows, onView, onEdit, onViewAll }: StaffListCard
             <tr className="text-left text-secondary border-b border-gray-200">
               <th className="pb-3 pr-4 pl-2 font-semibold">Name</th>
               <th className="pb-3 pr-4 font-semibold text-center">Role</th>
-              <th className="pb-3 pr-4 font-semibold text-center">Hire Date</th>
+              <th className="pb-3 pr-4 font-semibold text-center">Start date</th>
               <th className="pb-3 pr-4 font-semibold text-center">Tenure</th>
               <th className="pb-3 pr-4 font-semibold text-center">Review Status</th>
               <th className="pb-3 pr-2 font-semibold text-center">Actions</th>
@@ -43,7 +43,7 @@ export const StaffListCard = ({ rows, onView, onEdit, onViewAll }: StaffListCard
               >
                 <td className="py-3 pr-4 pl-2">{row.name}</td>
                 <td className="py-3 pr-4 text-center">{row.role}</td>
-                <td className="py-3 pr-4 text-center">{row.hireDate}</td>
+                <td className="py-3 pr-4 text-center">{row.startDate}</td>
                 <td className="py-3 pr-4 text-center">{row.tenure}</td>
                 <td className="py-3 pr-4 text-center">
                   <span className={reviewStatusClass[row.reviewStatus]}>{row.reviewStatus}</span>

@@ -24,6 +24,9 @@ import {
   buildHomebaseSyncUpdatePayload,
   buildHomebaseSyncCreatePayload,
 } from "../utils/syncFromHomebaseHelpers.js";
+import { ReviewCycleModel } from "../models/reviewCycle.model.js";
+import { ReviewCycleService } from "./reviewCycle.service.js";
+import { logger } from "../utils/logger.util.js";
 
 const OWNER_ROLE_NAME = UserRole.OWNER;
 const SALT_ROUNDS = 10;
@@ -119,6 +122,7 @@ export interface CreateUserPayload {
   homebaseData?: import('../types/user.types.js').HomebaseData | null;
   roleId?: string | null;
   profileImagePublicId?: string | null;
+  startDate?: Date | null;
 }
 
 export interface SyncFromSquareResult {
@@ -194,6 +198,7 @@ export class UserService {
     const squareId = payload.squareId?.trim();
     const homebaseData = payload.homebaseData;
     const profileImagePublicId = payload.profileImagePublicId?.trim();
+    const startDate = payload.startDate != null ? new Date(payload.startDate) : undefined;
     const doc = await this.userRepository.create({
       email: payload.email.trim().toLowerCase(),
       password: hashedPassword,
@@ -208,6 +213,7 @@ export class UserService {
       ...((homebaseData?.id ?? "") !== "" && homebaseData != null && { homebaseData }),
       ...(profileImagePublicId !== undefined &&
         profileImagePublicId !== "" && { profileImagePublicId }),
+      ...(startDate !== undefined && { startDate }),
     });
 
     if (options?.sendInvite) {
@@ -241,6 +247,16 @@ export class UserService {
     const finalDoc = options?.sendInvite
       ? await this.userRepository.findById(doc._id.toString())
       : doc;
+
+    const reviewCycleService = new ReviewCycleService();
+    const cycleResult = await reviewCycleService.startCycleForUser(doc._id.toString()).catch((err) => {
+      logger.warn("Review cycle start after create failed", { userId: doc._id.toString(), err });
+      return { started: false as const, message: err instanceof Error ? err.message : String(err) };
+    });
+    if (!cycleResult.started && cycleResult.message) {
+      logger.info("Review cycle not started after create", { userId: doc._id.toString(), reason: cycleResult.message });
+    }
+
     return toIUser(finalDoc ?? doc);
   }
 
@@ -630,15 +646,25 @@ export class UserService {
             updatePayload,
           );
           result.updated++;
+          const reviewCycleService = new ReviewCycleService();
+          await reviewCycleService.startCycleForUser(existing._id.toString()).catch((err) => {
+            logger.warn("Review cycle start after Homebase update failed", { userId: existing._id.toString(), err });
+          });
         } else {
           const hashedPassword = await bcrypt.hash(
             randomPassword(),
             SALT_ROUNDS,
           );
-          await this.userRepository.create(
+          const created = await this.userRepository.create(
             buildHomebaseSyncCreatePayload(normalized, hashedPassword),
           );
           result.created++;
+          if (created.isTerminated !== true) {
+            const reviewCycleService = new ReviewCycleService();
+            await reviewCycleService.startCycleForUser(created._id.toString()).catch((err) => {
+              logger.warn("Review cycle start after Homebase create failed", { userId: created._id.toString(), err });
+            });
+          }
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -674,5 +700,18 @@ export class UserService {
     const existingByEmail =
       await this.userRepository.findByEmail(normalized.email);
     return existingByHomebase ?? existingByEmail ?? null;
+  }
+
+  async terminateUser(id: string): Promise<IUser | null> {
+    const doc = await this.userRepository.updateById(id, { isTerminated: true });
+    if (!doc) return null;
+
+    const TERMINAL_STATUSES = ["cycle_complete", "checkin_60_done"];
+    await ReviewCycleModel.updateMany(
+      { employeeId: id, status: { $nin: TERMINAL_STATUSES } },
+      { $set: { status: "cycle_complete" as const } },
+    );
+
+    return toIUser(doc);
   }
 }

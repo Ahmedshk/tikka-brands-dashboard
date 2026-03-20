@@ -10,13 +10,14 @@ import {
 } from '../../services/auth.service';
 import { PasswordChecklist } from '../../components/common/PasswordChecklist';
 import { isPasswordStrong } from '../../utils/passwordValidation';
+import { getResponseMessageFromError } from '../../utils/apiErrorHelpers';
 
 type ValidationState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'valid'; email: string; firstName: string }
-  | { status: 'expired' }
-  | { status: 'invalid' };
+  | { status: 'expired'; message?: string }
+  | { status: 'invalid'; message?: string };
 
 export const SetPassword = () => {
   const [searchParams] = useSearchParams();
@@ -49,13 +50,17 @@ export const SetPassword = () => {
             firstName: res.data.firstName,
           });
         } else if (!res.success && res.expired) {
-          setValidation({ status: 'expired' });
+          setValidation({ status: 'expired', message: res.message });
         } else {
-          setValidation({ status: 'invalid' });
+          setValidation({ status: 'invalid', message: res.message });
         }
       })
       .catch(() => {
-        if (!cancelled) setValidation({ status: 'invalid' });
+        if (!cancelled)
+          setValidation({
+            status: 'invalid',
+            message: undefined,
+          });
       });
     return () => {
       cancelled = true;
@@ -89,14 +94,17 @@ export const SetPassword = () => {
           },
         });
       } else {
+        const msg = (res as { message?: string }).message;
         setSubmitError(
-          (res as { message?: string }).message ||
-            'Something went wrong. Please try again or contact your administrator.'
+          typeof msg === 'string' && msg.trim()
+            ? msg
+            : 'Something went wrong. Please try again.'
         );
       }
-    } catch {
+    } catch (err: unknown) {
+      const msg = getResponseMessageFromError(err);
       setSubmitError(
-        'Unable to set password. Please try again or contact your administrator for a new invitation link.'
+        (msg?.trim()) ?? 'Something went wrong. Please try again.'
       );
     } finally {
       setIsSubmitting(false);
@@ -116,8 +124,8 @@ export const SetPassword = () => {
       return (
         <div className="space-y-6">
           <p className="text-primary text-sm md:text-base">
-            This link has expired. Please contact your administrator for a new
-            invitation link.
+            {validation.message ??
+              'Something went wrong. Please try again.'}
           </p>
           <Link
             to="/login"
@@ -133,8 +141,8 @@ export const SetPassword = () => {
       return (
         <div className="space-y-6">
           <p className="text-primary text-sm md:text-base">
-            This link is invalid or has already been used. Please contact your
-            administrator for a new invitation link.
+            {validation.message ??
+              'Something went wrong. Please try again.'}
           </p>
           <Link
             to="/login"

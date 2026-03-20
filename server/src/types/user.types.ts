@@ -44,6 +44,10 @@ export interface IUser {
   /** Reference to Role document; when set, permissions are resolved from Role. */
   roleId?: string | null;
   isActive: boolean;
+  /** True when the employee has been terminated (manually or via Homebase archived_at). */
+  isTerminated?: boolean;
+  /** Employment start date; used for review cycle reference. Falls back to homebaseData.created_at or createdAt. */
+  startDate?: Date | null;
   /** pending = invited, not yet logged in; active = has logged in at least once. */
   status?: UserStatus;
   /** Set when an invitation email has been sent (create+invite or resend). Used to show "Send" vs "Resend" invitation. */

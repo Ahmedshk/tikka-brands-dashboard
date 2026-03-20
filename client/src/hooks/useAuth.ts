@@ -4,6 +4,8 @@ import toast from "react-hot-toast";
 import { RootState, AppDispatch } from "../store/store";
 import { setUser, clearUser, setLoading } from "../store/slices/auth.slice";
 import { setCurrentLocation } from "../store/slices/location.slice";
+import { clearNotifications } from "../store/slices/notification.slice";
+import { connectSocket, disconnectSocket } from "../services/socket.service";
 import api from "../services/api.service";
 import { ApiResponse, User } from "../types";
 import { API_ENDPOINTS } from "../utils/constants";
@@ -24,13 +26,16 @@ export const useAuth = () => {
   const login = async (credentials: LoginCredentials): Promise<void> => {
     try {
       dispatch(setLoading(true));
-      const response = await api.post<ApiResponse<{ user: User }>>(
+      const response = await api.post<ApiResponse<{ user: User; socketToken?: string }>>(
         API_ENDPOINTS.AUTH.LOGIN,
         credentials
       );
 
       if (response.data.success && response.data.data) {
         dispatch(setUser(response.data.data.user));
+        if (response.data.data.socketToken) {
+          connectSocket(response.data.data.socketToken);
+        }
         toast.success("Login successful");
         navigate("/dashboard");
       } else {
@@ -61,8 +66,10 @@ export const useAuth = () => {
       // Continue with logout even if API call fails
       console.error("Logout error:", error);
     } finally {
+      disconnectSocket();
       dispatch(clearUser());
       dispatch(setCurrentLocation(null));
+      dispatch(clearNotifications());
       toast.success("Logged out successfully");
       navigate("/login");
     }

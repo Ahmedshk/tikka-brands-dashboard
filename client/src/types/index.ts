@@ -15,6 +15,7 @@ export interface User {
   firstName: string;
   lastName: string;
   role: UserRole;
+  roleId?: string | null;
   /** Resolved from Role; used for nav and route guards. */
   permissions?: RolePermissions;
   /** User's additive overrides (needed to compute effective permissions when role is 'all'). */

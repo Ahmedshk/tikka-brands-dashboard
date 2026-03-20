@@ -4,15 +4,49 @@ export interface ValidatedUserForm {
   trimmedFirst: string;
   trimmedLast: string;
   trimmedEmail: string;
+  /** ISO date string (yyyy-mm-dd) for API */
+  trimmedStartDate: string;
+}
+
+const MM_DD_YYYY_REG = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+
+/**
+ * Parse mm/dd/yyyy string to Date. Returns null if invalid.
+ */
+export function parseMmDdYyyy(value: string): Date | null {
+  const trimmed = value.trim();
+  const m = MM_DD_YYYY_REG.exec(trimmed);
+  if (!m) return null;
+  const month = Number.parseInt(m[1], 10);
+  const day = Number.parseInt(m[2], 10);
+  const year = Number.parseInt(m[3], 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2100) return null;
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return d;
+}
+
+/**
+ * Format a Date or ISO date string to mm/dd/yyyy.
+ */
+export function formatToMmDdYyyy(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date.trim()) : date;
+  if (!Number.isFinite(d.getTime())) return '';
+  const month = d.getMonth() + 1;
+  const day = d.getDate();
+  const year = d.getFullYear();
+  return `${month.toString().padStart(2, '0')}/${day.toString().padStart(2, '0')}/${year}`;
 }
 
 /**
  * Validates add/edit user form fields. Returns either an error message or the normalized field values.
+ * startDate must be in mm/dd/yyyy format; returned trimmedStartDate is ISO (yyyy-mm-dd) for the API.
  */
 export function validateAddUserForm(
   firstName: string,
   lastName: string,
-  email: string
+  email: string,
+  startDate: string
 ): { error: string } | ValidatedUserForm {
   const trimmedFirst = firstName.trim();
   const trimmedLast = lastName.trim();
@@ -27,7 +61,26 @@ export function validateAddUserForm(
   if (!emailRegex.test(trimmedEmail)) {
     return { error: 'Please enter a valid email address.' };
   }
-  return { trimmedFirst, trimmedLast, trimmedEmail };
+  const trimmedStartDate = startDate.trim();
+  if (!trimmedStartDate) {
+    return { error: 'Start date is required.' };
+  }
+  // Accept ISO (yyyy-mm-dd) from date picker or mm/dd/yyyy from text input
+  let isoDate: string;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedStartDate)) {
+    const d = new Date(trimmedStartDate);
+    if (!Number.isFinite(d.getTime())) {
+      return { error: 'Please enter a valid start date.' };
+    }
+    isoDate = trimmedStartDate;
+  } else {
+    const parsed = parseMmDdYyyy(trimmedStartDate);
+    if (!parsed) {
+      return { error: 'Start date must be in mm/dd/yyyy format.' };
+    }
+    isoDate = `${parsed.getFullYear()}-${(parsed.getMonth() + 1).toString().padStart(2, '0')}-${parsed.getDate().toString().padStart(2, '0')}`;
+  }
+  return { trimmedFirst, trimmedLast, trimmedEmail, trimmedStartDate: isoDate };
 }
 
 export interface ResolveProfileImageParams {

@@ -64,7 +64,7 @@ export class UserRepository {
       query._id = { $nin: filters.excludeUserIds.map((id) => new Types.ObjectId(id)) };
     }
     if (!filters.showArchived) {
-      query['homebaseData.job.archived_at'] = { $in: [null, undefined] };
+      query.isTerminated = { $ne: true };
     }
     const searchTerm = filters.search?.trim();
     if (searchTerm) {

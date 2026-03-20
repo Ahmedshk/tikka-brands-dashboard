@@ -93,6 +93,11 @@ export const navigationConfig: NavigationConfig = [
         path: '/dashboard/location-management',
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
       },
+      {
+        label: 'Review Settings',
+        path: '/dashboard/review-settings',
+        allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
+      },
     ],
   },
 ];

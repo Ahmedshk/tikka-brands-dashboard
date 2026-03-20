@@ -9,7 +9,7 @@ import { ApiResponse } from "../types";
 import { store } from "../store/store";
 import { clearUser, updateUserContext } from "../store/slices/auth.slice";
 
-function getErrorMessage(error: AxiosError<ApiResponse>): string {
+export function getErrorMessage(error: AxiosError<ApiResponse>): string {
   const message = error.response?.data?.message;
   if (typeof message === "string" && message.trim()) return message;
   if (error.response?.status) {

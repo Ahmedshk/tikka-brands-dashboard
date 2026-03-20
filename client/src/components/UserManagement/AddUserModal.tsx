@@ -14,6 +14,7 @@ import {
   resolveProfileImagePublicId,
   getSaveErrorMessage,
   getProfileAvatarContent,
+  formatToMmDdYyyy,
 } from '../../utils/addUserModalHelpers';
 import { normalizeLocationsToIds } from '../../utils/addEditRoleModalHelpers';
 
@@ -51,6 +52,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
   const [locations, setLocations] = useState<LocationListItem[]>([]);
   const [additionalLocationsOpen, setAdditionalLocationsOpen] = useState(false);
   const [additionalPermissionsOpen, setAdditionalPermissionsOpen] = useState(false);
+  const [startDate, setStartDate] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isEdit = Boolean(initialUser?._id);
@@ -91,6 +93,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
         setPermissionRemovals(null);
       }
       setLocationRemovals(initialUser.locationRemovals ?? []);
+      setStartDate(initialUser.startDate ? formatToMmDdYyyy(initialUser.startDate) : '');
     } else {
       setFirstName('');
       setLastName('');
@@ -103,6 +106,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
       setPermissionRemovals(null);
       setLocationOverrides([]);
       setLocationRemovals([]);
+      setStartDate('');
     }
     setProfileImageFile(null);
     setProfileImagePreview(null);
@@ -150,12 +154,12 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
   };
 
   const handleSubmit = async (invite: boolean) => {
-    const validation = validateAddUserForm(firstName, lastName, email);
+    const validation = validateAddUserForm(firstName, lastName, email, startDate);
     if ('error' in validation) {
       onError?.(validation.error);
       return;
     }
-    const { trimmedFirst, trimmedLast, trimmedEmail } = validation;
+    const { trimmedFirst, trimmedLast, trimmedEmail, trimmedStartDate } = validation;
 
     setSaving(true);
     try {
@@ -183,6 +187,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
           permissionRemovals: permissionRemovals ?? null,
           locationOverrides: locationOverrides.length ? locationOverrides : null,
           locationRemovals: locationRemovals.length ? locationRemovals : null,
+          startDate: trimmedStartDate,
         });
       } else {
         await userService.createUser({
@@ -195,6 +200,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
           roleId: roleId.trim() || null,
           invite,
           ...(profileImagePublicId != null && profileImagePublicId !== '' && { profileImagePublicId }),
+          startDate: trimmedStartDate,
         });
       }
       onSaved();
@@ -328,6 +334,21 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
               onChange={(e) => setEmail(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
               placeholder="email@example.com"
+            />
+          </div>
+          <div>
+            <label htmlFor="user-start-date" className="block text-sm font-medium text-primary mb-1">
+              Start date <span className="text-negative">*</span>
+            </label>
+            <input
+              id="user-start-date"
+              type="text"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
+              placeholder="MM/DD/YYYY"
+              aria-label="Start date (MM/DD/YYYY)"
+              required
             />
           </div>
           <div>

@@ -82,6 +82,13 @@ export function buildHomebaseSyncUpdatePayload(
   if (normalized.phone !== undefined && normalized.phone !== "") {
     payload.phone = normalized.phone;
   }
+  const archivedAt = normalized.homebaseData.job?.archived_at;
+  if (archivedAt != null && archivedAt !== "") {
+    payload.isTerminated = true;
+  }
+  if (normalized.homebaseData.created_at != null) {
+    payload.startDate = normalized.homebaseData.created_at;
+  }
   return payload;
 }
 
@@ -90,6 +97,8 @@ export function buildHomebaseSyncCreatePayload(
   normalized: NormalizedHomebaseEmployee,
   hashedPassword: string,
 ): Omit<IUser, "_id" | "createdAt" | "updatedAt"> {
+  const archivedAt = normalized.homebaseData.job?.archived_at;
+  const isTerminated = archivedAt != null && archivedAt !== "";
   return {
     email: normalized.email,
     password: hashedPassword,
@@ -98,8 +107,10 @@ export function buildHomebaseSyncCreatePayload(
     role: null,
     roleId: null,
     isActive: true,
+    isTerminated,
     status: "pending",
     ...(normalized.phone && { phone: normalized.phone }),
+    ...(normalized.homebaseData.created_at != null && { startDate: normalized.homebaseData.created_at }),
     homebaseData: {
       id: normalized.homebaseData.id,
       job: normalized.homebaseData.job ?? null,

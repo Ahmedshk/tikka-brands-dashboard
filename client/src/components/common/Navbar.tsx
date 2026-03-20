@@ -1,9 +1,16 @@
-import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/store';
 import { setCurrentLocation, getStoredLocationId } from '../../store/slices/location.slice';
+import {
+  setUnreadCount,
+  setNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+} from '../../store/slices/notification.slice';
 import { locationService } from '../../services/location.service';
+import { notificationService } from '../../services/notification.service';
 import { useAuth } from '../../hooks/useAuth';
 import type { LocationListItem } from '../../types';
 import { Spinner } from './Spinner';
@@ -30,6 +37,18 @@ const LogoutIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+function formatTimeAgo(dateStr: string): string {
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
 const LOCATION_MANAGEMENT_PATH = '/dashboard/location-management';
 const USER_MANAGEMENT_PATH = '/dashboard/user-management';
 const RBAC_MANAGEMENT_PATH = '/dashboard/rbac-management';
@@ -51,7 +70,31 @@ export const Navbar = () => {
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const notificationCount = 2; // Placeholder count
+  const notificationCount = useSelector((state: RootState) => state.notification.unreadCount);
+  const notifications = useSelector((state: RootState) => state.notification.notifications);
+  const notificationsLoaded = useSelector((state: RootState) => state.notification.isLoaded);
+
+  useEffect(() => {
+    if (!user) return;
+    notificationService.getUnreadCount().then((c) => dispatch(setUnreadCount(c))).catch(() => {});
+  }, [user?._id, dispatch]);
+
+  const loadNotifications = useCallback(() => {
+    if (notificationsLoaded) return;
+    notificationService.getNotifications({ limit: 20 }).then((res) => {
+      dispatch(setNotifications(res.notifications));
+    }).catch(() => {});
+  }, [notificationsLoaded, dispatch]);
+
+  const handleMarkRead = useCallback((id: string) => {
+    dispatch(markNotificationRead(id));
+    notificationService.markAsRead(id).catch(() => {});
+  }, [dispatch]);
+
+  const handleMarkAllRead = useCallback(() => {
+    dispatch(markAllNotificationsRead());
+    notificationService.markAllAsRead().catch(() => {});
+  }, [dispatch]);
 
   // Fetch locations and sync current location from storage or first location.
   // Refetch when user's allowed locations change (e.g. after admin changes role) so dropdown updates.
@@ -225,21 +268,55 @@ export const Navbar = () => {
           <div className="relative" ref={notificationRef}>
             <button
               type="button"
-              onClick={() => setNotificationDropdownOpen(!notificationDropdownOpen)}
+              onClick={() => {
+                setNotificationDropdownOpen(!notificationDropdownOpen);
+                if (!notificationDropdownOpen) loadNotifications();
+              }}
               className="relative p-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
             >
               <NotificationIcon className="w-6 h-6" />
               {notificationCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-quaternary text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {notificationCount.toString().padStart(2, '0')}
+                  {notificationCount > 99 ? '99' : notificationCount.toString().padStart(2, '0')}
                 </span>
               )}
             </button>
             {notificationDropdownOpen && (
-              <div className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                <div className="p-4">
-                  <h3 className="text-sm font-semibold text-secondary mb-2">Notifications</h3>
-                  <p className="text-sm text-primary">No new notifications</p>
+              <div className="absolute top-full right-0 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-[420px] flex flex-col">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                  <h3 className="text-sm font-semibold text-secondary">Notifications</h3>
+                  {notificationCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllRead}
+                      className="text-xs text-button-primary hover:underline cursor-pointer"
+                    >
+                      Mark all as read
+                    </button>
+                  )}
+                </div>
+                <div className="overflow-y-auto flex-1">
+                  {notifications.length === 0 ? (
+                    <p className="text-sm text-gray-500 p-4 text-center">No notifications</p>
+                  ) : (
+                    notifications.map((n) => (
+                      <button
+                        key={n._id}
+                        type="button"
+                        onClick={() => { if (!n.isRead) handleMarkRead(n._id); }}
+                        className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${!n.isRead ? 'bg-blue-50/40' : ''}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          {!n.isRead && <span className="w-2 h-2 rounded-full bg-button-primary mt-1.5 flex-shrink-0" />}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-primary truncate">{n.title}</p>
+                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
+                            <p className="text-xs text-gray-400 mt-1">{formatTimeAgo(n.createdAt)}</p>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -316,21 +393,46 @@ export const Navbar = () => {
             <div className="relative flex-shrink-0" ref={notificationMobileRef}>
               <button
                 type="button"
-                onClick={() => setNotificationDropdownOpen(!notificationDropdownOpen)}
+                onClick={() => {
+                  setNotificationDropdownOpen(!notificationDropdownOpen);
+                  if (!notificationDropdownOpen) loadNotifications();
+                }}
                 className="relative p-2 hover:opacity-80 rounded-lg transition-opacity cursor-pointer"
               >
                 <NotificationIcon className="w-5 h-5 text-quaternary" />
                 {notificationCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 bg-quaternary text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                    {notificationCount}
+                    {notificationCount > 99 ? '99' : notificationCount}
                   </span>
                 )}
               </button>
               {notificationDropdownOpen && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-lg shadow-lg z-[200]">
-                  <div className="p-4">
-                    <h3 className="text-sm font-semibold text-secondary mb-2">Notifications</h3>
-                    <p className="text-sm text-primary">No new notifications</p>
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-lg shadow-lg z-[200] max-h-80 flex flex-col">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                    <h3 className="text-sm font-semibold text-secondary">Notifications</h3>
+                    {notificationCount > 0 && (
+                      <button type="button" onClick={handleMarkAllRead} className="text-xs text-button-primary hover:underline cursor-pointer">
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="overflow-y-auto flex-1">
+                    {notifications.length === 0 ? (
+                      <p className="text-sm text-gray-500 p-4 text-center">No notifications</p>
+                    ) : (
+                      notifications.slice(0, 10).map((n) => (
+                        <button
+                          key={n._id}
+                          type="button"
+                          onClick={() => { if (!n.isRead) handleMarkRead(n._id); }}
+                          className={`w-full text-left px-4 py-2.5 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${!n.isRead ? 'bg-blue-50/40' : ''}`}
+                        >
+                          <p className="text-xs font-medium text-primary truncate">{n.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{formatTimeAgo(n.createdAt)}</p>
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
               )}

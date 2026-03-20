@@ -30,6 +30,6 @@ export const CLOUDINARY_FOLDERS = {
   TIKKA_BRANDS: 'tikka_brands',
   profile_image: 'tikka_brands/profile_image',
   training: 'tikka_brands/training',
-  /** Assignment documents by employee: employee_training/<userId> */
-  employee_training: 'employee_training',
+  /** Assignment documents by employee: tikka_brands/employee_training/<userId> */
+  employee_training: 'tikka_brands/employee_training',
 } as const;

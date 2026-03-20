@@ -9,6 +9,13 @@ import inventoryRoutes from "./inventory.routes.js";
 import roleRoutes from "./role.routes.js";
 import userRoutes from "./user.routes.js";
 import trainingRoutes from "./training.routes.js";
+import notificationRoutes from "./notification.routes.js";
+import reviewSettingsRoutes from "./reviewSettings.routes.js";
+import reviewCycleRoutes from "./reviewCycle.routes.js";
+import {
+  getSelfReviewByToken,
+  submitSelfReviewByToken,
+} from "../controllers/reviewCycle.controller.js";
 import { healthCheck } from "../controllers/health.controller.js";
 import { proxyProfileImage, proxyDocument } from "../controllers/proxy.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
@@ -54,5 +61,18 @@ router.use("/inventory", inventoryRoutes);
 
 // Training management (auth + training-management permission required)
 router.use("/trainings", trainingRoutes);
+
+// Notifications (auth required, no specific page permission)
+router.use("/notifications", notificationRoutes);
+
+// Review settings (auth required; GET allowed for all, PUT requires review-settings permission)
+router.use("/reviews/settings", reviewSettingsRoutes);
+
+// Public self-review by token (no auth)
+router.get("/reviews/self-review/by-token", getSelfReviewByToken);
+router.post("/reviews/self-review/submit-by-token", submitSelfReviewByToken);
+
+// Review cycles (auth required)
+router.use("/reviews/cycles", reviewCycleRoutes);
 
 export default router;

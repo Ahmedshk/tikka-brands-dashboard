@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
 import { Login } from './pages/auth/Login';
 import { ForgotPassword } from './pages/auth/ForgotPassword';
 import { SetPassword } from './pages/auth/SetPassword';
+import { SelfReviewByToken } from './pages/auth/SelfReviewByToken';
 import { CommandCenter } from './pages/dashboard/CommandCenter';
 import { SalesLaborDetails } from './pages/dashboard/SalesLaborDetails';
 import { SalesTrendReports } from './pages/dashboard/SalesTrendReports';
@@ -16,6 +17,7 @@ import { RBACManagement } from './pages/dashboard/RBACManagement';
 import { ManageHierarchy } from './pages/dashboard/ManageHierarchy';
 import { GoalSetting } from './pages/dashboard/GoalSetting';
 import { LocationManagement } from './pages/dashboard/LocationManagement';
+import { ReviewSettings } from './pages/dashboard/ReviewSettings';
 import { NoAccess } from './pages/dashboard/NoAccess';
 import { ErrorPage } from './pages/ErrorPage';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -64,6 +66,11 @@ export const router = createBrowserRouter([
   {
     path: '/set-password',
     element: <SetPassword />,
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/self-review',
+    element: <SelfReviewByToken />,
     errorElement: <ErrorPage />,
   },
   {
@@ -225,6 +232,17 @@ export const router = createBrowserRouter([
       <ErrorBoundary>
         <ProtectedRoute>
           <LocationManagement />
+        </ProtectedRoute>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/dashboard/review-settings',
+    element: (
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <ReviewSettings />
         </ProtectedRoute>
       </ErrorBoundary>
     ),

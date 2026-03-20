@@ -11,6 +11,7 @@ export interface ValidateSetPasswordTokenInvalid {
   success: false;
   valid: false;
   expired?: boolean;
+  message?: string;
 }
 
 export type ValidateSetPasswordTokenResponse =

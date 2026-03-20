@@ -41,4 +41,10 @@ export const API_ENDPOINTS = {
   ROLES: "/roles",
   USERS: "/users",
   TRAININGS: "/trainings",
+  NOTIFICATIONS: "/notifications",
+  REVIEWS: {
+    CYCLES: "/reviews/cycles",
+    DASHBOARD: "/reviews/dashboard",
+    SETTINGS: "/reviews/settings",
+  },
 } as const;

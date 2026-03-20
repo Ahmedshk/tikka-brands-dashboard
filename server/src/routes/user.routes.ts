@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { listUsers, createUser, updateUser, deleteUser, resendInvite, syncFromSquare, syncFromHomebase, uploadProfileImage } from '../controllers/user.controller.js';
+import { listUsers, createUser, updateUser, deleteUser, terminateUser, resendInvite, syncFromSquare, syncFromHomebase, uploadProfileImage } from '../controllers/user.controller.js';
 import { validate } from '../utils/zod.util.js';
 import {
   listUsersQuerySchema,
@@ -49,5 +49,6 @@ router.delete('/:id', validate(deleteUserParamsSchema), deleteUser);
 router.post('/sync-square', validate(syncFromSquareSchema), syncFromSquare);
 router.post('/sync-homebase', validate(syncFromHomebaseSchema), syncFromHomebase);
 router.post('/:id/resend-invite', validate(resendInviteParamsSchema), resendInvite);
+router.post('/:id/terminate', validate(resendInviteParamsSchema), terminateUser);
 
 export default router;

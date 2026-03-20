@@ -46,6 +46,11 @@ const userSchema = new Schema<UserDocument>(
       type: Boolean,
       default: true,
     },
+    isTerminated: {
+      type: Boolean,
+      default: false,
+    },
+    startDate: { type: Date, default: undefined },
     status: {
       type: String,
       enum: ['pending', 'active'],

@@ -2,8 +2,8 @@
 export interface StaffListRow {
   name: string;
   role: string;
-  /** Hire date for display (mm/dd/yyyy) */
-  hireDate: string;
+  /** Start date for display (mm/dd/yyyy) */
+  startDate: string;
   tenure: string;
   reviewStatus: 'Complete' | 'Due Soon' | 'Over Due';
 }

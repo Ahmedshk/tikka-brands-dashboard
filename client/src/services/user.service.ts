@@ -19,12 +19,15 @@ interface ApiUser {
   roleId?: string | null;
   status?: 'pending' | 'active';
   isActive?: boolean;
+  isTerminated?: boolean;
   invitationSentAt?: string | null;
   profileImageUrl?: string | null;
   permissionOverrides?: RolePermissions | null;
   locationOverrides?: string[] | null;
   permissionRemovals?: RolePermissions | null;
   locationRemovals?: string[] | null;
+  startDate?: string | null;
+  hasActiveReviewCycle?: boolean;
   createdAt?: string | null;
 }
 
@@ -44,12 +47,15 @@ function pickUser(u: ApiUser): ApiUser {
       roleId: (d.roleId as string | null) ?? null,
       status: d.status as 'pending' | 'active' | undefined,
       isActive: d.isActive as boolean | undefined,
+      isTerminated: d.isTerminated === true,
       invitationSentAt: d.invitationSentAt as string | null | undefined,
       profileImageUrl: d.profileImageUrl as string | null | undefined,
       permissionOverrides: (d.permissionOverrides as RolePermissions | null | undefined) ?? undefined,
       locationOverrides: (d.locationOverrides as string[] | null | undefined) ?? undefined,
       permissionRemovals: (d.permissionRemovals as RolePermissions | null | undefined) ?? undefined,
       locationRemovals: (d.locationRemovals as string[] | null | undefined) ?? undefined,
+      startDate: (d.startDate as string | null | undefined) ?? undefined,
+      hasActiveReviewCycle: d.hasActiveReviewCycle === true,
       createdAt: (d.createdAt as string | null | undefined) ?? undefined,
     };
   }
@@ -65,10 +71,9 @@ function toUserRow(u: ApiUser): UserRow {
   const name = [firstName, lastName].filter(Boolean).join(' ').trim() || email;
   const isActive = d.isActive !== false;
   const statusVal = d.status ?? 'active';
-  const archivedAt = d.homebaseData?.job?.archived_at;
-  const isArchived = archivedAt != null && archivedAt !== '';
+  const isTerminated = d.isTerminated === true;
   let status: 'Suspended' | 'Pending' | 'Active' | 'Terminated';
-  if (isArchived) {
+  if (isTerminated) {
     status = 'Terminated';
   } else if (!isActive) {
     status = 'Suspended';
@@ -90,12 +95,15 @@ function toUserRow(u: ApiUser): UserRow {
     roleId: d.roleId ?? null,
     status,
     isActive,
+    isTerminated,
     invitationSentAt: d.invitationSentAt ?? null,
     profileImageUrl: d.profileImageUrl ?? null,
     permissionOverrides: d.permissionOverrides ?? null,
     locationOverrides: d.locationOverrides ?? null,
     permissionRemovals: d.permissionRemovals ?? null,
     locationRemovals: d.locationRemovals ?? null,
+    startDate: d.startDate ?? null,
+    hasActiveReviewCycle: d.hasActiveReviewCycle === true,
     createdAt: d.createdAt ?? null,
   };
 }
@@ -133,6 +141,7 @@ export interface CreateUserPayload {
   roleId?: string | null;
   invite?: boolean;
   profileImagePublicId?: string | null;
+  startDate?: string | null;
 }
 
 export interface UpdateUserPayload {
@@ -149,6 +158,7 @@ export interface UpdateUserPayload {
   locationOverrides?: string[] | null;
   permissionRemovals?: RolePermissions | null;
   locationRemovals?: string[] | null;
+  startDate?: string | null;
 }
 
 export interface SyncFromSquareResult {
@@ -214,6 +224,14 @@ export const userService = {
     if (!res.data.success) {
       throw new Error(res.data.message ?? 'Failed to delete user');
     }
+  },
+
+  async terminateUser(userId: string): Promise<UserRow> {
+    const res = await api.post<ApiResponse<{ user: ApiUser }>>(`${BASE}/${userId}/terminate`);
+    if (!res.data.success || !res.data.data?.user) {
+      throw new Error(res.data.message ?? 'Failed to terminate user');
+    }
+    return toUserRow(res.data.data.user);
   },
 
   async resendInvite(userId: string): Promise<UserRow> {

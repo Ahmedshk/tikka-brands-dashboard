@@ -4,6 +4,7 @@ import { RootState, AppDispatch } from '../../store/store';
 import { setUser, setAuthCheckDone } from '../../store/slices/auth.slice';
 import { Spinner } from '../common/Spinner';
 import api from '../../services/api.service';
+import { connectSocket } from '../../services/socket.service';
 import { API_ENDPOINTS } from '../../utils/constants';
 import { ApiResponse } from '../../types';
 import type { User } from '../../types';
@@ -21,12 +22,15 @@ export const AuthInit = ({ children }: AuthInitProps) => {
 
     const runCheck = async () => {
       try {
-        const res = await api.post<ApiResponse<{ user: User }>>(API_ENDPOINTS.AUTH.REFRESH, undefined, {
+        const res = await api.post<ApiResponse<{ user: User; socketToken?: string }>>(API_ENDPOINTS.AUTH.REFRESH, undefined, {
           withCredentials: true,
         });
         if (cancelled) return;
         if (res.data.success && res.data.data?.user) {
           dispatch(setUser(res.data.data.user));
+          if (res.data.data.socketToken) {
+            connectSocket(res.data.data.socketToken);
+          }
         }
       } catch {
         if (!cancelled) {

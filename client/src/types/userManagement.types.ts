@@ -39,6 +39,7 @@ export interface UserRow {
   roleId?: string | null;
   status: UserStatus;
   isActive: boolean;
+  isTerminated?: boolean;
   /** When set, an invitation email has been sent at least once (shows "Resend" vs "Send" invitation). */
   invitationSentAt?: string | null;
   /** Proxy URL for profile image (backend hides Cloudinary URL). */
@@ -51,5 +52,9 @@ export interface UserRow {
   permissionRemovals?: RolePermissions | null;
   /** Location IDs removed from (role locations ∪ overrides) for this user. */
   locationRemovals?: string[] | null;
+  /** Employment start date (ISO string); used for review cycle. */
+  startDate?: string | null;
+  /** True when user has at least one non-complete review cycle. */
+  hasActiveReviewCycle?: boolean;
   createdAt?: string | null;
 }

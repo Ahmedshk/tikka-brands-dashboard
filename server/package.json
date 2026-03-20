@@ -17,6 +17,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@agendajs/mongo-backend": "^4.0.0",
+    "@sendgrid/mail": "^8.1.6",
+    "agenda": "^6.2.3",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.9.0",
     "cookie-parser": "^1.4.7",
@@ -33,6 +36,7 @@
     "react": "^19.2.3",
     "socket.io": "^4.8.3",
     "square": "^44.0.0",
+    "twilio": "^5.13.0",
     "zod": "^4.3.5"
   },
   "devDependencies": {

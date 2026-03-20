@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserService } from '../services/user.service.js';
 import { TrainingAssignmentRepository } from '../repositories/trainingAssignment.repository.js';
+import { ReviewCycleModel } from '../models/reviewCycle.model.js';
 import { NotFoundError, ValidationError } from '../utils/errors.util.js';
 import { uploadToCloudinary, deleteFromCloudinary } from '../config/cloudinary.js';
 import { PROFILE_IMAGE_FOLDER } from '../middleware/upload-profile.middleware.js';
@@ -25,6 +26,7 @@ function toUserDTO(
     invitationSentAt?: Date;
     createdAt?: Date;
     updatedAt?: Date;
+    startDate?: Date | null;
     password?: string;
     profileImagePublicId?: string | null;
     permissionOverrides?: import('../types/rbac.types.js').RolePermissions | null;
@@ -65,8 +67,10 @@ function toUserDTO(
     role: user.role ?? null,
     roleId: user.roleId ?? null,
     isActive: user.isActive ?? true,
+    isTerminated: (user as Record<string, unknown>).isTerminated === true,
     status: user.status ?? 'active',
     invitationSentAt: user.invitationSentAt,
+    startDate: (user as Record<string, unknown>).startDate ?? null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     profileImageUrl,
@@ -106,7 +110,13 @@ export const listUsers = async (
     if (typeof page === 'number') filters.page = page;
     if (typeof pageSize === 'number') filters.pageSize = pageSize;
     const result = await userService.getUsers(filters);
-    const dtos = result.users.map((u) => toUserDTO(req, u));
+    const activeCycleEmployeeIds = new Set(
+      (await ReviewCycleModel.distinct('employeeId', { status: { $nin: ['cycle_complete', 'cycle_superseded'] } })).map(String)
+    );
+    const dtos = result.users.map((u) => {
+      const id = u._id == null ? '' : typeof u._id === 'string' ? u._id : (u._id as { toString(): string }).toString();
+      return { ...toUserDTO(req, u), hasActiveReviewCycle: activeCycleEmployeeIds.has(id) };
+    });
     res.status(200).json({
       success: true,
       data: {
@@ -131,7 +141,14 @@ export const createUser = async (
 ): Promise<void> => {
   const profileImagePublicId = req.body.profileImagePublicId as string | undefined | null;
   try {
-    const { firstName, lastName, email, phone, squareId, homebaseData, roleId, invite } = req.body;
+    const { firstName, lastName, email, phone, squareId, homebaseData, roleId, invite, startDate: startDateRaw } = req.body;
+    const startDate =
+      startDateRaw != null && typeof startDateRaw === 'string' && startDateRaw.trim() !== ''
+        ? (() => {
+            const d = new Date(startDateRaw.trim());
+            return Number.isFinite(d.getTime()) ? d : undefined;
+          })()
+        : undefined;
     const user = await userService.createUser(
       {
         firstName,
@@ -142,6 +159,7 @@ export const createUser = async (
         homebaseData: homebaseData ?? null,
         roleId: roleId || null,
         profileImagePublicId: profileImagePublicId ?? null,
+        startDate: startDate ?? null,
       },
       { sendInvite: invite === true }
     );
@@ -204,7 +222,17 @@ export const updateUser = async (
       locationOverrides,
       permissionRemovals,
       locationRemovals,
+      startDate: startDateRaw,
     } = req.body;
+    const startDate =
+      startDateRaw === null || (typeof startDateRaw === 'string' && startDateRaw.trim() === '')
+        ? null
+        : typeof startDateRaw === 'string'
+          ? (() => {
+              const d = new Date(startDateRaw.trim());
+              return Number.isFinite(d.getTime()) ? d : undefined;
+            })()
+          : undefined;
     const user = await userService.updateUser(id, {
       firstName,
       lastName,
@@ -219,6 +247,7 @@ export const updateUser = async (
       ...(locationOverrides === undefined ? {} : { locationOverrides }),
       ...(permissionRemovals === undefined ? {} : { permissionRemovals }),
       ...(locationRemovals === undefined ? {} : { locationRemovals }),
+      ...(startDate !== undefined && { startDate: startDate ?? null }),
     });
     if (!user) {
       throw new NotFoundError('User not found');
@@ -280,6 +309,29 @@ export const syncFromHomebase = async (
     res.status(200).json({
       success: true,
       data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const terminateUser = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const id = req.params.id;
+    if (id === undefined || Array.isArray(id)) {
+      throw new ValidationError('Invalid user id');
+    }
+    const user = await userService.terminateUser(id);
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    res.status(200).json({
+      success: true,
+      data: { user: toUserDTO(req, user) },
     });
   } catch (error) {
     next(error);

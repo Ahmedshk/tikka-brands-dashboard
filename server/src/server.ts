@@ -6,6 +6,8 @@ import app from './app.js';
 import { connectDatabase } from './config/database.js';
 import { initializeCloudinary } from './config/cloudinary.js';
 import { initializeNodemailer } from './config/nodemailer.js';
+import { initializeSocket } from './config/socket.js';
+import { initializeAgenda, shutdownAgenda } from './config/agenda.js';
 import { RoleService } from './services/role.service.js';
 import { logger } from './utils/logger.util.js';
 
@@ -28,6 +30,12 @@ const startServer = async (): Promise<void> => {
     // Create HTTP server
     const httpServer = http.createServer(app);
 
+    // Initialize Socket.io for real-time notifications
+    initializeSocket(httpServer);
+
+    // Initialize Agenda.js scheduler
+    await initializeAgenda();
+
     // Start server
     httpServer.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
@@ -35,15 +43,16 @@ const startServer = async (): Promise<void> => {
     });
 
     // Graceful shutdown
-    process.on('SIGTERM', () => {
+    process.on('SIGTERM', async () => {
       logger.info('SIGTERM signal received: closing HTTP server');
+      await shutdownAgenda();
       httpServer.close(() => {
         logger.info('HTTP server closed');
         process.exit(0);
       });
     });
   } catch (error) {
-    logger.error('Failed to start server', error);
+    logger.error('Failed to start server', error instanceof Error ? { message: error.message, stack: error.stack } : error);
     process.exit(1);
   }
 };

@@ -34,6 +34,7 @@ export const login = async (
       message: "Login successful",
       data: {
         user: result.user,
+        socketToken: result.accessToken,
       },
     });
   } catch (error) {
@@ -98,7 +99,7 @@ export const refresh = async (
     res.status(200).json({
       success: true,
       message: "Token refreshed",
-      data: { user: result.user },
+      data: { user: result.user, socketToken: result.accessToken },
     });
   } catch (error) {
     logger.error("Refresh token error", error);

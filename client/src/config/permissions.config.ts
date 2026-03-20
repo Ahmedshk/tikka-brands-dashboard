@@ -93,7 +93,7 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     pageLabel: 'Reviews Management',
     components: [
       FULL_PAGE_ACCESS,
-      { id: 'kpi-office-staff', label: 'Office Staff' },
+      { id: 'kpi-office-staff', label: 'Staff in Review' },
       { id: 'kpi-reviews-due', label: 'Reviews Due' },
       { id: 'staff-list', label: 'Staff List' },
       { id: 'review-tracker-chart', label: 'Review Tracker Chart' },
@@ -140,6 +140,11 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
   {
     pageId: 'location-management',
     pageLabel: 'Location Management',
+    components: [FULL_PAGE_ACCESS],
+  },
+  {
+    pageId: 'review-settings',
+    pageLabel: 'Review Settings',
     components: [FULL_PAGE_ACCESS],
   },
 ];

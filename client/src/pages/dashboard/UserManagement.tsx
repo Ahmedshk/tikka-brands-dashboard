@@ -4,6 +4,7 @@ import { UserManagementTableCard, AddUserModal, SyncHomebaseModal } from '../../
 import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
 import type { UserRow } from '../../types/userManagement.types';
 import { userService } from '../../services/user.service';
+import { reviewService } from '../../services/review.service';
 import { roleService } from '../../services/role.service';
 import { locationService } from '../../services/location.service';
 import type { RoleRow } from '../../types/rbac.types';
@@ -28,9 +29,9 @@ export const UserManagement = () => {
   const [locationIdFilter, setLocationIdFilter] = useState('');
   const [addUserOpen, setAddUserOpen] = useState(false);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
-  const [userToDelete, setUserToDelete] = useState<UserRow | null>(null);
+  const [userToTerminate, setUserToTerminate] = useState<UserRow | null>(null);
   const [userToResendInvite, setUserToResendInvite] = useState<UserRow | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [terminating, setTerminating] = useState(false);
   const [sendingInvite, setSendingInvite] = useState(false);
   const [syncHomebaseOpen, setSyncHomebaseOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -113,18 +114,29 @@ export const UserManagement = () => {
     }
   };
 
-  const handleConfirmDelete = async () => {
-    if (!userToDelete?._id) return;
-    setDeleting(true);
+  const handleConfirmTerminate = async () => {
+    if (!userToTerminate?._id) return;
+    setTerminating(true);
     try {
-      await userService.deleteUser(userToDelete._id);
-      setUserToDelete(null);
+      await userService.terminateUser(userToTerminate._id);
+      setUserToTerminate(null);
       fetchUsers(pagination.page);
-      toast.success('User deleted successfully.');
+      toast.success('User terminated successfully.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete user');
+      toast.error(err instanceof Error ? err.message : 'Failed to terminate user');
     } finally {
-      setDeleting(false);
+      setTerminating(false);
+    }
+  };
+
+  const handleStartReviewCycle = async (row: UserRow) => {
+    if (!row._id) return;
+    try {
+      await reviewService.startCycleForUser(row._id);
+      fetchUsers(pagination.page);
+      toast.success('Review cycle started.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not start review cycle');
     }
   };
 
@@ -179,7 +191,7 @@ export const UserManagement = () => {
                 checked={showArchived}
                 onChange={(e) => setShowArchived(e.target.checked)}
                 className="accent-button-primary w-3.5 h-3.5"
-              />
+              />{' '}
               Show terminated
             </label>
             <div className="w-full sm:w-24 md:w-52 lg:w-60 xl:w-74 2xl:w-80 min-w-0">
@@ -212,8 +224,9 @@ export const UserManagement = () => {
           <UserManagementTableCard
             rows={users}
             onEdit={handleEdit}
-            onDelete={(row) => setUserToDelete(row)}
+            onTerminate={(row) => setUserToTerminate(row)}
             onResendInvite={(row) => setUserToResendInvite(row)}
+            onStartReviewCycle={handleStartReviewCycle}
             pagination={{
               currentPage: pagination.page,
               totalPages: pagination.totalPages,
@@ -231,17 +244,17 @@ export const UserManagement = () => {
           onError={(msg) => toast.error(msg)}
           initialUser={editUser}
         />
-        {userToDelete != null && (
+        {userToTerminate != null && (
           <ConfirmDialog
             isOpen
-            onClose={() => setUserToDelete(null)}
-            title="Delete user"
-            message={`Are you sure you want to delete "${userToDelete.name || userToDelete.email}"? This cannot be undone.`}
-            confirmLabel="Delete"
+            onClose={() => setUserToTerminate(null)}
+            title="Terminate employee"
+            message={`Are you sure you want to terminate "${userToTerminate.name || userToTerminate.email}"? Their review cycle will be stopped and they will be marked as terminated.`}
+            confirmLabel="Terminate"
             cancelLabel="Cancel"
-            onConfirm={handleConfirmDelete}
+            onConfirm={handleConfirmTerminate}
             variant="danger"
-            isLoading={deleting}
+            isLoading={terminating}
           />
         )}
         {userToResendInvite != null && (

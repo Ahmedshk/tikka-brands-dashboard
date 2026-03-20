@@ -5,6 +5,11 @@ import { BadRequestError } from '../utils/errors.util.js';
 
 const userRepository = new UserRepository();
 
+const MESSAGE_LINK_INVALID_OR_MISSING =
+  'The link is invalid or missing. Please ask your administrator to resend the verification email.';
+const MESSAGE_LINK_EXPIRED_OR_REPLACED =
+  'The link has expired or been replaced. Please ask your administrator to resend the verification email.';
+
 export const validateSetPasswordToken = async (
   req: Request,
   res: Response,
@@ -13,19 +18,32 @@ export const validateSetPasswordToken = async (
   try {
     const token = (req.query.token as string)?.trim();
     if (!token) {
-      res.status(200).json({ success: false, valid: false });
+      res.status(200).json({
+        success: false,
+        valid: false,
+        message: MESSAGE_LINK_INVALID_OR_MISSING,
+      });
       return;
     }
 
     const user = await userRepository.findByInvitationToken(token);
     if (!user) {
-      res.status(200).json({ success: false, valid: false });
+      res.status(200).json({
+        success: false,
+        valid: false,
+        message: MESSAGE_LINK_EXPIRED_OR_REPLACED,
+      });
       return;
     }
 
     const expiresAt = user.invitationTokenExpiresAt;
     if (!expiresAt || new Date() >= expiresAt) {
-      res.status(200).json({ success: false, valid: false, expired: true });
+      res.status(200).json({
+        success: false,
+        valid: false,
+        expired: true,
+        message: MESSAGE_LINK_EXPIRED_OR_REPLACED,
+      });
       return;
     }
 
@@ -56,13 +74,22 @@ export const setPassword = async (
 
     const user = await userRepository.findByInvitationToken(token?.trim());
     if (!user) {
-      res.status(200).json({ success: false, valid: false });
+      res.status(200).json({
+        success: false,
+        valid: false,
+        message: MESSAGE_LINK_EXPIRED_OR_REPLACED,
+      });
       return;
     }
 
     const expiresAt = user.invitationTokenExpiresAt;
     if (!expiresAt || new Date() >= expiresAt) {
-      res.status(200).json({ success: false, valid: false, expired: true });
+      res.status(200).json({
+        success: false,
+        valid: false,
+        expired: true,
+        message: MESSAGE_LINK_EXPIRED_OR_REPLACED,
+      });
       return;
     }
 

@@ -29,6 +29,7 @@ export const createUserSchema = z.object({
     roleId: z.string().min(1).optional().nullable(),
     invite: z.boolean().optional(),
     profileImagePublicId: z.string().trim().optional().nullable(),
+    startDate: z.string().min(1, 'Start date is required').trim(),
   }),
 });
 
@@ -64,6 +65,7 @@ export const updateUserSchema = z.object({
     locationOverrides: z.array(z.string().min(1)).optional().nullable(),
     permissionRemovals: permissionOverridesSchema.optional(),
     locationRemovals: z.array(z.string().min(1)).optional().nullable(),
+    startDate: z.string().trim().optional().nullable(),
   }),
 });
 
