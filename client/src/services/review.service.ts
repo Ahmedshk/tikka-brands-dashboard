@@ -23,6 +23,25 @@ export const reviewService = {
     return data.data;
   },
 
+  async uploadQuestionnaireDocument(file: File): Promise<{
+    publicId: string;
+    resourceType: "image" | "raw";
+    filename?: string;
+    format?: string;
+  }> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await api.post("/reviews/settings/upload-document", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data.data as {
+      publicId: string;
+      resourceType: "image" | "raw";
+      filename?: string;
+      format?: string;
+    };
+  },
+
   // --- Review Cycles ---
   async getCycles(params?: Record<string, string>): Promise<{ cycles: ReviewCycle[]; total: number }> {
     const { data } = await api.get("/reviews/cycles", { params });
@@ -69,7 +88,21 @@ export const reviewService = {
   /** Public (no auth): get self-review form by token for email link. */
   async getSelfReviewByToken(token: string): Promise<{
     cycleId: string;
-    questionnaire: Array<{ id: string; text: string; type: string; required: boolean; order: number; options?: string[] }>;
+    questionnaire: Array<{
+      id: string;
+      text: string;
+      type: string;
+      required: boolean;
+      order: number;
+      options?: string[];
+      attachments?: Array<{
+        publicId: string;
+        resourceType: "image" | "raw";
+        filename?: string;
+        format?: string;
+        url?: string;
+      }>;
+    }>;
     employeeName: string;
     alreadySubmitted: boolean;
   } | null> {
@@ -80,7 +113,21 @@ export const reviewService = {
     if (!res.data.success || !res.data.data) return null;
     return res.data.data as {
       cycleId: string;
-      questionnaire: Array<{ id: string; text: string; type: string; required: boolean; order: number; options?: string[] }>;
+      questionnaire: Array<{
+        id: string;
+        text: string;
+        type: string;
+        required: boolean;
+        order: number;
+        options?: string[];
+        attachments?: Array<{
+          publicId: string;
+          resourceType: "image" | "raw";
+          filename?: string;
+          format?: string;
+          url?: string;
+        }>;
+      }>;
       employeeName: string;
       alreadySubmitted: boolean;
     };

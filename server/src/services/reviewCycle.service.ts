@@ -22,6 +22,7 @@ import {
   REVIEW_CYCLE_TERMINAL_FOR_NEW_CYCLE,
   REVIEW_CYCLE_PAST_STATUSES,
 } from "../types/reviewCycle.types.js";
+import { getCloudinaryConfigured, getSecureDocumentUrl } from "../config/cloudinary.js";
 
 const notificationService = new NotificationService();
 const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
@@ -127,7 +128,21 @@ export class ReviewCycleService {
    */
   async getSelfReviewByToken(token: string): Promise<{
     cycleId: string;
-    questionnaire: Array<{ id: string; text: string; type: string; required: boolean; order: number; options?: string[] }>;
+    questionnaire: Array<{
+      id: string;
+      text: string;
+      type: string;
+      required: boolean;
+      order: number;
+      options?: string[];
+      attachments?: Array<{
+        publicId: string;
+        resourceType: "image" | "raw";
+        filename?: string;
+        format?: string;
+        url?: string;
+      }>;
+    }>;
     employeeName: string;
     alreadySubmitted: boolean;
   } | null> {
@@ -139,13 +154,30 @@ export class ReviewCycleService {
     const existing = await SelfReviewModel.findOne({ reviewCycleId: validated.cycle._id }).lean();
     return {
       cycleId,
-      questionnaire: questionnaire.map((q: { id: string; text: string; type: string; required: boolean; order: number; options?: string[] }) => ({
+      questionnaire: questionnaire.map((q: {
+        id: string;
+        text: string;
+        type: string;
+        required: boolean;
+        order: number;
+        options?: string[];
+        attachments?: Array<{ publicId: string; resourceType: "image" | "raw"; filename?: string; format?: string }>;
+      }) => ({
         id: q.id,
         text: q.text,
         type: q.type,
         required: q.required,
         order: q.order,
         options: q.options,
+        attachments: (q.attachments ?? []).map((a) => ({
+          publicId: a.publicId,
+          resourceType: a.resourceType,
+          filename: a.filename,
+          format: a.format,
+          ...(getCloudinaryConfigured()
+            ? { url: getSecureDocumentUrl(a.publicId, a.resourceType) }
+            : {}),
+        })),
       })),
       employeeName: [validated.employee.firstName, validated.employee.lastName].filter(Boolean).join(" ") || "Employee",
       alreadySubmitted: !!existing,

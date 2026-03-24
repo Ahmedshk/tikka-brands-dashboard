@@ -14,6 +14,16 @@ export interface ReviewSettingsDocument extends Document {
   updatedAt: Date;
 }
 
+const questionAttachmentSchema = new Schema(
+  {
+    publicId: { type: String, required: true },
+    resourceType: { type: String, enum: ["image", "raw"], required: true },
+    filename: { type: String },
+    format: { type: String },
+  },
+  { _id: false },
+);
+
 const questionSchema = new Schema<IQuestion>(
   {
     id: { type: String, required: true },
@@ -22,6 +32,7 @@ const questionSchema = new Schema<IQuestion>(
     options: { type: [String], default: undefined },
     required: { type: Boolean, default: true },
     order: { type: Number, required: true },
+    attachments: { type: [questionAttachmentSchema], default: undefined },
   },
   { _id: false },
 );

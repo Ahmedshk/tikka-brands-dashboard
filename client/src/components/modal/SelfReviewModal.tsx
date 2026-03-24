@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { reviewService } from "../../services/review.service";
 import { Spinner } from "../common/Spinner";
+import { ReviewQuestionAttachmentLinks } from "../ReviewSettings/ReviewQuestionAttachmentLinks";
 import type { Question, QuestionResponse, ReviewCycleStatus } from "../../types/review.types";
 
 interface SelfReviewModalProps {
@@ -111,6 +112,7 @@ export const SelfReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitted 
                 <label className="text-sm font-medium text-primary">
                   {q.text} {q.required && <span className="text-red-500">*</span>}
                 </label>
+                <ReviewQuestionAttachmentLinks attachments={q.attachments} />
                 {q.type === "text" && (
                   <textarea
                     value={answers[q.id] ?? ""}

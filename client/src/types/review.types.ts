@@ -1,6 +1,14 @@
 export const QUESTION_TYPES = ["text", "rating", "multiple_choice", "yes_no"] as const;
 export type QuestionType = (typeof QUESTION_TYPES)[number];
 
+/** Uploaded reference document for a review question (same storage pattern as training modules). */
+export interface ReviewQuestionAttachment {
+  publicId: string;
+  resourceType: "image" | "raw";
+  filename?: string;
+  format?: string;
+}
+
 export interface Question {
   id: string;
   text: string;
@@ -8,6 +16,7 @@ export interface Question {
   options?: string[];
   required: boolean;
   order: number;
+  attachments?: ReviewQuestionAttachment[];
 }
 
 export interface ReviewSettings {

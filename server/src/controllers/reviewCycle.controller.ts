@@ -9,6 +9,7 @@ import { AppError } from "../utils/errors.util.js";
 import type { QuestionResponse } from "../types/reviewCycle.types.js";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
+import { getReviewCheckInFolder } from "../config/upload.config.js";
 
 const service = new ReviewCycleService();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -228,7 +229,7 @@ export async function uploadCheckInDocument(req: Request, res: Response, next: N
     if (!checkIn) throw new AppError("Check-in not found. Submit check-in first.", 404);
 
     const employeeId = checkIn.employeeId.toString();
-    const folder = `tikka_brands/employee_reviews/${employeeId}/${period === "30" ? "30-day-checkin" : "60-day-checkin"}`;
+    const folder = getReviewCheckInFolder(employeeId, period);
 
     const uploadOne = async (file: Express.Multer.File) =>
       new Promise<{

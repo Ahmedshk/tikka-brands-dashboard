@@ -7,6 +7,7 @@ import { reviewService } from "../../services/review.service";
 import { Spinner } from "../common/Spinner";
 import type { Question, QuestionResponse, ActionPlan, ReviewCycleStatus, CheckIn } from "../../types/review.types";
 import { DocumentTypeThumbnail } from "./DocumentTypeThumbnail";
+import { ReviewQuestionAttachmentLinks } from "../ReviewSettings/ReviewQuestionAttachmentLinks";
 import { TRAINING_DOCUMENT_ACCEPT, getDocumentFormatFromFile, openFileInNewTab } from "../../utils/createTrainingModalHelpers";
 
 interface CheckInModalProps {
@@ -277,6 +278,7 @@ export const CheckInModal = ({ isOpen, onClose, cycleId, period, status, onSubmi
                     <label className="text-sm font-medium text-primary">
                       {q.text} {q.required && <span className="text-red-500">*</span>}
                     </label>
+                    <ReviewQuestionAttachmentLinks attachments={q.attachments} />
                     {q.type === "text" && (
                       <textarea value={answers[q.id] ?? ""} onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })}
                         disabled={!canSubmit} rows={3}

@@ -3,33 +3,42 @@
  */
 import type { UploadType, UploadTypeConfig } from "../types/upload.types.js";
 
-export type { UploadType, UploadTypeConfig };
-
 export const UPLOAD_CONFIG: Record<UploadType, UploadTypeConfig> = {
   profile_image: {
     maxBytes: 2 * 1024 * 1024, // 2 MB
-    allowedMimeTypes: ['image/jpeg', 'image/jpg', 'image/webp', 'image/png'],
+    allowedMimeTypes: ["image/jpeg", "image/jpg", "image/webp", "image/png"],
   },
   training_document: {
     maxBytes: 10 * 1024 * 1024, // 10 MB
     allowedMimeTypes: [
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ],
   },
 };
 
 export const CLOUDINARY_FOLDERS = {
   /** Parent folder for Tikka brands assets */
-  TIKKA_BRANDS: 'tikka_brands',
-  profile_image: 'tikka_brands/profile_image',
-  training: 'tikka_brands/training',
+  TIKKA_BRANDS: "tikka_brands",
+  profile_image: "tikka_brands/profile_image",
+  training: "tikka_brands/training",
+  questionnaires: "tikka_brands/questionnaires",
   /** Assignment documents by employee: tikka_brands/employee_training/<userId> */
-  employee_training: 'tikka_brands/employee_training',
+  employee_training: "tikka_brands/employee_training",
+  /** Review check-in documents by employee: tikka_brands/employee_reviews/<userId>/<30-day-checkin|60-day-checkin> */
+  employee_reviews: "tikka_brands/employee_reviews",
 } as const;
+
+export function getReviewCheckInFolder(
+  employeeId: string,
+  period: "30" | "60",
+): string {
+  const suffix = period === "30" ? "30-day-checkin" : "60-day-checkin";
+  return `${CLOUDINARY_FOLDERS.employee_reviews}/${employeeId}/${suffix}`;
+}

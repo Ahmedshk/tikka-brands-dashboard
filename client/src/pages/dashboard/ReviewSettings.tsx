@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
 import { Layout } from "../../components/common/Layout";
 import { Spinner } from "../../components/common/Spinner";
 import { RoleMappingSection } from "../../components/ReviewSettings/RoleMappingSection";
-import { QuestionnaireBuilder } from "../../components/ReviewSettings/QuestionnaireBuilder";
+import {
+  QuestionnaireBuilder,
+  type QuestionnaireBuilderHandle,
+} from "../../components/ReviewSettings/QuestionnaireBuilder";
 import { reviewService } from "../../services/review.service";
 import api from "../../services/api.service";
 import type { ReviewSettings as ReviewSettingsType, Question } from "../../types/review.types";
@@ -28,6 +31,10 @@ export const ReviewSettings = () => {
   const [selfReviewQuestions, setSelfReviewQuestions] = useState<Question[]>([]);
   const [managerReviewQuestions, setManagerReviewQuestions] = useState<Question[]>([]);
   const [checkInQuestions, setCheckInQuestions] = useState<Question[]>([]);
+
+  const selfQuestionnaireRef = useRef<QuestionnaireBuilderHandle>(null);
+  const managerQuestionnaireRef = useRef<QuestionnaireBuilderHandle>(null);
+  const checkInQuestionnaireRef = useRef<QuestionnaireBuilderHandle>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -59,15 +66,27 @@ export const ReviewSettings = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
+      const selfReviewQuestionnaire =
+        (await selfQuestionnaireRef.current?.flushPendingUploads()) ?? selfReviewQuestions;
+      const managerReviewQuestionnaire =
+        (await managerQuestionnaireRef.current?.flushPendingUploads()) ?? managerReviewQuestions;
+      const checkInQuestionnaire =
+        (await checkInQuestionnaireRef.current?.flushPendingUploads()) ?? checkInQuestions;
+
       const payload: Partial<ReviewSettingsType> = {
         employeeRoleIds,
         managerRoleIds,
         directorRoleIds,
-        selfReviewQuestionnaire: selfReviewQuestions,
-        managerReviewQuestionnaire: managerReviewQuestions,
-        checkInQuestionnaire: checkInQuestions,
+        selfReviewQuestionnaire,
+        managerReviewQuestionnaire,
+        checkInQuestionnaire,
       };
-      await reviewService.updateSettings(payload);
+      const saved = await reviewService.updateSettings(payload);
+      if (saved) {
+        setSelfReviewQuestions(saved.selfReviewQuestionnaire);
+        setManagerReviewQuestions(saved.managerReviewQuestionnaire);
+        setCheckInQuestions(saved.checkInQuestionnaire);
+      }
       toast.success("Review settings saved");
     } catch {
       toast.error("Failed to save review settings");
@@ -112,18 +131,21 @@ export const ReviewSettings = () => {
                 <hr className="border-gray-200" />
 
                 <QuestionnaireBuilder
+                  ref={selfQuestionnaireRef}
                   title="Self-Review Questionnaire"
                   questions={selfReviewQuestions}
                   onChange={setSelfReviewQuestions}
                 />
 
                 <QuestionnaireBuilder
+                  ref={managerQuestionnaireRef}
                   title="Manager Review Questionnaire"
                   questions={managerReviewQuestions}
                   onChange={setManagerReviewQuestions}
                 />
 
                 <QuestionnaireBuilder
+                  ref={checkInQuestionnaireRef}
                   title="30/60 Day Check-in Questionnaire"
                   questions={checkInQuestions}
                   onChange={setCheckInQuestions}

@@ -5,6 +5,7 @@ import { isAxiosError } from "axios";
 import { getErrorMessage } from "../../services/api.service";
 import { reviewService } from "../../services/review.service";
 import { Spinner } from "../common/Spinner";
+import { ReviewQuestionAttachmentLinks } from "../ReviewSettings/ReviewQuestionAttachmentLinks";
 import type { Question, QuestionResponse, ReviewCycleStatus, SelfReview, ManagerReview } from "../../types/review.types";
 
 interface ManagerReviewModalProps {
@@ -231,6 +232,7 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
                     <label className="text-sm font-medium text-primary">
                       {q.text} {q.required && <span className="text-red-500">*</span>}
                     </label>
+                    <ReviewQuestionAttachmentLinks attachments={q.attachments} />
                     {renderQuestionField(q, answers[q.id] ?? "", (v) => setAnswers({ ...answers, [q.id]: v }), isFormLocked)}
                   </div>
                 ))}

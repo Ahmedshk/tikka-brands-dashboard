@@ -5,6 +5,7 @@ import MainLogo from "@assets/logos/main_logo.svg?react";
 import { reviewService } from "../../services/review.service";
 import type { QuestionResponse } from "../../types/review.types";
 import { getResponseMessageFromError } from "../../utils/apiErrorHelpers";
+import { ReviewQuestionAttachmentLinks } from "../../components/ReviewSettings/ReviewQuestionAttachmentLinks";
 
 type QuestionnaireItem = {
   id: string;
@@ -13,6 +14,13 @@ type QuestionnaireItem = {
   required: boolean;
   order: number;
   options?: string[];
+  attachments?: Array<{
+    publicId: string;
+    resourceType: "image" | "raw";
+    filename?: string;
+    format?: string;
+    url?: string;
+  }>;
 };
 
 type PageState =
@@ -161,6 +169,7 @@ export const SelfReviewByToken = () => {
                   <label className="text-sm font-medium text-primary block">
                     {q.text} {q.required && <span className="text-red-500">*</span>}
                   </label>
+                  <ReviewQuestionAttachmentLinks attachments={q.attachments} variant="directUrl" />
                   {q.type === "text" && (
                     <textarea
                       value={answers[q.id] ?? ""}
