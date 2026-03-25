@@ -10,6 +10,8 @@ import type { QuestionResponse } from "../types/reviewCycle.types.js";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import { getReviewCheckInFolder } from "../config/upload.config.js";
+import { getSecureDocumentUrl } from "../config/cloudinary.js";
+import { isDocumentPublicIdAllowed } from "../config/documentProxyAllowlist.js";
 
 const service = new ReviewCycleService();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -23,9 +25,13 @@ export async function getCycles(req: Request, res: Response, next: NextFunction)
     const status = req.query.status as string | undefined;
     const userId = req.query.employeeId as string | undefined;
     const pastOnly = req.query.pastOnly === "true" || req.query.pastOnly === "1";
+    const activeOnly = req.query.activeOnly === "true" || req.query.activeOnly === "1";
     const locationIdRaw = req.query.locationId;
     const locationId =
       typeof locationIdRaw === "string" && locationIdRaw.trim() !== "" ? locationIdRaw.trim() : undefined;
+    const searchRaw = req.query.search;
+    const employeeNameSearch =
+      typeof searchRaw === "string" && searchRaw.trim() !== "" ? searchRaw.trim() : undefined;
     const actorUserId = req.user?.userId;
     const result = await service.getCycles({
       pastOnly,
@@ -34,7 +40,9 @@ export async function getCycles(req: Request, res: Response, next: NextFunction)
       ...(actorUserId != null && actorUserId !== "" ? { actorUserId } : {}),
       ...(userId != null && userId !== "" ? { userId } : {}),
       ...(status != null && status !== "" ? { status } : {}),
+      ...(activeOnly && !pastOnly ? { activeOnly: true } : {}),
       ...(locationId != null ? { locationId } : {}),
+      ...(employeeNameSearch != null ? { employeeNameSearch } : {}),
     });
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
@@ -50,7 +58,10 @@ export async function getCycleSnapshot(req: Request, res: Response, next: NextFu
 export async function getCycleById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const cycle = await ReviewCycleModel.findById(req.params.id)
-      .populate("employeeId", "firstName lastName email role profileImagePublicId startDate")
+      .populate(
+        "employeeId",
+        "firstName lastName email phone role profileImagePublicId startDate homebaseData",
+      )
       .populate("reviewedByManagerId", "firstName lastName email role")
       .populate("approvedByDirectorId", "firstName lastName email role")
       .lean();
@@ -106,6 +117,56 @@ export async function submitSelfReviewByToken(req: Request, res: Response, next:
     await service.submitSelfReviewByToken(token.trim(), responses);
     res.status(200).json({ success: true, message: "Self-review submitted successfully." });
   } catch (err) { next(err); }
+}
+
+function safeInlineFilenameForAttachment(filename?: string, format?: string): string | null {
+  const fn = filename?.trim() ?? "";
+  if (fn && !fn.includes("/") && !fn.includes("\\") && /\.[^./\\]+$/i.test(fn)) return fn;
+  const fmt = format?.trim().toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
+  if (fmt) return `document.${fmt}`;
+  return null;
+}
+
+/** Public (no auth): stream a self-review questionnaire attachment when token + publicId are valid. */
+export async function getSelfReviewDocumentByToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
+    const publicId = typeof req.query.publicId === "string" ? req.query.publicId.trim() : "";
+    if (!token || !publicId) {
+      res.status(400).json({ success: false, message: "token and publicId are required" });
+      return;
+    }
+    const meta = await service.findSelfReviewAttachmentForToken(token, publicId);
+    if (!meta) {
+      res.status(404).json({ success: false, message: "Document not found" });
+      return;
+    }
+    if (!isDocumentPublicIdAllowed(publicId)) {
+      res.status(400).json({ success: false, message: "Invalid document" });
+      return;
+    }
+    const cloudinaryUrl = getSecureDocumentUrl(publicId, meta.resourceType);
+    const docResponse = await fetch(cloudinaryUrl);
+    if (!docResponse.ok) {
+      res.status(404).json({ success: false, message: "Document not found" });
+      return;
+    }
+    const buffer = Buffer.from(await docResponse.arrayBuffer());
+    const contentType = docResponse.headers.get("content-type") ?? "application/octet-stream";
+    const safeFilename = safeInlineFilenameForAttachment(meta.filename, meta.format);
+    const contentDisposition = safeFilename
+      ? `inline; filename="${safeFilename.replace(/"/g, '\\"')}"`
+      : (docResponse.headers.get("content-disposition") ?? "inline");
+    res.set({
+      "Content-Type": contentType,
+      "Content-Length": buffer.length.toString(),
+      "Cache-Control": "private, max-age=300",
+      "Content-Disposition": contentDisposition,
+    });
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
 }
 
 export async function getSelfReview(req: Request, res: Response, next: NextFunction): Promise<void> {

@@ -8,7 +8,13 @@ import { Spinner } from "../common/Spinner";
 import type { Question, QuestionResponse, ActionPlan, ReviewCycleStatus, CheckIn } from "../../types/review.types";
 import { DocumentTypeThumbnail } from "./DocumentTypeThumbnail";
 import { ReviewQuestionAttachmentLinks } from "../ReviewSettings/ReviewQuestionAttachmentLinks";
-import { TRAINING_DOCUMENT_ACCEPT, getDocumentFormatFromFile, openFileInNewTab } from "../../utils/createTrainingModalHelpers";
+import {
+  TRAINING_DOCUMENT_ACCEPT,
+  PENDING_LOCAL_FILE_ROW_CLASSNAME,
+  PENDING_UPLOAD_TAG_CLASSNAME,
+  getDocumentFormatFromFile,
+  openFileInNewTab,
+} from "../../utils/createTrainingModalHelpers";
 
 interface CheckInModalProps {
   isOpen: boolean;
@@ -368,7 +374,7 @@ export const CheckInModal = ({ isOpen, onClose, cycleId, period, status, onSubmi
                 {documentFiles.length > 0 ? (
                   <ul className="space-y-2">
                     {documentFiles.map((doc) => (
-                      <li key={doc.id} className="flex items-center gap-3 p-2 rounded-lg border border-gray-200 bg-white">
+                      <li key={doc.id} className={PENDING_LOCAL_FILE_ROW_CLASSNAME}>
                         {isImageFile(doc.file) ? (
                           <FilePreviewThumbnail file={doc.file} />
                         ) : (
@@ -376,6 +382,7 @@ export const CheckInModal = ({ isOpen, onClose, cycleId, period, status, onSubmi
                         )}
                         <span className="text-sm text-primary truncate min-w-0 flex-1" title={doc.file.name}>
                           {doc.file.name}
+                          <span className={PENDING_UPLOAD_TAG_CLASSNAME}>(pending upload)</span>
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
                           <button

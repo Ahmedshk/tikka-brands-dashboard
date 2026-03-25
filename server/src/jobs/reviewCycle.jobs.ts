@@ -1,4 +1,5 @@
 import type { Agenda } from "agenda";
+import { Types } from "mongoose";
 import { ReviewCycleModel } from "../models/reviewCycle.model.js";
 import { UserModel } from "../models/user.model.js";
 import { NotificationService } from "../services/notification.service.js";
@@ -233,9 +234,23 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
 
       const unitsSinceSubmission = diffPeriod(now, new Date(selfReview.submittedAt));
       if (unitsSinceSubmission >= MANAGER_DEADLINE && (cycle.status === "manager_review_due" || cycle.status === "manager_review_pending")) {
-        await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "manager_review_past_due" } });
-        if (cycle.reviewedByManagerId) {
-          const managerId = cycle.reviewedByManagerId.toString();
+        const employeeId = cycle.employeeId.toString();
+        let managerId = cycle.reviewedByManagerId
+          ? cycle.reviewedByManagerId.toString()
+          : null;
+        if (!managerId) {
+          managerId = await reviewCycleService.getManagerForEmployee(employeeId);
+        }
+
+        const setFields: { status: ReviewCycleStatus; reviewedByManagerId?: Types.ObjectId } = {
+          status: "manager_review_past_due",
+        };
+        if (!cycle.reviewedByManagerId && managerId) {
+          setFields.reviewedByManagerId = new Types.ObjectId(managerId);
+        }
+        await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: setFields });
+
+        if (managerId) {
           const actionUrl = `${CLIENT_URL}/dashboard/reviews-management`;
           await notificationService.send({
             recipientId: managerId,
@@ -249,6 +264,11 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
             emailTemplateData: { actionUrl, firstName: await getEmployeeFirstName(managerId) },
             emailButtonText: "View",
           });
+        } else {
+          logger.warn("review:check-manager-deadline: past due but no manager to notify", {
+            cycleId: cycle._id.toString(),
+            employeeId,
+          });
         }
       }
     }
@@ -261,7 +281,9 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
     const cycles = await ReviewCycleModel.find({
       status: { $in: ["director_approval_due", "director_approval_pending", "director_approval_past_due"] },
       managerReviewId: { $ne: null },
-    }).populate("managerReviewId", "submittedAt").lean();
+    })
+      .populate("managerReviewId", "submittedAt")
+      .lean();
 
     for (const cycle of cycles) {
       if (await cancelCycleIfTerminated(cycle._id, cycle.employeeId.toString())) continue;
@@ -269,7 +291,12 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
       const mgrReview = cycle.managerReviewId as unknown as { submittedAt: Date } | undefined;
       if (!mgrReview?.submittedAt) continue;
 
-      const unitsSince = diffPeriod(now, new Date(mgrReview.submittedAt));
+      const c = cycle as typeof cycle & { directorApprovalStartedAt?: Date };
+      const deadlineStart = c.directorApprovalStartedAt
+        ? new Date(c.directorApprovalStartedAt)
+        : new Date(mgrReview.submittedAt);
+
+      const unitsSince = diffPeriod(now, deadlineStart);
       if (unitsSince >= DIRECTOR_DEADLINE && (cycle.status === "director_approval_due" || cycle.status === "director_approval_pending")) {
         await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "director_approval_past_due" } });
         if (cycle.approvedByDirectorId) {

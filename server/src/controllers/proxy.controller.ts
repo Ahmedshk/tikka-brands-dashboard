@@ -2,17 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { UserService } from '../services/user.service.js';
 import { NotFoundError, ValidationError } from '../utils/errors.util.js';
 import { getSecureUrl, getSecureDocumentUrl } from '../config/cloudinary.js';
+import { isDocumentPublicIdAllowed } from '../config/documentProxyAllowlist.js';
 
 const userService = new UserService();
-
-const ALLOWED_DOC_PREFIXES = [
-  'tikka_brands/training/',
-  'tikka_brands/employee_training/',
-  'tikka_brands/employee_reviews/',
-  // Legacy prefixes kept for backward compatibility with previously uploaded assets.
-  'employee_training/',
-  'employee-reviews/',
-];
 
 /**
  * GET /api/proxy/image/:userId
@@ -63,7 +55,7 @@ export const proxyProfileImage = async (
 /**
  * GET /api/proxy/document?publicId=...&resourceType=raw|image&filename=...
  * Fetches a document from Cloudinary and streams it. Auth required.
- * publicId must start with tikka_brands/training/ to avoid leaking other assets.
+ * publicId must match an allowed Cloudinary folder prefix (training, questionnaires, employee uploads, etc.).
  * Optional filename: used for Content-Disposition so downloads open with correct extension (e.g. report.docx).
  */
 export const proxyDocument = async (
@@ -76,7 +68,7 @@ export const proxyDocument = async (
     if (!publicId) {
       throw new ValidationError('publicId is required');
     }
-    if (!ALLOWED_DOC_PREFIXES.some((prefix) => publicId.startsWith(prefix))) {
+    if (!isDocumentPublicIdAllowed(publicId)) {
       throw new ValidationError('Invalid document');
     }
     const resourceType =

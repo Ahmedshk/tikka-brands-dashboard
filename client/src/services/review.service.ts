@@ -1,4 +1,6 @@
+import axios from "axios";
 import api from "./api.service";
+import { API_BASE_URL } from "../utils/constants";
 import type {
   ReviewSettings,
   ReviewCycle,
@@ -43,8 +45,11 @@ export const reviewService = {
   },
 
   // --- Review Cycles ---
-  async getCycles(params?: Record<string, string>): Promise<{ cycles: ReviewCycle[]; total: number }> {
-    const { data } = await api.get("/reviews/cycles", { params });
+  async getCycles(
+    params?: Record<string, string>,
+    config?: { signal?: AbortSignal },
+  ): Promise<{ cycles: ReviewCycle[]; total: number }> {
+    const { data } = await api.get("/reviews/cycles", { params, signal: config?.signal });
     return data.data;
   },
 
@@ -214,3 +219,38 @@ export const reviewService = {
     return data.data;
   },
 };
+
+/**
+ * Public self-review link: fetch questionnaire attachment through the API (correct filename/extension for raw files).
+ */
+export async function openSelfReviewAttachmentByToken(
+  token: string,
+  publicId: string,
+  suggestedFilename?: string,
+): Promise<void> {
+  const base = API_BASE_URL.replace(/\/$/, "");
+  const params = new URLSearchParams({ token, publicId });
+  const res = await axios.get(`${base}/reviews/self-review/document?${params.toString()}`, {
+    responseType: "blob",
+    withCredentials: true,
+  });
+  if (res.status !== 200 || !(res.data instanceof Blob)) {
+    throw new Error("Failed to load document");
+  }
+  const blob = res.data;
+  const blobUrl = URL.createObjectURL(blob);
+  if (suggestedFilename?.trim()) {
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = suggestedFilename.trim();
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } else {
+    const w = window.open(blobUrl, "_blank", "noopener,noreferrer");
+    if (w) setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    else URL.revokeObjectURL(blobUrl);
+  }
+}

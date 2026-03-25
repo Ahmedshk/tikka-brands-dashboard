@@ -21,6 +21,9 @@ import {
   openFileInNewTab,
   getDocumentFormatFromFile,
   getDocumentFormatFromModuleFile,
+  PENDING_LOCAL_FILE_ROW_CLASSNAME,
+  PENDING_UPLOAD_TAG_CLASSNAME,
+  SAVED_REMOTE_FILE_ROW_CLASSNAME,
   type CreateTrainingModuleForm,
   type CreateTrainingModuleFileForm,
 } from '../../utils/createTrainingModalHelpers';
@@ -427,7 +430,9 @@ export const EditTrainingModal = ({
                                     {mod.moduleFiles.map((mf) => (
                                       <li
                                         key={mf.id}
-                                        className="flex items-center gap-3 p-2 rounded-lg border border-gray-200 bg-white"
+                                        className={
+                                          mf.file ? PENDING_LOCAL_FILE_ROW_CLASSNAME : SAVED_REMOTE_FILE_ROW_CLASSNAME
+                                        }
                                       >
                                         {mf.file ? (
                                           <>
@@ -438,6 +443,7 @@ export const EditTrainingModal = ({
                                             )}
                                             <span className="text-sm text-primary truncate min-w-0 flex-1" title={mf.file.name}>
                                               {mf.file.name}
+                                              <span className={PENDING_UPLOAD_TAG_CLASSNAME}>(pending upload)</span>
                                             </span>
                                             <div className="flex items-center gap-1 shrink-0">
                                               <button

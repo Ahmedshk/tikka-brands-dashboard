@@ -9,6 +9,7 @@ import { initializeNodemailer } from './config/nodemailer.js';
 import { initializeSocket } from './config/socket.js';
 import { initializeAgenda, shutdownAgenda } from './config/agenda.js';
 import { RoleService } from './services/role.service.js';
+import { ReviewCycleService } from './services/reviewCycle.service.js';
 import { logger } from './utils/logger.util.js';
 
 // Load environment variables from server directory (so correct .env is used regardless of cwd)
@@ -26,6 +27,10 @@ const startServer = async (): Promise<void> => {
     // Ensure Owner (system) role exists
     const roleService = new RoleService();
     await roleService.ensureOwnerRoleExists();
+
+    const reviewCycleService = new ReviewCycleService();
+    const expiredTokenSuperseded = await reviewCycleService.supersedeCyclesWithExpiredSelfReviewTokenAtStartup();
+    logger.info('Review cycle startup repair (expired self-review token)', expiredTokenSuperseded);
 
     // Create HTTP server
     const httpServer = http.createServer(app);

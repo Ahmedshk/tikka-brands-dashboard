@@ -1,6 +1,7 @@
 import { io, Socket } from "socket.io-client";
 import { store } from "../store/store";
 import { addNotification, incrementUnreadCount } from "../store/slices/notification.slice";
+import { showInAppNotificationToast } from "../utils/inAppNotificationToast";
 
 const SOCKET_URL = (() => {
   try {
@@ -28,6 +29,7 @@ export function connectSocket(token: string): void {
   socket.on("notification:new", (notification) => {
     store.dispatch(addNotification(notification));
     store.dispatch(incrementUnreadCount());
+    showInAppNotificationToast(notification);
   });
 
   socket.on("disconnect", (reason) => {

@@ -169,7 +169,7 @@ export const SelfReviewByToken = () => {
                   <label className="text-sm font-medium text-primary block">
                     {q.text} {q.required && <span className="text-red-500">*</span>}
                   </label>
-                  <ReviewQuestionAttachmentLinks attachments={q.attachments} variant="directUrl" />
+                  <ReviewQuestionAttachmentLinks attachments={q.attachments} selfReviewToken={token ?? undefined} />
                   {q.type === "text" && (
                     <textarea
                       value={answers[q.id] ?? ""}

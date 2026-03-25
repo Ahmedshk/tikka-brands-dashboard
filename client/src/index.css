@@ -11,11 +11,40 @@
     min-width: 100vw !important;
     min-height: 100vh !important;
   }
+
+  /**
+   * Native `type="search"` clear control inherits accent / text color (often blue).
+   * Replace with a neutral gray icon (Reviews Management card headers, etc.).
+   */
+  .search-input-gray-clear::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 1rem;
+    height: 1rem;
+    margin-right: 0;
+    cursor: pointer;
+    background: center / contain no-repeat
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath fill='%239CA3AF' d='M14%201.41L12.59%200L7%205.59L1.41%200L0%201.41L5.59%207L0%2012.59L1.41%2014L7%208.41L12.59%2014L14%2012.59L8.41%207z'/%3E%3C/svg%3E");
+  }
+
+  .search-input-gray-clear::-moz-search-clear {
+    filter: grayscale(1) brightness(0.55);
+  }
 }
 
 @layer base {
+  html {
+    height: 100%;
+  }
+
   body {
     @apply font-primary text-primary;
+    min-height: 100%;
+    overflow-x: hidden;
+  }
+
+  #root {
+    min-height: 100%;
   }
 
   button {

@@ -1,5 +1,5 @@
-import { Toaster } from 'react-hot-toast';
 import { RouterProvider } from 'react-router-dom';
+import { ToastTopLayerHost } from './components/common/ToastTopLayerHost';
 import { AuthInit } from './components/auth/AuthInit';
 import { router } from './router';
 
@@ -9,7 +9,7 @@ function App() {
       <AuthInit>
         <RouterProvider router={router} />
       </AuthInit>
-      <Toaster position="top-center" toastOptions={{ duration: 4000 }} />
+      <ToastTopLayerHost />
     </>
   );
 }

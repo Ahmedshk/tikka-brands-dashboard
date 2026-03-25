@@ -18,6 +18,8 @@ export interface ReviewCycleDocument extends Document {
   managerReviewId?: Types.ObjectId;
   reviewedByManagerId?: Types.ObjectId;
   approvedByDirectorId?: Types.ObjectId;
+  /** When the cycle entered director approval (submit to DO). Director deadline counts from this, not manager review completion. */
+  directorApprovalStartedAt?: Date;
   directorDecision?: "approved" | "rejected" | null;
   directorComments?: string;
   salaryIncrement?: number;
@@ -45,6 +47,7 @@ const reviewCycleSchema = new Schema<ReviewCycleDocument>(
     managerReviewId: { type: Schema.Types.ObjectId, ref: "ManagerReview", default: undefined },
     reviewedByManagerId: { type: Schema.Types.ObjectId, ref: "User", default: undefined },
     approvedByDirectorId: { type: Schema.Types.ObjectId, ref: "User", default: undefined },
+    directorApprovalStartedAt: { type: Date, default: undefined },
     directorDecision: { type: String, enum: ["approved", "rejected", null], default: null },
     directorComments: { type: String, default: undefined },
     salaryIncrement: { type: Number, default: undefined },

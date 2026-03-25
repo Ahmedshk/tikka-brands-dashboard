@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSelector } from "react-redux";
+import axios from "axios";
 import toast from "react-hot-toast";
 import { Layout } from "../../components/common/Layout";
 import { Spinner } from "../../components/common/Spinner";
@@ -74,23 +75,27 @@ const STAGE_TITLES: Record<keyof typeof STAGE_LABELS, string> = {
   checkin30: "30 Day Check-in",
   checkin60: "60 Day Check-in",
 };
+/** Single green for completed / approved segments across all review tracker donuts. */
+const REVIEW_TRACKER_COMPLETE_COLOR = "#5DC54F";
+/** Neutral segment (e.g. “—” on non–self-review donuts); “Upcoming” on self review uses the same grey. */
+const REVIEW_TRACKER_NEUTRAL_GRAY = "#9CA3AF";
 const getTrackerColorDefault = (label: string): string => {
-  if (label === "—") return "#9CA3AF";
+  if (label === "—") return REVIEW_TRACKER_NEUTRAL_GRAY;
   if (label === "Past due" || label === "Late" || label === "Rejected") return "#EF4444";
   if (label === "Due" || label === "Pending" || label === "Form Available" || label === "Upcoming" || label === "75-Day Notice Sent") return "#FBC52A";
-  if (label === "Complete" || label === "Done" || label === "Approved") return "#5DC54F";
-  return "#9CA3AF";
+  if (label === "Complete" || label === "Done" || label === "Approved") return REVIEW_TRACKER_COMPLETE_COLOR;
+  return REVIEW_TRACKER_NEUTRAL_GRAY;
 };
 const getSelfReviewTrackerColor = (label: string): string => {
-  if (label === "Complete") return "#22C55E"; // green
+  if (label === "Complete") return REVIEW_TRACKER_COMPLETE_COLOR;
   if (label === "Past due") return "#EF4444"; // red
   if (label === "Late") return "#F59E0B"; // yellow
   if (label === "Due") return "#FBC52A"; // yellow (consistent with other Due labels)
   if (label === "Form Available") return "#06B6D4"; // cyan
-  if (label === "Upcoming") return "#94A3B8"; // slate
+  if (label === "Upcoming") return REVIEW_TRACKER_NEUTRAL_GRAY;
   if (label === "75-Day Notice Sent") return "#EC4899"; // pink
-  if (label === "—") return "#6B7280"; // gray
-  return "#9CA3AF";
+  if (label === "—") return REVIEW_TRACKER_NEUTRAL_GRAY;
+  return REVIEW_TRACKER_NEUTRAL_GRAY;
 };
 /** Excluded from “Review cycles” until 60-day check-in is finished (`cycle_complete` / terminal). */
 const CLOSED_CYCLE_STATUSES = new Set<ReviewCycleStatus>([
@@ -106,14 +111,27 @@ export const ReviewsManagement = () => {
   const user = useSelector((s: RootState) => s.auth.user);
 
   const [cycles, setCycles] = useState<ReviewCycle[]>([]);
-  const [pastCycles, setPastCycles] = useState<ReviewCycle[]>([]);
+  const [pastPreviewCycles, setPastPreviewCycles] = useState<ReviewCycle[]>([]);
+  const [pastListTotal, setPastListTotal] = useState(0);
+  const [pastModalCycles, setPastModalCycles] = useState<ReviewCycle[]>([]);
+  const [pastModalLoading, setPastModalLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [pastListLoading, setPastListLoading] = useState(true);
   const [settings, setSettings] = useState<ReviewSettings | null>(null);
   const [modal, setModal] = useState<ModalType>(null);
   const [pastDetailCycleId, setPastDetailCycleId] = useState<string | null>(null);
   const [detailViewType, setDetailViewType] = useState<"past" | "active">("past");
   const [showAllReviewCycles, setShowAllReviewCycles] = useState(false);
   const [showAllPastReviews, setShowAllPastReviews] = useState(false);
+  const [pastReviewsSearchInput, setPastReviewsSearchInput] = useState("");
+  const [pastReviewsSearchDebounced, setPastReviewsSearchDebounced] = useState("");
+  const [reviewCyclesSearchInput, setReviewCyclesSearchInput] = useState("");
+  const [reviewCyclesSearchDebounced, setReviewCyclesSearchDebounced] = useState("");
+  const [activePreviewCycles, setActivePreviewCycles] = useState<ReviewCycle[]>([]);
+  const [activeListTotal, setActiveListTotal] = useState(0);
+  const [activeModalCycles, setActiveModalCycles] = useState<ReviewCycle[]>([]);
+  const [activeModalLoading, setActiveModalLoading] = useState(false);
+  const [activeListLoading, setActiveListLoading] = useState(true);
   const [reviewCyclesPage, setReviewCyclesPage] = useState(1);
   const [pastReviewsPage, setPastReviewsPage] = useState(1);
 
@@ -123,16 +141,17 @@ export const ReviewsManagement = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string> = {
+        activeOnly: "true",
+        page: "1",
+        limit: "100",
+      };
       if (currentLocation?._id) params.locationId = currentLocation._id;
-      const pastParams = { ...params, pastOnly: "true", limit: "100" };
-      const [cyclesRes, pastRes, settingsRes] = await Promise.all([
+      const [cyclesRes, settingsRes] = await Promise.all([
         reviewService.getCycles(params),
-        reviewService.getCycles(pastParams).catch(() => ({ cycles: [] as ReviewCycle[], total: 0 })),
         reviewService.getSettings().catch(() => null),
       ]);
       setCycles(cyclesRes.cycles);
-      setPastCycles(pastRes.cycles);
       setSettings(settingsRes);
     } catch {
       toast.error("Failed to load review data");
@@ -140,6 +159,150 @@ export const ReviewsManagement = () => {
       setLoading(false);
     }
   }, [currentLocation?._id]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setPastReviewsSearchDebounced(pastReviewsSearchInput.trim());
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [pastReviewsSearchInput]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setReviewCyclesSearchDebounced(reviewCyclesSearchInput.trim());
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [reviewCyclesSearchInput]);
+
+  const loadActiveCyclesPreview = useCallback(async (search: string, signal?: AbortSignal) => {
+    setActiveListLoading(true);
+    try {
+      const params: Record<string, string> = {
+        activeOnly: "true",
+        page: "1",
+        limit: String(CARD_ROW_LIMIT),
+      };
+      if (currentLocation?._id) params.locationId = currentLocation._id;
+      if (search) params.search = search;
+      const res = await reviewService.getCycles(params, { signal });
+      if (signal?.aborted) return;
+      setActivePreviewCycles(res.cycles);
+      setActiveListTotal(res.total);
+    } catch (e: unknown) {
+      if (axios.isCancel(e) || (e as { code?: string })?.code === "ERR_CANCELED") return;
+      if (signal?.aborted) return;
+      toast.error("Failed to load review cycles");
+      setActivePreviewCycles([]);
+      setActiveListTotal(0);
+    } finally {
+      if (!signal?.aborted) setActiveListLoading(false);
+    }
+  }, [currentLocation?._id]);
+
+  const loadActiveCyclesModalPage = useCallback(
+    async (page: number, search: string, signal?: AbortSignal) => {
+      setActiveModalLoading(true);
+      try {
+        const params: Record<string, string> = {
+          activeOnly: "true",
+          page: String(page),
+          limit: String(MODAL_PAGE_SIZE),
+        };
+        if (currentLocation?._id) params.locationId = currentLocation._id;
+        if (search) params.search = search;
+        const res = await reviewService.getCycles(params, { signal });
+        if (signal?.aborted) return;
+        setActiveModalCycles(res.cycles);
+        setActiveListTotal(res.total);
+      } catch (e: unknown) {
+        if (axios.isCancel(e) || (e as { code?: string })?.code === "ERR_CANCELED") return;
+        if (signal?.aborted) return;
+        toast.error("Failed to load review cycles");
+        setActiveModalCycles([]);
+      } finally {
+        if (!signal?.aborted) setActiveModalLoading(false);
+      }
+    },
+    [currentLocation?._id],
+  );
+
+  const loadPastReviews = useCallback(async (search: string, signal?: AbortSignal) => {
+    setPastListLoading(true);
+    try {
+      const params: Record<string, string> = {
+        pastOnly: "true",
+        page: "1",
+        limit: String(CARD_ROW_LIMIT),
+      };
+      if (currentLocation?._id) params.locationId = currentLocation._id;
+      if (search) params.search = search;
+      const pastRes = await reviewService.getCycles(params, { signal });
+      if (signal?.aborted) return;
+      setPastPreviewCycles(pastRes.cycles);
+      setPastListTotal(pastRes.total);
+    } catch (e: unknown) {
+      if (axios.isCancel(e) || (e as { code?: string })?.code === "ERR_CANCELED") return;
+      if (signal?.aborted) return;
+      toast.error("Failed to load past reviews");
+      setPastPreviewCycles([]);
+      setPastListTotal(0);
+    } finally {
+      if (!signal?.aborted) setPastListLoading(false);
+    }
+  }, [currentLocation?._id]);
+
+  const loadPastModalPage = useCallback(
+    async (page: number, search: string, signal?: AbortSignal) => {
+      setPastModalLoading(true);
+      try {
+        const params: Record<string, string> = {
+          pastOnly: "true",
+          page: String(page),
+          limit: String(MODAL_PAGE_SIZE),
+        };
+        if (currentLocation?._id) params.locationId = currentLocation._id;
+        if (search) params.search = search;
+        const res = await reviewService.getCycles(params, { signal });
+        if (signal?.aborted) return;
+        setPastModalCycles(res.cycles);
+        setPastListTotal(res.total);
+      } catch (e: unknown) {
+        if (axios.isCancel(e) || (e as { code?: string })?.code === "ERR_CANCELED") return;
+        if (signal?.aborted) return;
+        toast.error("Failed to load past reviews");
+        setPastModalCycles([]);
+      } finally {
+        if (!signal?.aborted) setPastModalLoading(false);
+      }
+    },
+    [currentLocation?._id],
+  );
+
+  useEffect(() => {
+    const ac = new AbortController();
+    void loadPastReviews(pastReviewsSearchDebounced, ac.signal);
+    return () => ac.abort();
+  }, [pastReviewsSearchDebounced, loadPastReviews]);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    void loadActiveCyclesPreview(reviewCyclesSearchDebounced, ac.signal);
+    return () => ac.abort();
+  }, [reviewCyclesSearchDebounced, loadActiveCyclesPreview]);
+
+  useEffect(() => {
+    if (!showAllPastReviews) return;
+    const ac = new AbortController();
+    void loadPastModalPage(pastReviewsPage, pastReviewsSearchDebounced, ac.signal);
+    return () => ac.abort();
+  }, [showAllPastReviews, pastReviewsPage, pastReviewsSearchDebounced, loadPastModalPage]);
+
+  useEffect(() => {
+    if (!showAllReviewCycles) return;
+    const ac = new AbortController();
+    void loadActiveCyclesModalPage(reviewCyclesPage, reviewCyclesSearchDebounced, ac.signal);
+    return () => ac.abort();
+  }, [showAllReviewCycles, reviewCyclesPage, reviewCyclesSearchDebounced, loadActiveCyclesModalPage]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -157,24 +320,27 @@ export const ReviewsManagement = () => {
     () => cycles.filter((c) => !CLOSED_CYCLE_STATUSES.has(c.status)),
     [cycles],
   );
-  const activeCyclesPreview = useMemo(
-    () => activeCycles.slice(0, CARD_ROW_LIMIT),
-    [activeCycles],
-  );
-  const pastCyclesPreview = useMemo(
-    () => pastCycles.slice(0, CARD_ROW_LIMIT),
-    [pastCycles],
-  );
-  const reviewCyclesTotalPages = Math.max(1, Math.ceil(activeCycles.length / MODAL_PAGE_SIZE));
-  const pastReviewsTotalPages = Math.max(1, Math.ceil(pastCycles.length / MODAL_PAGE_SIZE));
-  const reviewCyclesPageRows = useMemo(() => {
-    const start = (reviewCyclesPage - 1) * MODAL_PAGE_SIZE;
-    return activeCycles.slice(start, start + MODAL_PAGE_SIZE);
-  }, [activeCycles, reviewCyclesPage]);
-  const pastReviewsPageRows = useMemo(() => {
-    const start = (pastReviewsPage - 1) * MODAL_PAGE_SIZE;
-    return pastCycles.slice(start, start + MODAL_PAGE_SIZE);
-  }, [pastCycles, pastReviewsPage]);
+  const reviewCyclesTotalPages = Math.max(1, Math.ceil(activeListTotal / MODAL_PAGE_SIZE));
+  const pastReviewsTotalPages = Math.max(1, Math.ceil(pastListTotal / MODAL_PAGE_SIZE));
+
+  useEffect(() => {
+    setPastReviewsPage(1);
+  }, [pastReviewsSearchDebounced]);
+
+  useEffect(() => {
+    setReviewCyclesPage(1);
+  }, [reviewCyclesSearchDebounced]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(pastListTotal / MODAL_PAGE_SIZE));
+    if (pastReviewsPage > maxPage) setPastReviewsPage(maxPage);
+  }, [pastListTotal, pastReviewsPage]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(activeListTotal / MODAL_PAGE_SIZE));
+    if (reviewCyclesPage > maxPage) setReviewCyclesPage(maxPage);
+  }, [activeListTotal, reviewCyclesPage]);
+
   const trackerDonuts: ReviewTrackerDonut[] = useMemo(() => {
     type StageKey = keyof typeof STAGE_LABELS;
     const stageKeys = Object.keys(STAGE_LABELS) as StageKey[];
@@ -236,7 +402,33 @@ export const ReviewsManagement = () => {
     }
   };
 
-  const handleRefresh = () => { fetchData(); };
+  const handleRefresh = useCallback(() => {
+    void fetchData();
+    const acPastPreview = new AbortController();
+    void loadPastReviews(pastReviewsSearchDebounced, acPastPreview.signal);
+    const acActivePreview = new AbortController();
+    void loadActiveCyclesPreview(reviewCyclesSearchDebounced, acActivePreview.signal);
+    if (showAllPastReviews) {
+      const acPastModal = new AbortController();
+      void loadPastModalPage(pastReviewsPage, pastReviewsSearchDebounced, acPastModal.signal);
+    }
+    if (showAllReviewCycles) {
+      const acActiveModal = new AbortController();
+      void loadActiveCyclesModalPage(reviewCyclesPage, reviewCyclesSearchDebounced, acActiveModal.signal);
+    }
+  }, [
+    fetchData,
+    loadPastReviews,
+    loadPastModalPage,
+    loadActiveCyclesPreview,
+    loadActiveCyclesModalPage,
+    pastReviewsSearchDebounced,
+    reviewCyclesSearchDebounced,
+    showAllPastReviews,
+    showAllReviewCycles,
+    pastReviewsPage,
+    reviewCyclesPage,
+  ]);
 
   return (
     <Layout>
@@ -266,15 +458,31 @@ export const ReviewsManagement = () => {
             <div className="mb-6">
                 <div className="min-h-0 flex flex-col">
                   <div className="bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden flex flex-col h-full min-h-0">
-                    <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2">
-                      <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">Review Cycles</h3>
+                    <div className="rounded-t-xl bg-primary px-5 py-2 md:py-2 flex-shrink-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                      <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white shrink-0">Review Cycles</h3>
+                      <label className="sr-only" htmlFor="review-cycles-search">
+                        Search review cycles by employee name
+                      </label>
+                      <input
+                        id="review-cycles-search"
+                        type="search"
+                        value={reviewCyclesSearchInput}
+                        onChange={(e) => setReviewCyclesSearchInput(e.target.value)}
+                        placeholder="Search by name…"
+                        autoComplete="off"
+                        className="search-input-gray-clear w-full min-w-0 sm:max-w-[220px] md:max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-primary placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-gray-300/50"
+                      />
                     </div>
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-                      {loading ? (
+                      {loading || activeListLoading ? (
                         <div className="flex flex-1 min-h-[220px] items-center justify-center px-5 py-12" aria-busy="true">
                           <Spinner size="lg" className="text-button-primary" />
                         </div>
-                      ) : activeCycles.length === 0 ? (
+                      ) : activeListTotal === 0 && reviewCyclesSearchDebounced ? (
+                        <p className="text-sm text-gray-500 text-center py-8 px-5 flex-1 flex items-center justify-center min-h-[200px]">
+                          No review cycles match this search.
+                        </p>
+                      ) : activeListTotal === 0 ? (
                         <div className="flex flex-1 min-h-[200px] items-center justify-center px-5 py-12">
                           <div className="text-center text-gray-400">
                             <p className="text-lg font-medium">No review cycles found</p>
@@ -285,7 +493,7 @@ export const ReviewsManagement = () => {
                       <>
                       {/* Mobile: card list (matches User Management pattern) */}
                       <div className="md:hidden divide-y divide-gray-200 overflow-y-auto min-h-0 flex-1">
-                        {activeCyclesPreview.map((c, i) => {
+                        {activePreviewCycles.map((c, i) => {
                           const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                           const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
                           const isOwner = user?.role === "Owner";
@@ -388,7 +596,7 @@ export const ReviewsManagement = () => {
                             </tr>
                           </thead>
                           <tbody className="text-primary">
-                            {activeCyclesPreview.map((c, i) => {
+                            {activePreviewCycles.map((c, i) => {
                               const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                               const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
                               const isOwner = user?.role === "Owner";
@@ -459,7 +667,7 @@ export const ReviewsManagement = () => {
                       </>
                       )}
                     </div>
-                    {!loading && activeCycles.length > 0 && (
+                    {!loading && !activeListLoading && activeListTotal > 0 && (
                     <div className="px-5 pb-5 flex justify-end flex-shrink-0">
                       <button
                         type="button"
@@ -482,15 +690,31 @@ export const ReviewsManagement = () => {
               <div className="grid grid-cols-1 gap-6 mb-6 items-stretch">
                 <div className="min-h-0 flex flex-col">
                   <div className="bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden flex flex-col h-full min-h-0">
-                    <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2 flex-shrink-0">
-                      <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">Past Reviews</h3>
+                    <div className="rounded-t-xl bg-primary px-5 py-2 md:py-2 flex-shrink-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                      <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white shrink-0">Past Reviews</h3>
+                      <label className="sr-only" htmlFor="past-reviews-search">
+                        Search past reviews by employee name
+                      </label>
+                      <input
+                        id="past-reviews-search"
+                        type="search"
+                        value={pastReviewsSearchInput}
+                        onChange={(e) => setPastReviewsSearchInput(e.target.value)}
+                        placeholder="Search by name…"
+                        autoComplete="off"
+                        className="search-input-gray-clear w-full min-w-0 sm:max-w-[220px] md:max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-primary placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-gray-300/50"
+                      />
                     </div>
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-                      {loading ? (
+                      {pastListLoading ? (
                         <div className="flex flex-1 min-h-[220px] items-center justify-center px-5 py-12" aria-busy="true">
                           <Spinner size="lg" className="text-button-primary" />
                         </div>
-                      ) : pastCycles.length === 0 ? (
+                      ) : pastListTotal === 0 && pastReviewsSearchDebounced ? (
+                        <p className="text-sm text-gray-500 text-center py-8 px-5 flex-1 flex items-center justify-center min-h-[200px]">
+                          No reviews match this search.
+                        </p>
+                      ) : pastListTotal === 0 ? (
                         <p className="text-sm text-gray-500 text-center py-8 px-5 flex-1 flex items-center justify-center min-h-[200px]">
                           No Past Review cycles yet.
                         </p>
@@ -498,7 +722,7 @@ export const ReviewsManagement = () => {
                         <>
                           {/* Mobile: card list (matches User Management pattern) */}
                           <div className="md:hidden divide-y divide-gray-200 overflow-y-auto min-h-0">
-                            {pastCyclesPreview.map((c, i) => {
+                            {pastPreviewCycles.map((c, i) => {
                               const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                               const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
                               const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
@@ -556,7 +780,7 @@ export const ReviewsManagement = () => {
                                 </tr>
                               </thead>
                               <tbody className="text-primary">
-                                {pastCyclesPreview.map((c, i) => {
+                                {pastPreviewCycles.map((c, i) => {
                                   const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                                   const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
                                   const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
@@ -599,7 +823,7 @@ export const ReviewsManagement = () => {
                         </>
                       )}
                     </div>
-                    {!loading && pastCycles.length > 0 && (
+                    {!loading && !pastListLoading && pastListTotal > 0 && (
                     <div className="px-5 pb-5 flex justify-end flex-shrink-0">
                       <button
                         type="button"
@@ -638,8 +862,18 @@ export const ReviewsManagement = () => {
                 <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">All Review Cycles</h3>
               </div>
               <div className="flex-1 min-h-0 overflow-hidden border-x border-gray-200 flex flex-col">
+                {activeModalLoading ? (
+                  <div className="flex flex-1 min-h-[200px] items-center justify-center py-12">
+                    <Spinner size="lg" className="text-button-primary" />
+                  </div>
+                ) : activeListTotal === 0 && reviewCyclesSearchDebounced ? (
+                  <p className="text-sm text-gray-500 text-center py-10 px-5">No review cycles match this search.</p>
+                ) : activeListTotal === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-10 px-5">No review cycles found.</p>
+                ) : (
+                <>
                 <div className="md:hidden flex-1 min-h-0 overflow-y-auto divide-y divide-gray-200">
-                  {reviewCyclesPageRows.map((c, i) => {
+                  {activeModalCycles.map((c, i) => {
                     const globalIndex = (reviewCyclesPage - 1) * MODAL_PAGE_SIZE + i;
                     const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                     const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
@@ -746,7 +980,7 @@ export const ReviewsManagement = () => {
                       </tr>
                     </thead>
                     <tbody className="text-primary">
-                      {reviewCyclesPageRows.map((c, i) => {
+                      {activeModalCycles.map((c, i) => {
                         const globalIndex = (reviewCyclesPage - 1) * MODAL_PAGE_SIZE + i;
                         const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                         const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
@@ -817,14 +1051,18 @@ export const ReviewsManagement = () => {
                     </tbody>
                   </table>
                 </div>
+                </>
+                )}
               </div>
+              {!activeModalLoading && activeListTotal > 0 ? (
               <Pagination
                 currentPage={reviewCyclesPage}
                 totalPages={reviewCyclesTotalPages}
-                totalItems={activeCycles.length}
+                totalItems={activeListTotal}
                 pageSize={MODAL_PAGE_SIZE}
                 onPageChange={setReviewCyclesPage}
               />
+              ) : null}
             </div>
           </div>
         </div>
@@ -847,82 +1085,46 @@ export const ReviewsManagement = () => {
                 <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">All Past Reviews</h3>
               </div>
               <div className="flex-1 min-h-0 overflow-hidden border-x border-gray-200 flex flex-col">
-                <div className="md:hidden flex-1 min-h-0 overflow-y-auto divide-y divide-gray-200">
-                  {pastReviewsPageRows.map((c, i) => {
-                    const globalIndex = (pastReviewsPage - 1) * MODAL_PAGE_SIZE + i;
-                    const emp = typeof c.employeeId === "object" ? c.employeeId : null;
-                    const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
-                    const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
-                    const name = emp ? `${emp.firstName} ${emp.lastName}` : "—";
-                    const cardBg = globalIndex % 2 === 0 ? "bg-white" : "bg-gray-50/50";
-                    return (
-                      <div key={c._id} className={`${cardBg} px-4 py-4 flex flex-col gap-3`}>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-primary truncate" title={name}>
-                            {name}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-1">
-                            <span className="font-medium">Cycle:</span> #{c.cycleNumber}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-1">
-                            <span className="font-medium">Status:</span>
-                            <span
-                              className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}
-                            >
-                              {getStatusLabel(c.status)}
-                            </span>
-                          </p>
-                          <p className="text-xs text-gray-600 mt-0.5">
-                            <span className="font-medium">Period:</span> {periodStart} – {periodEnd}
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-end">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDetailViewType("past");
-                              setPastDetailCycleId(c._id);
-                              setShowAllPastReviews(false);
-                            }}
-                            className="p-2 text-primary hover:bg-gray-200 rounded transition-colors"
-                            aria-label="View Past Review"
-                            title="View Past Review"
-                          >
-                            <ViewIcon className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="hidden md:block flex-1 min-h-0 overflow-auto px-5 pt-4">
-                  <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm min-w-[520px]">
-                    <thead>
-                      <tr className="text-left text-secondary border-b border-gray-200">
-                        <th className="pb-3 pr-2 pl-2 font-semibold">Employee</th>
-                        <th className="pb-3 pr-2 font-semibold text-center">Cycle</th>
-                        <th className="pb-3 pr-2 font-semibold text-center">Status</th>
-                        <th className="pb-3 pr-2 font-semibold text-center">Period</th>
-                        <th className="pb-3 pr-2 font-semibold text-center">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-primary">
-                      {pastReviewsPageRows.map((c, i) => {
+                {pastModalLoading ? (
+                  <div className="flex flex-1 min-h-[200px] items-center justify-center py-12">
+                    <Spinner size="lg" className="text-button-primary" />
+                  </div>
+                ) : pastListTotal === 0 && pastReviewsSearchDebounced ? (
+                  <p className="text-sm text-gray-500 text-center py-10 px-5">No reviews match this search.</p>
+                ) : pastListTotal === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-10 px-5">No Past Review cycles yet.</p>
+                ) : (
+                  <>
+                    <div className="md:hidden flex-1 min-h-0 overflow-y-auto divide-y divide-gray-200">
+                      {pastModalCycles.map((c, i) => {
                         const globalIndex = (pastReviewsPage - 1) * MODAL_PAGE_SIZE + i;
                         const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                         const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
                         const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
+                        const name = emp ? `${emp.firstName} ${emp.lastName}` : "—";
+                        const cardBg = globalIndex % 2 === 0 ? "bg-white" : "bg-gray-50/50";
                         return (
-                          <tr key={c._id} className={globalIndex % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
-                            <td className="py-3 pr-2 pl-2">{emp ? `${emp.firstName} ${emp.lastName}` : "—"}</td>
-                            <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
-                            <td className="py-3 pr-2 text-center">
-                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}>
-                                {getStatusLabel(c.status)}
-                              </span>
-                            </td>
-                            <td className="py-3 pr-2 text-center whitespace-nowrap">{periodStart} - {periodEnd}</td>
-                            <td className="py-3 pr-2 text-center">
+                          <div key={c._id} className={`${cardBg} px-4 py-4 flex flex-col gap-3`}>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-primary truncate" title={name}>
+                                {name}
+                              </p>
+                              <p className="text-xs text-gray-600 mt-1">
+                                <span className="font-medium">Cycle:</span> #{c.cycleNumber}
+                              </p>
+                              <p className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-1">
+                                <span className="font-medium">Status:</span>
+                                <span
+                                  className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}
+                                >
+                                  {getStatusLabel(c.status)}
+                                </span>
+                              </p>
+                              <p className="text-xs text-gray-600 mt-0.5">
+                                <span className="font-medium">Period:</span> {periodStart} – {periodEnd}
+                              </p>
+                            </div>
+                            <div className="flex items-center justify-end">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -930,27 +1132,77 @@ export const ReviewsManagement = () => {
                                   setPastDetailCycleId(c._id);
                                   setShowAllPastReviews(false);
                                 }}
-                                className="p-1.5 text-button-primary hover:bg-blue-50 rounded cursor-pointer"
+                                className="p-2 text-primary hover:bg-gray-200 rounded transition-colors"
                                 aria-label="View Past Review"
                                 title="View Past Review"
                               >
                                 <ViewIcon className="w-4 h-4" />
                               </button>
-                            </td>
-                          </tr>
+                            </div>
+                          </div>
                         );
                       })}
-                    </tbody>
-                  </table>
-                </div>
+                    </div>
+                    <div className="hidden md:block flex-1 min-h-0 overflow-auto px-5 pt-4">
+                      <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm min-w-[520px]">
+                        <thead>
+                          <tr className="text-left text-secondary border-b border-gray-200">
+                            <th className="pb-3 pr-2 pl-2 font-semibold">Employee</th>
+                            <th className="pb-3 pr-2 font-semibold text-center">Cycle</th>
+                            <th className="pb-3 pr-2 font-semibold text-center">Status</th>
+                            <th className="pb-3 pr-2 font-semibold text-center">Period</th>
+                            <th className="pb-3 pr-2 font-semibold text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-primary">
+                          {pastModalCycles.map((c, i) => {
+                            const globalIndex = (pastReviewsPage - 1) * MODAL_PAGE_SIZE + i;
+                            const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                            const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
+                            const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
+                            return (
+                              <tr key={c._id} className={globalIndex % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
+                                <td className="py-3 pr-2 pl-2">{emp ? `${emp.firstName} ${emp.lastName}` : "—"}</td>
+                                <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
+                                <td className="py-3 pr-2 text-center">
+                                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}>
+                                    {getStatusLabel(c.status)}
+                                  </span>
+                                </td>
+                                <td className="py-3 pr-2 text-center whitespace-nowrap">{periodStart} - {periodEnd}</td>
+                                <td className="py-3 pr-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDetailViewType("past");
+                                      setPastDetailCycleId(c._id);
+                                      setShowAllPastReviews(false);
+                                    }}
+                                    className="p-1.5 text-button-primary hover:bg-blue-50 rounded cursor-pointer"
+                                    aria-label="View Past Review"
+                                    title="View Past Review"
+                                  >
+                                    <ViewIcon className="w-4 h-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </div>
-              <Pagination
-                currentPage={pastReviewsPage}
-                totalPages={pastReviewsTotalPages}
-                totalItems={pastCycles.length}
-                pageSize={MODAL_PAGE_SIZE}
-                onPageChange={setPastReviewsPage}
-              />
+              {!pastModalLoading && pastListTotal > 0 ? (
+                <Pagination
+                  currentPage={pastReviewsPage}
+                  totalPages={pastReviewsTotalPages}
+                  totalItems={pastListTotal}
+                  pageSize={MODAL_PAGE_SIZE}
+                  onPageChange={setPastReviewsPage}
+                />
+              ) : null}
             </div>
           </div>
         </div>
@@ -1011,6 +1263,10 @@ export const ReviewsManagement = () => {
         }}
         cycleId={pastDetailCycleId}
         viewType={detailViewType}
+        onSelectPastCycleId={(id) => {
+          setDetailViewType("past");
+          setPastDetailCycleId(id);
+        }}
       />
     </Layout>
   );

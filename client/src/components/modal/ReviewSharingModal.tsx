@@ -3,8 +3,20 @@ import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { reviewService } from "../../services/review.service";
 import { Spinner } from "../common/Spinner";
+import { ReviewEmployeeBioSection } from "../review/ReviewEmployeeBioSection";
+import {
+  personLabelFromReviewRef,
+  personRoleFromReviewRef,
+  reviewEmployeeHeaderSubtitle,
+} from "../../utils/employeeBioHelpers";
+import { ReviewQuestionResponseList } from "../../utils/reviewQuestionResponseList";
 import type {
-  SelfReview, ManagerReview, ReviewCycle, ActionPlanItem, ReviewCycleStatus,
+  ActionPlanItem,
+  ManagerReview,
+  ReviewCycle,
+  ReviewCycleStatus,
+  ReviewSettings,
+  SelfReview,
 } from "../../types/review.types";
 
 interface ReviewSharingModalProps {
@@ -28,25 +40,38 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
     { period: "90", description: "", targetScore: "", currentScore: "" },
   ]);
   const [step, setStep] = useState<"review" | "action-plan">("review");
+  /** Full cycle with populated employee (phone, homebase, etc.) for bio. */
+  const [cycleDetail, setCycleDetail] = useState<ReviewCycle | null>(null);
+  const [reviewSettings, setReviewSettings] = useState<ReviewSettings | null>(null);
 
   const canAct = (["approved", "sharing_due", "sharing_pending", "sharing_past_due"] as ReviewCycleStatus[]).includes(cycle.status);
+  const cycleForBio = cycleDetail ?? cycle;
+  const sharingHeaderSubtitle = reviewEmployeeHeaderSubtitle(cycleForBio);
 
   useEffect(() => {
     if (isOpen) dialogRef.current?.showModal();
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setCycleDetail(null);
+      setReviewSettings(null);
+      return;
+    }
     (async () => {
       setLoading(true);
       try {
-        const [selfRev, mgrRev, existing] = await Promise.all([
+        const [selfRev, mgrRev, existing, fullCycle, settings] = await Promise.all([
           reviewService.getSelfReview(cycle._id).catch(() => null),
           reviewService.getManagerReview(cycle._id).catch(() => null),
           reviewService.getActionPlan(cycle._id).catch(() => null),
+          reviewService.getCycleById(cycle._id).catch(() => null),
+          reviewService.getSettings().catch(() => null),
         ]);
         setSelfReview(selfRev);
         setManagerReview(mgrRev);
+        setCycleDetail(fullCycle);
+        setReviewSettings(settings);
         if (existing?.items.length) setActionItems(existing.items);
       } catch { toast.error("Failed to load review data"); }
       finally { setLoading(false); }
@@ -84,17 +109,6 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
     finally { setSubmitting(false); }
   };
 
-  const renderResponses = (responses: { questionId: string; questionText: string; answer: string }[]) => (
-    <div className="space-y-2">
-      {responses.map((r) => (
-        <div key={r.questionId} className="text-sm">
-          <span className="font-medium text-gray-700">{r.questionText}</span>
-          <p className="text-gray-800 mt-0.5">{r.answer}</p>
-        </div>
-      ))}
-    </div>
-  );
-
   const handleClose = () => {
     dialogRef.current?.close();
     onClose();
@@ -110,16 +124,70 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
       </div>
     );
   } else if (step === "review") {
+    const managerRole = personRoleFromReviewRef(cycleForBio.reviewedByManagerId);
+    const mgrQuestionnaire = reviewSettings?.managerReviewQuestionnaire;
+    let managerReviewBody: ReactNode;
+    if (!managerReview) {
+      managerReviewBody = <p className="text-sm text-gray-400 italic">Not available</p>;
+    } else if (managerReview.revisionHistory && managerReview.revisionHistory.length >= 2) {
+      managerReviewBody = (
+        <>
+          <div>
+            <h4 className="text-xs font-semibold text-green-800 mb-2">
+              Original (before viewing employee self-review)
+            </h4>
+            <ReviewQuestionResponseList
+              responses={managerReview.revisionHistory[0]?.responses ?? []}
+              questionnaire={mgrQuestionnaire}
+            />
+          </div>
+          <div>
+            <h4 className="text-xs font-semibold text-green-800 mb-2">
+              Updated (after viewing employee self-review)
+            </h4>
+            <ReviewQuestionResponseList
+              responses={managerReview.revisionHistory.at(-1)?.responses ?? []}
+              questionnaire={mgrQuestionnaire}
+            />
+          </div>
+        </>
+      );
+    } else {
+      managerReviewBody = (
+        <ReviewQuestionResponseList
+          responses={managerReview.responses ?? []}
+          questionnaire={mgrQuestionnaire}
+        />
+      );
+    }
+
     mainContent = (
       <div className="space-y-6 pb-2">
+        <ReviewEmployeeBioSection cycle={cycleForBio} sectionHeadingId="sharing-employee-bio-heading" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <section className="bg-blue-50/50 rounded-lg p-4">
             <h3 className="text-sm font-semibold text-blue-700 mb-3 uppercase tracking-wide">Self-Review</h3>
-            {selfReview ? renderResponses(selfReview.responses) : <p className="text-sm text-gray-400 italic">Not available</p>}
+            {selfReview ? (
+              <ReviewQuestionResponseList
+                responses={selfReview.responses ?? []}
+                questionnaire={reviewSettings?.selfReviewQuestionnaire}
+              />
+            ) : (
+              <p className="text-sm text-gray-400 italic">Not available</p>
+            )}
           </section>
-          <section className="bg-green-50/50 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-green-700 mb-3 uppercase tracking-wide">Manager Review</h3>
-            {managerReview ? renderResponses(managerReview.responses) : <p className="text-sm text-gray-400 italic">Not available</p>}
+          <section className="bg-green-50/50 rounded-lg p-4 space-y-4">
+            <h3 className="text-sm font-semibold text-green-700 mb-2 uppercase tracking-wide">Manager Review</h3>
+            <p className="text-xs text-gray-600 mb-3">
+              <span className="text-secondary">Reviewed by: </span>
+              <span className="font-semibold text-gray-900">
+                {personLabelFromReviewRef(cycleForBio.reviewedByManagerId)}
+              </span>
+              {managerRole ? (
+                <span className="text-gray-500"> · {managerRole}</span>
+              ) : null}
+            </p>
+            {managerReviewBody}
           </section>
         </div>
       </div>
@@ -127,15 +195,16 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
   } else {
     mainContent = (
       <div className="space-y-6 pb-2">
+        <ReviewEmployeeBioSection cycle={cycleForBio} sectionHeadingId="sharing-employee-bio-action-plan-heading" />
         {PERIODS.map((period) => (
           <section key={period} className="border border-gray-100 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
               <h3 className="text-sm font-semibold text-gray-700">{period}-Day Actions</h3>
               {canAct ? (
                 <button
                   type="button"
                   onClick={() => handleAddItem(period)}
-                  className="text-xs text-button-primary hover:underline cursor-pointer"
+                  className="w-full cursor-pointer rounded-lg bg-button-primary px-3 py-2 text-sm text-white transition-opacity hover:opacity-90 sm:w-auto"
                 >
                   + Add Item
                 </button>
@@ -144,40 +213,62 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
             {actionItems.filter((i) => i.period === period).map((item) => {
               const idx = actionItems.indexOf(item);
               return (
-                <div key={idx} className="grid grid-cols-12 gap-2 items-start">
-                  <textarea
-                    value={item.description}
-                    onChange={(e) => handleItemChange(idx, "description", e.target.value)}
-                    disabled={!canAct}
-                    rows={2}
-                    placeholder="Action item description"
-                    className="col-span-6 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20 disabled:bg-gray-50"
-                  />
-                  <input
-                    type="text"
-                    value={item.currentScore ?? ""}
-                    onChange={(e) => handleItemChange(idx, "currentScore", e.target.value)}
-                    disabled={!canAct}
-                    placeholder="Current"
-                    className="col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none disabled:bg-gray-50"
-                  />
-                  <input
-                    type="text"
-                    value={item.targetScore ?? ""}
-                    onChange={(e) => handleItemChange(idx, "targetScore", e.target.value)}
-                    disabled={!canAct}
-                    placeholder="Target"
-                    className="col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none disabled:bg-gray-50"
-                  />
-                  {canAct ? (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveItem(idx)}
-                      className="col-span-2 text-red-400 hover:text-red-600 text-sm cursor-pointer pt-2"
-                    >
-                      Remove
-                    </button>
-                  ) : null}
+                <div key={idx} className="flex min-w-0 flex-col gap-3">
+                  <div className="min-w-0">
+                    <label htmlFor={`action-desc-${idx}`} className="mb-1 block text-xs font-medium text-secondary md:hidden">
+                      Description
+                    </label>
+                    <textarea
+                      id={`action-desc-${idx}`}
+                      value={item.description}
+                      onChange={(e) => handleItemChange(idx, "description", e.target.value)}
+                      disabled={!canAct}
+                      rows={2}
+                      placeholder="Action item description"
+                      className="w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20 disabled:bg-gray-50"
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-end md:gap-3">
+                    <div className="min-w-0 md:flex-1">
+                      <label htmlFor={`action-current-${idx}`} className="mb-1 block text-xs font-medium text-secondary md:hidden">
+                        Current
+                      </label>
+                      <input
+                        id={`action-current-${idx}`}
+                        type="text"
+                        value={item.currentScore ?? ""}
+                        onChange={(e) => handleItemChange(idx, "currentScore", e.target.value)}
+                        disabled={!canAct}
+                        placeholder="Current"
+                        className="w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none disabled:bg-gray-50"
+                      />
+                    </div>
+                    <div className="min-w-0 md:flex-1">
+                      <label htmlFor={`action-target-${idx}`} className="mb-1 block text-xs font-medium text-secondary md:hidden">
+                        Target
+                      </label>
+                      <input
+                        id={`action-target-${idx}`}
+                        type="text"
+                        value={item.targetScore ?? ""}
+                        onChange={(e) => handleItemChange(idx, "targetScore", e.target.value)}
+                        disabled={!canAct}
+                        placeholder="Target"
+                        className="w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none disabled:bg-gray-50"
+                      />
+                    </div>
+                    {canAct ? (
+                      <div className="flex shrink-0 md:items-end md:pb-2">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(idx)}
+                          className="text-sm text-red-400 hover:text-red-600 cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               );
             })}
@@ -211,6 +302,12 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
             <h2 id="review-sharing-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
               {modalTitle}
             </h2>
+            {sharingHeaderSubtitle ? (
+              <p className="mt-1 text-xs md:text-sm text-white/90">
+                <span className="font-medium">{sharingHeaderSubtitle.name}</span>
+                {sharingHeaderSubtitle.role ? <span>{` · ${sharingHeaderSubtitle.role}`}</span> : null}
+              </p>
+            ) : null}
           </div>
           <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden border-x border-gray-200">
             {cycle.salaryIncrement != null && cycle.salaryIncrement > 0 && (
@@ -231,23 +328,23 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
             </div>
 
             {loading ? null : (
-              <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-gray-200 bg-card-background">
+              <div className="flex-shrink-0 flex flex-col gap-3 px-5 py-4 border-t border-gray-200 bg-card-background sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   {step === "action-plan" ? (
                     <button
                       type="button"
                       onClick={() => setStep("review")}
-                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer"
+                      className="px-0 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer sm:px-4"
                     >
                       ← Back to Review
                     </button>
                   ) : null}
                 </div>
-                <div className="flex flex-wrap justify-end gap-3 ml-auto">
+                <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
                   <button
                     type="button"
                     onClick={handleClose}
-                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer"
+                    className="w-full rounded-lg px-4 py-2.5 text-sm text-gray-600 hover:text-gray-800 cursor-pointer sm:w-auto"
                   >
                     Close
                   </button>
@@ -255,7 +352,7 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
                     <button
                       type="button"
                       onClick={() => setStep("action-plan")}
-                      className="px-6 py-2 bg-button-primary text-white rounded-lg text-sm font-medium hover:opacity-90 cursor-pointer"
+                      className="w-full rounded-lg bg-button-primary px-6 py-2.5 text-sm font-medium text-white hover:opacity-90 cursor-pointer sm:w-auto"
                     >
                       Create Action Plan →
                     </button>
@@ -265,7 +362,7 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
                       type="button"
                       onClick={handleSaveAndComplete}
                       disabled={submitting}
-                      className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                      className="w-full rounded-lg bg-green-600 px-6 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 cursor-pointer sm:w-auto"
                     >
                       {submitting ? "Saving..." : "Save Action Plan & Complete Review"}
                     </button>

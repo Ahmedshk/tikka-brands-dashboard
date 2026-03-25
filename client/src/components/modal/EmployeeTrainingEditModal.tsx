@@ -2,16 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { trainingAssignmentService } from '../../services/trainingAssignment.service';
-import {
-  openDocumentProxyInNewTab,
-  getDocumentImageBlobUrl,
-} from '../../services/training.service';
+import { openDocumentProxyInNewTab } from '../../services/training.service';
 import {
   getDocumentFormatFromApiModuleFile,
   getDocumentFormatFromFile,
   openFileInNewTab,
   TRAINING_DOCUMENT_ACCEPT,
+  PENDING_LOCAL_FILE_ROW_CLASSNAME,
+  PENDING_UPLOAD_TAG_CLASSNAME,
+  SAVED_REMOTE_FILE_ROW_CLASSNAME,
 } from '../../utils/createTrainingModalHelpers';
+import { ProxiedImageThumbnail } from '../common/ProxiedImageThumbnail';
 import { DocumentTypeThumbnail } from './DocumentTypeThumbnail';
 import { Dropdown } from '../common/Dropdown';
 import { Spinner } from '../common/Spinner';
@@ -42,49 +43,6 @@ function FilePreviewThumbnail({ objectUrl }: Readonly<{ objectUrl: string }>) {
       alt=""
       className="w-12 h-12 rounded object-cover border border-gray-200 flex-shrink-0"
     />
-  );
-}
-
-/** Image thumbnail for already-uploaded files (fetched via auth proxy). */
-function UploadedImagePreview({ publicId }: Readonly<{ publicId: string }>) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const blobUrlRef = useRef<string | null>(null);
-  useEffect(() => {
-    let revoked = false;
-    getDocumentImageBlobUrl(publicId)
-      .then((url) => {
-        if (!revoked) {
-          blobUrlRef.current = url;
-          setBlobUrl(url);
-        } else {
-          URL.revokeObjectURL(url);
-        }
-      })
-      .catch(() => {
-        if (!revoked) setFailed(true);
-      });
-    return () => {
-      revoked = true;
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-      setBlobUrl(null);
-    };
-  }, [publicId]);
-  if (failed) {
-    return <DocumentTypeThumbnail format="image" className="flex-shrink-0" />;
-  }
-  if (!blobUrl) {
-    return (
-      <div className="w-12 h-12 rounded border border-gray-200 flex-shrink-0 bg-gray-200 animate-pulse" aria-hidden />
-    );
-  }
-  return (
-    <div className="w-12 h-12 rounded border border-gray-200 flex-shrink-0 overflow-hidden bg-gray-100">
-      <img src={blobUrl} alt="" className="w-full h-full object-cover" />
-    </div>
   );
 }
 
@@ -410,7 +368,10 @@ export const EmployeeTrainingEditModal = ({
                                       {mod.moduleFiles.map((f) => (
                                         <li key={f.publicId} className="flex items-center gap-2 px-3 py-1.5 min-w-0">
                                           {f.resourceType === 'image' ? (
-                                            <UploadedImagePreview publicId={f.publicId} />
+                                            <ProxiedImageThumbnail
+                                              publicId={f.publicId}
+                                              fallbackFormat={getDocumentFormatFromApiModuleFile(f)}
+                                            />
                                           ) : (
                                             <DocumentTypeThumbnail format={getDocumentFormatFromApiModuleFile(f)} />
                                           )}
@@ -456,45 +417,44 @@ export const EmployeeTrainingEditModal = ({
                                     )}
                                   </p>
                                   {totalExtraCount > 0 ? (
-                                    <ul className="space-y-0 rounded-lg border border-gray-200 bg-white divide-y divide-gray-100 list-none p-0 m-0 mb-3">
+                                    <ul className="mb-3 list-none space-y-2 p-0 m-0">
                                       {savedExtra.map((f, i) => (
-                                        <li
-                                          key={`${f.publicId}-${i}`}
-                                          className="flex items-center gap-2 px-3 py-1.5 min-w-0"
-                                        >
+                                        <li key={`${f.publicId}-${i}`} className={SAVED_REMOTE_FILE_ROW_CLASSNAME}>
                                           {f.resourceType === 'image' ? (
-                                            <UploadedImagePreview publicId={f.publicId} />
+                                            <ProxiedImageThumbnail
+                                              publicId={f.publicId}
+                                              fallbackFormat={getDocumentFormatFromApiModuleFile(f)}
+                                            />
                                           ) : (
                                             <DocumentTypeThumbnail format={getDocumentFormatFromApiModuleFile(f)} />
                                           )}
                                           <span className="text-sm text-primary truncate min-w-0 flex-1" title={f.filename ?? 'File'}>
                                             {f.filename ?? 'View file'}
                                           </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenFile(f.publicId, f.resourceType, f.filename)}
-                                            className="p-1 text-primary hover:bg-gray-100 rounded shrink-0"
-                                            aria-label="View file"
-                                            title="View file"
-                                          >
-                                            <ViewIcon className="w-4 h-4" />
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => removeExtraFile(idx, i)}
-                                            className="p-1 text-negative hover:bg-red-50 rounded shrink-0"
-                                            aria-label="Remove file"
-                                            title="Remove file"
-                                          >
-                                            <span className="text-sm font-medium">×</span>
-                                          </button>
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenFile(f.publicId, f.resourceType, f.filename)}
+                                              className="p-1.5 text-primary hover:bg-gray-100 rounded"
+                                              aria-label="View file"
+                                              title="View file"
+                                            >
+                                              <ViewIcon className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => removeExtraFile(idx, i)}
+                                              className="p-1.5 text-negative hover:bg-red-50 rounded"
+                                              aria-label="Remove file"
+                                              title="Remove file"
+                                            >
+                                              <span className="text-lg leading-none" aria-hidden>×</span>
+                                            </button>
+                                          </div>
                                         </li>
                                       ))}
                                       {pendingList.map((item, i) => (
-                                        <li
-                                          key={item.id}
-                                          className="flex items-center gap-2 px-3 py-1.5 min-w-0"
-                                        >
+                                        <li key={item.id} className={PENDING_LOCAL_FILE_ROW_CLASSNAME}>
                                           {isImageFile(item.file) ? (
                                             <FilePreviewThumbnail objectUrl={item.objectUrl} />
                                           ) : (
@@ -502,12 +462,13 @@ export const EmployeeTrainingEditModal = ({
                                           )}
                                           <span className="text-sm text-primary truncate min-w-0 flex-1" title={item.file.name}>
                                             {item.file.name}
+                                            <span className={PENDING_UPLOAD_TAG_CLASSNAME}>(pending upload)</span>
                                           </span>
                                           <div className="flex items-center gap-1 shrink-0">
                                             <button
                                               type="button"
                                               onClick={() => openFileInNewTab(item.file)}
-                                              className="p-1 text-primary hover:bg-gray-100 rounded"
+                                              className="p-1.5 text-primary hover:bg-gray-100 rounded"
                                               aria-label="View file"
                                               title="View file"
                                             >
@@ -516,7 +477,7 @@ export const EmployeeTrainingEditModal = ({
                                             <button
                                               type="button"
                                               onClick={() => removeExtraFile(idx, savedExtra.length + i)}
-                                              className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                              className="p-1.5 text-red-600 hover:bg-red-50 rounded"
                                               aria-label="Remove file"
                                             >
                                               <span className="text-lg leading-none" aria-hidden>×</span>

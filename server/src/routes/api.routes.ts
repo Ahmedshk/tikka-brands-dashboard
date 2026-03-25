@@ -14,6 +14,7 @@ import reviewSettingsRoutes from "./reviewSettings.routes.js";
 import reviewCycleRoutes from "./reviewCycle.routes.js";
 import {
   getSelfReviewByToken,
+  getSelfReviewDocumentByToken,
   submitSelfReviewByToken,
 } from "../controllers/reviewCycle.controller.js";
 import { healthCheck } from "../controllers/health.controller.js";
@@ -70,6 +71,7 @@ router.use("/reviews/settings", reviewSettingsRoutes);
 
 // Public self-review by token (no auth)
 router.get("/reviews/self-review/by-token", getSelfReviewByToken);
+router.get("/reviews/self-review/document", getSelfReviewDocumentByToken);
 router.post("/reviews/self-review/submit-by-token", submitSelfReviewByToken);
 
 // Review cycles (auth required)

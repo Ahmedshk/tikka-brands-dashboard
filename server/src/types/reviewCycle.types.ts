@@ -69,6 +69,8 @@ export interface IReviewCycle {
   managerReviewId?: Types.ObjectId | string;
   reviewedByManagerId?: Types.ObjectId | string;
   approvedByDirectorId?: Types.ObjectId | string;
+  /** Set when manager submits to director; used for the 3-day director deadline. */
+  directorApprovalStartedAt?: Date;
   directorDecision?: "approved" | "rejected" | null;
   directorComments?: string;
   salaryIncrement?: number;

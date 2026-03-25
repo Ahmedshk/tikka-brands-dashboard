@@ -4,6 +4,17 @@
 export const TRAINING_DOCUMENT_ACCEPT =
   'image/jpeg,image/jpg,image/png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
+/** File row: chosen locally, not yet on the server (training, check-ins, questionnaires). */
+export const PENDING_LOCAL_FILE_ROW_CLASSNAME =
+  'flex items-center gap-3 p-2 rounded-lg border border-amber-200 bg-amber-50/50';
+
+/** File row: already stored (e.g. Cloudinary). */
+export const SAVED_REMOTE_FILE_ROW_CLASSNAME =
+  'flex items-center gap-3 p-2 rounded-lg border border-gray-200 bg-white';
+
+/** Inline “(pending upload)” after the filename. */
+export const PENDING_UPLOAD_TAG_CLASSNAME = 'text-amber-700 text-xs ml-1';
+
 export interface CreateTrainingModuleFileForm {
   id: string;
   file: File | null;

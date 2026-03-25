@@ -38,7 +38,7 @@ export const Layout = ({ children }: LayoutProps) => {
   };
 
   return (
-    <div className="flex h-screen bg-dashboard-background overflow-hidden">
+    <div className="fixed inset-0 z-0 flex overflow-hidden bg-dashboard-background">
       <Sidebar 
         activePath={activePath}
         expandedItems={expandedItems}
@@ -47,9 +47,9 @@ export const Layout = ({ children }: LayoutProps) => {
         onClose={closeSidebar}
         onToggle={toggleSidebar}
       />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <Navbar />
-        <main className="flex-1 overflow-y-auto">
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
           {children}
         </main>
       </div>

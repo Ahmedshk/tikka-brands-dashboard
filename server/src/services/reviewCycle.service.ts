@@ -22,10 +22,12 @@ import {
   REVIEW_CYCLE_TERMINAL_FOR_NEW_CYCLE,
   REVIEW_CYCLE_PAST_STATUSES,
 } from "../types/reviewCycle.types.js";
-import { getCloudinaryConfigured, getSecureDocumentUrl } from "../config/cloudinary.js";
-
 const notificationService = new NotificationService();
 const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
+
+function escapeRegexForEmployeeNameSearch(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 /** Token expiry: 14 units after due date (14 days in prod, 14 min in test). */
 const SELF_REVIEW_TOKEN_VALID_UNITS = 14;
@@ -174,14 +176,39 @@ export class ReviewCycleService {
           resourceType: a.resourceType,
           filename: a.filename,
           format: a.format,
-          ...(getCloudinaryConfigured()
-            ? { url: getSecureDocumentUrl(a.publicId, a.resourceType) }
-            : {}),
         })),
       })),
       employeeName: [validated.employee.firstName, validated.employee.lastName].filter(Boolean).join(" ") || "Employee",
       alreadySubmitted: !!existing,
     };
+  }
+
+  /**
+   * If token is valid, return metadata for an attachment on the self-review questionnaire with this publicId.
+   */
+  async findSelfReviewAttachmentForToken(
+    token: string,
+    publicId: string,
+  ): Promise<{ resourceType: "image" | "raw"; filename?: string; format?: string } | null> {
+    const validated = await this.validateSelfReviewToken(token);
+    if (!validated) return null;
+    const target = publicId.trim();
+    if (!target) return null;
+    const settings = await ReviewSettingsModel.findOne().select("selfReviewQuestionnaire").lean();
+    const questionnaire = settings?.selfReviewQuestionnaire ?? [];
+    for (const q of questionnaire) {
+      const attachments = (q as { attachments?: Array<{ publicId: string; resourceType: "image" | "raw"; filename?: string; format?: string }> }).attachments;
+      for (const a of attachments ?? []) {
+        if (a.publicId === target) {
+          return {
+            resourceType: a.resourceType,
+            filename: a.filename,
+            format: a.format,
+          };
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -651,6 +678,7 @@ export class ReviewCycleService {
 
     cycle.approvedByDirectorId = directorId as unknown as typeof cycle.approvedByDirectorId;
     cycle.status = "director_approval_due";
+    cycle.directorApprovalStartedAt = new Date();
     await cycle.save();
 
     const directorUser = await UserModel.findById(directorId).select("firstName").lean();
@@ -964,16 +992,21 @@ export class ReviewCycleService {
     userId?: string;
     status?: string;
     pastOnly?: boolean;
+    /** When true (and not pastOnly), exclude terminal / past-review statuses — same set as dashboard “active” cycles. */
+    activeOnly?: boolean;
     page?: number;
     limit?: number;
     /** When set (navbar location), only cycles for employees assigned this location on role + overrides. */
     locationId?: string;
+    /** Case-insensitive match on employee first or last name (visible employees only). */
+    employeeNameSearch?: string;
   }) {
     const { page = 1, limit = 20 } = query;
     const filter: Record<string, unknown> = {};
 
     if (query.pastOnly) filter.status = { $in: REVIEW_CYCLE_PAST_STATUSES };
     else if (query.status) filter.status = query.status;
+    else if (query.activeOnly) filter.status = { $nin: REVIEW_CYCLE_PAST_STATUSES };
 
     const locationId = query.locationId?.trim();
 
@@ -1001,13 +1034,39 @@ export class ReviewCycleService {
       }
     }
 
+    const nameSearch = query.employeeNameSearch?.trim();
+    if (nameSearch) {
+      const rx = new RegExp(escapeRegexForEmployeeNameSearch(nameSearch), "i");
+      const matchingUsers = await UserModel.find({
+        $or: [{ firstName: rx }, { lastName: rx }],
+      })
+        .select("_id")
+        .lean();
+      const nameMatchIds = matchingUsers.map((u) => String(u._id));
+      if (nameMatchIds.length === 0) {
+        return { cycles: [], total: 0 };
+      }
+      const nameSet = new Set(nameMatchIds);
+      if (employeeIdFilter !== null) {
+        employeeIdFilter = employeeIdFilter.filter((id) => nameSet.has(id));
+      } else {
+        employeeIdFilter = nameMatchIds;
+      }
+      if (employeeIdFilter.length === 0) {
+        return { cycles: [], total: 0 };
+      }
+    }
+
     if (employeeIdFilter !== null) {
       filter.employeeId = { $in: employeeIdFilter };
     }
 
     const [cycles, total] = await Promise.all([
       ReviewCycleModel.find(filter)
-        .populate("employeeId", "firstName lastName email role profileImagePublicId startDate")
+        .populate(
+          "employeeId",
+          "firstName lastName email phone role profileImagePublicId startDate homebaseData",
+        )
         .sort({ updatedAt: -1, dueDate90: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -1029,7 +1088,10 @@ export class ReviewCycleService {
     checkIns: Record<string, unknown>[];
   }> {
     const cycle = await ReviewCycleModel.findById(cycleId)
-      .populate("employeeId", "firstName lastName email role profileImagePublicId startDate")
+      .populate(
+        "employeeId",
+        "firstName lastName email phone role profileImagePublicId startDate homebaseData",
+      )
       .populate("reviewedByManagerId", "firstName lastName email role")
       .populate("approvedByDirectorId", "firstName lastName email role")
       .lean();
@@ -1059,6 +1121,30 @@ export class ReviewCycleService {
       managerReview: managerReview as Record<string, unknown> | null,
       actionPlan: actionPlan as Record<string, unknown> | null,
       checkIns: checkIns as Record<string, unknown>[],
+    };
+  }
+
+  /**
+   * Run after DB connect on server start. Scheduled jobs can miss updates while the process is down;
+   * this marks open cycles whose self-review link has expired as superseded so employees do not
+   * keep multiple non-terminal cycles. Skips cycles that already have a self-review record.
+   */
+  async supersedeCyclesWithExpiredSelfReviewTokenAtStartup(): Promise<{
+    matchedCount: number;
+    modifiedCount: number;
+  }> {
+    const now = new Date();
+    const result = await ReviewCycleModel.updateMany(
+      {
+        status: { $nin: REVIEW_CYCLE_TERMINAL_FOR_NEW_CYCLE },
+        selfReviewTokenExpiresAt: { $exists: true, $lte: now, $ne: null },
+        selfReviewId: null,
+      },
+      { $set: { status: "cycle_superseded" as ReviewCycleStatus } },
+    );
+    return {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
     };
   }
 

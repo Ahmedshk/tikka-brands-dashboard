@@ -5,8 +5,17 @@ import { isAxiosError } from "axios";
 import { getErrorMessage } from "../../services/api.service";
 import { reviewService } from "../../services/review.service";
 import { Spinner } from "../common/Spinner";
+import { ReviewEmployeeBioSection } from "../review/ReviewEmployeeBioSection";
 import { ReviewQuestionAttachmentLinks } from "../ReviewSettings/ReviewQuestionAttachmentLinks";
-import type { Question, QuestionResponse, ReviewCycleStatus, SelfReview, ManagerReview } from "../../types/review.types";
+import { reviewEmployeeHeaderSubtitle } from "../../utils/employeeBioHelpers";
+import type {
+  Question,
+  QuestionResponse,
+  ReviewCycle,
+  ReviewCycleStatus,
+  SelfReview,
+  ManagerReview,
+} from "../../types/review.types";
 
 interface ManagerReviewModalProps {
   isOpen: boolean;
@@ -19,6 +28,8 @@ interface ManagerReviewModalProps {
 export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitted }: ManagerReviewModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
+  /** Self-review questionnaire (for attachments when showing employee self-review). */
+  const [selfReviewQuestionnaire, setSelfReviewQuestionnaire] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -27,6 +38,7 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
   const [showSelfReview, setShowSelfReview] = useState(false);
   const [editing, setEditing] = useState(false);
   const [loadingSelfReview, setLoadingSelfReview] = useState(false);
+  const [reviewCycle, setReviewCycle] = useState<ReviewCycle | null>(null);
 
   const hasCompleted = !!existingReview;
   const canSeeEmployeeReview = hasCompleted;
@@ -70,14 +82,18 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
     if (!isOpen) return;
     setSelfReview(null);
     setShowSelfReview(false);
+    setReviewCycle(null);
     (async () => {
       setLoading(true);
       try {
-        const [settings, existing] = await Promise.all([
+        const [settings, existing, cycleData] = await Promise.all([
           reviewService.getSettings(),
           reviewService.getManagerReview(cycleId).catch(() => null),
+          reviewService.getCycleById(cycleId).catch(() => null),
         ]);
+        setReviewCycle(cycleData);
         setQuestions(settings?.managerReviewQuestionnaire ?? []);
+        setSelfReviewQuestionnaire(settings?.selfReviewQuestionnaire ?? []);
         if (existing) {
           setExistingReview(existing);
           const map: Record<string, string> = {};
@@ -192,6 +208,8 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
     onClose();
   };
 
+  const managerHeaderSubtitle = reviewEmployeeHeaderSubtitle(reviewCycle);
+
   if (!isOpen) return null;
 
   return createPortal(
@@ -216,6 +234,12 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
             <h2 id="manager-review-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
               Manager Review
             </h2>
+            {managerHeaderSubtitle ? (
+              <p className="mt-1 text-xs md:text-sm text-white/90">
+                <span className="font-medium">{managerHeaderSubtitle.name}</span>
+                {managerHeaderSubtitle.role ? <span>{` · ${managerHeaderSubtitle.role}`}</span> : null}
+              </p>
+            ) : null}
           </div>
           <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden border-x border-gray-200">
             <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 pt-4 pb-4 md:[scrollbar-gutter:stable]">
@@ -223,6 +247,8 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
           <div className="flex justify-center py-12"><Spinner size="lg" className="text-button-primary" /></div>
         ) : (
           <div className="space-y-6 pb-2">
+            <ReviewEmployeeBioSection cycle={reviewCycle} sectionHeadingId="manager-review-employee-bio-heading" />
+
             {/* Manager's own review */}
             <section>
               <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Your Review</h3>
@@ -252,7 +278,7 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
                       <div className="mt-2 space-y-2">
                         {rev.responses.map((r) => (
                           <div key={r.questionId} className="text-sm">
-                            <span className="font-medium text-gray-600">{r.questionText}:</span>{" "}
+                            <span className="font-medium text-black">{r.questionText}:</span>{" "}
                             <span className="text-gray-800">{r.answer}</span>
                           </div>
                         ))}
@@ -287,13 +313,23 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
                 </div>
               )}
               {canSeeEmployeeReview && selfReview && showSelfReview && (
-                <div className="mt-3 space-y-3 bg-blue-50/50 rounded-lg p-4">
-                  {selfReview.responses.map((r) => (
-                    <div key={r.questionId} className="text-sm">
-                      <span className="font-medium text-gray-700">{r.questionText}</span>
-                      <p className="text-gray-800 mt-0.5">{r.answer}</p>
-                    </div>
-                  ))}
+                <div className="mt-3 space-y-4 bg-blue-50/50 rounded-lg p-4">
+                  {selfReview.responses
+                    .toSorted((a, b) => {
+                      const qa = selfReviewQuestionnaire.find((q) => q.id === a.questionId);
+                      const qb = selfReviewQuestionnaire.find((q) => q.id === b.questionId);
+                      return (qa?.order ?? 0) - (qb?.order ?? 0);
+                    })
+                    .map((r) => {
+                      const sq = selfReviewQuestionnaire.find((q) => q.id === r.questionId);
+                      return (
+                        <div key={r.questionId} className="space-y-1 text-sm">
+                          <span className="font-medium text-black block">{r.questionText}</span>
+                          <ReviewQuestionAttachmentLinks attachments={sq?.attachments} />
+                          <p className="text-gray-800">{r.answer}</p>
+                        </div>
+                      );
+                    })}
                 </div>
               )}
             </section>

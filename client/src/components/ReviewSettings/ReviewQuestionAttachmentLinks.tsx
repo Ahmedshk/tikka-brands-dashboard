@@ -1,18 +1,23 @@
 import ViewIcon from "@assets/icons/view.svg?react";
 import { openDocumentProxyInNewTab } from "../../services/training.service";
+import { openSelfReviewAttachmentByToken } from "../../services/review.service";
+import { getQuestionAttachmentSuggestedFilename } from "../../utils/reviewQuestionnaireHelpers";
 import type { ReviewQuestionAttachment } from "../../types/review.types";
 
 export type QuestionAttachmentWithUrl = ReviewQuestionAttachment & { url?: string };
 
 interface ReviewQuestionAttachmentLinksProps {
   readonly attachments?: QuestionAttachmentWithUrl[];
-  /** Use `url` field (e.g. public self-review). Default: authenticated document proxy. */
+  /** Authenticated dashboard: document proxy. */
   readonly variant?: "proxy" | "directUrl";
+  /** Public self-review page: token-scoped document endpoint (preferred over directUrl for correct filenames). */
+  readonly selfReviewToken?: string;
 }
 
 export function ReviewQuestionAttachmentLinks({
   attachments,
   variant = "proxy",
+  selfReviewToken,
 }: ReviewQuestionAttachmentLinksProps) {
   const list = attachments?.filter((a) => a.publicId) ?? [];
   if (list.length === 0) return null;
@@ -29,6 +34,15 @@ export function ReviewQuestionAttachmentLinks({
                 type="button"
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-xs text-button-primary hover:bg-gray-50 cursor-pointer"
                 onClick={() => {
+                  const token = selfReviewToken?.trim();
+                  if (token) {
+                    void openSelfReviewAttachmentByToken(
+                      token,
+                      att.publicId,
+                      getQuestionAttachmentSuggestedFilename(att),
+                    );
+                    return;
+                  }
                   if (variant === "directUrl" && att.url?.trim()) {
                     window.open(att.url, "_blank", "noopener,noreferrer");
                     return;
@@ -36,7 +50,7 @@ export function ReviewQuestionAttachmentLinks({
                   void openDocumentProxyInNewTab(
                     att.publicId,
                     att.resourceType,
-                    att.filename,
+                    getQuestionAttachmentSuggestedFilename(att) ?? att.filename,
                   );
                 }}
               >

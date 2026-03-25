@@ -1,3 +1,5 @@
+import type { HomebaseData } from "./userManagement.types";
+
 export const QUESTION_TYPES = ["text", "rating", "multiple_choice", "yes_no"] as const;
 export type QuestionType = (typeof QUESTION_TYPES)[number];
 
@@ -73,7 +75,19 @@ export interface QuestionResponse {
 
 export interface ReviewCycle {
   _id: string;
-  employeeId: string | { _id: string; firstName: string; lastName: string; email: string; role?: string; startDate?: string };
+  employeeId:
+    | string
+    | {
+        _id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone?: string;
+        role?: string;
+        startDate?: string;
+        profileImagePublicId?: string;
+        homebaseData?: HomebaseData | null;
+      };
   cycleNumber: number;
   referenceDate: string;
   status: ReviewCycleStatus;
@@ -81,6 +95,8 @@ export interface ReviewCycle {
   managerReviewId?: string;
   reviewedByManagerId?: string | { _id: string; firstName: string; lastName: string; email?: string; role?: string };
   approvedByDirectorId?: string | { _id: string; firstName: string; lastName: string; email?: string; role?: string };
+  /** ISO date: when the review was submitted to the director (director deadline anchor). */
+  directorApprovalStartedAt?: string;
   directorDecision?: "approved" | "rejected" | null;
   directorComments?: string;
   salaryIncrement?: number;

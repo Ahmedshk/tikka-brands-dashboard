@@ -11,6 +11,8 @@ import type { Training } from '../../types/trainingReviews.types';
 import {
   validateCreateTrainingForm,
   TRAINING_DOCUMENT_ACCEPT,
+  PENDING_LOCAL_FILE_ROW_CLASSNAME,
+  PENDING_UPLOAD_TAG_CLASSNAME,
   openFileInNewTab,
   getDocumentFormatFromFile,
   type CreateTrainingModuleForm,
@@ -392,7 +394,7 @@ export const CreateTrainingModal = ({
                                     mf.file ? (
                                       <li
                                         key={mf.id}
-                                        className="flex items-center gap-3 p-2 rounded-lg border border-gray-200 bg-white"
+                                        className={PENDING_LOCAL_FILE_ROW_CLASSNAME}
                                       >
                                         {isImageFile(mf.file) ? (
                                           <FilePreviewThumbnail file={mf.file} />
@@ -404,6 +406,7 @@ export const CreateTrainingModal = ({
                                           title={mf.file.name}
                                         >
                                           {mf.file.name}
+                                          <span className={PENDING_UPLOAD_TAG_CLASSNAME}>(pending upload)</span>
                                         </span>
                                         <div className="flex items-center gap-1 shrink-0">
                                           <button

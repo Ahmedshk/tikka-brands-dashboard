@@ -225,7 +225,7 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
 
   return (
     <aside
-      className={`hidden lg:flex bg-card-background border-r border-gray-200 flex-col h-screen shrink-0 transition-[width] duration-200 ease-in-out ${isDesktopExpanded ? 'w-64' : 'w-16'
+      className={`hidden lg:flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-card-background transition-[width] duration-200 ease-in-out ${isDesktopExpanded ? 'w-64' : 'w-16'
         }`}
     >
       {/* Logo - same height as navbar (72px) so the border aligns with navbar bottom */}
@@ -234,7 +234,7 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
       </div>
 
       {/* Navigation Items */}
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden py-4 px-2">
+      <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-4 px-2">
         {filteredNav.map((item, index) => (
           <div key={item.label}>
               {item.hasSeparator && index > 0 && (
