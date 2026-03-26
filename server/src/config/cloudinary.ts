@@ -41,7 +41,7 @@ const IMAGE_MIMES = new Set([
 export async function uploadToCloudinary(
   file: { buffer: Buffer; mimetype: string },
   folder: string,
-  options?: { resource_type?: 'image' | 'raw' | 'auto' }
+  options?: { resource_type?: 'image' | 'raw' | 'auto'; public_id?: string }
 ): Promise<UploadToCloudinaryResult> {
   if (!isConfigured()) {
     throw new Error('Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.');
@@ -53,10 +53,18 @@ export async function uploadToCloudinary(
         ? 'image'
         : 'raw'
       : options?.resource_type ?? (IMAGE_MIMES.has(file.mimetype) ? 'image' : 'raw');
-  const result = await cloudinary.uploader.upload(dataUri, {
+  const uploadOptions: Record<string, unknown> = {
     folder,
     resource_type: resourceType,
-  });
+  };
+  if (options?.public_id) {
+    uploadOptions.public_id = options.public_id;
+    // When re-uploading to the same public_id (disciplinary signed docs),
+    // force overwrite + CDN invalidation so downstream fetches get latest bytes.
+    uploadOptions.overwrite = true;
+    uploadOptions.invalidate = true;
+  }
+  const result = await cloudinary.uploader.upload(dataUri, uploadOptions);
   return {
     public_id: result.public_id,
     secure_url: result.secure_url ?? '',

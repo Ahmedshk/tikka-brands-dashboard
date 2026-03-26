@@ -18,6 +18,13 @@ export const NOTIFICATION_TYPES = [
   "review_checkin_past_due",
   "review_completed",
   "general",
+  "disciplinary_threshold_crossed",
+  "disciplinary_document_signed",
+  "disciplinary_points_expired",
+  "disciplinary_incident_created",
+  "disciplinary_employee_sign_pending",
+  "disciplinary_manager_signed",
+  "disciplinary_signing_aborted",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

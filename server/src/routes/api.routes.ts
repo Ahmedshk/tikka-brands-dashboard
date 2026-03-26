@@ -12,6 +12,9 @@ import trainingRoutes from "./training.routes.js";
 import notificationRoutes from "./notification.routes.js";
 import reviewSettingsRoutes from "./reviewSettings.routes.js";
 import reviewCycleRoutes from "./reviewCycle.routes.js";
+import disciplinarySettingsRoutes from "./disciplinarySettings.routes.js";
+import disciplinaryIncidentRoutes from "./disciplinaryIncident.routes.js";
+import adobeSignWebhookRoutes from "./adobeSignWebhook.routes.js";
 import {
   getSelfReviewByToken,
   getSelfReviewDocumentByToken,
@@ -26,6 +29,9 @@ const router = Router();
 
 // Health check (no auth required)
 router.get("/health", healthCheck);
+
+// Adobe Sign webhook (no auth — Adobe POSTs from their servers)
+router.use("/webhooks", adobeSignWebhookRoutes);
 
 // Proxy image (no auth so img src works)
 router.get("/proxy/image/:userId", proxyProfileImage);
@@ -76,5 +82,11 @@ router.post("/reviews/self-review/submit-by-token", submitSelfReviewByToken);
 
 // Review cycles (auth required)
 router.use("/reviews/cycles", reviewCycleRoutes);
+
+// Disciplinary settings (auth required; GET allowed for all, PUT requires disciplinary-settings permission)
+router.use("/disciplinary/settings", disciplinarySettingsRoutes);
+
+// Disciplinary management (auth + disciplinary-management permission required)
+router.use("/disciplinary", disciplinaryIncidentRoutes);
 
 export default router;

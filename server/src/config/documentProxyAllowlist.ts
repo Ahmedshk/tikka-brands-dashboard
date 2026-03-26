@@ -8,6 +8,7 @@ export const ALLOWED_DOCUMENT_PUBLIC_ID_PREFIXES: string[] = [
   "tikka_brands/employee_reviews/",
   "employee_training/",
   "employee-reviews/",
+  "tikka_brands/disciplinary_management/",
 ];
 
 export function isDocumentPublicIdAllowed(publicId: string): boolean {

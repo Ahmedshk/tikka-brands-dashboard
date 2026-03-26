@@ -147,6 +147,11 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     pageLabel: 'Review Settings',
     components: [FULL_PAGE_ACCESS],
   },
+  {
+    pageId: 'disciplinary-settings',
+    pageLabel: 'Disciplinary Settings',
+    components: [FULL_PAGE_ACCESS],
+  },
 ];
 
 /** All page IDs in order (for path → pageId mapping). */

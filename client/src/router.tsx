@@ -18,6 +18,7 @@ import { ManageHierarchy } from './pages/dashboard/ManageHierarchy';
 import { GoalSetting } from './pages/dashboard/GoalSetting';
 import { LocationManagement } from './pages/dashboard/LocationManagement';
 import { ReviewSettings } from './pages/dashboard/ReviewSettings';
+import { DisciplinarySettings } from './pages/dashboard/DisciplinarySettings';
 import { NoAccess } from './pages/dashboard/NoAccess';
 import { ErrorPage } from './pages/ErrorPage';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -243,6 +244,17 @@ export const router = createBrowserRouter([
       <ErrorBoundary>
         <ProtectedRoute>
           <ReviewSettings />
+        </ProtectedRoute>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/dashboard/disciplinary-settings',
+    element: (
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <DisciplinarySettings />
         </ProtectedRoute>
       </ErrorBoundary>
     ),

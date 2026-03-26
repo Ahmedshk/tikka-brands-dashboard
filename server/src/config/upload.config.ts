@@ -33,7 +33,13 @@ export const CLOUDINARY_FOLDERS = {
   employee_training: "tikka_brands/employee_training",
   /** Review check-in documents by employee: tikka_brands/employee_reviews/<userId>/<30-day-checkin|60-day-checkin> */
   employee_reviews: "tikka_brands/employee_reviews",
+  /** Signed disciplinary documents by employee: tikka_brands/disciplinary_management/<userId> */
+  disciplinary_management: "tikka_brands/disciplinary_management",
 } as const;
+
+export function getDisciplinaryFolder(employeeId: string): string {
+  return `${CLOUDINARY_FOLDERS.disciplinary_management}/${employeeId}`;
+}
 
 export function getReviewCheckInFolder(
   employeeId: string,

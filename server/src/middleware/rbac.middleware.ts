@@ -47,6 +47,52 @@ function isPageFullyRemoved(
  * If permissions.type === 'all', allow unless page is fully removed (removal with empty components).
  * If type === 'custom', allow only if pages includes pageId and page is not fully removed.
  */
+/** Allow if the user has any of the listed page permissions (or type === 'all' without full removal). */
+export const requireAnyPermission = (pageIds: string[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    const permissions = req.user.permissions;
+    if (!permissions) {
+      res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions',
+      });
+      return;
+    }
+
+    const removalPages =
+      req.user.permissionRemovals?.type === 'custom'
+        ? req.user.permissionRemovals.pages
+        : [];
+
+    const allowedFor = (pageId: string): boolean => {
+      if (isPageFullyRemoved(removalPages, pageId)) return false;
+      if (permissions.type === 'all') return true;
+      return permissions.pages?.some((p) => p.pageId === pageId) ?? false;
+    };
+
+    if (!pageIds.some(allowedFor)) {
+      logger.warn(`Access denied: need one of permissions ${pageIds.join(', ')}`, {
+        userId: req.user.userId,
+      });
+      res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions',
+      });
+      return;
+    }
+
+    next();
+  };
+};
+
 export const requirePermission = (pageId: string) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {

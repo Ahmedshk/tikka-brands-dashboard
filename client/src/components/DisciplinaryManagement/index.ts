@@ -14,5 +14,7 @@ export { RequiredProtocolCard } from './RequiredProtocolCard';
 export type { RequiredProtocolCardProps } from './RequiredProtocolCard';
 export { IncidentHistoryCard } from './IncidentHistoryCard';
 export type { IncidentHistoryCardProps } from './IncidentHistoryCard';
+export { IncidentSigningStatusLabel } from './IncidentSigningStatusLabel';
+export type { IncidentSigningStatusLabelProps } from './IncidentSigningStatusLabel';
 export { DocumentVaultCard } from './DocumentVaultCard';
 export type { DocumentVaultCardProps } from './DocumentVaultCard';

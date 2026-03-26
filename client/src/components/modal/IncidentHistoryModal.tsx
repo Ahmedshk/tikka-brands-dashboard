@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Pagination } from '../common/Pagination';
 import type { IncidentHistoryItem } from '../../types/disciplinaryManagement.types';
-import PendingIcon from '@assets/icons/pending.svg?react';
-import CompliantIcon from '@assets/icons/compliant.svg?react';
-import DownloadIcon from '@assets/icons/download.svg?react';
+import { IncidentSigningStatusLabel } from '../DisciplinaryManagement/IncidentSigningStatusLabel';
 import ViewIcon from '@assets/icons/view.svg?react';
+import SignatureIcon from '@assets/icons/signature.svg?react';
 
 const PAGE_SIZE = 10;
 
@@ -13,17 +12,40 @@ export interface IncidentHistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   items: IncidentHistoryItem[];
-  onDownload?: (item: IncidentHistoryItem, index: number) => void;
+  title?: string;
   onView?: (item: IncidentHistoryItem, index: number) => void;
+  onSign?: (item: IncidentHistoryItem, index: number) => void;
+  canSign?: (item: IncidentHistoryItem, index: number) => boolean;
+  signLoadingIncidentId?: string | null;
 }
 
 export const IncidentHistoryModal = ({
   isOpen,
   onClose,
   items,
-  onDownload,
+  title = 'Incident History (90 Days)',
   onView,
+  onSign,
+  canSign,
+  signLoadingIncidentId,
 }: IncidentHistoryModalProps) => {
+  const getAssignerStatus = (item: IncidentHistoryItem): IncidentHistoryItem['status'] => {
+    if (item.managerSignedAt) return 'signed';
+    if (item.signingPhase === 'pending_manager') return 'pending';
+    if (item.signingPhase === 'declined') return 'declined';
+    if (item.signingPhase === 'cancelled') return 'cancelled';
+    if (item.signingPhase === 'expired') return 'expired';
+    return 'signed';
+  };
+
+  const getAssigneeStatus = (item: IncidentHistoryItem): IncidentHistoryItem['status'] => {
+    if (item.employeeSignedAt) return 'signed';
+    if (item.signingPhase === 'declined') return 'declined';
+    if (item.signingPhase === 'cancelled') return 'cancelled';
+    if (item.signingPhase === 'expired') return 'expired';
+    return 'pending';
+  };
+
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [page, setPage] = useState(1);
 
@@ -74,24 +96,38 @@ export const IncidentHistoryModal = ({
         <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
           <div className="relative w-full rounded-t-xl bg-gray-700 px-5 py-3 flex-shrink-0">
             <h2 id="incident-history-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
-              Incident History (90 Days)
+              {title}
             </h2>
           </div>
           <div className="flex-1 min-h-0 min-w-0 flex flex-col px-5 pt-4 overflow-hidden border-x border-gray-200">
             <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-auto md:[scrollbar-gutter:stable]">
-              <table className="w-full min-w-[400px] border-collapse text-[10px] md:text-xs 2xl:text-sm">
+              <table className="w-full min-w-[700px] border-collapse text-[10px] md:text-xs 2xl:text-sm">
                 <thead>
                   <tr className="text-left text-secondary border-b border-gray-200">
                     <th className="pb-3 pr-4 pl-2 font-semibold">Incident Type</th>
                     <th className="pb-3 pr-4 font-semibold">Date</th>
-                    <th className="pb-3 pr-4 font-semibold">Document</th>
-                    <th className="pb-3 pr-4 font-semibold">Status</th>
+                    <th className="pb-3 pr-4 font-semibold text-center">Total Points</th>
+                    <th className="pb-3 pr-4 font-semibold text-center">Assigner Signature</th>
+                    <th className="pb-3 pr-4 font-semibold text-center">Assignee Signature</th>
                     <th className="pb-3 pr-2 font-semibold text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="text-primary">
                   {pageItems.map((item, index) => {
                     const globalIndex = start + index;
+                    const isPendingManager = item.signingPhase === 'pending_manager';
+                    const isAuthorizedSigner = canSign?.(item, globalIndex) ?? isPendingManager;
+                    const showSignAction = isPendingManager && isAuthorizedSigner;
+                    const isSignLoading = showSignAction && signLoadingIncidentId === item.id;
+                    let actionIcon = null;
+                    if (showSignAction) {
+                      actionIcon = <SignatureIcon className="w-4 h-4" />;
+                    }
+                    if (isSignLoading) {
+                      actionIcon = (
+                        <span className="inline-block w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
+                      );
+                    }
                     return (
                       <tr
                         key={`${item.incidentType}-${item.date}-${globalIndex}`}
@@ -99,33 +135,31 @@ export const IncidentHistoryModal = ({
                       >
                         <td className="py-3 pr-4 pl-2">{item.incidentType}</td>
                         <td className="py-3 pr-4">{item.date}</td>
-                        <td className="py-3 pr-4">{item.documentName}</td>
-                        <td className="py-3 pr-4">
+                        <td className="py-3 pr-4 text-center">{item.totalPoints}</td>
+                        <td className="py-3 pr-4 text-center">
+                          <div className="flex items-center gap-1.5 justify-center">
+                            <IncidentSigningStatusLabel status={getAssignerStatus(item)} />
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4 text-center">
                           <div className="flex items-center gap-1.5">
-                            {item.status === 'pending' ? (
-                              <>
-                                <PendingIcon className="w-4 h-4 shrink-0 text-[#F59E0B]" aria-hidden />
-                                <span className="text-[#F59E0B]">Pending Signature</span>
-                              </>
-                            ) : (
-                              <>
-                                <CompliantIcon className="w-4 h-4 shrink-0 text-positive" aria-hidden />
-                                <span>Signed</span>
-                              </>
-                            )}
+                            <IncidentSigningStatusLabel status={getAssigneeStatus(item)} />
                           </div>
                         </td>
                         <td className="py-3 pr-2">
                           <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => onDownload?.(item, globalIndex)}
-                              className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors"
-                              aria-label="Download"
-                              title="Download"
-                            >
-                              <DownloadIcon className="w-4 h-4" />
-                            </button>
+                            {showSignAction && (
+                              <button
+                                type="button"
+                                onClick={() => onSign?.(item, globalIndex)}
+                                disabled={isSignLoading}
+                                className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors disabled:opacity-60"
+                                aria-label="Sign"
+                                title="Sign"
+                              >
+                                {actionIcon}
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => onView?.(item, globalIndex)}

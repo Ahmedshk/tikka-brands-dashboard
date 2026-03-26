@@ -44,6 +44,16 @@ export function initializeSocket(httpServer: HttpServer): SocketServer {
     socket.join(`user:${userId}`);
     logger.info("Socket connected", { userId, socketId: socket.id });
 
+    socket.on("disciplinary:subscribe-employee", (employeeId: string) => {
+      if (typeof employeeId !== "string" || employeeId.trim().length === 0) return;
+      socket.join(`disciplinary:employee:${employeeId}`);
+    });
+
+    socket.on("disciplinary:unsubscribe-employee", (employeeId: string) => {
+      if (typeof employeeId !== "string" || employeeId.trim().length === 0) return;
+      socket.leave(`disciplinary:employee:${employeeId}`);
+    });
+
     socket.on("disconnect", (reason) => {
       logger.info("Socket disconnected", { userId, socketId: socket.id, reason });
     });

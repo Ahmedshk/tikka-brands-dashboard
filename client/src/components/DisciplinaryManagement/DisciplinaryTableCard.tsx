@@ -1,5 +1,6 @@
 import type { DisciplinaryRow, DisciplinaryStatus } from '../../types/disciplinaryManagement.types';
 import { Pagination } from '../common/Pagination';
+import { Spinner } from '../common/Spinner';
 import PendingIcon from '@assets/icons/pending.svg?react';
 import CompliantIcon from '@assets/icons/compliant.svg?react';
 import ViewIcon from '@assets/icons/view.svg?react';
@@ -15,21 +16,14 @@ export interface DisciplinaryTableCardPagination {
 }
 
 const statusPillClass: Record<DisciplinaryStatus, string> = {
-  'At Risk': 'rounded-full px-2 py-0.5 text-[8px] text-[10px] 2xl:text-xs font-medium bg-pending text-white',
+  Caution: 'rounded-full px-2 py-0.5 text-[8px] text-[10px] 2xl:text-xs font-medium bg-[#FEF08A] text-[#854D0E]',
+  'At Risk': 'rounded-full px-2 py-0.5 text-[8px] text-[10px] 2xl:text-xs font-medium bg-[#D97706] text-white',
   'Good Standing': 'rounded-full px-2 py-0.5 text-[8px] text-[10px] 2xl:text-xs font-medium bg-[rgba(93,197,79,0.2)] text-primary',
   Critical: 'rounded-full px-2 py-0.5 text-[8px] text-[10px] 2xl:text-xs font-medium bg-negative text-white',
 };
 
-/** Status from 90-day points: Good Standing 0-7, At Risk 8-11, Critical 12+ */
-function getStatusFromPoints(points: number): DisciplinaryStatus {
-  if (points >= 12) return 'Critical';
-  if (points >= 8) return 'At Risk';
-  return 'Good Standing';
-}
-
-function pointsColorClass(points: number): string {
-  if (points >= 12) return 'text-[#FF1C28] font-bold';
-  if (points >= 8) return 'text-[#F59E0B] font-bold';
+function pointsColorClass(status: DisciplinaryStatus): string {
+  if (status === 'Critical') return 'text-[#FF1C28] font-bold';
   return 'text-primary';
 }
 
@@ -40,11 +34,12 @@ function getInitial(name: string): string {
 
 export interface DisciplinaryTableCardProps {
   rows: DisciplinaryRow[];
+  loading?: boolean;
   onView?: (row: DisciplinaryRow, index: number) => void;
   pagination?: DisciplinaryTableCardPagination;
 }
 
-export const DisciplinaryTableCard = ({ rows, onView, pagination }: DisciplinaryTableCardProps) => {
+export const DisciplinaryTableCard = ({ rows, loading = false, onView, pagination }: DisciplinaryTableCardProps) => {
   return (
     <div className={`${cardClass} flex flex-col min-h-0 overflow-hidden`}>
       <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2 flex items-center flex-shrink-0">
@@ -53,7 +48,81 @@ export const DisciplinaryTableCard = ({ rows, onView, pagination }: Disciplinary
         </h3>
       </div>
       <div className="p-5 flex-1 min-h-0 overflow-hidden">
-        <div className="overflow-x-auto overflow-y-auto min-h-0">
+        {loading ? (
+          <div className="h-full min-h-[320px] flex flex-col items-center justify-center gap-3 text-primary">
+            <Spinner size="xl" className="text-button-primary" />
+            <span className="text-sm">Loading employees...</span>
+          </div>
+        ) : (
+          <>
+        <div className="md:hidden divide-y divide-gray-200 overflow-y-auto min-h-0">
+          {rows.map((row, index) => (
+            <div
+              key={`${row.name}-${row.role}-${index}-mobile`}
+              className={`px-3 py-3 ${index % 2 === 1 ? 'bg-[#F3F5F7]' : 'bg-white'}`}
+            >
+              <div className="flex items-start gap-2">
+                <div
+                  className="w-8 h-8 rounded-full bg-button-primary text-white flex items-center justify-center text-sm font-semibold shrink-0"
+                  aria-hidden
+                >
+                  {getInitial(row.name)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-primary whitespace-normal break-words">{row.name}</p>
+                  <p className="text-xs text-secondary mt-0.5">{row.role}</p>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
+                <div className="flex items-center gap-2">
+                  <span className="text-secondary">90-day Points:</span>
+                  <span className={`font-bold ${pointsColorClass(row.status)}`}>{row.points90Day}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-secondary">Most Recent:</span>
+                  <span className="text-primary">{row.mostRecent}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-secondary">Status:</span>
+                  <span className={statusPillClass[row.status]}>
+                    {row.status}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-secondary">E-Sign Status:</span>
+                  <div className="flex items-center gap-1.5">
+                    {row.eSignStatus.type === 'pending' ? (
+                      <>
+                        <PendingIcon className="w-3.5 h-3.5 shrink-0 text-pending" aria-hidden />
+                        <span className="text-pending font-semibold">{row.eSignStatus.count} Pending</span>
+                      </>
+                    ) : (
+                      <>
+                        <CompliantIcon className="w-3.5 h-3.5 shrink-0 text-positive" aria-hidden />
+                        <span className="text-positive font-semibold">Compliant</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => onView?.(row, index)}
+                  className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors inline-flex items-center justify-center"
+                  aria-label="View"
+                  title="View details"
+                >
+                  <ViewIcon className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto overflow-y-auto min-h-0">
           <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
             <thead>
               <tr className="text-left text-secondary border-b border-gray-200">
@@ -85,13 +154,13 @@ export const DisciplinaryTableCard = ({ rows, onView, pagination }: Disciplinary
                       </div>
                     </div>
                   </td>
-                  <td className={`py-3 pr-4 font-bold text-center ${pointsColorClass(row.points90Day)}`}>
+                  <td className={`py-3 pr-4 font-bold text-center ${pointsColorClass(row.status)}`}>
                     {row.points90Day}
                   </td>
                   <td className="py-3 pr-4 text-center">{row.mostRecent}</td>
                   <td className="py-3 pr-4 text-center">
-                    <span className={statusPillClass[getStatusFromPoints(row.points90Day)]}>
-                      {getStatusFromPoints(row.points90Day)}
+                    <span className={statusPillClass[row.status]}>
+                      {row.status}
                     </span>
                   </td>
                   <td className="py-3 pr-4 text-center">
@@ -125,6 +194,8 @@ export const DisciplinaryTableCard = ({ rows, onView, pagination }: Disciplinary
             </tbody>
           </table>
         </div>
+          </>
+        )}
       </div>
       {pagination && (
         <Pagination

@@ -30,6 +30,7 @@ import type {
 import type { RootState } from "../../store/store";
 import TeamHrIcon from "@assets/icons/team_and_hr.svg?react";
 import ViewIcon from "@assets/icons/view.svg?react";
+import SearchIcon from "@assets/icons/search.svg?react";
 import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
 
 const PAGE_ID = "reviews-management";
@@ -463,15 +464,21 @@ export const ReviewsManagement = () => {
                       <label className="sr-only" htmlFor="review-cycles-search">
                         Search review cycles by employee name
                       </label>
-                      <input
-                        id="review-cycles-search"
-                        type="search"
-                        value={reviewCyclesSearchInput}
-                        onChange={(e) => setReviewCyclesSearchInput(e.target.value)}
-                        placeholder="Search by name…"
-                        autoComplete="off"
-                        className="search-input-gray-clear w-full min-w-0 sm:max-w-[220px] md:max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-primary placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-gray-300/50"
-                      />
+                      <div className="relative w-full min-w-0 sm:max-w-[220px] md:max-w-xs">
+                        <SearchIcon
+                          className="absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5 text-secondary shrink-0 pointer-events-none"
+                          aria-hidden
+                        />
+                        <input
+                          id="review-cycles-search"
+                          type="search"
+                          value={reviewCyclesSearchInput}
+                          onChange={(e) => setReviewCyclesSearchInput(e.target.value)}
+                          placeholder="Search by name…"
+                          autoComplete="off"
+                          className="search-input-gray-clear w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 py-2 text-sm text-primary placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-gray-300/50"
+                        />
+                      </div>
                     </div>
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                       {loading || activeListLoading ? (
@@ -695,15 +702,21 @@ export const ReviewsManagement = () => {
                       <label className="sr-only" htmlFor="past-reviews-search">
                         Search past reviews by employee name
                       </label>
-                      <input
-                        id="past-reviews-search"
-                        type="search"
-                        value={pastReviewsSearchInput}
-                        onChange={(e) => setPastReviewsSearchInput(e.target.value)}
-                        placeholder="Search by name…"
-                        autoComplete="off"
-                        className="search-input-gray-clear w-full min-w-0 sm:max-w-[220px] md:max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-primary placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-gray-300/50"
-                      />
+                      <div className="relative w-full min-w-0 sm:max-w-[220px] md:max-w-xs">
+                        <SearchIcon
+                          className="absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5 text-secondary shrink-0 pointer-events-none"
+                          aria-hidden
+                        />
+                        <input
+                          id="past-reviews-search"
+                          type="search"
+                          value={pastReviewsSearchInput}
+                          onChange={(e) => setPastReviewsSearchInput(e.target.value)}
+                          placeholder="Search by name…"
+                          autoComplete="off"
+                          className="search-input-gray-clear w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 py-2 text-sm text-primary placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-gray-300/50"
+                        />
+                      </div>
                     </div>
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                       {pastListLoading ? (

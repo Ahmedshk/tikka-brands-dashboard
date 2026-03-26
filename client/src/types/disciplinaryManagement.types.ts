@@ -1,4 +1,4 @@
-export type DisciplinaryStatus = 'At Risk' | 'Good Standing' | 'Critical';
+export type DisciplinaryStatus = 'Good Standing' | 'Caution' | 'At Risk' | 'Critical';
 
 export type ESignStatus =
   | { type: 'pending'; count: number }
@@ -26,15 +26,45 @@ export interface DisciplinaryDetailsEmployee {
 }
 
 export interface RequiredProtocol {
-  nextAction: string;
+  currentAction: string;
   message?: string;
 }
 
+export type IncidentHistorySigningStatus =
+  | 'pending'
+  | 'signed'
+  | 'declined'
+  | 'cancelled'
+  | 'expired';
+
+export type IncidentSigningPhase =
+  | 'pending_manager'
+  | 'pending_employee'
+  | 'completed'
+  | 'declined'
+  | 'cancelled'
+  | 'expired';
+
 export interface IncidentHistoryItem {
+  id: string;
   incidentType: string;
   date: string;
+  incidentDateIso: string;
   documentName: string;
-  status: 'pending' | 'signed';
+  status: IncidentHistorySigningStatus;
+  signingPhase: IncidentSigningPhase;
+  assignerId?: string;
+  assignerName: string;
+  totalPoints: number;
+  detailsOfIncident: string;
+  supervisorCommitment: string;
+  supervisorComments: string;
+  positiveResults?: string;
+  negativeConsequences?: string;
+  managerSignedAt?: string;
+  employeeSignedAt?: string;
+  signedDocumentPublicId?: string;
+  auditTrailPublicId?: string;
 }
 
 export interface DocumentVaultItem {

@@ -33,6 +33,9 @@ export async function initializeAgenda(): Promise<Agenda> {
   const { registerReviewCycleJobs } = await import("../jobs/reviewCycle.jobs.js");
   registerReviewCycleJobs(agenda);
 
+  const { registerDisciplinaryJobs } = await import("../jobs/disciplinary.jobs.js");
+  registerDisciplinaryJobs(agenda);
+
   await agenda.start();
   logger.info("Agenda: scheduler started");
 
@@ -45,6 +48,9 @@ export async function initializeAgenda(): Promise<Agenda> {
   await agenda.every(schedule, "review:check-sharing-deadline");
   await agenda.every(schedule, "review:check-checkin-deadlines");
   await agenda.every(schedule, "review:supersede-scheduled");
+
+  // Disciplinary rolling period expiry check (daily at midnight)
+  await agenda.every("0 0 * * *", "disciplinary:check-expiry");
 
   return agenda;
 }

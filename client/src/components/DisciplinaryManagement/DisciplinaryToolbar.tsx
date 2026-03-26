@@ -1,16 +1,13 @@
 import SearchIcon from '@assets/icons/search.svg?react';
-import LogIncidentIcon from '@assets/icons/log_incident.svg?react';
 
 export interface DisciplinaryToolbarProps {
   searchValue: string;
   onSearchChange: (value: string) => void;
-  onLogIncident: () => void;
 }
 
 export const DisciplinaryToolbar = ({
   searchValue,
   onSearchChange,
-  onLogIncident,
 }: DisciplinaryToolbarProps) => {
   return (
     <div className="flex flex-wrap items-center justify-end gap-4 mb-6">
@@ -29,14 +26,6 @@ export const DisciplinaryToolbar = ({
             aria-label="Search by name or role"
           />
         </div>
-        <button
-          type="button"
-          onClick={onLogIncident}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity order-1 md:order-2"
-        >
-          <LogIncidentIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5 shrink-0" aria-hidden />
-          Log Incident
-        </button>
       </div>
     </div>
   );

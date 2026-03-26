@@ -101,7 +101,72 @@ export const EmployeeTrainingCard = ({
             <Spinner size="lg" className="text-button-primary" />
           </div>
         ) : (
-        <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
+        <>
+        <div className="md:hidden divide-y divide-gray-200 overflow-y-auto flex-1 min-h-0">
+          {displayRows.map((row, index) => {
+            const rowKey = row.assignmentId ?? `${row.trainingName}-${row.assignTo}-${index}`;
+            return (
+            <div
+              key={`${rowKey}-mobile`}
+              className={`px-3 py-3 ${index % 2 === 1 ? 'bg-[#F3F5F7]' : 'bg-white'}`}
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-primary whitespace-normal break-words">{row.assignTo}</p>
+                <p className="text-xs text-secondary mt-0.5">{row.role}</p>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
+                <div className="flex items-start gap-2">
+                  <span className="text-secondary shrink-0">Training:</span>
+                  <span className="text-primary whitespace-normal break-words">{row.trainingName}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-secondary shrink-0">Progress:</span>
+                  <ProgressSegments row={row} keyPrefix={`${row.trainingName}-${row.assignTo}-${index}-mobile`} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-secondary shrink-0">Status:</span>
+                  <span className={statusClass[row.status]}>
+                    {statusLabel(row.status)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => onView?.(row, index)}
+                  className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors"
+                  aria-label="View"
+                  title="View"
+                >
+                  <ViewIcon className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onEdit?.(row, index)}
+                  className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors"
+                  aria-label="Edit"
+                  title="Edit"
+                >
+                  <EditIcon className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete?.(row, index)}
+                  className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors"
+                  aria-label="Delete"
+                  title="Delete"
+                >
+                  <DeleteIcon className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto overflow-y-auto flex-1 min-h-0">
           <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
             <thead>
               <tr className="text-left text-secondary border-b border-gray-200">
@@ -166,6 +231,7 @@ export const EmployeeTrainingCard = ({
             </tbody>
           </table>
         </div>
+        </>
         )}
         {!loading && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">

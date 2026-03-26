@@ -1,16 +1,19 @@
-import DocumentIcon from '@assets/icons/document.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
 
 export interface DetailsPageHeaderProps {
   dateWindowStart: string;
   dateWindowEnd: string;
   onBack: () => void;
-  onSendDocument: () => void;
   onAssignPoints: () => void;
 }
 
 export const DetailsPageHeader = (props: DetailsPageHeaderProps) => {
-  const { dateWindowStart, dateWindowEnd, onBack, onSendDocument, onAssignPoints } = props;
+  const {
+    dateWindowStart,
+    dateWindowEnd,
+    onBack,
+    onAssignPoints,
+  } = props;
   return (
     <div className="mb-6 flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -33,14 +36,6 @@ export const DetailsPageHeader = (props: DetailsPageHeaderProps) => {
           ← Back
         </button>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onSendDocument}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-gray-50 transition-colors"
-          >
-            <DocumentIcon className="w-4 h-4 shrink-0" aria-hidden />
-            Send Document for Signature
-          </button>
           <button
             type="button"
             onClick={onAssignPoints}

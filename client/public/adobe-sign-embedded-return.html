@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Signature complete</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; text-align: center; color: #1a1a1a; }
+    p { color: #555; font-size: 0.95rem; }
+  </style>
+</head>
+<body>
+  <p><strong>Signature recorded.</strong></p>
+  <p>You can close this panel or return to the dashboard.</p>
+  <script>
+    (function () {
+      if (window.parent !== window) {
+        window.parent.postMessage({ type: "tikka-adobe-sign-complete" }, window.location.origin);
+      }
+    })();
+  </script>
+</body>
+</html>

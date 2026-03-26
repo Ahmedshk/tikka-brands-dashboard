@@ -98,6 +98,11 @@ export const navigationConfig: NavigationConfig = [
         path: '/dashboard/review-settings',
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
       },
+      {
+        label: 'Disciplinary Settings',
+        path: '/dashboard/disciplinary-settings',
+        allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
+      },
     ],
   },
 ];

@@ -75,7 +75,8 @@ export const proxyDocument = async (
       req.query.resourceType === 'image' ? 'image' : 'raw';
     const suggestedFilename =
       typeof req.query.filename === 'string' ? req.query.filename.trim() : '';
-    const cloudinaryUrl = getSecureDocumentUrl(publicId, resourceType);
+    // Add a cache-busting token so overwritten assets (same public_id) return fresh content.
+    const cloudinaryUrl = `${getSecureDocumentUrl(publicId, resourceType)}?cb=${Date.now()}`;
     const docResponse = await fetch(cloudinaryUrl);
     if (!docResponse.ok) {
       throw new NotFoundError('Document not found');
@@ -86,13 +87,18 @@ export const proxyDocument = async (
       suggestedFilename && /^[\w\s.-]+\.\w+$/.test(suggestedFilename)
         ? suggestedFilename
         : null;
+    const escapedFilename = safeFilename
+      ? safeFilename.replaceAll('"', String.raw`\"`)
+      : null;
     const contentDisposition = safeFilename
-      ? `inline; filename="${safeFilename.replace(/"/g, '\\"')}"`
+      ? `inline; filename="${escapedFilename}"`
       : (docResponse.headers.get('content-disposition') ?? 'inline');
     res.set({
       'Content-Type': contentType,
       'Content-Length': buffer.length.toString(),
-      'Cache-Control': 'private, max-age=86400',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
       'Content-Disposition': contentDisposition,
     });
     res.send(buffer);

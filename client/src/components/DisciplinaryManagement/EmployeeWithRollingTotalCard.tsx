@@ -1,17 +1,19 @@
 import { LinearProgress } from '@mui/material';
 import type { DisciplinaryStatus } from '../../types/disciplinaryManagement.types';
-import { TREND_POSITIVE, TREND_PENDING, TREND_NEGATIVE } from '../../constants/trendColors';
+import { TREND_POSITIVE, TREND_NEGATIVE } from '../../constants/trendColors';
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
 
-function getProgressBarColor(currentPoints: number): string {
-  if (currentPoints >= 12) return TREND_NEGATIVE;
-  if (currentPoints >= 8) return TREND_PENDING;
+function getProgressBarColor(status: DisciplinaryStatus): string {
+  if (status === 'Critical') return TREND_NEGATIVE;
+  if (status === 'At Risk') return '#D97706';
+  if (status === 'Caution') return '#FACC15';
   return TREND_POSITIVE;
 }
 
 const statusPillClass: Record<DisciplinaryStatus, string> = {
-  'At Risk': 'rounded-full px-2 py-0.5 text-[8px] md:text-[10px] 2xl:text-xs font-medium bg-[#F59E0B] text-white',
+  Caution: 'rounded-full px-2 py-0.5 text-[8px] md:text-[10px] 2xl:text-xs font-medium bg-[#FEF08A] text-[#854D0E]',
+  'At Risk': 'rounded-full px-2 py-0.5 text-[8px] md:text-[10px] 2xl:text-xs font-medium bg-[#D97706] text-white',
   'Good Standing': 'rounded-full px-2 py-0.5 text-[8px] md:text-[10px] 2xl:text-xs font-medium bg-[rgba(93,197,79,0.2)] text-primary',
   Critical: 'rounded-full px-2 py-0.5 text-[8px] md:text-[10px] 2xl:text-xs font-medium bg-[#FF1C28] text-white',
 };
@@ -41,7 +43,7 @@ export const EmployeeWithRollingTotalCard = ({
   noteText = 'Points older than 90-days are automatically removed from calculation.',
 }: EmployeeWithRollingTotalCardProps) => {
   const displayPercent = maxPoints === 0 ? 0 : Math.min(100, Math.round((currentPoints / maxPoints) * 100));
-  const barColor = getProgressBarColor(currentPoints);
+  const barColor = getProgressBarColor(status);
 
   return (
     <div className={`${cardClass} h-full flex flex-col min-h-0`}>
