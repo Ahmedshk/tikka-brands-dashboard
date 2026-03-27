@@ -23,6 +23,8 @@ interface IncidentReportData {
   detailsOfIncident: string;
   supervisorCommitment: string;
   supervisorComments: string;
+  associateCommitment?: string;
+  associateComments?: string;
   positiveResults?: string;
   negativeConsequences?: string;
   guidelines: { pointThreshold: number; action: string }[];
@@ -197,7 +199,13 @@ export class PdfGeneratorService {
 
     this.drawBodyPanel(doc, "Details of incident", data.detailsOfIncident);
     this.drawBodyPanel(doc, "Supervisor commitment", data.supervisorCommitment);
+    if (data.associateCommitment) {
+      this.drawBodyPanel(doc, "Associate commitment", data.associateCommitment);
+    }
     this.drawBodyPanel(doc, "Supervisor comments", data.supervisorComments);
+    if (data.associateComments) {
+      this.drawBodyPanel(doc, "Associate comments", data.associateComments);
+    }
 
     if (data.positiveResults) {
       this.drawBodyPanel(doc, "Positive results", data.positiveResults);

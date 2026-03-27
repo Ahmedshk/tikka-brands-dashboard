@@ -82,6 +82,22 @@ export class DisciplinaryIncidentService {
     return null;
   }
 
+  private locationIdEntryToString(value: unknown): string {
+    if (value == null) return "";
+    if (typeof value === "object" && "_id" in (value as Record<string, unknown>)) {
+      return this.toIdString((value as { _id: unknown })._id) ?? "";
+    }
+    if (typeof value === "object") {
+      return typeof (value as { toString?: () => string }).toString === "function"
+        ? (value as { toString: () => string }).toString()
+        : "";
+    }
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    if (typeof value === "bigint") return value.toString();
+    return "";
+  }
+
   private async loadHierarchyRoles(): Promise<HierarchyRole[]> {
     const allRoles = await RoleModel.find()
       .select("_id name reportsTo")
@@ -163,19 +179,27 @@ export class DisciplinaryIncidentService {
     const role = emp.roleId as { locationAccess?: string; locationIds?: unknown[] } | undefined;
     if (!role) return [];
 
-    let locs: string[] | "all" =
-      role.locationAccess === "all"
-        ? "all"
-        : (role.locationIds ?? []).map(String);
+    const roleLocationIds = (role.locationIds ?? [])
+      .map((entry) => this.locationIdEntryToString(entry))
+      .filter(Boolean);
 
-    if (locs !== "all") {
-      const overrides = (emp.locationOverrides ?? []).map(String);
-      const removals = new Set((emp.locationRemovals ?? []).map(String));
-      const merged = new Set([...locs, ...overrides]);
-      locs = [...merged].filter((id) => !removals.has(id));
+    // Match effective-access semantics used elsewhere:
+    // non-specific roles (or specific with empty locations) mean global location access.
+    if (role.locationAccess !== "specific" || roleLocationIds.length === 0) {
+      return "all";
     }
 
-    return locs;
+    const effective = new Set(roleLocationIds);
+    for (const entry of emp.locationOverrides ?? []) {
+      const id = this.locationIdEntryToString(entry);
+      if (id) effective.add(id);
+    }
+    for (const entry of emp.locationRemovals ?? []) {
+      const id = this.locationIdEntryToString(entry);
+      if (id) effective.delete(id);
+    }
+
+    return [...effective];
   }
 
   async getEmployeesForLocation(
@@ -252,9 +276,10 @@ export class DisciplinaryIncidentService {
 
     const result: DisciplinaryEmployeeListItem[] = [];
 
+    const normalizedLocationId = this.locationIdEntryToString(locationId);
     for (const emp of employees) {
       const empLocs = this.resolveEmployeeLocations(emp as unknown as Record<string, unknown>);
-      if (empLocs !== "all" && !empLocs.includes(locationId)) continue;
+      if (empLocs !== "all" && !empLocs.includes(normalizedLocationId)) continue;
 
       const empIdStr = emp._id.toString();
       const incidents = await repo.findActiveByEmployeeId(empIdStr, cutoff);
@@ -441,6 +466,12 @@ export class DisciplinaryIncidentService {
       detailsOfIncident: incident.detailsOfIncident,
       supervisorCommitment: incident.supervisorCommitment,
       supervisorComments: incident.supervisorComments,
+      ...(incident.associateCommitment
+        ? { associateCommitment: incident.associateCommitment }
+        : {}),
+      ...(incident.associateComments
+        ? { associateComments: incident.associateComments }
+        : {}),
       guidelines: settings.disciplineGuidelines.map((g) => ({
         pointThreshold: g.pointThreshold,
         action: g.action,
@@ -469,6 +500,8 @@ export class DisciplinaryIncidentService {
       detailsOfIncident: string;
       supervisorCommitment: string;
       supervisorComments: string;
+      associateCommitment?: string;
+      associateComments?: string;
       positiveResults?: string;
       negativeConsequences?: string;
       incidentDate?: string;
@@ -519,6 +552,8 @@ export class DisciplinaryIncidentService {
       detailsOfIncident: data.detailsOfIncident,
       supervisorCommitment: data.supervisorCommitment,
       supervisorComments: data.supervisorComments,
+      associateCommitment: data.associateCommitment,
+      associateComments: data.associateComments,
       positiveResults: data.positiveResults,
       negativeConsequences: data.negativeConsequences,
       signingStatus: "pending_manager",

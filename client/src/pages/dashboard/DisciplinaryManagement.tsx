@@ -23,7 +23,8 @@ export const DisciplinaryManagement = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<DisciplinaryRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tableLoading, setTableLoading] = useState(true);
+  const [kpiLoading, setKpiLoading] = useState(true);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [criticalCount, setCriticalCount] = useState(0);
@@ -37,18 +38,47 @@ export const DisciplinaryManagement = () => {
     return () => globalThis.clearTimeout(timeout);
   }, [search]);
 
+  const fetchKPIs = useCallback(async () => {
+    if (!currentLocation?._id) {
+      setCriticalCount(0);
+      setPendingCount(0);
+      setTotalActive(0);
+      setKpiLoading(false);
+      return;
+    }
+    setKpiLoading(true);
+    try {
+      const data = await disciplinaryManagementService.getEmployees(currentLocation._id, {
+        page: 1,
+        limit: PAGE_SIZE,
+        search: '',
+      });
+      setCriticalCount(data.meta.criticalCount);
+      setPendingCount(data.meta.pendingCount);
+      setTotalActive(data.meta.totalActive);
+    } catch {
+      toast.error('Failed to load KPI metrics');
+      setCriticalCount(0);
+      setPendingCount(0);
+      setTotalActive(0);
+    } finally {
+      setKpiLoading(false);
+    }
+  }, [currentLocation?._id]);
+
+  useEffect(() => {
+    fetchKPIs();
+  }, [fetchKPIs]);
+
   const fetchEmployees = useCallback(async () => {
     if (!currentLocation?._id) {
       setRows([]);
       setTotalItems(0);
       setTotalPages(1);
-      setCriticalCount(0);
-      setPendingCount(0);
-      setTotalActive(0);
-      setLoading(false);
+      setTableLoading(false);
       return;
     }
-    setLoading(true);
+    setTableLoading(true);
     try {
       const data = await disciplinaryManagementService.getEmployees(currentLocation._id, {
         page,
@@ -58,9 +88,6 @@ export const DisciplinaryManagement = () => {
       setRows(data.rows);
       setTotalItems(data.meta.total);
       setTotalPages(data.meta.totalPages);
-      setCriticalCount(data.meta.criticalCount);
-      setPendingCount(data.meta.pendingCount);
-      setTotalActive(data.meta.totalActive);
       if (data.meta.page !== page) {
         setPage(data.meta.page);
       }
@@ -69,11 +96,8 @@ export const DisciplinaryManagement = () => {
       setRows([]);
       setTotalItems(0);
       setTotalPages(1);
-      setCriticalCount(0);
-      setPendingCount(0);
-      setTotalActive(0);
     } finally {
-      setLoading(false);
+      setTableLoading(false);
     }
   }, [currentLocation?._id, debouncedSearch, page]);
 
@@ -83,25 +107,25 @@ export const DisciplinaryManagement = () => {
 
   const disciplinaryKPIs = [
     {
-      title: 'Critical',
-      value: `${criticalCount} Member${criticalCount === 1 ? '' : 's'}`,
-      accentColor: 'red' as const,
-      rightIcon: <CriticalIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      loading,
+      title: 'Total Team Members',
+      value: `${totalActive} Active`,
+      accentColor: 'blue' as const,
+      rightIcon: <TotalTeamMembersIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+      loading: kpiLoading,
     },
     {
       title: 'Pending PIPs',
       value: `${pendingCount} PIP${pendingCount === 1 ? '' : 's'}`,
       accentColor: 'gold' as const,
       rightIcon: <DisciplinaryReviewsDueIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      loading,
+      loading: kpiLoading,
     },
     {
-      title: 'Total Team Members',
-      value: `${totalActive} Active`,
-      accentColor: 'blue' as const,
-      rightIcon: <TotalTeamMembersIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      loading,
+      title: 'Critical',
+      value: `${criticalCount} Member${criticalCount === 1 ? '' : 's'}`,
+      accentColor: 'red' as const,
+      rightIcon: <CriticalIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+      loading: kpiLoading,
     },
   ];
 
@@ -131,7 +155,7 @@ export const DisciplinaryManagement = () => {
 
         <DisciplinaryTableCard
           rows={rows}
-          loading={loading}
+          loading={tableLoading}
           onView={(row) => {
             if (row.id) {
               navigate(`/dashboard/disciplinary-management/${row.id}`);

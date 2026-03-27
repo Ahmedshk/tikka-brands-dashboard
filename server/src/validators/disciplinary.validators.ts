@@ -61,6 +61,8 @@ export const createIncidentSchema = z.object({
     detailsOfIncident: z.string().min(1, "Details of incident is required"),
     supervisorCommitment: z.string().min(1, "Supervisor commitment is required"),
     supervisorComments: z.string().min(1, "Supervisor comments is required"),
+    associateCommitment: z.string().optional(),
+    associateComments: z.string().optional(),
     positiveResults: z.string().optional(),
     negativeConsequences: z.string().optional(),
     incidentDate: z.string().optional(),

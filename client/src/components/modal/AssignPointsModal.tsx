@@ -70,7 +70,9 @@ export const AssignPointsModal = ({
 
   const [detailsOfIncident, setDetailsOfIncident] = useState('');
   const [supervisorCommitment, setSupervisorCommitment] = useState('');
+  const [associateCommitment, setAssociateCommitment] = useState('');
   const [supervisorComments, setSupervisorComments] = useState('');
+  const [associateComments, setAssociateComments] = useState('');
   const [positiveResults, setPositiveResults] = useState('');
   const [negativeConsequences, setNegativeConsequences] = useState('');
 
@@ -80,7 +82,9 @@ export const AssignPointsModal = ({
 
   const detailsRef = useAutoResizeTextareaRef(detailsOfIncident);
   const commitmentRef = useAutoResizeTextareaRef(supervisorCommitment);
+  const associateCommitmentRef = useAutoResizeTextareaRef(associateCommitment);
   const commentsRef = useAutoResizeTextareaRef(supervisorComments);
+  const associateCommentsRef = useAutoResizeTextareaRef(associateComments);
   const positiveRef = useAutoResizeTextareaRef(positiveResults);
   const negativeRef = useAutoResizeTextareaRef(negativeConsequences);
 
@@ -104,7 +108,9 @@ export const AssignPointsModal = ({
       setSelectedTerminationPolicyIds([]);
       setDetailsOfIncident('');
       setSupervisorCommitment('');
+      setAssociateCommitment('');
       setSupervisorComments('');
+      setAssociateComments('');
       setPositiveResults('');
       setNegativeConsequences('');
     }
@@ -167,6 +173,8 @@ export const AssignPointsModal = ({
         detailsOfIncident: detailsOfIncident.trim(),
         supervisorCommitment: supervisorCommitment.trim(),
         supervisorComments: supervisorComments.trim(),
+        associateCommitment: associateCommitment.trim() || undefined,
+        associateComments: associateComments.trim() || undefined,
         positiveResults: positiveResults.trim() || undefined,
         negativeConsequences: negativeConsequences.trim() || undefined,
       };
@@ -291,6 +299,19 @@ export const AssignPointsModal = ({
           />
         </div>
         <div>
+          <label htmlFor="associate-commitment" className="block text-xs font-medium text-secondary mb-1">
+            Associate Commitment <span className="text-tertiary">(optional)</span>
+          </label>
+          <textarea
+            id="associate-commitment"
+            ref={associateCommitmentRef}
+            value={associateCommitment}
+            onChange={(e) => setAssociateCommitment(e.target.value)}
+            rows={1}
+            className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
+          />
+        </div>
+        <div>
           <label htmlFor="supervisor-comments" className="block text-xs font-medium text-secondary mb-1">
             Supervisor Comments *
           </label>
@@ -299,6 +320,19 @@ export const AssignPointsModal = ({
             ref={commentsRef}
             value={supervisorComments}
             onChange={(e) => setSupervisorComments(e.target.value)}
+            rows={1}
+            className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
+          />
+        </div>
+        <div>
+          <label htmlFor="associate-comments" className="block text-xs font-medium text-secondary mb-1">
+            Associate Comments <span className="text-tertiary">(optional)</span>
+          </label>
+          <textarea
+            id="associate-comments"
+            ref={associateCommentsRef}
+            value={associateComments}
+            onChange={(e) => setAssociateComments(e.target.value)}
             rows={1}
             className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
           />

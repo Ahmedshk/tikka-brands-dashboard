@@ -58,7 +58,9 @@ export interface IncidentHistoryItem {
   totalPoints: number;
   detailsOfIncident: string;
   supervisorCommitment: string;
+  associateCommitment?: string;
   supervisorComments: string;
+  associateComments?: string;
   positiveResults?: string;
   negativeConsequences?: string;
   managerSignedAt?: string;

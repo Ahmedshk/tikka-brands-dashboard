@@ -22,6 +22,8 @@ export interface DisciplinaryIncidentDocument extends Document {
   detailsOfIncident: string;
   supervisorCommitment: string;
   supervisorComments: string;
+  associateCommitment?: string;
+  associateComments?: string;
   positiveResults?: string;
   negativeConsequences?: string;
 
@@ -92,6 +94,8 @@ const disciplinaryIncidentSchema = new Schema<DisciplinaryIncidentDocument>(
     detailsOfIncident: { type: String, required: true },
     supervisorCommitment: { type: String, required: true },
     supervisorComments: { type: String, required: true },
+    associateCommitment: { type: String, default: undefined },
+    associateComments: { type: String, default: undefined },
     positiveResults: { type: String, default: undefined },
     negativeConsequences: { type: String, default: undefined },
     signingStatus: {

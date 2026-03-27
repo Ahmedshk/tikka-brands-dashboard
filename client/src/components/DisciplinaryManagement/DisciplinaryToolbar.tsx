@@ -22,7 +22,7 @@ export const DisciplinaryToolbar = ({
             value={searchValue}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search by name or role..."
-            className="w-full min-w-[200px] md:min-w-[260px] pl-9 pr-3 py-2 rounded-lg border border-primary bg-white text-xs md:text-sm 2xl:text-base text-primary placeholder:text-xs placeholder:md:text-sm placeholder:2xl:text-base placeholder:text-primary focus:outline-none focus:ring-2 focus:ring-quaternary/30"
+            className="search-input-gray-clear w-full min-w-[200px] md:min-w-[260px] rounded-lg border border-gray-300 bg-white pl-9 pr-3 py-2 text-xs md:text-sm 2xl:text-base text-primary placeholder:text-xs placeholder:md:text-sm placeholder:2xl:text-base placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-gray-300/50"
             aria-label="Search by name or role"
           />
         </div>

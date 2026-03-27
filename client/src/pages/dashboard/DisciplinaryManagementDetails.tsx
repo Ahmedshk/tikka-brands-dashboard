@@ -91,7 +91,9 @@ function mapIncidents(details: EmployeeDetails): IncidentHistoryItem[] {
       totalPoints: inc.totalPoints,
       detailsOfIncident: inc.detailsOfIncident,
       supervisorCommitment: inc.supervisorCommitment,
+      associateCommitment: inc.associateCommitment,
       supervisorComments: inc.supervisorComments,
+      associateComments: inc.associateComments,
       positiveResults: inc.positiveResults,
       negativeConsequences: inc.negativeConsequences,
       managerSignedAt: inc.managerSignedAt,
@@ -120,6 +122,7 @@ export const DisciplinaryManagementDetails = () => {
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<EmployeeDetails | null>(null);
   const lastHandledNotificationIdRef = useRef<string | null>(null);
+  const initialLocationIdRef = useRef<string | null>(null);
 
   const fetchDetails = useCallback(async () => {
     if (!employeeId) return;
@@ -137,6 +140,17 @@ export const DisciplinaryManagementDetails = () => {
   useEffect(() => {
     fetchDetails();
   }, [fetchDetails]);
+
+  useEffect(() => {
+    const locationId = currentLocation?._id ?? null;
+    if (initialLocationIdRef.current == null) {
+      initialLocationIdRef.current = locationId;
+      return;
+    }
+    if (locationId && initialLocationIdRef.current !== locationId) {
+      navigate('/dashboard/disciplinary-management');
+    }
+  }, [currentLocation?._id, navigate]);
 
   const refreshDetailsSilently = useCallback(async () => {
     if (!employeeId) return;
@@ -292,8 +306,8 @@ export const DisciplinaryManagementDetails = () => {
     const parsed = new Date(item.incidentDateIso);
     return !Number.isNaN(parsed.getTime()) && parsed < cutoffDate;
   });
-  const recentIncidentsPreview = recentIncidents.slice(0, 5);
-  const priorIncidentsPreview = priorIncidents.slice(0, 5);
+  const recentIncidentsPreview = recentIncidents.slice(0, 3);
+  const priorIncidentsPreview = priorIncidents.slice(0, 3);
   const currentUserId = user?._id ?? null;
 
   return (
@@ -307,7 +321,7 @@ export const DisciplinaryManagementDetails = () => {
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-          <div className="lg:col-span-1 min-h-0">
+          <div className="order-1 lg:order-none lg:col-span-1 min-h-0">
             {isCardLoading ? (
               <CardLoader message="Loading employee details..." />
             ) : (
@@ -321,7 +335,7 @@ export const DisciplinaryManagementDetails = () => {
               />
             )}
           </div>
-          <div className="lg:col-span-2 min-h-0">
+          <div className="order-3 lg:order-none lg:col-span-2 min-h-0">
             {isCardLoading ? (
               <CardLoader message="Loading incident history..." />
             ) : (
@@ -342,7 +356,7 @@ export const DisciplinaryManagementDetails = () => {
               />
             )}
           </div>
-          <div className="lg:col-span-1 min-h-0">
+          <div className="order-2 lg:order-none lg:col-span-1 min-h-0">
             {isCardLoading ? (
               <CardLoader message="Loading required protocol..." />
             ) : (
@@ -352,7 +366,7 @@ export const DisciplinaryManagementDetails = () => {
               />
             )}
           </div>
-          <div className="lg:col-span-2 min-h-0">
+          <div className="order-4 lg:order-none lg:col-span-2 min-h-0">
             {isCardLoading ? (
               <CardLoader message="Loading prior incidents..." />
             ) : (

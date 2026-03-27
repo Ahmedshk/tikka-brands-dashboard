@@ -79,6 +79,8 @@ export interface IDisciplinaryIncident {
   detailsOfIncident: string;
   supervisorCommitment: string;
   supervisorComments: string;
+  associateCommitment?: string;
+  associateComments?: string;
   positiveResults?: string;
   negativeConsequences?: string;
 

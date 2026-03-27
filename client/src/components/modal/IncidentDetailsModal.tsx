@@ -135,10 +135,22 @@ export function IncidentDetailsModal({
               <p className="text-tertiary text-xs uppercase tracking-wide">Supervisor Commitment</p>
               <p className="text-primary whitespace-pre-wrap">{incident.supervisorCommitment}</p>
             </div>
+            {incident.associateCommitment && (
+              <div>
+                <p className="text-tertiary text-xs uppercase tracking-wide">Associate Commitment</p>
+                <p className="text-primary whitespace-pre-wrap">{incident.associateCommitment}</p>
+              </div>
+            )}
             <div>
               <p className="text-tertiary text-xs uppercase tracking-wide">Supervisor Comments</p>
               <p className="text-primary whitespace-pre-wrap">{incident.supervisorComments}</p>
             </div>
+            {incident.associateComments && (
+              <div>
+                <p className="text-tertiary text-xs uppercase tracking-wide">Associate Comments</p>
+                <p className="text-primary whitespace-pre-wrap">{incident.associateComments}</p>
+              </div>
+            )}
             {incident.positiveResults && (
               <div>
                 <p className="text-tertiary text-xs uppercase tracking-wide">Positive Results</p>
