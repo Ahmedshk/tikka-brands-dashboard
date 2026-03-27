@@ -8,6 +8,7 @@ import InventoryFoodCostIcon from '@assets/icons/inventory_and_food_cost.svg?rea
 import TeamHrIcon from '@assets/icons/team_and_hr.svg?react';
 import CalendarEventsIcon from '@assets/icons/calendar_and_events.svg?react';
 import AdminSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
+import OperationsIcon from '@assets/icons/operations.svg?react';
 
 export const navigationConfig: NavigationConfig = [
   {
@@ -29,6 +30,23 @@ export const navigationConfig: NavigationConfig = [
       {
         label: 'Sales Trend Reports',
         path: '/dashboard/sales-trend-reports',
+        allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
+      },
+    ],
+  },
+  {
+    label: 'Operations',
+    icon: OperationsIcon,
+    allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
+    children: [
+      {
+        label: 'Kitchen Performance',
+        path: '/dashboard/kitchen-performance',
+        allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
+      },
+      {
+        label: 'Activity Log',
+        path: '/dashboard/activity-log',
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
       },
     ],

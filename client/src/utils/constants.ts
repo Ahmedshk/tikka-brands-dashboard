@@ -38,6 +38,10 @@ export const API_ENDPOINTS = {
     VALID_COUNT_DATES: "/inventory/valid-count-dates",
     ORDERS: "/inventory/orders",
   },
+  KITCHEN_PERFORMANCE: {
+    LIST: "/kitchen-performance",
+    IMPORT: "/kitchen-performance/import",
+  },
   ROLES: "/roles",
   USERS: "/users",
   TRAININGS: "/trainings",

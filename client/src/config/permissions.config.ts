@@ -116,6 +116,16 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     components: [FULL_PAGE_ACCESS],
   },
   {
+    pageId: 'kitchen-performance',
+    pageLabel: 'Kitchen Performance',
+    components: [FULL_PAGE_ACCESS],
+  },
+  {
+    pageId: 'activity-log',
+    pageLabel: 'Activity Log',
+    components: [FULL_PAGE_ACCESS],
+  },
+  {
     pageId: 'user-management',
     pageLabel: 'User Management',
     components: [FULL_PAGE_ACCESS],
