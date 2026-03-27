@@ -14,6 +14,7 @@ export interface DisciplinaryIncidentDocument extends Document {
 
   appliedPolicies: IAppliedPolicy[];
   isImmediateTermination: boolean;
+  immediateTerminationPolicies?: IAppliedImmediateTerminationPolicy[];
   immediateTerminationPolicy?: IAppliedImmediateTerminationPolicy;
 
   totalPoints: number;
@@ -79,6 +80,10 @@ const disciplinaryIncidentSchema = new Schema<DisciplinaryIncidentDocument>(
     },
     appliedPolicies: { type: [appliedPolicySchema], default: [] },
     isImmediateTermination: { type: Boolean, default: false },
+    immediateTerminationPolicies: {
+      type: [immediateTerminationPolicySchema],
+      default: [],
+    },
     immediateTerminationPolicy: {
       type: immediateTerminationPolicySchema,
       default: undefined,

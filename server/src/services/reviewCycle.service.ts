@@ -34,6 +34,11 @@ const SELF_REVIEW_TOKEN_VALID_UNITS = 14;
 /** If self-review is late/past due and not submitted, extend token from now (90 days in prod). */
 const SELF_REVIEW_TOKEN_STALLED_UNITS = 90;
 
+interface CreateCycleOptions {
+  suppressNotifications?: boolean;
+  forceStatus?: ReviewCycleStatus;
+}
+
 export class ReviewCycleService {
   /**
    * Calculate the next review reference date for an employee.
@@ -231,7 +236,13 @@ export class ReviewCycleService {
     return { success: true };
   }
 
-  async createCycleForEmployee(employeeId: string, referenceDate: Date, cycleNumber?: number): Promise<void> {
+  async createCycleForEmployee(
+    employeeId: string,
+    referenceDate: Date,
+    cycleNumber?: number,
+    options: CreateCycleOptions = {},
+  ): Promise<void> {
+    const { suppressNotifications = false, forceStatus } = options;
     const employee = await UserModel.findById(employeeId).lean();
     if (!employee || employee.isTerminated === true) return;
 
@@ -242,10 +253,12 @@ export class ReviewCycleService {
     const dates = this.computeDates(referenceDate);
     const now = new Date();
 
-    let status: ReviewCycleStatus = "upcoming";
-    if (now >= dates.dueDate90) status = "self_review_due";
-    else if (now >= dates.formAvailableDate85) status = "form_available_85";
-    else if (now >= dates.notifyDate75) status = "notification_sent_75";
+    let status: ReviewCycleStatus = forceStatus ?? "upcoming";
+    if (!forceStatus) {
+      if (now >= dates.dueDate90) status = "self_review_due";
+      else if (now >= dates.formAvailableDate85) status = "form_available_85";
+      else if (now >= dates.notifyDate75) status = "notification_sent_75";
+    }
 
     const scheduledNextCycleReferenceDate = addPeriod(referenceDate, NEXT_CYCLE_OFFSET);
 
@@ -264,44 +277,46 @@ export class ReviewCycleService {
     const dashboardUrl = `${CLIENT_URL}/dashboard/reviews-management`;
     const actionUrl = selfReviewUrl ?? dashboardUrl;
 
-    const firstName = String(employee?.firstName ?? "");
-    if (status === "notification_sent_75") {
-      await notificationService.send({
-        recipientId: employeeId,
-        type: "review_self_upcoming",
-        title: "Self-Review Period Approaching",
-        message: "Your self-review window is approaching. You will receive another email when the form is available.",
-        data: { reviewCycleId: cycleId },
-        channels: ["all"],
-        emailTemplateFile: "review-email.ejs",
-        emailTemplateData: { firstName },
-      });
-    } else if (status === "form_available_85") {
-      await notificationService.send({
-        recipientId: employeeId,
-        type: "review_self_available",
-        title: "Self-Review Form Available",
-        message: "Your self-review form is now available. Please complete it before the due date.",
-        data: { reviewCycleId: cycleId },
-        channels: ["all"],
-        actionUrl,
-        emailTemplateFile: "review-email.ejs",
-        emailTemplateData: { firstName, actionUrl },
-        emailButtonText: "Complete self-review",
-      });
-    } else if (status === "self_review_due") {
-      await notificationService.send({
-        recipientId: employeeId,
-        type: "review_self_due",
-        title: "Self-Review Due Today",
-        message: "Your self-review is due today. Please submit it as soon as possible.",
-        data: { reviewCycleId: cycleId },
-        channels: ["all"],
-        actionUrl,
-        emailTemplateFile: "review-email.ejs",
-        emailTemplateData: { firstName, actionUrl },
-        emailButtonText: "Complete self-review",
-      });
+    if (!suppressNotifications) {
+      const firstName = String(employee?.firstName ?? "");
+      if (status === "notification_sent_75") {
+        await notificationService.send({
+          recipientId: employeeId,
+          type: "review_self_upcoming",
+          title: "Self-Review Period Approaching",
+          message: "Your self-review window is approaching. You will receive another email when the form is available.",
+          data: { reviewCycleId: cycleId },
+          channels: ["all"],
+          emailTemplateFile: "review-email.ejs",
+          emailTemplateData: { firstName },
+        });
+      } else if (status === "form_available_85") {
+        await notificationService.send({
+          recipientId: employeeId,
+          type: "review_self_available",
+          title: "Self-Review Form Available",
+          message: "Your self-review form is now available. Please complete it before the due date.",
+          data: { reviewCycleId: cycleId },
+          channels: ["all"],
+          actionUrl,
+          emailTemplateFile: "review-email.ejs",
+          emailTemplateData: { firstName, actionUrl },
+          emailButtonText: "Complete self-review",
+        });
+      } else if (status === "self_review_due") {
+        await notificationService.send({
+          recipientId: employeeId,
+          type: "review_self_due",
+          title: "Self-Review Due Today",
+          message: "Your self-review is due today. Please submit it as soon as possible.",
+          data: { reviewCycleId: cycleId },
+          channels: ["all"],
+          actionUrl,
+          emailTemplateFile: "review-email.ejs",
+          emailTemplateData: { firstName, actionUrl },
+          emailButtonText: "Complete self-review",
+        });
+      }
     }
   }
 
@@ -1146,6 +1161,143 @@ export class ReviewCycleService {
       matchedCount: result.matchedCount,
       modifiedCount: result.modifiedCount,
     };
+  }
+
+  async repairMissingCycleChainAtStartup(): Promise<{
+    employeesScanned: number;
+    cyclesCreated: number;
+    cyclesSuperseded: number;
+    activeCyclesCreated: number;
+    skippedTerminated: number;
+    errors: number;
+  }> {
+    const now = new Date();
+    const metrics = {
+      employeesScanned: 0,
+      cyclesCreated: 0,
+      cyclesSuperseded: 0,
+      activeCyclesCreated: 0,
+      skippedTerminated: 0,
+      errors: 0,
+    };
+
+    type StartupCycle = {
+      _id: unknown;
+      employeeId: { toString(): string } | string;
+      cycleNumber: number;
+      referenceDate: Date;
+      dueDate90: Date;
+      scheduledNextCycleReferenceDate?: Date;
+      status: ReviewCycleStatus;
+    };
+
+    const latestPerEmployee = await ReviewCycleModel.aggregate<{ latest: StartupCycle }>([
+      { $sort: { employeeId: 1, cycleNumber: -1 } },
+      { $group: { _id: "$employeeId", latest: { $first: "$$ROOT" } } },
+      { $project: { _id: 0, latest: 1 } },
+    ]);
+
+    for (const row of latestPerEmployee) {
+      const latest = row.latest;
+      metrics.employeesScanned += 1;
+      const employeeId = String(latest.employeeId);
+      const user = await UserModel.findById(employeeId).select("isTerminated").lean();
+      if (user?.isTerminated === true) {
+        metrics.skippedTerminated += 1;
+        continue;
+      }
+
+      let current = latest;
+      let expectedReference = current.scheduledNextCycleReferenceDate
+        ? new Date(current.scheduledNextCycleReferenceDate)
+        : addPeriod(new Date(current.referenceDate), NEXT_CYCLE_OFFSET);
+      let expectedCycleNumber = current.cycleNumber + 1;
+      let iterations = 0;
+
+      while (expectedReference <= now) {
+        iterations += 1;
+        if (iterations > 200) {
+          metrics.errors += 1;
+          logger.warn("Review cycle startup repair: max iteration safeguard reached", {
+            employeeId,
+            currentCycleId: current._id,
+            expectedCycleNumber,
+            expectedReference,
+          });
+          break;
+        }
+
+        const existing = await ReviewCycleModel.findOne({
+          employeeId,
+          $or: [{ cycleNumber: expectedCycleNumber }, { dueDate90: expectedReference }],
+        })
+          .select("_id employeeId cycleNumber referenceDate dueDate90 scheduledNextCycleReferenceDate status")
+          .lean() as StartupCycle | null;
+
+        if (existing) {
+          current = existing;
+          expectedReference = current.scheduledNextCycleReferenceDate
+            ? new Date(current.scheduledNextCycleReferenceDate)
+            : addPeriod(new Date(current.referenceDate), NEXT_CYCLE_OFFSET);
+          expectedCycleNumber = current.cycleNumber + 1;
+          continue;
+        }
+
+        try {
+          await this.createCycleForEmployee(
+            employeeId,
+            new Date(expectedReference),
+            expectedCycleNumber,
+            { suppressNotifications: true },
+          );
+          metrics.cyclesCreated += 1;
+        } catch (err) {
+          metrics.errors += 1;
+          logger.error("Review cycle startup repair: failed creating missing cycle", {
+            employeeId,
+            expectedCycleNumber,
+            expectedReference,
+            err,
+          });
+          break;
+        }
+
+        const created = await ReviewCycleModel.findOne({ employeeId, cycleNumber: expectedCycleNumber })
+          .select("_id employeeId cycleNumber referenceDate dueDate90 scheduledNextCycleReferenceDate status")
+          .lean() as StartupCycle | null;
+        if (!created) {
+          metrics.errors += 1;
+          logger.warn("Review cycle startup repair: cycle create reported success but record not found", {
+            employeeId,
+            expectedCycleNumber,
+          });
+          break;
+        }
+
+        const createdNextReference = created.scheduledNextCycleReferenceDate
+          ? new Date(created.scheduledNextCycleReferenceDate)
+          : addPeriod(new Date(created.referenceDate), NEXT_CYCLE_OFFSET);
+
+        if (createdNextReference <= now) {
+          if (created.status !== "cycle_superseded") {
+            await ReviewCycleModel.updateOne(
+              { _id: created._id as string },
+              { $set: { status: "cycle_superseded" as ReviewCycleStatus } },
+            );
+            metrics.cyclesSuperseded += 1;
+          }
+          current = { ...created, status: "cycle_superseded" };
+          expectedReference = createdNextReference;
+          expectedCycleNumber = created.cycleNumber + 1;
+          continue;
+        }
+
+        metrics.activeCyclesCreated += 1;
+        break;
+      }
+    }
+
+    return metrics;
   }
 
   /**

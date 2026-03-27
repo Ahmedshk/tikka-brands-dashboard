@@ -1,10 +1,13 @@
 import PDFDocument from "@react-pdf/pdfkit";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { logger } from "../utils/logger.util.js";
 
 interface IncidentReportData {
   companyName: string;
   employeeName: string;
   employeeRole: string;
+  locationName: string;
   managerName: string;
   incidentDate: string;
   appliedPolicies: {
@@ -14,6 +17,7 @@ interface IncidentReportData {
     sectionName?: string;
   }[];
   isImmediateTermination: boolean;
+  immediateTerminationPolicies?: { title: string; description: string }[];
   immediateTerminationPolicy?: { title: string; description: string };
   totalPoints: number;
   detailsOfIncident: string;
@@ -49,8 +53,38 @@ const PANEL_BG = "#f8fafc";
 const RED_ALERT_BG = "#fff5f5";
 const RED_ALERT_BORDER = "#fc8181";
 const RED_ALERT_TEXT = "#742a2a";
+const FONT_REGULAR_CANDIDATES = [
+  "C:/Windows/Fonts/arial.ttf",
+  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+];
+const FONT_BOLD_CANDIDATES = [
+  "C:/Windows/Fonts/arialbd.ttf",
+  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+];
 
 export class PdfGeneratorService {
+  private fontRegular = "Helvetica";
+
+  private fontBold = "Helvetica-Bold";
+
+  private configureFonts(doc: PdfDoc): void {
+    const regularPath = FONT_REGULAR_CANDIDATES.find((candidate) =>
+      fs.existsSync(path.normalize(candidate)),
+    );
+    const boldPath = FONT_BOLD_CANDIDATES.find((candidate) =>
+      fs.existsSync(path.normalize(candidate)),
+    );
+
+    if (regularPath) {
+      this.fontRegular = "AppSans";
+      doc.registerFont(this.fontRegular, path.normalize(regularPath));
+    }
+    if (boldPath) {
+      this.fontBold = "AppSansBold";
+      doc.registerFont(this.fontBold, path.normalize(boldPath));
+    }
+  }
+
   async generateIncidentReport(data: IncidentReportData): Promise<Buffer> {
     try {
       const doc = new PDFDocument({
@@ -63,6 +97,7 @@ export class PdfGeneratorService {
           Subject: "Performance improvement plan",
         },
       });
+      this.configureFonts(doc);
 
       const chunks: Uint8Array[] = [];
       doc.on("data", (chunk: Uint8Array) => chunks.push(chunk));
@@ -90,7 +125,7 @@ export class PdfGeneratorService {
       const y = PAGE_HEIGHT - PAGE_MARGIN - 12;
       doc
         .save()
-        .font("Helvetica")
+        .font(this.fontRegular)
         .fontSize(8)
         .fillColor(TEXT_MUTED)
         .text(
@@ -128,27 +163,37 @@ export class PdfGeneratorService {
     this.drawDocumentHeader(doc, data);
     this.drawMetaForm(doc, data);
 
-    if (data.isImmediateTermination && data.immediateTerminationPolicy) {
-      this.pageBreakIfNeeded(doc, 72);
-      this.drawImmediateTerminationBlock(doc, data.immediateTerminationPolicy);
+    let immediatePolicies: { title: string; description: string }[] = [];
+    if (data.immediateTerminationPolicies?.length) {
+      immediatePolicies = data.immediateTerminationPolicies;
+    } else if (data.immediateTerminationPolicy) {
+      immediatePolicies = [data.immediateTerminationPolicy];
+    }
+    if (data.isImmediateTermination && immediatePolicies.length > 0) {
+      for (const policy of immediatePolicies) {
+        this.pageBreakIfNeeded(doc, 72);
+        this.drawImmediateTerminationBlock(doc, policy);
+      }
     }
 
-    this.pageBreakIfNeeded(doc, 80);
-    this.drawSectionTitle(doc, "Applied policies", "Point assignments for this incident");
-    this.drawTable(
-      doc,
-      [
-        { label: "Policy", width: CONTENT_WIDTH * 0.36 },
-        { label: "Description", width: CONTENT_WIDTH * 0.44 },
-        { label: "Pts", width: CONTENT_WIDTH * 0.2, align: "center" },
-      ],
-      data.appliedPolicies.map((p) => [
-        p.sectionName ? `${p.sectionName}: ${p.title}` : p.title,
-        p.description || "—",
-        String(p.points),
-      ]),
-      { stripe: true },
-    );
+    if (data.appliedPolicies.length > 0) {
+      this.pageBreakIfNeeded(doc, 80);
+      this.drawSectionTitle(doc, "Applied policies", "Point assignments for this incident");
+      this.drawTable(
+        doc,
+        [
+          { label: "Policy", width: CONTENT_WIDTH * 0.36 },
+          { label: "Description", width: CONTENT_WIDTH * 0.44 },
+          { label: "Pts", width: CONTENT_WIDTH * 0.2, align: "center" },
+        ],
+        data.appliedPolicies.map((p) => [
+          p.sectionName ? `${p.sectionName}: ${p.title}` : p.title,
+          p.description || "",
+          String(p.points),
+        ]),
+        { stripe: true },
+      );
+    }
 
     this.drawBodyPanel(doc, "Details of incident", data.detailsOfIncident);
     this.drawBodyPanel(doc, "Supervisor commitment", data.supervisorCommitment);
@@ -188,23 +233,23 @@ export class PdfGeneratorService {
     const top = PAGE_MARGIN + 4;
     doc.y = top;
 
-    doc.font("Helvetica-Bold").fontSize(22).fillColor(TEXT_PRIMARY);
+    doc.font(this.fontBold).fontSize(22).fillColor(TEXT_PRIMARY);
     doc.text(data.companyName, PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH * 0.68 });
 
-    doc.font("Helvetica").fontSize(9).fillColor(TEXT_MUTED);
+    doc.font(this.fontRegular).fontSize(9).fillColor(TEXT_MUTED);
     doc.text("HR · PIP", PAGE_MARGIN + CONTENT_WIDTH * 0.68, top + 4, {
       width: CONTENT_WIDTH * 0.32,
       align: "right",
     });
 
     doc.moveDown(0.35);
-    doc.font("Helvetica-Bold").fontSize(15).fillColor(ACCENT);
+    doc.font(this.fontBold).fontSize(15).fillColor(ACCENT);
     doc.text("Performance Improvement Plan (PIP)", PAGE_MARGIN, doc.y, {
       width: CONTENT_WIDTH,
     });
 
     doc.moveDown(0.15);
-    doc.font("Helvetica").fontSize(10).fillColor(TEXT_SECONDARY);
+    doc.font(this.fontRegular).fontSize(10).fillColor(TEXT_SECONDARY);
     doc.text(
       "This document records the incident, applied policies, and acknowledgements. Signatures below confirm review.",
       PAGE_MARGIN,
@@ -214,16 +259,16 @@ export class PdfGeneratorService {
 
     const pillY = doc.y + 6;
     const pillW = 118;
-    const pillH = 22;
+    const pillH = 30;
     doc
       .save()
       .roundedRect(PAGE_MARGIN, pillY, pillW, pillH, 3)
       .fillAndStroke("#edf2f7", BORDER)
       .restore();
-    doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT_MUTED);
+    doc.font(this.fontBold).fontSize(8).fillColor(TEXT_MUTED);
     doc.text("REPORT DATE", PAGE_MARGIN + 10, pillY + 5, { width: pillW - 20 });
-    doc.font("Helvetica-Bold").fontSize(11).fillColor(TEXT_PRIMARY);
-    doc.text(data.incidentDate, PAGE_MARGIN + 10, pillY + 13, { width: pillW - 20 });
+    doc.font(this.fontBold).fontSize(11).fillColor(TEXT_PRIMARY);
+    doc.text(data.incidentDate, PAGE_MARGIN + 10, pillY + 16, { width: pillW - 20 });
 
     const pill2X = PAGE_MARGIN + pillW + 10;
     doc
@@ -231,12 +276,17 @@ export class PdfGeneratorService {
       .roundedRect(pill2X, pillY, 140, pillH, 3)
       .fillAndStroke("#edf2f7", BORDER)
       .restore();
-    doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT_MUTED);
-    doc.text("TOTAL POINTS (THIS INCIDENT)", pill2X + 10, pillY + 5, {
+    doc.font(this.fontBold).fontSize(8).fillColor(TEXT_MUTED);
+    doc.text("TOTAL POINTS", pill2X + 10, pillY + 5, {
       width: 120,
     });
-    doc.font("Helvetica-Bold").fontSize(11).fillColor(ACCENT);
-    doc.text(String(data.totalPoints), pill2X + 10, pillY + 13, { width: 120 });
+    if (data.isImmediateTermination) {
+      doc.font(this.fontBold).fontSize(10).fillColor("#dc2626");
+      doc.text("Immediate Termination", pill2X + 10, pillY + 16, { width: 120 });
+    } else {
+      doc.font(this.fontBold).fontSize(11).fillColor(ACCENT);
+      doc.text(String(data.totalPoints), pill2X + 10, pillY + 16, { width: 120 });
+    }
 
     doc.y = pillY + pillH + 18;
   }
@@ -247,14 +297,23 @@ export class PdfGeneratorService {
     const pad = 14;
     const innerW = CONTENT_WIDTH - pad * 2;
     const labelW = innerW * 0.28;
-    const valueW = innerW * 0.32;
-    const rowH = 28;
-    const rows: [string, string, string, string][] = [
-      ["Employee name", data.employeeName, "Role", data.employeeRole],
-      ["Reporting manager", data.managerName, "Incident points", String(data.totalPoints)],
+    const valueW = innerW - labelW;
+    const rowGap = 12;
+    const rows: [string, string][] = [
+      ["Employee name", data.employeeName],
+      ["Role", data.employeeRole],
+      ["Location", data.locationName],
+      ["Reporting manager", data.managerName],
     ];
+    const rowHeights = rows.map(([label, value]) => {
+      doc.font(this.fontBold).fontSize(8);
+      const labelHeight = doc.heightOfString(label.toUpperCase(), { width: labelW, lineGap: 1 });
+      doc.font(this.fontRegular).fontSize(10);
+      const valueHeight = doc.heightOfString(value || "—", { width: valueW - 8, lineGap: 1 });
+      return Math.max(labelHeight, valueHeight) + rowGap;
+    });
 
-    let blockH = pad * 2 + rows.length * rowH;
+    const blockH = pad * 2 + rowHeights.reduce((sum, h) => sum + h, 0);
     this.pageBreakIfNeeded(doc, blockH + 8);
 
     const boxY = doc.y;
@@ -265,20 +324,12 @@ export class PdfGeneratorService {
       .restore();
 
     let y = boxY + pad;
-    rows.forEach(([l1, v1, l2, v2], idx) => {
-      doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT_MUTED);
-      doc.text(l1.toUpperCase(), PAGE_MARGIN + pad, y, { width: labelW });
-      doc.font("Helvetica").fontSize(11).fillColor(TEXT_PRIMARY);
-      doc.text(v1 || "—", PAGE_MARGIN + pad + labelW, y, { width: valueW - 8 });
-
-      doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT_MUTED);
-      doc.text(l2.toUpperCase(), PAGE_MARGIN + pad + labelW + valueW, y, {
-        width: labelW,
-      });
-      doc.font("Helvetica").fontSize(11).fillColor(TEXT_PRIMARY);
-      doc.text(v2 || "—", PAGE_MARGIN + pad + labelW + valueW + labelW, y, {
-        width: valueW - 8,
-      });
+    rows.forEach(([label, value], idx) => {
+      const rowH = rowHeights[idx] ?? 36;
+      doc.font(this.fontBold).fontSize(8).fillColor(TEXT_MUTED);
+      doc.text(label.toUpperCase(), PAGE_MARGIN + pad, y, { width: labelW });
+      doc.font(this.fontRegular).fontSize(10).fillColor(TEXT_PRIMARY);
+      doc.text(value || "—", PAGE_MARGIN + pad + labelW, y, { width: valueW - 8, lineGap: 1 });
 
       y += rowH;
       if (idx < rows.length - 1) {
@@ -302,14 +353,21 @@ export class PdfGeneratorService {
   ): void {
     const pad = 12;
     const innerW = CONTENT_WIDTH - pad * 2 - 6;
-    doc.font("Helvetica-Bold").fontSize(11);
+    doc.font(this.fontBold).fontSize(11);
     const titleH = doc.heightOfString(policy.title, { width: innerW, lineGap: 2 });
-    doc.font("Helvetica").fontSize(10);
-    const descH = doc.heightOfString(policy.description || "—", {
-      width: innerW,
-      lineGap: 2,
-    });
-    const blockHeight = Math.max(64, 18 + titleH + 6 + descH + pad * 2);
+    doc.font(this.fontRegular).fontSize(10);
+    const trimmedDescription = policy.description?.trim() ?? "";
+    const hasDescription = trimmedDescription.length > 0;
+    const descH = hasDescription
+      ? doc.heightOfString(trimmedDescription, {
+        width: innerW,
+        lineGap: 2,
+      })
+      : 0;
+    const blockHeight = Math.max(
+      64,
+      18 + titleH + (hasDescription ? 6 + descH : 0) + pad * 2,
+    );
 
     this.pageBreakIfNeeded(doc, blockHeight + 12);
 
@@ -328,17 +386,19 @@ export class PdfGeneratorService {
 
     const tx = PAGE_MARGIN + 4 + pad;
     const ty = startY + pad;
-    doc.font("Helvetica-Bold").fontSize(9).fillColor("#c53030");
+    doc.font(this.fontBold).fontSize(9).fillColor("#c53030");
     doc.text("IMMEDIATE TERMINATION POLICY APPLIED", tx, ty, { width: innerW });
 
-    doc.font("Helvetica-Bold").fontSize(11).fillColor(RED_ALERT_TEXT);
+    doc.font(this.fontBold).fontSize(11).fillColor(RED_ALERT_TEXT);
     doc.text(policy.title, tx, ty + 14, { width: innerW, lineGap: 2 });
 
-    doc.font("Helvetica").fontSize(10).fillColor(TEXT_SECONDARY);
-    doc.text(policy.description || "—", tx, ty + 14 + titleH + 6, {
-      width: innerW,
-      lineGap: 2,
-    });
+    if (hasDescription) {
+      doc.font(this.fontRegular).fontSize(10).fillColor(TEXT_SECONDARY);
+      doc.text(trimmedDescription, tx, ty + 14 + titleH + 6, {
+        width: innerW,
+        lineGap: 2,
+      });
+    }
 
     doc.y = startY + blockHeight + 14;
   }
@@ -349,11 +409,11 @@ export class PdfGeneratorService {
     const y = doc.y + 6;
     doc.save().rect(PAGE_MARGIN, y + 2, 3, 14).fill(ACCENT).restore();
 
-    doc.font("Helvetica-Bold").fontSize(12).fillColor(TEXT_PRIMARY);
+    doc.font(this.fontBold).fontSize(12).fillColor(TEXT_PRIMARY);
     doc.text(title, PAGE_MARGIN + 10, y, { width: CONTENT_WIDTH - 12 });
 
     if (subtitle) {
-      doc.font("Helvetica").fontSize(9).fillColor(TEXT_MUTED);
+      doc.font(this.fontRegular).fontSize(9).fillColor(TEXT_MUTED);
       doc.text(subtitle, PAGE_MARGIN + 10, y + 14, { width: CONTENT_WIDTH - 12 });
       doc.y = y + 30;
     } else {
@@ -366,7 +426,7 @@ export class PdfGeneratorService {
     const textW = CONTENT_WIDTH - pad * 2;
     const lines = body.split(/\r?\n/);
     let textH = 0;
-    doc.font("Helvetica").fontSize(10).fillColor(TEXT_PRIMARY);
+    doc.font(this.fontRegular).fontSize(10).fillColor(TEXT_PRIMARY);
     for (const line of lines) {
       textH += doc.heightOfString(line || " ", { width: textW, lineGap: 3 });
     }
@@ -384,7 +444,7 @@ export class PdfGeneratorService {
       .fillAndStroke(PANEL_BG, BORDER)
       .restore();
 
-    doc.font("Helvetica").fontSize(10).fillColor(TEXT_PRIMARY);
+    doc.font(this.fontRegular).fontSize(10).fillColor(TEXT_PRIMARY);
     let cy = top + pad + 2;
     for (const line of lines) {
       const h = doc.heightOfString(line || " ", { width: textW, lineGap: 3 });
@@ -422,7 +482,7 @@ export class PdfGeneratorService {
           .fill()
           .restore();
 
-        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff");
+        doc.font(this.fontBold).fontSize(9).fillColor("#ffffff");
         doc.text(col.label.toUpperCase(), x + 8, y + headerTextY, {
           width: col.width - 16,
           align: col.align ?? "left",
@@ -438,8 +498,8 @@ export class PdfGeneratorService {
     rows.forEach((row, rowIdx) => {
       const cellHeights = row.map((cell, idx) => {
         const width = (columns[idx]?.width ?? 100) - 16;
-        doc.font("Helvetica").fontSize(10);
-        return Math.ceil(doc.heightOfString(cell || "—", { width, lineGap: 2 })) + 14;
+        doc.font(this.fontRegular).fontSize(10);
+        return Math.ceil(doc.heightOfString(cell ?? "—", { width, lineGap: 2 })) + 14;
       });
       const rowHeight = Math.max(minRowHeight, ...cellHeights);
 
@@ -461,8 +521,8 @@ export class PdfGeneratorService {
         doc.strokeColor(BORDER).lineWidth(0.35).rect(x, y, col.width, rowHeight).stroke();
         doc.restore();
 
-        doc.font("Helvetica").fontSize(10).fillColor(TEXT_PRIMARY);
-        doc.text(value || "—", x + 8, y + 7, {
+        doc.font(this.fontRegular).fontSize(10).fillColor(TEXT_PRIMARY);
+        doc.text(value ?? "—", x + 8, y + 7, {
           width: col.width - 16,
           align: col.align ?? "left",
           lineGap: 2,
@@ -494,7 +554,7 @@ export class PdfGeneratorService {
       .fillAndStroke("#ffffff", BORDER)
       .restore();
 
-    doc.font("Helvetica").fontSize(8).fillColor(TEXT_MUTED);
+    doc.font(this.fontRegular).fontSize(8).fillColor(TEXT_MUTED);
     doc.text(
       "By signing, each party acknowledges the accuracy of the information above and agrees to the terms of this performance improvement plan.",
       PAGE_MARGIN + 14,
@@ -507,7 +567,7 @@ export class PdfGeneratorService {
     const leftX = PAGE_MARGIN + 14;
     const rightX = leftX + colW + 40;
 
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(TEXT_SECONDARY);
+    doc.font(this.fontBold).fontSize(9).fillColor(TEXT_SECONDARY);
     doc.text("Manager / supervisor signature", leftX, rowY, { width: colW });
     doc.text("Employee signature", rightX, rowY, { width: colW });
 

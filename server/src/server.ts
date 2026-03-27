@@ -31,6 +31,8 @@ const startServer = async (): Promise<void> => {
     const reviewCycleService = new ReviewCycleService();
     const expiredTokenSuperseded = await reviewCycleService.supersedeCyclesWithExpiredSelfReviewTokenAtStartup();
     logger.info('Review cycle startup repair (expired self-review token)', expiredTokenSuperseded);
+    const missingCycleRepair = await reviewCycleService.repairMissingCycleChainAtStartup();
+    logger.info('Review cycle startup repair (missing cycle chain)', missingCycleRepair);
 
     // Create HTTP server
     const httpServer = http.createServer(app);

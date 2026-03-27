@@ -4,6 +4,7 @@ import { DisciplinarySettingsModel } from "../models/disciplinarySettings.model.
 import { UserModel } from "../models/user.model.js";
 import { RoleModel } from "../models/role.model.js";
 import { DisciplinaryIncidentModel } from "../models/disciplinaryIncident.model.js";
+import { LocationModel } from "../models/location.model.js";
 import { NotificationService } from "./notification.service.js";
 import { AppError } from "../utils/errors.util.js";
 import {
@@ -409,11 +410,24 @@ export class DisciplinaryIncidentService {
     const pdfSvc = new PdfGeneratorService();
     const sectionTitle = (sectionId: string) =>
       settings.policySections.find((s) => s.id === sectionId)?.name ?? "";
+    const locationId = this.toIdString(incident.locationId);
+    const location = locationId
+      ? await LocationModel.findById(locationId).select("storeName").lean()
+      : null;
+    const locationName = location?.storeName?.trim() || "—";
+    let immediateTerminationPoliciesForPdf:
+      NonNullable<IDisciplinaryIncident["immediateTerminationPolicies"]> = [];
+    if (incident.immediateTerminationPolicies?.length) {
+      immediateTerminationPoliciesForPdf = incident.immediateTerminationPolicies;
+    } else if (incident.immediateTerminationPolicy) {
+      immediateTerminationPoliciesForPdf = [incident.immediateTerminationPolicy];
+    }
 
     return pdfSvc.generateIncidentReport({
       companyName: process.env.COMPANY_NAME?.trim() || "Tikka Brands",
       employeeName,
       employeeRole,
+      locationName,
       managerName,
       incidentDate: new Date(incident.incidentDate).toISOString().slice(0, 10),
       appliedPolicies: incident.appliedPolicies.map((p) => ({
@@ -431,8 +445,8 @@ export class DisciplinaryIncidentService {
         pointThreshold: g.pointThreshold,
         action: g.action,
       })),
-      ...(incident.immediateTerminationPolicy
-        ? { immediateTerminationPolicy: incident.immediateTerminationPolicy }
+      ...(immediateTerminationPoliciesForPdf.length
+        ? { immediateTerminationPolicies: immediateTerminationPoliciesForPdf }
         : {}),
       ...(incident.positiveResults
         ? { positiveResults: incident.positiveResults }
@@ -450,6 +464,7 @@ export class DisciplinaryIncidentService {
       locationId: string;
       appliedPolicies: IDisciplinaryIncident["appliedPolicies"];
       isImmediateTermination: boolean;
+      immediateTerminationPolicies?: IDisciplinaryIncident["immediateTerminationPolicies"];
       immediateTerminationPolicy?: IDisciplinaryIncident["immediateTerminationPolicy"];
       detailsOfIncident: string;
       supervisorCommitment: string;
@@ -497,7 +512,9 @@ export class DisciplinaryIncidentService {
       locationId: new Types.ObjectId(data.locationId),
       appliedPolicies: data.appliedPolicies,
       isImmediateTermination: data.isImmediateTermination,
-      immediateTerminationPolicy: data.immediateTerminationPolicy,
+      immediateTerminationPolicies: data.immediateTerminationPolicies ?? [],
+      immediateTerminationPolicy:
+        data.immediateTerminationPolicy ?? data.immediateTerminationPolicies?.[0],
       totalPoints,
       detailsOfIncident: data.detailsOfIncident,
       supervisorCommitment: data.supervisorCommitment,

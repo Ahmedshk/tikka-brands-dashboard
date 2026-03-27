@@ -82,11 +82,11 @@ interface IncidentCreatePayload {
     points: number;
   }[];
   isImmediateTermination: boolean;
-  immediateTerminationPolicy?: {
+  immediateTerminationPolicies?: Array<{
     id: string;
     title: string;
     description: string;
-  };
+  }>;
   detailsOfIncident: string;
   supervisorCommitment: string;
   supervisorComments: string;

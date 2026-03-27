@@ -71,6 +71,7 @@ export interface IDisciplinaryIncident {
 
   appliedPolicies: IAppliedPolicy[];
   isImmediateTermination: boolean;
+  immediateTerminationPolicies?: IAppliedImmediateTerminationPolicy[];
   immediateTerminationPolicy?: IAppliedImmediateTerminationPolicy;
 
   totalPoints: number;

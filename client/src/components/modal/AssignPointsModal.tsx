@@ -66,7 +66,7 @@ export const AssignPointsModal = ({
   const [submitting, setSubmitting] = useState(false);
 
   const [selectedPolicies, setSelectedPolicies] = useState<SelectedPolicy[]>([]);
-  const [selectedTerminationPolicyId, setSelectedTerminationPolicyId] = useState<string | null>(null);
+  const [selectedTerminationPolicyIds, setSelectedTerminationPolicyIds] = useState<string[]>([]);
 
   const [detailsOfIncident, setDetailsOfIncident] = useState('');
   const [supervisorCommitment, setSupervisorCommitment] = useState('');
@@ -75,7 +75,8 @@ export const AssignPointsModal = ({
   const [negativeConsequences, setNegativeConsequences] = useState('');
 
   const totalPoints = selectedPolicies.reduce((sum, p) => sum + p.points, 0);
-  const isImmediateTermination = selectedTerminationPolicyId !== null;
+  const isImmediateTermination = selectedTerminationPolicyIds.length > 0;
+  const isPoliciesStep = step === 'policies';
 
   const detailsRef = useAutoResizeTextareaRef(detailsOfIncident);
   const commitmentRef = useAutoResizeTextareaRef(supervisorCommitment);
@@ -100,7 +101,7 @@ export const AssignPointsModal = ({
       fetchSettings();
       setStep('policies');
       setSelectedPolicies([]);
-      setSelectedTerminationPolicyId(null);
+      setSelectedTerminationPolicyIds([]);
       setDetailsOfIncident('');
       setSupervisorCommitment('');
       setSupervisorComments('');
@@ -134,6 +135,14 @@ export const AssignPointsModal = ({
     });
   };
 
+  const toggleTerminationPolicy = (policyId: string) => {
+    setSelectedTerminationPolicyIds((prev) => (
+      prev.includes(policyId)
+        ? prev.filter((id) => id !== policyId)
+        : [...prev, policyId]
+    ));
+  };
+
   const handleSubmit = async () => {
     if (!detailsOfIncident.trim()) { toast.error('Details of incident is required'); return; }
     if (!supervisorCommitment.trim()) { toast.error('Supervisor commitment is required'); return; }
@@ -145,16 +154,16 @@ export const AssignPointsModal = ({
 
     setSubmitting(true);
     try {
-      const terminationPolicy = isImmediateTermination && settings
-        ? settings.immediateTerminationPolicies.find((p) => p.id === selectedTerminationPolicyId)
-        : undefined;
+      const terminationPolicies = isImmediateTermination && settings
+        ? settings.immediateTerminationPolicies.filter((p) => selectedTerminationPolicyIds.includes(p.id))
+        : [];
 
       const payload: IncidentCreatePayload = {
         employeeId,
         locationId,
         appliedPolicies: selectedPolicies,
         isImmediateTermination,
-        immediateTerminationPolicy: terminationPolicy ?? undefined,
+        immediateTerminationPolicies: terminationPolicies.length > 0 ? terminationPolicies : undefined,
         detailsOfIncident: detailsOfIncident.trim(),
         supervisorCommitment: supervisorCommitment.trim(),
         supervisorComments: supervisorComments.trim(),
@@ -173,6 +182,157 @@ export const AssignPointsModal = ({
     }
   };
 
+  let bodyContent: JSX.Element;
+  if (loadingSettings) {
+    bodyContent = (
+      <div className="flex flex-col items-center justify-center py-12 gap-4">
+        <Spinner size="lg" className="text-button-primary" />
+        <span className="text-sm text-tertiary">Loading policies...</span>
+      </div>
+    );
+  } else if (isPoliciesStep) {
+    bodyContent = (
+      <div className="space-y-6">
+        {settings?.policySections.map((section) => (
+          <div key={section.id}>
+            <h3 className="text-sm font-semibold text-primary mb-2">{section.name}</h3>
+            <div className="space-y-2">
+              {section.policies.map((policy) => {
+                const isSelected = selectedPolicies.some(
+                  (p) => p.policyId === policy.id && p.sectionId === section.id,
+                );
+                return (
+                  <label
+                    key={policy.id}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${isSelected ? 'border-button-primary bg-button-primary/5' : 'border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => togglePolicy(section.id, policy)}
+                      aria-label={`Select policy ${policy.title}`}
+                      className="mt-0.5 accent-button-primary"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-primary">{policy.title}</span>
+                        <span className="text-xs font-semibold text-button-primary whitespace-nowrap">
+                          {policy.points} pts
+                        </span>
+                      </div>
+                      <p className="text-xs text-tertiary mt-0.5">{policy.description}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        {(settings?.immediateTerminationPolicies.length ?? 0) > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold text-red-600 mb-2">
+              Immediate Termination Policies
+            </h3>
+            <div className="space-y-2">
+              {settings!.immediateTerminationPolicies.map((policy) => {
+                const isSelected = selectedTerminationPolicyIds.includes(policy.id);
+                return (
+                  <label
+                    key={policy.id}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${isSelected ? 'border-red-400 bg-red-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleTerminationPolicy(policy.id)}
+                      aria-label={`Select immediate termination policy ${policy.title}`}
+                      className="mt-0.5 accent-red-600"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-primary">{policy.title}</span>
+                      <p className="text-xs text-tertiary mt-0.5">{policy.description}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  } else {
+    bodyContent = (
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="details-of-incident" className="block text-xs font-medium text-secondary mb-1">
+            Details of Incident *
+          </label>
+          <textarea
+            id="details-of-incident"
+            ref={detailsRef}
+            value={detailsOfIncident}
+            onChange={(e) => setDetailsOfIncident(e.target.value)}
+            rows={1}
+            className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
+          />
+        </div>
+        <div>
+          <label htmlFor="supervisor-commitment" className="block text-xs font-medium text-secondary mb-1">
+            Supervisor Commitment *
+          </label>
+          <textarea
+            id="supervisor-commitment"
+            ref={commitmentRef}
+            value={supervisorCommitment}
+            onChange={(e) => setSupervisorCommitment(e.target.value)}
+            rows={1}
+            className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
+          />
+        </div>
+        <div>
+          <label htmlFor="supervisor-comments" className="block text-xs font-medium text-secondary mb-1">
+            Supervisor Comments *
+          </label>
+          <textarea
+            id="supervisor-comments"
+            ref={commentsRef}
+            value={supervisorComments}
+            onChange={(e) => setSupervisorComments(e.target.value)}
+            rows={1}
+            className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
+          />
+        </div>
+        <div>
+          <label htmlFor="positive-results" className="block text-xs font-medium text-secondary mb-1">
+            Positive Results <span className="text-tertiary">(optional)</span>
+          </label>
+          <textarea
+            id="positive-results"
+            ref={positiveRef}
+            value={positiveResults}
+            onChange={(e) => setPositiveResults(e.target.value)}
+            rows={1}
+            className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
+          />
+        </div>
+        <div>
+          <label htmlFor="negative-consequences" className="block text-xs font-medium text-secondary mb-1">
+            Negative Consequences <span className="text-tertiary">(optional)</span>
+          </label>
+          <textarea
+            id="negative-consequences"
+            ref={negativeRef}
+            value={negativeConsequences}
+            onChange={(e) => setNegativeConsequences(e.target.value)}
+            rows={1}
+            className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (!isOpen) return null;
 
   return createPortal(
@@ -182,26 +342,27 @@ export const AssignPointsModal = ({
       aria-labelledby="assign-points-modal-title"
       onClose={onClose}
     >
-      <div className="bg-card-background rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="relative w-full min-w-0 max-w-2xl">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Close"
+          title="Close"
+        >
+          <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
+        </button>
+      <div className="bg-card-background rounded-xl shadow-2xl w-full max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 bg-primary">
           <div>
-            <h2 id="assign-points-modal-title" className="text-base font-semibold text-primary">
+            <h2 id="assign-points-modal-title" className="text-base font-semibold text-white">
               Assign Disciplinary Points
             </h2>
-            <p className="text-xs text-tertiary mt-0.5">
-              Employee: <span className="font-medium text-secondary">{employeeName}</span>
+            <p className="text-xs text-white/90 mt-0.5">
+              Employee: <span className="font-medium text-white">{employeeName}</span>
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 text-tertiary hover:text-primary transition-colors cursor-pointer"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
 
         {/* Steps indicator */}
@@ -216,145 +377,7 @@ export const AssignPointsModal = ({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {loadingSettings ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-4">
-              <Spinner size="lg" className="text-button-primary" />
-              <span className="text-sm text-tertiary">Loading policies...</span>
-            </div>
-          ) : step === 'policies' ? (
-            <div className="space-y-6">
-              {settings?.policySections.map((section) => (
-                <div key={section.id}>
-                  <h3 className="text-sm font-semibold text-primary mb-2">{section.name}</h3>
-                  <div className="space-y-2">
-                    {section.policies.map((policy) => {
-                      const isSelected = selectedPolicies.some(
-                        (p) => p.policyId === policy.id && p.sectionId === section.id,
-                      );
-                      return (
-                        <label
-                          key={policy.id}
-                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${isSelected ? 'border-button-primary bg-button-primary/5' : 'border-gray-200 hover:bg-gray-50'}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => togglePolicy(section.id, policy)}
-                            className="mt-0.5 accent-button-primary"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-sm font-medium text-primary">{policy.title}</span>
-                              <span className="text-xs font-semibold text-button-primary whitespace-nowrap">
-                                {policy.points} pts
-                              </span>
-                            </div>
-                            <p className="text-xs text-tertiary mt-0.5">{policy.description}</p>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-
-              {(settings?.immediateTerminationPolicies.length ?? 0) > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-red-600 mb-2">
-                    Immediate Termination Policies
-                  </h3>
-                  <div className="space-y-2">
-                    {settings!.immediateTerminationPolicies.map((policy) => {
-                      const isSelected = selectedTerminationPolicyId === policy.id;
-                      return (
-                        <label
-                          key={policy.id}
-                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${isSelected ? 'border-red-400 bg-red-50' : 'border-gray-200 hover:bg-gray-50'}`}
-                        >
-                          <input
-                            type="radio"
-                            name="terminationPolicy"
-                            checked={isSelected}
-                            onChange={() => setSelectedTerminationPolicyId(isSelected ? null : policy.id)}
-                            className="mt-0.5 accent-red-600"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <span className="text-sm font-medium text-primary">{policy.title}</span>
-                            <p className="text-xs text-tertiary mt-0.5">{policy.description}</p>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1">
-                  Details of Incident *
-                </label>
-                <textarea
-                  ref={detailsRef}
-                  value={detailsOfIncident}
-                  onChange={(e) => setDetailsOfIncident(e.target.value)}
-                  rows={1}
-                  className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1">
-                  Supervisor Commitment *
-                </label>
-                <textarea
-                  ref={commitmentRef}
-                  value={supervisorCommitment}
-                  onChange={(e) => setSupervisorCommitment(e.target.value)}
-                  rows={1}
-                  className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1">
-                  Supervisor Comments *
-                </label>
-                <textarea
-                  ref={commentsRef}
-                  value={supervisorComments}
-                  onChange={(e) => setSupervisorComments(e.target.value)}
-                  rows={1}
-                  className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1">
-                  Positive Results <span className="text-tertiary">(optional)</span>
-                </label>
-                <textarea
-                  ref={positiveRef}
-                  value={positiveResults}
-                  onChange={(e) => setPositiveResults(e.target.value)}
-                  rows={1}
-                  className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-secondary mb-1">
-                  Negative Consequences <span className="text-tertiary">(optional)</span>
-                </label>
-                <textarea
-                  ref={negativeRef}
-                  value={negativeConsequences}
-                  onChange={(e) => setNegativeConsequences(e.target.value)}
-                  rows={1}
-                  className="w-full min-h-[2.75rem] px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary resize-none overflow-hidden"
-                />
-              </div>
-            </div>
-          )}
-        </div>
+        <div className="flex-1 overflow-y-auto p-6">{bodyContent}</div>
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
@@ -395,6 +418,7 @@ export const AssignPointsModal = ({
             )}
           </div>
         </div>
+      </div>
       </div>
     </dialog>,
     document.body,
