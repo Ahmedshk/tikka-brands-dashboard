@@ -2,6 +2,7 @@ import api from "./api.service";
 import { API_ENDPOINTS } from "../utils/constants";
 import type { ApiResponse } from "../types";
 import type {
+  KitchenPerformanceDetails,
   KitchenPerformancePaginationMeta,
   KitchenPerformanceRow,
 } from "../types/kitchenPerformance.types";
@@ -11,7 +12,7 @@ interface KitchenPerformanceListResponse {
   meta: KitchenPerformancePaginationMeta;
 }
 
-function formatDateToIso(date: Date): string {
+export function formatDateToIso(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
@@ -68,5 +69,26 @@ export const kitchenPerformanceService = {
     if (!res.data.success) {
       throw new Error(res.data.message ?? "Failed to import kitchen performance CSV.");
     }
+  },
+
+  async getDetails(
+    locationId: string,
+    date: Date,
+    deviceName: string,
+  ): Promise<KitchenPerformanceDetails> {
+    const params = new URLSearchParams({
+      locationId,
+      date: formatDateToIso(date),
+      deviceName,
+    });
+    const res = await api.get<ApiResponse<KitchenPerformanceDetails>>(
+      `${API_ENDPOINTS.KITCHEN_PERFORMANCE.DETAILS}?${params.toString()}`,
+    );
+    if (!res.data.success || !res.data.data) {
+      throw new Error(
+        res.data.message ?? "Failed to load kitchen performance details.",
+      );
+    }
+    return res.data.data;
   },
 };

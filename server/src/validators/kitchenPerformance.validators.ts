@@ -19,3 +19,11 @@ export const importKitchenPerformanceBodySchema = z.object({
     date: ymdDateSchema,
   }),
 });
+
+export const getKitchenPerformanceDetailsQuerySchema = z.object({
+  query: z.object({
+    locationId: z.string().min(1, "Location ID is required"),
+    date: ymdDateSchema,
+    deviceName: z.string().min(1, "Device name is required"),
+  }),
+});

@@ -91,3 +91,25 @@ export async function importKitchenPerformanceCsv(
     next(err);
   }
 }
+
+export async function getKitchenPerformanceDetails(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { locationId, date, deviceName } = req.query as {
+      locationId: string;
+      date: string;
+      deviceName: string;
+    };
+    const details = await service.getDetailsByLocationDateAndDevice(
+      locationId,
+      date,
+      deviceName,
+    );
+    res.json({ success: true, data: details });
+  } catch (err) {
+    next(err);
+  }
+}

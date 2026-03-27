@@ -7,11 +7,25 @@ export interface KitchenPerformanceRowSubdocument {
   avgCompletionTimeSeconds: number;
 }
 
+export interface KitchenPerformanceRawTicketSubdocument {
+  deviceName: string | null;
+  ticketName: string | null;
+  orderSource: string | null;
+  numberOfItems: number | null;
+  itemsInTicket: string | null;
+  completionTimeSeconds: number | null;
+  timeCreated: string | null;
+  timeCompleted: string | null;
+  timeDue: string | null;
+  timeRecalled: string | null;
+}
+
 export interface KitchenPerformanceDocument extends Document {
   _id: Types.ObjectId;
   locationId: Types.ObjectId;
   reportDate: string;
   rows: KitchenPerformanceRowSubdocument[];
+  rawTickets: KitchenPerformanceRawTicketSubdocument[];
   uploadedBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -26,6 +40,28 @@ const kitchenPerformanceRowSchema = new Schema<KitchenPerformanceRowSubdocument>
   },
   { _id: false },
 );
+
+const kitchenPerformanceRawTicketSchema =
+  new Schema<KitchenPerformanceRawTicketSubdocument>(
+    {
+      deviceName: { type: String, required: false, trim: true, default: null },
+      ticketName: { type: String, required: false, trim: true, default: null },
+      orderSource: { type: String, required: false, trim: true, default: null },
+      numberOfItems: { type: Number, required: false, min: 0, default: null },
+      itemsInTicket: { type: String, required: false, trim: true, default: null },
+      completionTimeSeconds: {
+        type: Number,
+        required: false,
+        min: 0,
+        default: null,
+      },
+      timeCreated: { type: String, required: false, trim: true, default: null },
+      timeCompleted: { type: String, required: false, trim: true, default: null },
+      timeDue: { type: String, required: false, trim: true, default: null },
+      timeRecalled: { type: String, required: false, trim: true, default: null },
+    },
+    { _id: false },
+  );
 
 const kitchenPerformanceSchema = new Schema<KitchenPerformanceDocument>(
   {
@@ -42,6 +78,7 @@ const kitchenPerformanceSchema = new Schema<KitchenPerformanceDocument>(
       index: true,
     },
     rows: { type: [kitchenPerformanceRowSchema], default: [] },
+    rawTickets: { type: [kitchenPerformanceRawTicketSchema], default: [] },
     uploadedBy: {
       type: Schema.Types.ObjectId,
       ref: "User",

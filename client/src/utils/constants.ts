@@ -41,6 +41,7 @@ export const API_ENDPOINTS = {
   KITCHEN_PERFORMANCE: {
     LIST: "/kitchen-performance",
     IMPORT: "/kitchen-performance/import",
+    DETAILS: "/kitchen-performance/details",
   },
   ROLES: "/roles",
   USERS: "/users",

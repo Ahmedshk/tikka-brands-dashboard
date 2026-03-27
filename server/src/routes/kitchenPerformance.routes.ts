@@ -5,9 +5,11 @@ import { requirePermission, requireLocationAccess } from "../middleware/rbac.mid
 import { validate } from "../utils/zod.util.js";
 import {
   getKitchenPerformanceQuerySchema,
+  getKitchenPerformanceDetailsQuerySchema,
   importKitchenPerformanceBodySchema,
 } from "../validators/kitchenPerformance.validators.js";
 import {
+  getKitchenPerformanceDetails,
   getKitchenPerformance,
   importKitchenPerformanceCsv,
   handleKitchenPerformanceUploadError,
@@ -24,6 +26,13 @@ router.get(
   requireLocationAccess,
   validate(getKitchenPerformanceQuerySchema),
   getKitchenPerformance,
+);
+
+router.get(
+  "/details",
+  requireLocationAccess,
+  validate(getKitchenPerformanceDetailsQuerySchema),
+  getKitchenPerformanceDetails,
 );
 
 router.post(

@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import {
   KitchenPerformanceModel,
+  type KitchenPerformanceRawTicketSubdocument,
   type KitchenPerformanceRowSubdocument,
 } from "../models/kitchenPerformance.model.js";
 
@@ -9,6 +10,7 @@ export class KitchenPerformanceRepository {
     locationId: string,
     reportDate: string,
     rows: KitchenPerformanceRowSubdocument[],
+    rawTickets: KitchenPerformanceRawTicketSubdocument[],
     uploadedBy: string,
   ) {
     return KitchenPerformanceModel.findOneAndUpdate(
@@ -16,6 +18,7 @@ export class KitchenPerformanceRepository {
       {
         $set: {
           rows,
+          rawTickets,
           uploadedBy: new Types.ObjectId(uploadedBy),
         },
       },

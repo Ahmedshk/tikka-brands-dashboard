@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSelector } from "react-redux";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
@@ -10,7 +11,10 @@ import ImportIcon from "@assets/icons/import.svg?react";
 import { Layout } from "../../components/common/Layout";
 import type { RootState } from "../../store/store";
 import type { KitchenPerformanceRow } from "../../types/kitchenPerformance.types";
-import { kitchenPerformanceService } from "../../services/kitchenPerformance.service";
+import {
+  formatDateToIso,
+  kitchenPerformanceService,
+} from "../../services/kitchenPerformance.service";
 import {
   KitchenPerformanceImportModal,
   KitchenPerformanceTableCard,
@@ -28,11 +32,22 @@ const GREY_FOCUS_FIELD_SX = {
   },
 } as const;
 
+function parseDateQueryParam(value: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
 export const KitchenPerformance = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const currentLocation = useSelector(
     (state: RootState) => state.location.currentLocation,
   );
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(
+    () => parseDateQueryParam(searchParams.get("date")) ?? new Date(),
+  );
   const [rows, setRows] = useState<KitchenPerformanceRow[]>([]);
   const [page, setPage] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
@@ -75,6 +90,14 @@ export const KitchenPerformance = () => {
   useEffect(() => {
     fetchKitchenRows();
   }, [fetchKitchenRows]);
+
+  useEffect(() => {
+    const queryDate = parseDateQueryParam(searchParams.get("date"));
+    if (queryDate) {
+      setSelectedDate(queryDate);
+      setPage(1);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -139,8 +162,10 @@ export const KitchenPerformance = () => {
         <KitchenPerformanceTableCard
           rows={rows}
           loading={loading}
-          onView={() => {
-            toast("Row details view will be added soon.");
+          onView={(row) => {
+            const encoded = encodeURIComponent(row.deviceName);
+            const date = formatDateToIso(selectedDate);
+            navigate(`/dashboard/kitchen-performance/${encoded}?date=${date}`);
           }}
           pagination={{
             currentPage: page,

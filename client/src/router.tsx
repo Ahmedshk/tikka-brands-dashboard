@@ -20,6 +20,7 @@ import { LocationManagement } from './pages/dashboard/LocationManagement';
 import { ReviewSettings } from './pages/dashboard/ReviewSettings';
 import { DisciplinarySettings } from './pages/dashboard/DisciplinarySettings';
 import { KitchenPerformance } from './pages/dashboard/KitchenPerformance';
+import { KitchenPerformanceDetails } from './pages/dashboard/KitchenPerformanceDetails';
 import { ActivityLog } from './pages/dashboard/ActivityLog';
 import { NoAccess } from './pages/dashboard/NoAccess';
 import { ErrorPage } from './pages/ErrorPage';
@@ -268,6 +269,17 @@ export const router = createBrowserRouter([
       <ErrorBoundary>
         <ProtectedRoute>
           <KitchenPerformance />
+        </ProtectedRoute>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/dashboard/kitchen-performance/:deviceName',
+    element: (
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <KitchenPerformanceDetails />
         </ProtectedRoute>
       </ErrorBoundary>
     ),
