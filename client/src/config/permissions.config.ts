@@ -85,7 +85,6 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
       { id: 'kpi-trainings-overdue', label: 'Trainings Overdue' },
       { id: 'kpi-training-completion', label: 'Training Completion' },
       { id: 'employee-training', label: 'Employee Training' },
-      { id: 'trainings', label: 'Trainings' },
     ],
   },
   {
@@ -161,6 +160,11 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     pageId: 'disciplinary-settings',
     pageLabel: 'Disciplinary Settings',
     components: [FULL_PAGE_ACCESS],
+  },
+  {
+    pageId: 'training-settings',
+    pageLabel: 'Training Settings',
+    components: [FULL_PAGE_ACCESS, { id: 'trainings', label: 'Trainings' }],
   },
 ];
 

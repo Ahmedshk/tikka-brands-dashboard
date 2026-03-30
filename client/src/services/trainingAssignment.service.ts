@@ -189,7 +189,8 @@ export const trainingAssignmentService = {
     formData.append('file', file);
     const res = await api.put<ApiResponse<{ publicId: string; resourceType: 'image' | 'raw'; filename?: string; format?: string }>>(
       `${BASE}/${id}/upload-document`,
-      formData
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
     );
     if (!res.data.success || !res.data.data) {
       throw new Error(res.data.message ?? 'Upload failed');

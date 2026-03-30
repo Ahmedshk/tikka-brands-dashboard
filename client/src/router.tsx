@@ -19,6 +19,7 @@ import { GoalSetting } from './pages/dashboard/GoalSetting';
 import { LocationManagement } from './pages/dashboard/LocationManagement';
 import { ReviewSettings } from './pages/dashboard/ReviewSettings';
 import { DisciplinarySettings } from './pages/dashboard/DisciplinarySettings';
+import { TrainingSettings } from './pages/dashboard/TrainingSettings';
 import { KitchenPerformance } from './pages/dashboard/KitchenPerformance';
 import { KitchenPerformanceDetails } from './pages/dashboard/KitchenPerformanceDetails';
 import { ActivityLog } from './pages/dashboard/ActivityLog';
@@ -258,6 +259,17 @@ export const router = createBrowserRouter([
       <ErrorBoundary>
         <ProtectedRoute>
           <DisciplinarySettings />
+        </ProtectedRoute>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/dashboard/training-settings',
+    element: (
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <TrainingSettings />
         </ProtectedRoute>
       </ErrorBoundary>
     ),

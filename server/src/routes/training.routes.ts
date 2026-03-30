@@ -8,7 +8,7 @@ import {
 } from '../validators/training.validators.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { attachUserContext } from '../middleware/user-context.middleware.js';
-import { requirePermission } from '../middleware/rbac.middleware.js';
+import { requireAnyPermission, requirePermission } from '../middleware/rbac.middleware.js';
 import {
   handleUploadTrainingDocumentError,
   uploadTrainingDocument,
@@ -24,18 +24,26 @@ const router = Router();
 
 router.use(authenticate);
 router.use(attachUserContext);
-router.use(requirePermission('training-management'));
+
+/** Catalog CRUD: Training Management or Admin Training Settings. */
+const trainingCatalogAuth = requireAnyPermission([
+  'training-management',
+  'training-settings',
+]);
+/** Assignments stay on Training Management only. */
+const assignmentsAuth = requirePermission('training-management');
 
 router.post(
   '/upload-document',
+  trainingCatalogAuth,
   handleUploadTrainingDocumentError,
   uploadTrainingDocument
 );
-router.post('/', validate(createTrainingSchema), createTraining);
-router.get('/', listTrainings);
-router.use('/assignments', trainingAssignmentRoutes);
-router.get('/:id', validate(getTrainingByIdSchema), getTrainingById);
-router.put('/:id', validate(updateTrainingSchema), updateTraining);
-router.delete('/:id', validate(deleteTrainingSchema), deleteTraining);
+router.post('/', trainingCatalogAuth, validate(createTrainingSchema), createTraining);
+router.get('/', trainingCatalogAuth, listTrainings);
+router.use('/assignments', assignmentsAuth, trainingAssignmentRoutes);
+router.get('/:id', trainingCatalogAuth, validate(getTrainingByIdSchema), getTrainingById);
+router.put('/:id', trainingCatalogAuth, validate(updateTrainingSchema), updateTraining);
+router.delete('/:id', trainingCatalogAuth, validate(deleteTrainingSchema), deleteTraining);
 
 export default router;

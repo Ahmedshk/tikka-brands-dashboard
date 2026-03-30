@@ -4,6 +4,9 @@ export const SIDEBAR_DEFAULT_LOGO_PATHS = new Set([
   '/dashboard/rbac-management',
   '/dashboard/goal-setting',
   '/dashboard/location-management',
+  '/dashboard/training-settings',
+  '/dashboard/review-settings',
+  '/dashboard/disciplinary-settings',
 ]);
 
 export const SIDEBAR_WIDTH = 256;

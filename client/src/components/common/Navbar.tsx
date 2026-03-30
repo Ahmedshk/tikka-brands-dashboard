@@ -53,6 +53,9 @@ const LOCATION_MANAGEMENT_PATH = '/dashboard/location-management';
 const USER_MANAGEMENT_PATH = '/dashboard/user-management';
 const RBAC_MANAGEMENT_PATH = '/dashboard/rbac-management';
 const GOAL_SETTING_PATH = '/dashboard/goal-setting';
+const TRAINING_SETTINGS_PATH = '/dashboard/training-settings';
+const REVIEW_SETTINGS_PATH = '/dashboard/review-settings';
+const DISCIPLINARY_SETTINGS_PATH = '/dashboard/disciplinary-settings';
 
 export const Navbar = () => {
   const { pathname } = useLocation();
@@ -65,7 +68,10 @@ export const Navbar = () => {
     pathname === LOCATION_MANAGEMENT_PATH ||
     pathname === USER_MANAGEMENT_PATH ||
     pathname.startsWith(RBAC_MANAGEMENT_PATH) ||
-    pathname === GOAL_SETTING_PATH;
+    pathname === GOAL_SETTING_PATH ||
+    pathname === TRAINING_SETTINGS_PATH ||
+    pathname === REVIEW_SETTINGS_PATH ||
+    pathname === DISCIPLINARY_SETTINGS_PATH;
   const [locationsLoading, setLocationsLoading] = useState(true);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
