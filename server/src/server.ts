@@ -31,6 +31,8 @@ const startServer = async (): Promise<void> => {
     const reviewCycleService = new ReviewCycleService();
     const expiredTokenSuperseded = await reviewCycleService.supersedeCyclesWithExpiredSelfReviewTokenAtStartup();
     logger.info('Review cycle startup repair (expired self-review token)', expiredTokenSuperseded);
+    const pastScheduledNextSuperseded = await reviewCycleService.supersedeCyclesPastScheduledNextAtStartup();
+    logger.info('Review cycle startup repair (past scheduled next reference)', pastScheduledNextSuperseded);
     const missingCycleRepair = await reviewCycleService.repairMissingCycleChainAtStartup();
     logger.info('Review cycle startup repair (missing cycle chain)', missingCycleRepair);
 

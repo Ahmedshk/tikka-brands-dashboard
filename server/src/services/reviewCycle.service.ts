@@ -1163,6 +1163,52 @@ export class ReviewCycleService {
     };
   }
 
+  /**
+   * Run after DB connect on server start. If the next-cycle scheduled date has passed but the cycle
+   * was never marked terminal (e.g. jobs missed while the server was down), supersede it so
+   * repair/backfill can proceed. Skips terminated employees, matching supersedeStaleScheduledCycles.
+   */
+  async supersedeCyclesPastScheduledNextAtStartup(): Promise<{
+    candidatesCount: number;
+    modifiedCount: number;
+    skippedTerminated: number;
+  }> {
+    const now = new Date();
+    const candidates = await ReviewCycleModel.find({
+      scheduledNextCycleReferenceDate: { $exists: true, $lte: now, $ne: null },
+      status: { $nin: REVIEW_CYCLE_TERMINAL_FOR_NEW_CYCLE },
+    })
+      .select("_id employeeId")
+      .lean();
+
+    let modifiedCount = 0;
+    let skippedTerminated = 0;
+
+    for (const c of candidates) {
+      const empId = String(c.employeeId);
+      const user = await UserModel.findById(empId).select("isTerminated").lean();
+      if (user?.isTerminated === true) {
+        skippedTerminated += 1;
+        continue;
+      }
+      const result = await ReviewCycleModel.updateOne(
+        {
+          _id: c._id,
+          status: { $nin: REVIEW_CYCLE_TERMINAL_FOR_NEW_CYCLE },
+          scheduledNextCycleReferenceDate: { $lte: now },
+        },
+        { $set: { status: "cycle_superseded" as ReviewCycleStatus } },
+      );
+      if (result.modifiedCount > 0) modifiedCount += 1;
+    }
+
+    return {
+      candidatesCount: candidates.length,
+      modifiedCount,
+      skippedTerminated,
+    };
+  }
+
   async repairMissingCycleChainAtStartup(): Promise<{
     employeesScanned: number;
     cyclesCreated: number;
