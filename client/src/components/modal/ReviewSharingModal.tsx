@@ -10,13 +10,14 @@ import {
   reviewEmployeeHeaderSubtitle,
 } from "../../utils/employeeBioHelpers";
 import { ReviewQuestionResponseList } from "../../utils/reviewQuestionResponseList";
-import type {
-  ActionPlanItem,
-  ManagerReview,
-  ReviewCycle,
-  ReviewCycleStatus,
-  ReviewSettings,
-  SelfReview,
+import {
+  formatMeritIncreaseDisplay,
+  type ActionPlanItem,
+  type ManagerReview,
+  type ReviewCycle,
+  type ReviewCycleStatus,
+  type ReviewSettings,
+  type SelfReview,
 } from "../../types/review.types";
 
 interface ReviewSharingModalProps {
@@ -310,11 +311,11 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
             ) : null}
           </div>
           <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden border-x border-gray-200">
-            {cycle.salaryIncrement != null && cycle.salaryIncrement > 0 && (
+            {formatMeritIncreaseDisplay(cycle.salaryIncrement, cycle.salaryIncrementType) != null && (
               <div className="px-5 pt-4 flex-shrink-0">
                 <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2">
                   <span className="text-sm font-medium text-green-700">
-                    Merit Increase: {cycle.salaryIncrement}%
+                    Merit Increase: {formatMeritIncreaseDisplay(cycle.salaryIncrement, cycle.salaryIncrementType)}
                   </span>
                   {cycle.directorComments ? (
                     <p className="text-xs text-green-600 mt-1">{cycle.directorComments}</p>

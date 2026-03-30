@@ -2,6 +2,7 @@ import mongoose, { Schema, Document, Types } from "mongoose";
 import {
   REVIEW_CYCLE_STATUSES,
   type ReviewCycleStatus,
+  type SalaryIncrementType,
 } from "../types/reviewCycle.types.js";
 
 export interface ReviewCycleDocument extends Document {
@@ -23,6 +24,7 @@ export interface ReviewCycleDocument extends Document {
   directorDecision?: "approved" | "rejected" | null;
   directorComments?: string;
   salaryIncrement?: number;
+  salaryIncrementType?: SalaryIncrementType;
   actionPlanId?: Types.ObjectId;
   checkIn30Id?: Types.ObjectId;
   checkIn60Id?: Types.ObjectId;
@@ -51,6 +53,11 @@ const reviewCycleSchema = new Schema<ReviewCycleDocument>(
     directorDecision: { type: String, enum: ["approved", "rejected", null], default: null },
     directorComments: { type: String, default: undefined },
     salaryIncrement: { type: Number, default: undefined },
+    salaryIncrementType: {
+      type: String,
+      enum: ["percent", "fixed"],
+      default: undefined,
+    },
     actionPlanId: { type: Schema.Types.ObjectId, ref: "ActionPlan", default: undefined },
     checkIn30Id: { type: Schema.Types.ObjectId, ref: "CheckIn", default: undefined },
     checkIn60Id: { type: Schema.Types.ObjectId, ref: "CheckIn", default: undefined },

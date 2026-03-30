@@ -168,7 +168,10 @@ export const reviewService = {
   },
 
   // --- Director Approval ---
-  async approveReview(cycleId: string, body: { comments?: string; salaryIncrement?: number }): Promise<ReviewCycle> {
+  async approveReview(
+    cycleId: string,
+    body: { comments?: string; salaryIncrement?: number; salaryIncrementType?: "percent" | "fixed" },
+  ): Promise<ReviewCycle> {
     const { data } = await api.post(`/reviews/cycles/${cycleId}/approve`, body);
     return data.data;
   },

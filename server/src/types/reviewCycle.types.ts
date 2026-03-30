@@ -35,6 +35,9 @@ export const REVIEW_CYCLE_STATUSES = [
 
 export type ReviewCycleStatus = (typeof REVIEW_CYCLE_STATUSES)[number];
 
+/** How `salaryIncrement` should be interpreted when director approves. */
+export type SalaryIncrementType = "percent" | "fixed";
+
 /** Cycles that no longer block starting a new review cycle for the employee. */
 export const REVIEW_CYCLE_TERMINAL_FOR_NEW_CYCLE: ReviewCycleStatus[] = [
   "cycle_complete",
@@ -74,6 +77,8 @@ export interface IReviewCycle {
   directorDecision?: "approved" | "rejected" | null;
   directorComments?: string;
   salaryIncrement?: number;
+  /** When omitted and `salaryIncrement` is set (legacy), treat as percent. */
+  salaryIncrementType?: SalaryIncrementType;
   actionPlanId?: Types.ObjectId | string;
   checkIn30Id?: Types.ObjectId | string;
   checkIn60Id?: Types.ObjectId | string;

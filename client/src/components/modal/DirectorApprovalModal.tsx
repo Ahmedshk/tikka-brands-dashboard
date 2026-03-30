@@ -10,7 +10,14 @@ import {
   reviewEmployeeHeaderSubtitle,
 } from "../../utils/employeeBioHelpers";
 import { ReviewQuestionResponseList } from "../../utils/reviewQuestionResponseList";
-import type { ManagerReview, ReviewCycle, ReviewCycleStatus, ReviewSettings, SelfReview } from "../../types/review.types";
+import type {
+  ManagerReview,
+  ReviewCycle,
+  ReviewCycleStatus,
+  ReviewSettings,
+  SalaryIncrementType,
+  SelfReview,
+} from "../../types/review.types";
 
 interface DirectorApprovalModalProps {
   isOpen: boolean;
@@ -30,6 +37,7 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
   const [reviewSettings, setReviewSettings] = useState<ReviewSettings | null>(null);
   const [comments, setComments] = useState("");
   const [salaryIncrement, setSalaryIncrement] = useState("");
+  const [salaryIncrementKind, setSalaryIncrementKind] = useState<SalaryIncrementType>("percent");
   const [decision, setDecision] = useState<"approve" | "reject" | null>(null);
 
   const canDecide = ["manager_review_submitted", "director_approval_due", "director_approval_pending", "director_approval_past_due"].includes(status);
@@ -67,6 +75,7 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
         await reviewService.approveReview(cycleId, {
           comments: comments || undefined,
           salaryIncrement: salaryIncrement ? Number.parseFloat(salaryIncrement) : undefined,
+          salaryIncrementType: salaryIncrement ? salaryIncrementKind : undefined,
         });
         toast.success("Review approved!");
       } else {
@@ -216,30 +225,65 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
                       </div>
 
                       {decision === "approve" && (
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-                          <label
-                            htmlFor="salary-increment"
-                            className="text-sm font-medium text-gray-600 shrink-0 sm:min-w-[12rem]"
-                          >
-                            Salary Increment % (optional)
-                          </label>
-                          <input
-                            id="salary-increment"
-                            type="number"
-                            inputMode="decimal"
-                            step="0.5"
-                            min="0"
-                            max="100"
-                            value={salaryIncrement}
-                            onChange={(e) => setSalaryIncrement(sanitizeSalaryIncrementInput(e.target.value))}
-                            onKeyDown={(e) => {
-                              if (e.key === "e" || e.key === "E" || e.key === "+" || e.key === "-") {
-                                e.preventDefault();
-                              }
-                            }}
-                            className="w-full sm:w-48 max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20"
-                            placeholder="e.g. 5.0"
-                          />
+                        <div className="space-y-3">
+                          <div>
+                            <span className="text-sm font-medium text-gray-600 block mb-2">
+                              Merit increase (optional)
+                            </span>
+                            <div className="flex flex-wrap gap-4">
+                              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="salary-increment-kind"
+                                  className="accent-button-primary"
+                                  checked={salaryIncrementKind === "percent"}
+                                  onChange={() => {
+                                    setSalaryIncrementKind("percent");
+                                    setSalaryIncrement("");
+                                  }}
+                                />
+                                Percent
+                              </label>
+                              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="salary-increment-kind"
+                                  className="accent-button-primary"
+                                  checked={salaryIncrementKind === "fixed"}
+                                  onChange={() => {
+                                    setSalaryIncrementKind("fixed");
+                                    setSalaryIncrement("");
+                                  }}
+                                />
+                                Fixed amount (USD)
+                              </label>
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                            <label
+                              htmlFor="salary-increment"
+                              className="text-sm font-medium text-gray-600 shrink-0 sm:min-w-[12rem]"
+                            >
+                              {salaryIncrementKind === "percent" ? "Increase (%)" : "Increase ($)"}
+                            </label>
+                            <input
+                              id="salary-increment"
+                              type="number"
+                              inputMode="decimal"
+                              step={salaryIncrementKind === "percent" ? 0.5 : 0.01}
+                              min={0}
+                              max={salaryIncrementKind === "percent" ? 100 : undefined}
+                              value={salaryIncrement}
+                              onChange={(e) => setSalaryIncrement(sanitizeSalaryIncrementInput(e.target.value))}
+                              onKeyDown={(e) => {
+                                if (e.key === "e" || e.key === "E" || e.key === "+" || e.key === "-") {
+                                  e.preventDefault();
+                                }
+                              }}
+                              className="w-full sm:w-48 max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20"
+                              placeholder={salaryIncrementKind === "percent" ? "e.g. 5.0" : "e.g. 5000"}
+                            />
+                          </div>
                         </div>
                       )}
 

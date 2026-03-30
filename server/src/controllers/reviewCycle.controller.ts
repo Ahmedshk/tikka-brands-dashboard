@@ -227,8 +227,31 @@ export async function getManagerReview(req: Request, res: Response, next: NextFu
 
 export async function approveReview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    const { comments, salaryIncrement: rawInc, salaryIncrementType } = req.body as {
+      comments?: string;
+      salaryIncrement?: unknown;
+      salaryIncrementType?: unknown;
+    };
+    if (
+      salaryIncrementType != null &&
+      salaryIncrementType !== "percent" &&
+      salaryIncrementType !== "fixed"
+    ) {
+      throw new AppError("salaryIncrementType must be 'percent' or 'fixed'", 400);
+    }
+    const inc =
+      rawInc === undefined || rawInc === null || rawInc === ""
+        ? undefined
+        : Number(rawInc);
+    if (inc !== undefined && (typeof inc !== "number" || Number.isNaN(inc))) {
+      throw new AppError("Invalid salary increment", 400);
+    }
     const result = await service.approveReview(
-      req.params.id, req.user!.userId, req.body.comments, req.body.salaryIncrement,
+      req.params.id,
+      req.user!.userId,
+      comments,
+      inc,
+      salaryIncrementType as "percent" | "fixed" | undefined,
     );
     res.json({ success: true, data: result });
   } catch (err) { next(err); }

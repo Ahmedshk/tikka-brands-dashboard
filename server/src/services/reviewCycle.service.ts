@@ -805,6 +805,7 @@ export class ReviewCycleService {
     directorId: string,
     comments?: string,
     salaryIncrement?: number,
+    salaryIncrementType?: "percent" | "fixed",
   ) {
     const cycle = await ReviewCycleModel.findById(cycleId);
     if (!cycle) throw new AppError("Review cycle not found", 404);
@@ -814,9 +815,36 @@ export class ReviewCycleService {
       throw new AppError(`Cannot approve in status: ${cycle.status}`, 400);
     }
 
+    const hasIncrement =
+      salaryIncrement !== undefined &&
+      salaryIncrement !== null &&
+      Number.isFinite(salaryIncrement);
+
+    if (hasIncrement) {
+      const kind: "percent" | "fixed" = salaryIncrementType === "fixed" ? "fixed" : "percent";
+      if (kind === "percent") {
+        if (salaryIncrement! < 0 || salaryIncrement! > 100) {
+          throw new AppError("Salary increment must be between 0 and 100 percent", 400);
+        }
+        cycle.salaryIncrement = salaryIncrement;
+        cycle.salaryIncrementType = "percent";
+      } else {
+        if (salaryIncrement! < 0) {
+          throw new AppError("Fixed salary increment must be non-negative", 400);
+        }
+        if (salaryIncrement! > 50_000_000) {
+          throw new AppError("Fixed salary increment is too large", 400);
+        }
+        cycle.salaryIncrement = salaryIncrement;
+        cycle.salaryIncrementType = "fixed";
+      }
+    } else {
+      cycle.salaryIncrement = undefined;
+      cycle.salaryIncrementType = undefined;
+    }
+
     cycle.directorDecision = "approved";
     cycle.directorComments = comments;
-    cycle.salaryIncrement = salaryIncrement;
     cycle.approvedByDirectorId = directorId as unknown as typeof cycle.approvedByDirectorId;
     cycle.status = "approved";
     await cycle.save();

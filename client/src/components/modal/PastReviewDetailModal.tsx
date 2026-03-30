@@ -9,6 +9,7 @@ import { ReviewEmployeeBioSection } from "../review/ReviewEmployeeBioSection";
 import { DocumentTypeThumbnail } from "./DocumentTypeThumbnail";
 import { getDocumentFormatFromApiModuleFile } from "../../utils/createTrainingModalHelpers";
 import {
+  formatMeritIncreaseDisplay,
   getStageStatuses,
   getStageStatusesFromSnapshot,
   getStageStatusColor,
@@ -348,10 +349,12 @@ export const PastReviewDetailModal = ({
                           ) : null}
                         </dd>
                       </div>
-                      {cycle.salaryIncrement != null && cycle.salaryIncrement !== undefined && (
+                      {formatMeritIncreaseDisplay(cycle.salaryIncrement, cycle.salaryIncrementType) != null && (
                         <div>
                           <dt className="text-gray-500 text-xs">Salary increment</dt>
-                          <dd className="font-medium">{String(cycle.salaryIncrement)}</dd>
+                          <dd className="font-medium">
+                            {formatMeritIncreaseDisplay(cycle.salaryIncrement, cycle.salaryIncrementType)}
+                          </dd>
                         </div>
                       )}
                     </dl>

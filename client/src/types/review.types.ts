@@ -67,6 +67,23 @@ export const REVIEW_CYCLE_STATUSES = [
 
 export type ReviewCycleStatus = (typeof REVIEW_CYCLE_STATUSES)[number];
 
+export type SalaryIncrementType = "percent" | "fixed";
+
+/** Merit increase label for director-approved cycles (legacy: no type implies percent). */
+export function formatMeritIncreaseDisplay(
+  amount: number | null | undefined,
+  type: SalaryIncrementType | null | undefined,
+): string | null {
+  if (amount == null || typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+  const kind = type ?? "percent";
+  if (kind === "fixed") {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+  }
+  return `${amount}%`;
+}
+
 export interface QuestionResponse {
   questionId: string;
   questionText: string;
@@ -100,6 +117,8 @@ export interface ReviewCycle {
   directorDecision?: "approved" | "rejected" | null;
   directorComments?: string;
   salaryIncrement?: number;
+  /** When omitted but `salaryIncrement` is set, UI/API treat as percent (legacy). */
+  salaryIncrementType?: SalaryIncrementType;
   actionPlanId?: string;
   checkIn30Id?: string;
   checkIn60Id?: string;
