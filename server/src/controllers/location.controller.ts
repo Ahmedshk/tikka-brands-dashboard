@@ -8,12 +8,13 @@ import type { ILocationListItem, ILocationResponse } from '../types/location.typ
 
 const locationService = new LocationService();
 
-/** Strip to minimal fields for list response (no sensitive address/IDs). */
 function toLocationListItem(loc: ILocationResponse): ILocationListItem {
   return {
     _id: loc._id ?? '',
     storeName: loc.storeName,
+    address: loc.address ?? '',
     timezone: loc.timezone ?? '',
+    businessStartTime: loc.businessStartTime ?? '00:00',
     ...(loc.logoDataUrl != null && { logoDataUrl: loc.logoDataUrl }),
   };
 }

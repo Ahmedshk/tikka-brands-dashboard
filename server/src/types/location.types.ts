@@ -15,13 +15,16 @@ export interface ILocation {
 }
 
 /**
- * Minimal location shape for list endpoints (GET /locations).
- * Excludes sensitive fields: address, squareLocationId, homebaseLocationId, marketManBuyerGuid, etc.
+ * Location shape for list endpoints (GET /locations).
+ * Excludes sensitive integration fields: squareLocationId, homebaseLocationId, marketManBuyerGuid, tokens, etc.
+ * Address and business hours are included for admin location-management UI.
  */
 export interface ILocationListItem {
   _id: string;
   storeName: string;
+  address: string;
   timezone: string;
+  businessStartTime: string;
   logoDataUrl?: string;
 }
 

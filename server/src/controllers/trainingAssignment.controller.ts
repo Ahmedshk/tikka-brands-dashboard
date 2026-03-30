@@ -44,8 +44,17 @@ export const listAssignments = async (
 ): Promise<void> => {
   try {
     const locationId = (req.query.locationId as string) ?? '';
-    const list = await assignmentService.listByLocationId(locationId);
-    res.status(200).json({ success: true, data: { assignments: list } });
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const limitRaw = req.query.limit;
+    const limit =
+      limitRaw === undefined || limitRaw === ''
+        ? undefined
+        : Number(limitRaw);
+    const { list, total } = await assignmentService.listByLocationId(locationId, {
+      ...(search != null && search !== '' && { search }),
+      ...(limit != null && !Number.isNaN(limit) && limit > 0 && { limit }),
+    });
+    res.status(200).json({ success: true, data: { assignments: list, total } });
   } catch (error) {
     next(error);
   }

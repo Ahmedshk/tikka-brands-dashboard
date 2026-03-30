@@ -24,6 +24,8 @@ export const createAssignmentsSchema = z.object({
 export const listAssignmentsSchema = z.object({
   query: z.object({
     locationId: z.string().min(1, 'locationId is required'),
+    search: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(500).optional(),
   }),
 });
 

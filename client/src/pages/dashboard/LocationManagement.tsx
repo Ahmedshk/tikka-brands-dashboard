@@ -139,8 +139,16 @@ export const LocationManagement = () => {
                           </span>
                           <span className="truncate">{loc.storeName}</span>
                         </p>
+                        {loc.address ? (
+                          <p className="text-xs text-gray-600 mt-1 line-clamp-2" title={loc.address}>
+                            {loc.address}
+                          </p>
+                        ) : null}
                         <p className="text-xs text-gray-600 mt-1" title={loc.timezone}>
                           <span className="font-medium">Timezone:</span> {loc.timezone}
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          <span className="font-medium">Business start:</span> {loc.businessStartTime}
                         </p>
                       </div>
                       <div className="flex items-center justify-end gap-0 sm:gap-2">
@@ -185,7 +193,7 @@ export const LocationManagement = () => {
                       const rowBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                       return (
                         <tr key={loc._id} className={rowBg}>
-                          <td className="w-[40%] px-4 lg:px-6 py-3 lg:py-4">
+                          <td className="px-4 lg:px-6 py-3 lg:py-4">
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="w-8 h-8 flex items-center justify-center shrink-0 text-gray-400">
                                 {loc.logoDataUrl ? (
@@ -194,10 +202,26 @@ export const LocationManagement = () => {
                                   <CiImageOn className="w-5 h-5" aria-hidden />
                                 )}
                               </span>
-                              <span className="text-xs 2xl:text-sm text-primary truncate" title={loc.storeName}>{loc.storeName}</span>
+                              <span className="text-xs 2xl:text-sm text-primary truncate" title={loc.storeName}>
+                                {loc.storeName}
+                              </span>
                             </div>
                           </td>
-                          <td className="w-[40%] px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate" title={loc.timezone}>{loc.timezone}</td>
+                          <td
+                            className="px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate"
+                            title={loc.address}
+                          >
+                            {loc.address}
+                          </td>
+                          <td
+                            className="px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary truncate"
+                            title={loc.timezone}
+                          >
+                            {loc.timezone}
+                          </td>
+                          <td className="px-4 lg:px-6 py-3 lg:py-4 text-xs 2xl:text-sm text-primary whitespace-nowrap">
+                            {loc.businessStartTime}
+                          </td>
                           <td className="px-4 lg:px-6 py-3 lg:py-4 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <button

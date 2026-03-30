@@ -30,6 +30,85 @@ interface Money {
   currency?: string;
 }
 
+export interface SquareOrderDiscount {
+  name?: string;
+  percentage?: string;
+  amountMoneyCents?: number;
+}
+
+export interface SquareOrderWithDiscount {
+  id: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  paymentIds: string[];
+  discounts: SquareOrderDiscount[];
+  lineItems: {
+    name: string;
+    variationName?: string;
+    quantity?: string;
+    unitPriceMoneyCents?: number;
+    grossSalesMoneyCents?: number;
+    totalMoneyCents?: number;
+    modifiers: {
+      name: string;
+      quantity?: string;
+      unitPriceMoneyCents?: number;
+      totalPriceMoneyCents?: number;
+    }[];
+  }[];
+  orderTotals: {
+    totalMoneyCents?: number;
+    taxMoneyCents?: number;
+    tipMoneyCents?: number;
+    serviceChargeMoneyCents?: number;
+    /** Order-level discount (Square net_amounts.discount_money or total_discount_money). */
+    discountMoneyCents?: number;
+  };
+  refunds: {
+    tenderId: string | null;
+    refundCreatedAt: string | null;
+    lineItems: {
+      name: string;
+      variationName?: string;
+      quantity?: string;
+      unitPriceMoneyCents?: number;
+      lineTotalMoneyCents?: number;
+      grossReturnMoneyCents?: number;
+      modifiers: {
+        name: string;
+        quantity?: string;
+        unitPriceMoneyCents?: number;
+        totalPriceMoneyCents?: number;
+      }[];
+    }[];
+    refundAmountMoneyCents?: number;
+    taxMoneyCents?: number;
+    tipMoneyCents?: number;
+    serviceChargeMoneyCents?: number;
+  }[];
+}
+
+export interface SquarePaymentDetails {
+  id: string;
+  employeeId: string | null;
+  teamMemberId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  amountMoneyCents?: number;
+  tipMoneyCents?: number;
+  receiptNumber: string | null;
+  receiptUrl: string | null;
+  deviceName: string | null;
+}
+
+export interface SquareTeamMemberDetails {
+  id: string;
+  givenName: string | null;
+  familyName: string | null;
+  /** From wage_setting.job_assignments[0].job_title when present. */
+  jobTitle?: string;
+}
+
 interface NetAmounts {
   total_money?: Money;
   tax_money?: Money;
@@ -48,25 +127,69 @@ interface OrderMoneyAmounts {
 
 /** Line item for sales-by-category (Square OrderLineItem). */
 interface SquareOrderLineItem {
+  name?: string;
+  variation_name?: string;
   catalog_object_id?: string;
+  base_price_money?: Money;
+  gross_sales_money?: Money;
   total_money?: Money;
   quantity?: string;
+  modifiers?: Array<{
+    name?: string;
+    quantity?: string;
+    base_price_money?: Money;
+    total_price_money?: Money;
+  }>;
 }
 
 interface SquareOrder {
+  id?: string;
   created_at?: string;
+  updated_at?: string;
   /** Order state (e.g. OPEN, COMPLETED, CANCELED). CANCELED orders are excluded from net sales. */
   state?: string;
   total_money?: Money;
+  total_discount_money?: Money;
   net_amounts?: NetAmounts;
   /** Refund/return amounts for the order (Square Order.return_amounts). */
   return_amounts?: OrderMoneyAmounts;
   /** Refund transactions on this order (Square Order.refunds). */
-  refunds?: unknown[];
+  refunds?: Array<{
+    tender_id?: string;
+    created_at?: string;
+  }>;
   /** Tenders that were used to pay (Square returns this array). */
-  tenders?: unknown[];
+  tenders?: Array<{ payment_id?: string }>;
   tender_ids?: string[];
   payment_ids?: string[];
+  discounts?: Array<{
+    name?: string;
+    percentage?: string;
+    amount_money?: Money;
+    applied_money?: Money;
+  }>;
+  returns?: Array<{
+    return_line_items?: Array<{
+      name?: string;
+      variation_name?: string;
+      quantity?: string;
+      base_price_money?: Money;
+      total_money?: Money;
+      gross_return_money?: Money;
+      return_modifiers?: Array<{
+        name?: string;
+        quantity?: string;
+        base_price_money?: Money;
+        total_price_money?: Money;
+      }>;
+    }>;
+    return_amounts?: {
+      total_money?: Money;
+      tax_money?: Money;
+      tip_money?: Money;
+      service_charge_money?: Money;
+    };
+  }>;
   /** Origination of the order (Square Order.source). */
   source?: { name?: string };
   /** Fulfillment details (Square Order.fulfillments). */
@@ -78,6 +201,36 @@ interface SquareOrder {
 interface SearchOrdersResponse {
   orders?: SquareOrder[];
   cursor?: string;
+  errors?: Array<{ code: string; detail?: string }>;
+}
+
+interface RetrievePaymentResponse {
+  payment?: {
+    id?: string;
+    employee_id?: string;
+    team_member_id?: string;
+    created_at?: string;
+    updated_at?: string;
+    amount_money?: Money;
+    tip_money?: Money;
+    receipt_number?: string;
+    receipt_url?: string;
+    device_details?: {
+      device_name?: string;
+    };
+  };
+  errors?: Array<{ code: string; detail?: string }>;
+}
+
+interface RetrieveTeamMemberResponse {
+  team_member?: {
+    id?: string;
+    given_name?: string;
+    family_name?: string;
+    wage_setting?: {
+      job_assignments?: Array<{ job_title?: string }>;
+    };
+  };
   errors?: Array<{ code: string; detail?: string }>;
 }
 
@@ -176,6 +329,86 @@ export async function searchTeamMembers(
   return all;
 }
 
+export async function getPaymentById(
+  paymentId: string,
+  options?: SquareServiceOptions,
+): Promise<SquarePaymentDetails | null> {
+  const token = resolveAccessToken(options?.accessToken);
+  const res = await fetch(
+    `${SQUARE_BASE}/v2/payments/${encodeURIComponent(paymentId)}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  if (!res.ok) {
+    if (res.status === 404) return null;
+    const errText = await res.text();
+    throw new Error(`Square Payment API error ${res.status}: ${errText}`);
+  }
+  const data = (await res.json()) as RetrievePaymentResponse;
+  if (data.errors?.length) {
+    throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+  }
+  const payment = data.payment;
+  if (!payment?.id) return null;
+  return {
+    id: payment.id,
+    employeeId: payment.employee_id ?? null,
+    teamMemberId: payment.team_member_id ?? null,
+    createdAt: payment.created_at ?? null,
+    updatedAt: payment.updated_at ?? null,
+    ...(payment.amount_money?.amount != null
+      ? { amountMoneyCents: moneyToCents(payment.amount_money) }
+      : {}),
+    ...(payment.tip_money?.amount != null
+      ? { tipMoneyCents: moneyToCents(payment.tip_money) }
+      : {}),
+    receiptNumber: payment.receipt_number ?? null,
+    receiptUrl: payment.receipt_url ?? null,
+    deviceName: payment.device_details?.device_name ?? null,
+  };
+}
+
+export async function getTeamMemberById(
+  teamMemberId: string,
+  options?: SquareServiceOptions,
+): Promise<SquareTeamMemberDetails | null> {
+  const token = resolveAccessToken(options?.accessToken);
+  const res = await fetch(
+    `${SQUARE_BASE}/v2/team-members/${encodeURIComponent(teamMemberId)}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  if (!res.ok) {
+    if (res.status === 404) return null;
+    const errText = await res.text();
+    throw new Error(`Square Team API error ${res.status}: ${errText}`);
+  }
+  const data = (await res.json()) as RetrieveTeamMemberResponse;
+  if (data.errors?.length) {
+    throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+  }
+  const member = data.team_member;
+  if (!member?.id) return null;
+  const jobTitleRaw =
+    member.wage_setting?.job_assignments?.[0]?.job_title?.trim();
+  const jobTitle =
+    jobTitleRaw && jobTitleRaw.length > 0 ? jobTitleRaw : undefined;
+  return {
+    id: member.id,
+    givenName: member.given_name ?? null,
+    familyName: member.family_name ?? null,
+    ...(jobTitle != null ? { jobTitle } : {}),
+  };
+}
+
 /**
  * Fetch a single Square location by ID (GET /v2/locations/{location_id}).
  * Used to get business_hours and timezone for the selected store.
@@ -215,6 +448,91 @@ function moneyToCents(money: Money | undefined): number {
   if (money?.amount == null) return 0;
   const amount = Number(money.amount);
   return Number.isNaN(amount) ? 0 : amount;
+}
+
+function refundReturnModifierFromSquare(modifier: {
+  name?: string;
+  quantity?: string;
+  base_price_money?: Money;
+  total_price_money?: Money;
+}): SquareOrderWithDiscount["refunds"][number]["lineItems"][number]["modifiers"][number] {
+  const qty = modifier.quantity?.trim();
+  return {
+    name: modifier.name?.trim() || "Add-on",
+    ...(qty !== "" && qty != null ? { quantity: modifier.quantity } : {}),
+    ...(modifier.base_price_money?.amount != null
+      ? { unitPriceMoneyCents: moneyToCents(modifier.base_price_money) }
+      : {}),
+    ...(modifier.total_price_money?.amount != null
+      ? { totalPriceMoneyCents: moneyToCents(modifier.total_price_money) }
+      : {}),
+  };
+}
+
+function refundReturnLineItemFromSquare(lineItem: {
+  name?: string;
+  variation_name?: string;
+  quantity?: string;
+  base_price_money?: Money;
+  total_money?: Money;
+  gross_return_money?: Money;
+  return_modifiers?: Array<{
+    name?: string;
+    quantity?: string;
+    base_price_money?: Money;
+    total_price_money?: Money;
+  }>;
+}): SquareOrderWithDiscount["refunds"][number]["lineItems"][number] {
+  const variation = lineItem.variation_name?.trim();
+  const qty = lineItem.quantity?.trim();
+  return {
+    name: lineItem.name?.trim() || "Item",
+    ...(variation ? { variationName: variation } : {}),
+    ...(qty !== "" && qty != null ? { quantity: lineItem.quantity } : {}),
+    ...(lineItem.base_price_money?.amount != null
+      ? { unitPriceMoneyCents: moneyToCents(lineItem.base_price_money) }
+      : {}),
+    ...(lineItem.total_money?.amount != null
+      ? { lineTotalMoneyCents: moneyToCents(lineItem.total_money) }
+      : {}),
+    ...(lineItem.gross_return_money?.amount != null
+      ? { grossReturnMoneyCents: moneyToCents(lineItem.gross_return_money) }
+      : {}),
+    modifiers: (lineItem.return_modifiers ?? []).map(refundReturnModifierFromSquare),
+  };
+}
+
+function discountOrderLineItemFromSquare(lineItem: {
+  name?: string;
+  variation_name?: string;
+  quantity?: string;
+  base_price_money?: Money;
+  gross_sales_money?: Money;
+  total_money?: Money;
+  modifiers?: Array<{
+    name?: string;
+    quantity?: string;
+    base_price_money?: Money;
+    total_price_money?: Money;
+  }>;
+}): SquareOrderWithDiscount["lineItems"][number] {
+  const variation = lineItem.variation_name?.trim();
+  const qty = lineItem.quantity?.trim();
+  return {
+    name: lineItem.name?.trim() || "Item",
+    ...(variation ? { variationName: variation } : {}),
+    ...(qty !== "" && qty != null ? { quantity: lineItem.quantity } : {}),
+    ...(lineItem.base_price_money?.amount != null
+      ? { unitPriceMoneyCents: moneyToCents(lineItem.base_price_money) }
+      : {}),
+    ...(lineItem.gross_sales_money?.amount != null
+      ? { grossSalesMoneyCents: moneyToCents(lineItem.gross_sales_money) }
+      : {}),
+    ...(lineItem.total_money?.amount != null
+      ? { totalMoneyCents: moneyToCents(lineItem.total_money) }
+      : {}),
+    modifiers: (lineItem.modifiers ?? []).map(refundReturnModifierFromSquare),
+  };
 }
 
 function isPaidOrder(order: SquareOrder): boolean {
@@ -313,6 +631,133 @@ async function fetchOrdersInRange(
   } while (cursor);
 
   return all;
+}
+
+export async function searchOrdersWithDiscountsInRange(
+  squareLocationId: string,
+  range: TimeRange,
+  options?: SquareServiceOptions,
+): Promise<SquareOrderWithDiscount[]> {
+  const orders = await fetchOrdersInRange(
+    squareLocationId,
+    range,
+    options?.accessToken,
+  );
+  return orders
+    .filter(
+      (order) =>
+        (order.discounts?.length ?? 0) > 0 || (order.returns?.length ?? 0) > 0,
+    )
+    .map((order) => {
+      const tenderPaymentIds = (order.tenders ?? [])
+        .map((tender) => tender.payment_id)
+        .filter(
+          (paymentId): paymentId is string =>
+            paymentId != null && paymentId.trim() !== "",
+        );
+      const paymentIds = [
+        ...new Set([...(order.payment_ids ?? []), ...tenderPaymentIds]),
+      ];
+      let orderLevelDiscountCents: number | undefined;
+      if (order.net_amounts?.discount_money?.amount != null) {
+        orderLevelDiscountCents = moneyToCents(order.net_amounts.discount_money);
+      } else if (order.total_discount_money?.amount != null) {
+        orderLevelDiscountCents = moneyToCents(order.total_discount_money);
+      }
+      const discounts: SquareOrderDiscount[] = (order.discounts ?? []).map(
+        (discount) => {
+          const amountMoneyCents =
+            orderLevelDiscountCents ??
+            (discount.amount_money?.amount == null &&
+            discount.applied_money?.amount == null
+              ? undefined
+              : moneyToCents(discount.amount_money ?? discount.applied_money));
+          const d: SquareOrderDiscount = {};
+          if (discount.name != null) {
+            d.name = discount.name;
+          }
+          if (discount.percentage != null) {
+            d.percentage = discount.percentage;
+          }
+          if (amountMoneyCents != null) {
+            d.amountMoneyCents = amountMoneyCents;
+          }
+          return d;
+        },
+      );
+      const lineItems = (order.line_items ?? []).map(discountOrderLineItemFromSquare);
+      const orderTotals: SquareOrderWithDiscount["orderTotals"] = {
+        ...(order.net_amounts?.total_money?.amount != null
+          ? { totalMoneyCents: moneyToCents(order.net_amounts.total_money) }
+          : {}),
+        ...(order.net_amounts?.tax_money?.amount != null
+          ? { taxMoneyCents: moneyToCents(order.net_amounts.tax_money) }
+          : {}),
+        ...(order.net_amounts?.tip_money?.amount != null
+          ? { tipMoneyCents: moneyToCents(order.net_amounts.tip_money) }
+          : {}),
+        ...(order.net_amounts?.service_charge_money?.amount != null
+          ? {
+              serviceChargeMoneyCents: moneyToCents(
+                order.net_amounts.service_charge_money,
+              ),
+            }
+          : {}),
+        ...(orderLevelDiscountCents != null
+          ? { discountMoneyCents: orderLevelDiscountCents }
+          : {}),
+      };
+      const refundTenderId = order.refunds?.[0]?.tender_id ?? null;
+      const refundCreatedAt = order.refunds?.[0]?.created_at ?? null;
+      const refunds: SquareOrderWithDiscount["refunds"] = (order.returns ?? []).map(
+        (returnEntry) => ({
+          tenderId: refundTenderId,
+          refundCreatedAt,
+          lineItems: (returnEntry.return_line_items ?? []).map(
+            refundReturnLineItemFromSquare,
+          ),
+          ...(returnEntry.return_amounts?.total_money?.amount != null
+            ? {
+                refundAmountMoneyCents: moneyToCents(
+                  returnEntry.return_amounts.total_money,
+                ),
+              }
+            : {}),
+          ...(returnEntry.return_amounts?.tax_money?.amount != null
+            ? {
+                taxMoneyCents: moneyToCents(
+                  returnEntry.return_amounts.tax_money,
+                ),
+              }
+            : {}),
+          ...(returnEntry.return_amounts?.tip_money?.amount != null
+            ? {
+                tipMoneyCents: moneyToCents(
+                  returnEntry.return_amounts.tip_money,
+                ),
+              }
+            : {}),
+          ...(returnEntry.return_amounts?.service_charge_money?.amount != null
+            ? {
+                serviceChargeMoneyCents: moneyToCents(
+                  returnEntry.return_amounts.service_charge_money,
+                ),
+              }
+            : {}),
+        }),
+      );
+      return {
+        id: order.id ?? "",
+        createdAt: order.created_at ?? null,
+        updatedAt: order.updated_at ?? null,
+        paymentIds,
+        discounts,
+        lineItems,
+        orderTotals,
+        refunds,
+      };
+    })
+    .filter((order) => order.id.length > 0);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 import { createPortal } from "react-dom";
 import { IoClose } from "react-icons/io5";
 import { FiPlus } from "react-icons/fi";
@@ -29,8 +29,7 @@ interface AddRolesModalProps {
 
 const AddRolesModal = ({ isOpen, onClose, title, roles, selectedIds, onConfirm }: AddRolesModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const titleId = useId();
   const [tempSelected, setTempSelected] = useState<Set<string>>(new Set(selectedIds));
 
   useEffect(() => {
@@ -38,24 +37,13 @@ const AddRolesModal = ({ isOpen, onClose, title, roles, selectedIds, onConfirm }
   }, [isOpen, selectedIds]);
 
   useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (isOpen && !dialog.open) dialog.showModal();
-    else if (!isOpen && dialog.open) dialog.close();
+    if (!isOpen) return;
+    const el = dialogRef.current;
+    if (el && !el.open) el.showModal();
   }, [isOpen]);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const handleClose = () => onCloseRef.current();
-    dialog.addEventListener("close", handleClose);
-    return () => dialog.removeEventListener("close", handleClose);
-  }, []);
-
-  const handleCancel = (e: React.SyntheticEvent) => {
-    e.preventDefault();
-    if (dialogRef.current?.open) dialogRef.current.close();
-    else onClose();
+  const dismiss = () => {
+    dialogRef.current?.close();
   };
 
   const toggleRole = (id: string) => {
@@ -69,67 +57,71 @@ const AddRolesModal = ({ isOpen, onClose, title, roles, selectedIds, onConfirm }
 
   const handleAdd = () => {
     onConfirm(Array.from(tempSelected));
-    if (dialogRef.current?.open) dialogRef.current.close();
-    else onClose();
+    dialogRef.current?.close();
   };
+
+  if (!isOpen) return null;
 
   return createPortal(
     <dialog
       ref={dialogRef}
-      onCancel={handleCancel}
-      className="modal-full-viewport z-[300] m-0 bg-transparent border-0 p-4 outline-none hidden open:grid place-items-center [&::backdrop]:bg-black/50"
-      aria-labelledby="add-roles-title"
+      className="modal-full-viewport z-[300] m-0 grid place-items-center border-0 bg-transparent p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
+      aria-labelledby={titleId}
+      onClose={onClose}
     >
-      <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl border border-gray-200 bg-card-background shadow-lg">
-        <div className="flex items-center justify-between p-5 border-b border-gray-200">
-          <h2 id="add-roles-title" className="text-base font-semibold text-primary">{title}</h2>
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="p-1 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-            aria-label="Close"
-          >
-            <IoClose className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-2">
-          {roles.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-4">
-              No roles available. Create roles in RBAC Management first.
-            </p>
-          )}
-          {roles.map((role) => (
-            <label
-              key={role._id}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+      <div className="relative w-full min-w-0 max-w-full md:max-w-md">
+        <button
+          type="button"
+          onClick={dismiss}
+          className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Close"
+          title="Close"
+        >
+          <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
+        </button>
+        <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+          <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
+            <h2 id={titleId} className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+              {title}
+            </h2>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-4 border-x border-gray-200 space-y-2">
+            {roles.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-4">
+                No roles available. Create roles in RBAC Management first.
+              </p>
+            )}
+            {roles.map((role) => (
+              <label
+                key={role._id}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={tempSelected.has(role._id)}
+                  onChange={() => toggleRole(role._id)}
+                  className="w-4 h-4 rounded border-gray-300 text-button-primary focus:ring-button-primary/30"
+                />
+                <span className="text-sm text-primary">{role.name}</span>
+              </label>
+            ))}
+          </div>
+          <div className="px-5 py-4 border-t border-gray-200 flex flex-wrap justify-end gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={dismiss}
+              className="px-4 py-2 rounded-lg border border-gray-300 text-primary hover:bg-gray-50"
             >
-              <input
-                type="checkbox"
-                checked={tempSelected.has(role._id)}
-                onChange={() => toggleRole(role._id)}
-                className="w-4 h-4 rounded border-gray-300 text-button-primary focus:ring-button-primary/30"
-              />
-              <span className="text-sm text-primary">{role.name}</span>
-            </label>
-          ))}
-        </div>
-
-        <div className="flex gap-3 justify-end p-5 border-t border-gray-200">
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="px-4 py-2.5 border border-gray-200 rounded-xl text-xs md:text-sm font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleAdd}
-            className="px-4 py-2.5 bg-button-primary text-white rounded-xl text-xs md:text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer"
-          >
-            Add Roles
-          </button>
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleAdd}
+              className="px-4 py-2 rounded-lg bg-button-primary text-white font-medium hover:opacity-90 transition-opacity"
+            >
+              Add Roles
+            </button>
+          </div>
         </div>
       </div>
     </dialog>,

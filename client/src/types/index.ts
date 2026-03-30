@@ -57,11 +57,13 @@ export interface Logo {
   updatedAt?: string;
 }
 
-/** Minimal location from list API (no sensitive address/IDs). */
+/** Location row from list API (no Square/Homebase IDs or secrets). */
 export interface LocationListItem {
   _id: string;
   storeName: string;
+  address: string;
   timezone: string;
+  businessStartTime: string;
   logoDataUrl?: string;
 }
 

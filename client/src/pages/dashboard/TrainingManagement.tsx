@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useSelector } from 'react-redux';
+import axios from 'axios';
 import { Layout } from '../../components/common/Layout';
 import { CommandCenterKPICards } from '../../components/CommandCenter';
 import { EmployeeTrainingCard, TrainingsCard } from '../../components/TrainingReviews';
@@ -24,6 +25,8 @@ import { useTrainingHierarchyAllowed } from '../../hooks/useTrainingHierarchyAll
 import type { RootState } from '../../store/store';
 
 const PAGE_ID = 'training-management';
+/** Card preview row cap; must match server `limit` and EmployeeTrainingCard display cap. */
+const CARD_PREVIEW_LIMIT = 8;
 
 export const TrainingManagement = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
@@ -41,7 +44,11 @@ export const TrainingManagement = () => {
   const [trainings, setTrainings] = useState<Training[]>([]);
   const [trainingsLoading, setTrainingsLoading] = useState(true);
   const [assignmentRows, setAssignmentRows] = useState<EmployeeTrainingRow[]>([]);
-  const [assignmentsLoading, setAssignmentsLoading] = useState(() => Boolean(currentLocation?._id));
+  const [employeeTrainingSearchInput, setEmployeeTrainingSearchInput] = useState('');
+  const [employeeTrainingSearchDebounced, setEmployeeTrainingSearchDebounced] = useState('');
+  const [cardPreviewRows, setCardPreviewRows] = useState<EmployeeTrainingRow[]>([]);
+  const [cardPreviewTotal, setCardPreviewTotal] = useState(0);
+  const [cardPreviewLoading, setCardPreviewLoading] = useState(false);
 
   const refreshTrainings = () => {
     setTrainingsLoading(true);
@@ -52,19 +59,62 @@ export const TrainingManagement = () => {
       .finally(() => setTrainingsLoading(false));
   };
 
-  const refreshAssignments = () => {
-    if (!currentLocation?._id) {
+  const loadFullAssignments = useCallback(async () => {
+    const id = currentLocation?._id;
+    if (!id?.trim()) {
       setAssignmentRows([]);
-      setAssignmentsLoading(false);
       return;
     }
-    setAssignmentsLoading(true);
-    trainingAssignmentService
-      .listAssignments(currentLocation._id)
-      .then(setAssignmentRows)
-      .catch(() => setAssignmentRows([]))
-      .finally(() => setAssignmentsLoading(false));
-  };
+    try {
+      const { rows } = await trainingAssignmentService.listAssignments(id);
+      setAssignmentRows(rows);
+    } catch {
+      setAssignmentRows([]);
+    }
+  }, [currentLocation?._id]);
+
+  const loadAssignmentsPreview = useCallback(
+    async (search: string, signal?: AbortSignal) => {
+      const id = currentLocation?._id;
+      if (!id?.trim()) {
+        setCardPreviewRows([]);
+        setCardPreviewTotal(0);
+        setCardPreviewLoading(false);
+        return;
+      }
+      setCardPreviewLoading(true);
+      try {
+        const { rows, total } = await trainingAssignmentService.listAssignments(id, {
+          ...(search ? { search } : {}),
+          limit: CARD_PREVIEW_LIMIT,
+          signal,
+        });
+        if (signal?.aborted) return;
+        setCardPreviewRows(rows);
+        setCardPreviewTotal(total);
+      } catch (e: unknown) {
+        if (axios.isCancel(e) || (e as { code?: string })?.code === 'ERR_CANCELED') return;
+        if (signal?.aborted) return;
+        setCardPreviewRows([]);
+        setCardPreviewTotal(0);
+      } finally {
+        if (!signal?.aborted) setCardPreviewLoading(false);
+      }
+    },
+    [currentLocation?._id],
+  );
+
+  const refreshAssignments = useCallback(() => {
+    void loadFullAssignments();
+    if (!currentLocation?._id?.trim()) return;
+    const ac = new AbortController();
+    void loadAssignmentsPreview(employeeTrainingSearchDebounced, ac.signal);
+  }, [
+    loadFullAssignments,
+    loadAssignmentsPreview,
+    currentLocation?._id,
+    employeeTrainingSearchDebounced,
+  ]);
 
   useEffect(() => {
     setTrainingsLoading(true);
@@ -76,18 +126,26 @@ export const TrainingManagement = () => {
   }, []);
 
   useEffect(() => {
-    if (!currentLocation?._id) {
-      setAssignmentRows([]);
-      setAssignmentsLoading(false);
-      return;
-    }
-    setAssignmentsLoading(true);
-    trainingAssignmentService
-      .listAssignments(currentLocation._id)
-      .then(setAssignmentRows)
-      .catch(() => setAssignmentRows([]))
-      .finally(() => setAssignmentsLoading(false));
+    setEmployeeTrainingSearchInput('');
+    setEmployeeTrainingSearchDebounced('');
   }, [currentLocation?._id]);
+
+  useEffect(() => {
+    const t = globalThis.setTimeout(() => {
+      setEmployeeTrainingSearchDebounced(employeeTrainingSearchInput.trim());
+    }, 400);
+    return () => globalThis.clearTimeout(t);
+  }, [employeeTrainingSearchInput]);
+
+  useEffect(() => {
+    void loadFullAssignments();
+  }, [loadFullAssignments]);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    void loadAssignmentsPreview(employeeTrainingSearchDebounced, ac.signal);
+    return () => ac.abort();
+  }, [employeeTrainingSearchDebounced, loadAssignmentsPreview]);
 
   const canStaffInTraining = useCanAccessComponent(PAGE_ID, 'kpi-office-staff');
   const canTrainingsOverdue = useCanAccessComponent(PAGE_ID, 'kpi-trainings-overdue');
@@ -101,6 +159,12 @@ export const TrainingManagement = () => {
     if (allowedRoleNames.size === 0) return [];
     return assignmentRows.filter((row) => row.role !== '—' && allowedRoleNames.has(row.role));
   }, [assignmentRows, allowedRoleNames, hierarchyLoading]);
+
+  const filteredCardPreviewRows = useMemo(() => {
+    if (hierarchyLoading) return cardPreviewRows;
+    if (allowedRoleNames.size === 0) return [];
+    return cardPreviewRows.filter((row) => row.role !== '—' && allowedRoleNames.has(row.role));
+  }, [cardPreviewRows, allowedRoleNames, hierarchyLoading]);
 
   const kpiValues = useMemo(() => computeTrainingKpis(filteredAssignmentRows), [filteredAssignmentRows]);
 
@@ -168,8 +232,16 @@ export const TrainingManagement = () => {
                   <p className="text-secondary text-sm mb-2">Select a location in the navbar to see assignments.</p>
                 )}
                 <EmployeeTrainingCard
-                  rows={filteredAssignmentRows}
-                  loading={Boolean(currentLocation?._id) && (assignmentsLoading || hierarchyLoading)}
+                  rows={filteredCardPreviewRows}
+                  loading={
+                    Boolean(currentLocation?._id) &&
+                    (cardPreviewLoading || hierarchyLoading)
+                  }
+                  searchInput={employeeTrainingSearchInput}
+                  onSearchInputChange={setEmployeeTrainingSearchInput}
+                  debouncedSearch={employeeTrainingSearchDebounced}
+                  previewTotal={cardPreviewTotal}
+                  hasMore={cardPreviewTotal > CARD_PREVIEW_LIMIT}
                   onAssignTraining={() => setAssignTrainingModalOpen(true)}
                   onViewAll={() => setEmployeeTrainingModalOpen(true)}
                   onView={(row) => setViewAssignmentId(row.assignmentId)}

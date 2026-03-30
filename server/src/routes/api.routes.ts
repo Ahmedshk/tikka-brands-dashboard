@@ -15,6 +15,7 @@ import reviewCycleRoutes from "./reviewCycle.routes.js";
 import disciplinarySettingsRoutes from "./disciplinarySettings.routes.js";
 import disciplinaryIncidentRoutes from "./disciplinaryIncident.routes.js";
 import kitchenPerformanceRoutes from "./kitchenPerformance.routes.js";
+import activityLogRoutes from "./activityLog.routes.js";
 import adobeSignWebhookRoutes from "./adobeSignWebhook.routes.js";
 import {
   getSelfReviewByToken,
@@ -92,5 +93,8 @@ router.use("/disciplinary", disciplinaryIncidentRoutes);
 
 // Kitchen performance (auth + kitchen-performance permission required)
 router.use("/kitchen-performance", kitchenPerformanceRoutes);
+
+// Activity log (auth + activity-log permission required)
+router.use("/activity-log", activityLogRoutes);
 
 export default router;

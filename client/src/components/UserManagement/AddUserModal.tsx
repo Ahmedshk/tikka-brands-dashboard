@@ -54,6 +54,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
   const [additionalPermissionsOpen, setAdditionalPermissionsOpen] = useState(false);
   const [startDate, setStartDate] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   const isEdit = Boolean(initialUser?._id);
   const selectedRole = roleId ? roles.find((r) => r.id === roleId) : null;
@@ -130,6 +131,12 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
     setProfileImagePreview(url);
     return () => URL.revokeObjectURL(url);
   }, [profileImageFile]);
+
+  useEffect(() => {
+    if (!open) return;
+    const el = dialogRef.current;
+    if (el && !el.open) el.showModal();
+  }, [open]);
 
   const handleProfileImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -224,24 +231,32 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
 
   return createPortal(
     <dialog
-      open
-      onCancel={onClose}
-      className="modal-full-viewport z-50 flex items-center justify-center p-4 m-0 border-0 bg-black/50 backdrop:bg-black/50"
+      ref={dialogRef}
+      className="modal-full-viewport z-50 m-0 grid place-items-center border-0 bg-transparent p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
       aria-labelledby="add-user-title"
+      onClose={onClose}
     >
-      <button
-        type="button"
-        className="absolute inset-0 w-full h-full cursor-default"
-        onClick={onClose}
-        aria-label="Close modal"
-      />
-      <div className="relative bg-card-background rounded-xl shadow-lg border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 id="add-user-title" className="text-lg font-semibold text-primary">
-            {isEdit ? 'Edit User' : 'Add User'}
-          </h2>
-        </div>
-        <div className="px-6 py-4 overflow-y-auto flex-1 space-y-4">
+      <div className="relative w-full min-w-0 max-w-full md:max-w-2xl">
+        <button
+          type="button"
+          onClick={() => {
+            dialogRef.current?.close();
+            onClose();
+          }}
+          className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Close"
+          title="Close"
+        >
+          <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
+        </button>
+        <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+          <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
+            <h2 id="add-user-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+              {isEdit ? 'Edit User' : 'Add User'}
+            </h2>
+          </div>
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-4 space-y-4 border-x border-gray-200">
           {/* Profile image first */}
           <div>
             <label htmlFor="user-profile-image" className="block text-sm font-medium text-primary mb-1">
@@ -411,11 +426,14 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
               roles={roles}
             />
           )}
-        </div>
-        <div className="px-6 py-4 border-t border-gray-200 flex flex-wrap justify-end gap-2">
+            </div>
+            <div className="px-5 py-4 border-t border-gray-200 flex flex-wrap justify-end gap-2 shrink-0">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              dialogRef.current?.close();
+              onClose();
+            }}
             className="px-4 py-2 rounded-lg border border-gray-300 text-primary hover:bg-gray-50"
           >
             Cancel
@@ -449,6 +467,8 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
               </button>
             </>
           )}
+            </div>
+          </div>
         </div>
       </div>
       {showInviteConfirm && (

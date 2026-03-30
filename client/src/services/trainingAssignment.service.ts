@@ -122,18 +122,41 @@ function toAssignmentDetail(data: {
   };
 }
 
+export interface ListAssignmentsOptions {
+  search?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}
+
 export const trainingAssignmentService = {
-  async listAssignments(locationId: string): Promise<EmployeeTrainingRow[]> {
-    if (!locationId?.trim()) return [];
-    const res = await api.get<ApiResponse<{ assignments: unknown[] }>>(BASE, {
-      params: { locationId: locationId.trim() },
+  async listAssignments(
+    locationId: string,
+    options?: ListAssignmentsOptions
+  ): Promise<{ rows: EmployeeTrainingRow[]; total: number }> {
+    if (!locationId?.trim()) return { rows: [], total: 0 };
+    const params: Record<string, string | number> = {
+      locationId: locationId.trim(),
+    };
+    const search = options?.search?.trim();
+    if (search) params.search = search;
+    if (options?.limit != null && options.limit > 0) params.limit = options.limit;
+    const res = await api.get<
+      ApiResponse<{ assignments: unknown[]; total?: number }>
+    >(BASE, {
+      params,
+      signal: options?.signal,
     });
     if (!res.data.success || !Array.isArray(res.data.data?.assignments)) {
-      return [];
+      return { rows: [], total: 0 };
     }
-    return res.data.data.assignments.map((a: unknown) =>
+    const rows = res.data.data.assignments.map((a: unknown) =>
       toEmployeeTrainingRow(a as Parameters<typeof toEmployeeTrainingRow>[0])
     );
+    const total =
+      typeof res.data.data.total === "number"
+        ? res.data.data.total
+        : rows.length;
+    return { rows, total };
   },
 
   async getAssignmentById(id: string): Promise<AssignmentDetail | null> {

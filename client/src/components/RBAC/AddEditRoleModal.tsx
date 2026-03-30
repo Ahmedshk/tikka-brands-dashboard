@@ -187,13 +187,28 @@ export function AddEditRoleModal({
       aria-labelledby="add-edit-role-title"
       onClose={onClose}
     >
-      <div className="bg-card-background rounded-xl shadow-lg border border-gray-200 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 id="add-edit-role-title" className="text-lg font-semibold text-primary">
-            {isEdit ? 'Edit Role' : 'Add Role'}
-          </h2>
-        </div>
-        <AddEditRoleModalBody
+      <div className="relative w-full min-w-0 max-w-full md:max-w-2xl">
+        <button
+          type="button"
+          onClick={() => {
+            dialogRef.current?.close();
+            onClose();
+          }}
+          className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Close"
+          title="Close"
+        >
+          <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
+        </button>
+
+        <div className="relative max-h-[90vh] flex flex-col bg-primary rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+          <div className="relative w-full rounded-t-xl bg-primary px-6 py-3 flex-shrink-0">
+            <h2 id="add-edit-role-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+              {isEdit ? 'Edit Role' : 'Add Role'}
+            </h2>
+          </div>
+        <div className="bg-card-background">
+          <AddEditRoleModalBody
           name={name}
           setName={setName}
           description={description}
@@ -220,6 +235,8 @@ export function AddEditRoleModal({
           setReportsTo={setReportsTo}
           availableRoles={availableRoles}
         />
+        </div>
+        </div>
       </div>
     </dialog>,
     document.body

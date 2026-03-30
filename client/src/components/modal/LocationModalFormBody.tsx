@@ -186,6 +186,8 @@ export interface LocationModalFormBodyProps {
   setShowHomebaseKey: (v: boolean | ((s: boolean) => boolean)) => void;
   logoId: string | null;
   onClose: () => void;
+  /** When false, Cancel/Submit are omitted so the parent can render a modal footer (e.g. dialog shell). */
+  showFormActions?: boolean;
 }
 
 export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps>) {
@@ -239,6 +241,7 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
     setShowHomebaseKey,
     logoId,
     onClose,
+    showFormActions = true,
   } = props;
 
   const handleLogoListToggle = async () => {
@@ -578,31 +581,33 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
         </div>
       </section>
 
-      <div className="flex gap-3 pt-4 border-t border-gray-200">
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer"
-          title="Cancel"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={submitting || !canSubmit}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60 cursor-pointer"
-          title={isEdit ? 'Update location' : 'Save location'}
-        >
-          {submitting ? (
-            <>
-              <Spinner size="sm" className="h-4 w-4 text-white" />
-              {isEdit ? 'Updating...' : 'Saving...'}
-            </>
-          ) : (
-            submitButtonLabel
-          )}
-        </button>
-      </div>
+      {showFormActions && (
+        <div className="flex gap-3 pt-4 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer"
+            title="Cancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={submitting || !canSubmit}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60 cursor-pointer"
+            title={isEdit ? 'Update location' : 'Save location'}
+          >
+            {submitting ? (
+              <>
+                <Spinner size="sm" className="h-4 w-4 text-white" />
+                {isEdit ? 'Updating...' : 'Saving...'}
+              </>
+            ) : (
+              submitButtonLabel
+            )}
+          </button>
+        </div>
+      )}
     </>
   );
 }

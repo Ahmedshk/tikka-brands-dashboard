@@ -150,8 +150,11 @@ export class TrainingAssignmentService {
     return { created: created.length, skipped: alreadyAssignedUserIds.size };
   }
 
-  async listByLocationId(locationId: string): Promise<IAssignmentListItem[]> {
-    if (!locationId?.trim()) return [];
+  async listByLocationId(
+    locationId: string,
+    options?: { search?: string; limit?: number }
+  ): Promise<{ list: IAssignmentListItem[]; total: number }> {
+    if (!locationId?.trim()) return { list: [], total: 0 };
     const userIds = await this.userService.getUserIdsWithAccessToLocation(
       locationId.trim()
     );
@@ -229,7 +232,16 @@ export class TrainingAssignmentService {
         moduleProgress,
       };
     });
-    return list;
+    const searchTrim = options?.search?.trim().toLowerCase();
+    let filtered = searchTrim
+      ? list.filter((item) => item.assignTo.toLowerCase().includes(searchTrim))
+      : list;
+    const total = filtered.length;
+    const limit = options?.limit;
+    if (limit != null && limit > 0 && filtered.length > limit) {
+      filtered = filtered.slice(0, limit);
+    }
+    return { list: filtered, total };
   }
 
   async getById(id: string, actorUserId?: string): Promise<IAssignmentDetail | null> {

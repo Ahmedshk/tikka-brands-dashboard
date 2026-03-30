@@ -7,6 +7,7 @@ import {
   parseBusinessStartToDate,
   submitLocationForm,
 } from '../../utils/locationModalHelpers';
+import { Spinner } from '../common/Spinner';
 import { LocationModalFormBody } from './LocationModalFormBody';
 
 export interface LocationModalProps {
@@ -40,8 +41,15 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const modalContentRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [pickerPaperWidth, setPickerPaperWidth] = useState(400);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const el = dialogRef.current;
+    if (el && !el.open) el.showModal();
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || !modalContentRef.current) return;
@@ -150,68 +158,121 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
   const submitButtonLabel = isEdit ? 'Update' : 'Add Location';
 
   return createPortal(
-    <div className="modal-full-viewport z-[300] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
-      <div ref={modalContentRef} className="relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-card-background rounded-xl shadow-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-secondary mb-6">
-          {isEdit ? 'Edit Location' : 'Add Location'}
-        </h3>
-        <form onSubmit={handleSubmit} className="space-y-8">
-          <LocationModalFormBody
-            error={error}
-            isEdit={isEdit}
-            submitButtonLabel={submitButtonLabel}
-            submitting={submitting}
-            canSubmit={canSubmit}
-            storeName={storeName}
-            setStoreName={setStoreName}
-            address={address}
-            setAddress={setAddress}
-            timezone={timezone}
-            setTimezone={setTimezone}
-            businessStartTime={businessStartTime}
-            businessStartTimeDate={businessStartTimeDate}
-            setBusinessStartTime={setBusinessStartTime}
-            pickerPaperWidth={pickerPaperWidth}
-            logoDataUrl={logoDataUrl}
-            setLogoId={setLogoId}
-            setLogoDataUrl={setLogoDataUrl}
-            logoList={logoList}
-            setLogoList={setLogoList}
-            logoListOpen={logoListOpen}
-            setLogoListOpen={setLogoListOpen}
-            logoListLoading={logoListLoading}
-            setLogoListLoading={setLogoListLoading}
-            logoUploading={logoUploading}
-            setLogoUploading={setLogoUploading}
-            setError={setError}
-            fileInputRef={fileInputRef}
-            marketManBuyerGuid={marketManBuyerGuid}
-            setMarketManBuyerGuid={setMarketManBuyerGuid}
-            squareLocationId={squareLocationId}
-            setSquareLocationId={setSquareLocationId}
-            hasStoredSquare={hasStoredSquare}
-            updateSquareCredentials={updateSquareCredentials}
-            setUpdateSquareCredentials={setUpdateSquareCredentials}
-            squareAccessToken={squareAccessToken}
-            setSquareAccessToken={setSquareAccessToken}
-            showSquareToken={showSquareToken}
-            setShowSquareToken={setShowSquareToken}
-            homebaseLocationId={homebaseLocationId}
-            setHomebaseLocationId={setHomebaseLocationId}
-            hasStoredHomebase={hasStoredHomebase}
-            updateHomebaseCredentials={updateHomebaseCredentials}
-            setUpdateHomebaseCredentials={setUpdateHomebaseCredentials}
-            homebaseApiKey={homebaseApiKey}
-            setHomebaseApiKey={setHomebaseApiKey}
-            showHomebaseKey={showHomebaseKey}
-            setShowHomebaseKey={setShowHomebaseKey}
-            logoId={logoId}
-            onClose={onClose}
-          />
-        </form>
+    <dialog
+      ref={dialogRef}
+      className="modal-full-viewport z-[300] m-0 grid place-items-center border-0 bg-transparent p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
+      aria-labelledby="location-modal-title"
+      onClose={onClose}
+    >
+      <div className="relative w-full min-w-0 max-w-full md:max-w-2xl">
+        <button
+          type="button"
+          onClick={() => {
+            dialogRef.current?.close();
+            onClose();
+          }}
+          className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[400] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary"
+          aria-label="Close"
+          title="Close"
+        >
+          <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
+        </button>
+        <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+          <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
+            <h2 id="location-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+              {isEdit ? 'Edit Location' : 'Add Location'}
+            </h2>
+          </div>
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div
+              ref={modalContentRef}
+              className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-4 space-y-8 border-x border-gray-200"
+            >
+              <LocationModalFormBody
+                error={error}
+                isEdit={isEdit}
+                submitButtonLabel={submitButtonLabel}
+                submitting={submitting}
+                canSubmit={canSubmit}
+                storeName={storeName}
+                setStoreName={setStoreName}
+                address={address}
+                setAddress={setAddress}
+                timezone={timezone}
+                setTimezone={setTimezone}
+                businessStartTime={businessStartTime}
+                businessStartTimeDate={businessStartTimeDate}
+                setBusinessStartTime={setBusinessStartTime}
+                pickerPaperWidth={pickerPaperWidth}
+                logoDataUrl={logoDataUrl}
+                setLogoId={setLogoId}
+                setLogoDataUrl={setLogoDataUrl}
+                logoList={logoList}
+                setLogoList={setLogoList}
+                logoListOpen={logoListOpen}
+                setLogoListOpen={setLogoListOpen}
+                logoListLoading={logoListLoading}
+                setLogoListLoading={setLogoListLoading}
+                logoUploading={logoUploading}
+                setLogoUploading={setLogoUploading}
+                setError={setError}
+                fileInputRef={fileInputRef}
+                marketManBuyerGuid={marketManBuyerGuid}
+                setMarketManBuyerGuid={setMarketManBuyerGuid}
+                squareLocationId={squareLocationId}
+                setSquareLocationId={setSquareLocationId}
+                hasStoredSquare={hasStoredSquare}
+                updateSquareCredentials={updateSquareCredentials}
+                setUpdateSquareCredentials={setUpdateSquareCredentials}
+                squareAccessToken={squareAccessToken}
+                setSquareAccessToken={setSquareAccessToken}
+                showSquareToken={showSquareToken}
+                setShowSquareToken={setShowSquareToken}
+                homebaseLocationId={homebaseLocationId}
+                setHomebaseLocationId={setHomebaseLocationId}
+                hasStoredHomebase={hasStoredHomebase}
+                updateHomebaseCredentials={updateHomebaseCredentials}
+                setUpdateHomebaseCredentials={setUpdateHomebaseCredentials}
+                homebaseApiKey={homebaseApiKey}
+                setHomebaseApiKey={setHomebaseApiKey}
+                showHomebaseKey={showHomebaseKey}
+                setShowHomebaseKey={setShowHomebaseKey}
+                logoId={logoId}
+                onClose={onClose}
+                showFormActions={false}
+              />
+            </div>
+            <div className="px-5 py-4 border-t border-gray-200 flex flex-wrap justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  dialogRef.current?.close();
+                  onClose();
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-primary hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || !canSubmit}
+                className="px-4 py-2 rounded-lg bg-button-primary text-white font-medium hover:opacity-90 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                title={isEdit ? 'Update location' : 'Save location'}
+              >
+                {submitting ? (
+                  <>
+                    <Spinner size="sm" className="h-4 w-4 text-white" />
+                    {isEdit ? 'Updating...' : 'Saving...'}
+                  </>
+                ) : (
+                  submitButtonLabel
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>,
+    </dialog>,
     document.body
   );
 };

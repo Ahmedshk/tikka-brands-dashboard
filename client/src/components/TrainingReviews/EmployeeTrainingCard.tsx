@@ -5,6 +5,7 @@ import ViewIcon from '@assets/icons/view.svg?react';
 import EditIcon from '@assets/icons/edit.svg?react';
 import DeleteIcon from '@assets/icons/delete.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
+import SearchIcon from '@assets/icons/search.svg?react';
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
 
@@ -69,6 +70,15 @@ export interface EmployeeTrainingCardProps {
   rows: EmployeeTrainingRow[];
   /** When true, shows a centered spinner in the card body (header unchanged). */
   loading?: boolean;
+  /** Controlled search field (debounced fetch lives in parent). */
+  searchInput: string;
+  onSearchInputChange: (value: string) => void;
+  /** Trimmed debounced query for empty-state copy. */
+  debouncedSearch: string;
+  /** Total matches from API (after name filter, before client role filter). */
+  previewTotal: number;
+  /** Show View All when API reports more rows than the card limit. */
+  hasMore: boolean;
   onView?: (row: EmployeeTrainingRow, index: number) => void;
   onEdit?: (row: EmployeeTrainingRow, index: number) => void;
   onDelete?: (row: EmployeeTrainingRow, index: number) => void;
@@ -79,6 +89,11 @@ export interface EmployeeTrainingCardProps {
 export const EmployeeTrainingCard = ({
   rows,
   loading = false,
+  searchInput,
+  onSearchInputChange,
+  debouncedSearch,
+  previewTotal,
+  hasMore,
   onView,
   onEdit,
   onDelete,
@@ -86,19 +101,47 @@ export const EmployeeTrainingCard = ({
   onViewAll,
 }: EmployeeTrainingCardProps) => {
   const displayRows = rows.slice(0, CARD_DISPLAY_LIMIT);
-  const hasMore = rows.length > CARD_DISPLAY_LIMIT;
 
   return (
     <div className={`${cardClass} flex flex-col h-full min-h-0`}>
-      <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2 flex items-center flex-shrink-0">
-        <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+      <div className="rounded-t-xl bg-primary px-5 py-2 md:py-2 flex-shrink-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white shrink-0">
           Employee Training
         </h3>
+        <label className="sr-only" htmlFor="employee-training-search">
+          Search employee training by name
+        </label>
+        <div className="relative w-full min-w-0 sm:max-w-[220px] md:max-w-xs">
+          <SearchIcon
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5 text-secondary shrink-0 pointer-events-none"
+            aria-hidden
+          />
+          <input
+            id="employee-training-search"
+            type="search"
+            value={searchInput}
+            onChange={(e) => onSearchInputChange(e.target.value)}
+            placeholder="Search by name…"
+            autoComplete="off"
+            className="search-input-gray-clear w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 py-2 text-sm text-primary placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-gray-300/50"
+          />
+        </div>
       </div>
       <div className="p-5 flex flex-col flex-1 min-h-0 overflow-hidden">
         {loading ? (
           <div className="flex flex-1 min-h-[200px] items-center justify-center" aria-busy="true">
             <Spinner size="lg" className="text-button-primary" />
+          </div>
+        ) : previewTotal === 0 && debouncedSearch ? (
+          <p className="text-sm text-gray-500 text-center py-8 px-2 flex-1 flex items-center justify-center min-h-[200px]">
+            No assignments match this search.
+          </p>
+        ) : previewTotal === 0 && !debouncedSearch ? (
+          <div className="flex flex-1 min-h-[200px] items-center justify-center px-2">
+            <div className="text-center text-gray-400">
+              <p className="text-lg font-medium">No assignments yet</p>
+              <p className="text-sm mt-1">Assign training to employees to see progress here.</p>
+            </div>
           </div>
         ) : (
         <>

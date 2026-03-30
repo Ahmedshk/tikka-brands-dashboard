@@ -1,17 +1,138 @@
-import OperationsIcon from '@assets/icons/operations.svg?react';
-import { Layout } from '../../components/common/Layout';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
+import toast from "react-hot-toast";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import TextField from "@mui/material/TextField";
+import OperationsIcon from "@assets/icons/operations.svg?react";
+import { Dropdown } from "../../components/common/Dropdown";
+import { Layout } from "../../components/common/Layout";
+import { ActivityLogDetailsModal, ActivityLogTableCard } from "../../components/ActivityLog";
+import { activityLogService } from "../../services/activityLog.service";
+import type { RootState } from "../../store/store";
+import type { ActivityLogRow } from "../../types/activityLog.types";
+
+type ActivityLogEventFilter = "all" | ActivityLogRow["eventType"];
+
+const EVENT_FILTER_OPTIONS = [
+  { value: "all", label: "All events" },
+  { value: "Discounts", label: "Discounts only" },
+  { value: "Refunds", label: "Refunds only" },
+] as const;
+
+const GREY_FOCUS_FIELD_SX = {
+  "& .MuiOutlinedInput-root": {
+    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+      borderColor: "#9CA3AF",
+    },
+    "&:hover .MuiOutlinedInput-notchedOutline": {
+      borderColor: "#9CA3AF",
+    },
+  },
+} as const;
 
 export const ActivityLog = () => {
+  const currentLocation = useSelector(
+    (state: RootState) => state.location.currentLocation,
+  );
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [rows, setRows] = useState<ActivityLogRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [eventFilter, setEventFilter] = useState<ActivityLogEventFilter>("all");
+  const [selectedRow, setSelectedRow] = useState<ActivityLogRow | null>(null);
+
+  const filteredRows = useMemo(() => {
+    if (eventFilter === "all") return rows;
+    return rows.filter((r) => r.eventType === eventFilter);
+  }, [rows, eventFilter]);
+
+  useEffect(() => {
+    setSelectedRow((prev) => {
+      if (prev == null) return null;
+      if (eventFilter === "all") return prev;
+      return prev.eventType === eventFilter ? prev : null;
+    });
+  }, [eventFilter]);
+
+  const fetchRows = useCallback(async () => {
+    if (!currentLocation?._id) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await activityLogService.getRows(currentLocation._id, selectedDate);
+      setRows(data.rows);
+    } catch {
+      setRows([]);
+      toast.error("Failed to load activity log.");
+    } finally {
+      setLoading(false);
+    }
+  }, [currentLocation?._id, selectedDate]);
+
+  useEffect(() => {
+    fetchRows();
+  }, [fetchRows]);
+
   return (
     <Layout>
       <div className="p-6">
-        <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-primary md:text-lg 2xl:text-xl">
-          <OperationsIcon className="h-4 w-4 text-primary md:h-5 md:w-5 2xl:h-6 2xl:w-6" aria-hidden />
-          Activity Log
-        </h2>
-        <div className="rounded-xl border border-gray-200 bg-card-background p-6 text-sm text-primary/80">
-          Activity Log content will be added here.
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-primary md:text-lg 2xl:text-xl">
+            <OperationsIcon className="h-4 w-4 text-primary md:h-5 md:w-5 2xl:h-6 2xl:w-6" aria-hidden />
+            Activity Log
+          </h2>
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto sm:shrink-0">
+            <Dropdown
+              options={[...EVENT_FILTER_OPTIONS]}
+              value={eventFilter}
+              onChange={(v) => {
+                if (v === "Discounts" || v === "Refunds") setEventFilter(v);
+                else setEventFilter("all");
+              }}
+              placeholder="Filter events"
+              aria-label="Filter activity log by event type"
+              className="w-full sm:w-[200px]"
+              allowEmpty={false}
+            />
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                value={selectedDate}
+                onChange={(date) => {
+                  if (date) setSelectedDate(date);
+                }}
+                disableFuture
+                enableAccessibleFieldDOMStructure={false}
+                slots={{ textField: TextField }}
+                slotProps={{
+                  textField: {
+                    size: "small",
+                    placeholder: "MM/DD/YYYY",
+                    sx: { minWidth: 180, ...GREY_FOCUS_FIELD_SX },
+                  },
+                }}
+              />
+            </LocalizationProvider>
+          </div>
         </div>
+
+        <ActivityLogTableCard
+          rows={filteredRows}
+          loading={loading}
+          onView={(row) => {
+            setSelectedRow(row);
+          }}
+        />
+
+        <ActivityLogDetailsModal
+          open={selectedRow != null}
+          row={selectedRow}
+          onClose={() => setSelectedRow(null)}
+        />
       </div>
     </Layout>
   );
