@@ -21,7 +21,8 @@ export async function initializeAgenda(): Promise<Agenda> {
 
   agenda = new Agenda({
     backend,
-    processEvery: isTestMode() ? "15 seconds" : "1 minute",
+    // Shorter poll so one-shot calendar notification jobs are picked up within ~30s.
+    processEvery: isTestMode() ? "15 seconds" : "30 seconds",
     maxConcurrency: 5,
     defaultConcurrency: 1,
   });
@@ -35,6 +36,11 @@ export async function initializeAgenda(): Promise<Agenda> {
 
   const { registerDisciplinaryJobs } = await import("../jobs/disciplinary.jobs.js");
   registerDisciplinaryJobs(agenda);
+
+  const { registerCalendarJobs, queueCalendarNotificationBackfill } = await import(
+    "../jobs/calendar.jobs.js"
+  );
+  registerCalendarJobs(agenda);
 
   await agenda.start();
   logger.info("Agenda: scheduler started");
@@ -51,6 +57,11 @@ export async function initializeAgenda(): Promise<Agenda> {
 
   // Disciplinary rolling period expiry check (daily at midnight)
   await agenda.every("0 0 * * *", "disciplinary:check-expiry");
+
+  await agenda.every(isTestMode() ? "*/1 * * * * *" : "*/15 * * * *", "calendar:reconcile");
+  if (process.env.SKIP_CALENDAR_STARTUP_BACKFILL !== "1") {
+    queueCalendarNotificationBackfill(agenda);
+  }
 
   return agenda;
 }

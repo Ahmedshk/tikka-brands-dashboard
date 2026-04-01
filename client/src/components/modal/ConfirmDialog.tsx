@@ -76,7 +76,7 @@ export const ConfirmDialog = ({
     <dialog
       ref={dialogRef}
       onCancel={handleCancel}
-      className="modal-full-viewport z-[300] m-0 bg-transparent border-0 p-4 outline-none hidden open:grid place-items-center [&::backdrop]:bg-black/50"
+      className="modal-full-viewport z-[460] m-0 bg-transparent border-0 p-4 outline-none hidden open:grid place-items-center [&::backdrop]:bg-black/50"
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-message"
     >

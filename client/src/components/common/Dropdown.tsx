@@ -12,6 +12,8 @@ export interface DropdownProps {
   onChange: (value: string) => void;
   placeholder: string;
   'aria-label': string;
+  /** When set, associates the trigger with an external label (e.g. field caption id). */
+  'aria-labelledby'?: string;
   className?: string;
   /** When true, position list above the trigger. Default false (open below). */
   openAbove?: boolean;
@@ -35,6 +37,7 @@ export function Dropdown({
   onChange,
   placeholder,
   'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
   className = '',
   openAbove = false,
   allowEmpty = true,
@@ -88,6 +91,7 @@ export function Dropdown({
         disabled={disabled}
         className={`${triggerBaseClass} ${!selectedOption && triggerLabel == null ? 'text-secondary' : ''}`}
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         aria-haspopup="menu"
         aria-expanded={open}
       >

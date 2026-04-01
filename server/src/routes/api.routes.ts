@@ -16,6 +16,7 @@ import disciplinarySettingsRoutes from "./disciplinarySettings.routes.js";
 import disciplinaryIncidentRoutes from "./disciplinaryIncident.routes.js";
 import kitchenPerformanceRoutes from "./kitchenPerformance.routes.js";
 import activityLogRoutes from "./activityLog.routes.js";
+import calendarRoutes from "./calendar.routes.js";
 import adobeSignWebhookRoutes from "./adobeSignWebhook.routes.js";
 import {
   getSelfReviewByToken,
@@ -96,5 +97,8 @@ router.use("/kitchen-performance", kitchenPerformanceRoutes);
 
 // Activity log (auth + activity-log permission required)
 router.use("/activity-log", activityLogRoutes);
+
+// Calendar & event notification settings
+router.use("/calendar", calendarRoutes);
 
 export default router;

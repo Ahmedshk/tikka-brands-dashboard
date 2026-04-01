@@ -126,6 +126,11 @@ export const navigationConfig: NavigationConfig = [
         path: "/dashboard/disciplinary-settings",
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
       },
+      {
+        label: "Events & Notifications",
+        path: "/dashboard/events-notifications-settings",
+        allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
+      },
     ],
   },
 ];

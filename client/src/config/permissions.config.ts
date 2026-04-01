@@ -166,6 +166,11 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     pageLabel: 'Training Settings',
     components: [FULL_PAGE_ACCESS, { id: 'trainings', label: 'Trainings' }],
   },
+  {
+    pageId: 'events-notifications-settings',
+    pageLabel: 'Events & Notifications',
+    components: [FULL_PAGE_ACCESS],
+  },
 ];
 
 /** All page IDs in order (for path → pageId mapping). */

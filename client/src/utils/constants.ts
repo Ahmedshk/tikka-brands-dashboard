@@ -46,6 +46,12 @@ export const API_ENDPOINTS = {
   ACTIVITY_LOG: {
     LIST: "/activity-log",
   },
+  CALENDAR: {
+    EVENTS: "/calendar/events",
+    EVENT_TYPES: "/calendar/event-types",
+    EVENT_TYPES_ALL: "/calendar/event-types/all",
+    NOTIFICATION_SETTINGS: "/calendar/notification-settings",
+  },
   ROLES: "/roles",
   USERS: "/users",
   TRAININGS: "/trainings",

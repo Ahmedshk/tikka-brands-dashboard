@@ -183,106 +183,106 @@ export function CountDateRangePicker({
 
   return (
     <Popover
-        open={open}
-        anchorEl={anchorEl}
-        onClose={onRequestClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        slotProps={{
-          paper: {
-            sx: {
-              maxWidth: 'min(95vw, 640px)',
-              '@media (max-width: 640px)': {
-                position: 'fixed',
-                left: '50% !important',
-                top: '50% !important',
-                transform: 'translate(-50%, -50%) !important',
-                margin: 0,
-                width: '95vw',
-                maxWidth: '95vw',
-                maxHeight: '90vh',
-              },
+      open={open}
+      anchorEl={anchorEl}
+      onClose={onRequestClose}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+      slotProps={{
+        paper: {
+          sx: {
+            maxWidth: 'min(95vw, 640px)',
+            '@media (max-width: 640px)': {
+              position: 'fixed',
+              left: '50% !important',
+              top: '50% !important',
+              transform: 'translate(-50%, -50%) !important',
+              margin: 0,
+              width: '95vw',
+              maxWidth: '95vw',
+              maxHeight: '90vh',
             },
           },
-        }}
-      >
-        <div className="p-4 flex flex-col gap-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm font-semibold text-secondary mb-2">
-                Start date :
-              </p>
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <DateCalendar
-                  value={localStart ? parseISO(localStart) : null}
-                  onChange={handleStartChange}
-                  slots={startSlots}
-                  showDaysOutsideCurrentMonth
-                  sx={{ height: 280 }}
-                />
-              </LocalizationProvider>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-secondary mb-2">
-                End date :
-              </p>
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <DateCalendar
-                  value={localEnd ? parseISO(localEnd) : null}
-                  onChange={handleEndChange}
-                  slots={endSlots}
-                  showDaysOutsideCurrentMonth
-                  sx={{ height: 280 }}
-                />
-              </LocalizationProvider>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-4 text-xs text-secondary">
-            <span className="flex items-center gap-2">
-              <span
-                className="inline-block w-5 h-5 rounded-full border-2 border-[#5DC54F] bg-transparent"
-                aria-hidden
+        },
+      }}
+    >
+      <div className="p-4 flex flex-col gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <p className="text-sm font-semibold text-secondary mb-2">
+              Start date :
+            </p>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DateCalendar
+                value={localStart ? parseISO(localStart) : null}
+                onChange={handleStartChange}
+                slots={startSlots}
+                showDaysOutsideCurrentMonth
+                sx={{ width: '100%', maxWidth: '100%', }}
               />
-              <span>Valid count available for start date</span>
-            </span>
-            <span className="flex items-center gap-2">
-              <span
-                className="inline-block w-5 h-5 rounded-full border-2 border-[#009BBE] bg-transparent"
-                aria-hidden
+            </LocalizationProvider>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-secondary mb-2">
+              End date :
+            </p>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DateCalendar
+                value={localEnd ? parseISO(localEnd) : null}
+                onChange={handleEndChange}
+                slots={endSlots}
+                showDaysOutsideCurrentMonth
+                sx={{ width: '100%', maxWidth: '100%', }}
               />
-              <span>Valid count available for end date</span>
-            </span>
+            </LocalizationProvider>
           </div>
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirm}
-              disabled={!canConfirm}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Confirm
-            </button>
-          </div>
-          <p className="flex items-start gap-2 text-xs text-secondary">
-            <span className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-gray-400 text-white flex items-center justify-center text-[10px] font-bold">
-              i
-            </span>
-            <span>
-              The calendar displays dates valid for variance analysis, based on
-              available inventory counts. Note that a day-end count makes the
-              following day relevant for starting date, and a day-start count
-              makes the previous day relevant for end of period.
-            </span>
-          </p>
         </div>
-      </Popover>
+        <div className="flex flex-wrap items-center gap-4 text-xs text-secondary">
+          <span className="flex items-center gap-2">
+            <span
+              className="inline-block w-5 h-5 rounded-full border-2 border-[#5DC54F] bg-transparent"
+              aria-hidden
+            />
+            <span>Valid count available for start date</span>
+          </span>
+          <span className="flex items-center gap-2">
+            <span
+              className="inline-block w-5 h-5 rounded-full border-2 border-[#009BBE] bg-transparent"
+              aria-hidden
+            />
+            <span>Valid count available for end date</span>
+          </span>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={!canConfirm}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Confirm
+          </button>
+        </div>
+        <p className="flex items-start gap-2 text-xs text-secondary">
+          <span className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-gray-400 text-white flex items-center justify-center text-[10px] font-bold">
+            i
+          </span>
+          <span>
+            The calendar displays dates valid for variance analysis, based on
+            available inventory counts. Note that a day-end count makes the
+            following day relevant for starting date, and a day-start count
+            makes the previous day relevant for end of period.
+          </span>
+        </p>
+      </div>
+    </Popover>
   );
 }
 

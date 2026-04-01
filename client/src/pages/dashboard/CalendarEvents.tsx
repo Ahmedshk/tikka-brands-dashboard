@@ -1,121 +1,107 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { View } from 'react-big-calendar';
+import { useSelector } from 'react-redux';
+import { addMonths, endOfMonth, startOfMonth, subMonths } from 'date-fns';
 import { Layout } from '../../components/common/Layout';
+import { Spinner } from '../../components/common/Spinner';
 import {
+  buildUpcomingEventRows,
   CalendarCard,
   UpcomingEventsCard,
   type CalendarEventItem,
-  type UpcomingEventItem,
+  type UpcomingEventRow,
 } from '../../components/CalendarEvents';
 import { AddEventModal } from '../../components/modal/AddEventModal';
+import { EditEventModal } from '../../components/modal/EditEventModal';
+import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
 import CalendarEventsIcon from '@assets/icons/calendar_and_events.svg?react';
+import { RootState } from '../../store/store';
+import { calendarService } from '../../services/calendar.service';
+import type { CalendarEventDto, CalendarEventTypeDto } from '../../types/calendar.types';
+import { colorHexToCalendarBackground } from '../../utils/calendarColors';
+import toast from 'react-hot-toast';
 
-
-interface AddEventParams {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-  min: number;
-  durationHours: number;
-  title: string;
-  type: CalendarEventItem['type'];
+function visibleRange(anchor: Date): { timeMin: Date; timeMax: Date } {
+  const timeMin = startOfMonth(subMonths(anchor, 1));
+  const timeMax = endOfMonth(addMonths(anchor, 2));
+  return { timeMin, timeMax };
 }
 
-function buildCalendarEvents(): CalendarEventItem[] {
-  const events: CalendarEventItem[] = [];
-  const add = (p: AddEventParams) => {
-    const start = new Date(p.year, p.month, p.day, p.hour, p.min, 0);
-    const end = new Date(start.getTime() + p.durationHours * 60 * 60 * 1000);
-    events.push({ start, end, title: p.title, type: p.type });
-  };
-  const feb = 1;
-  const mar = 2;
-  const apr = 3;
-  const y = 2026;
-  // February – mix of 1, 2, 3, 4 events per day
-  add({ year: y, month: feb, day: 3, hour: 14, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  add({ year: y, month: feb, day: 5, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: feb, day: 5, hour: 15, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: feb, day: 6, hour: 9, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: feb, day: 10, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: feb, day: 12, hour: 9, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: feb, day: 14, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: feb, day: 17, hour: 9, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: feb, day: 18, hour: 10, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: feb, day: 18, hour: 14, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  add({ year: y, month: feb, day: 18, hour: 16, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: feb, day: 21, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: feb, day: 24, hour: 9, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: feb, day: 26, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: feb, day: 27, hour: 14, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  // March – mix of 1, 2, 3, 4 events per day
-  add({ year: y, month: mar, day: 1, hour: 14, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  add({ year: y, month: mar, day: 3, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: mar, day: 3, hour: 15, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: mar, day: 4, hour: 9, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: mar, day: 8, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: mar, day: 12, hour: 9, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: mar, day: 14, hour: 9, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: mar, day: 14, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: mar, day: 14, hour: 14, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  add({ year: y, month: mar, day: 14, hour: 16, min: 0, durationHours: 1, title: 'Team Standup', type: 'manager-meeting' });
-  add({ year: y, month: mar, day: 17, hour: 9, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: mar, day: 18, hour: 11, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: mar, day: 18, hour: 14, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  add({ year: y, month: mar, day: 22, hour: 8, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: mar, day: 22, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: mar, day: 22, hour: 15, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  add({ year: y, month: mar, day: 25, hour: 9, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: mar, day: 28, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: mar, day: 29, hour: 10, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  add({ year: y, month: mar, day: 29, hour: 14, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  add({ year: y, month: mar, day: 29, hour: 16, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: mar, day: 31, hour: 14, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  // April
-  add({ year: y, month: apr, day: 16, hour: 10, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: apr, day: 17, hour: 11, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  add({ year: y, month: apr, day: 18, hour: 9, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: apr, day: 18, hour: 12, min: 0, durationHours: 2, title: 'Large Catering Order', type: 'catering' });
-  add({ year: y, month: apr, day: 18, hour: 15, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  add({ year: y, month: apr, day: 19, hour: 8, min: 0, durationHours: 1, title: 'Delivery', type: 'delivery' });
-  add({ year: y, month: apr, day: 20, hour: 9, min: 0, durationHours: 1, title: 'Manager Meeting', type: 'manager-meeting' });
-  add({ year: y, month: apr, day: 20, hour: 11, min: 0, durationHours: 2, title: 'Catering', type: 'catering' });
-  return events;
-}
-
-const calendarEvents = buildCalendarEvents();
-
-function calendarEventsToUpcoming(events: CalendarEventItem[]): UpcomingEventItem[] {
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const sorted = [...events].sort((a, b) => a.start.getTime() - b.start.getTime());
-  const timeOpts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', hour12: true };
-  return sorted.map((e) => {
-    const d = e.start;
-    const dateStr = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-    const isToday = d.getTime() >= todayStart.getTime() && d.getTime() < todayStart.getTime() + 24 * 60 * 60 * 1000;
-    const dayLabel = isToday ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'long' });
-    const startTime = d.toLocaleTimeString('en-US', timeOpts);
-    const timeStr =
-      e.end && e.end.getTime() !== d.getTime()
-        ? `${startTime} - ${e.end.toLocaleTimeString('en-US', timeOpts)}`
-        : startTime;
+function dtoToCalendarItems(
+  rows: CalendarEventDto[],
+  typeById: Map<string, CalendarEventTypeDto>,
+): CalendarEventItem[] {
+  return rows.map((r) => {
+    const t = typeById.get(r.eventTypeId);
     return {
-      date: dateStr,
-      dayLabel,
-      time: timeStr,
-      eventName: e.title,
-      status: 'Scheduled',
+      id: r._id,
+      start: new Date(r.start),
+      end: new Date(r.end),
+      title: r.title,
+      color: t ? colorHexToCalendarBackground(t.colorHex) : undefined,
     };
   });
 }
 
 export const CalendarEvents = () => {
+  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [currentView, setCurrentView] = useState<View>('month');
   const [selectedDate] = useState<Date | null>(null);
   const [addEventModalOpen, setAddEventModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEventDto | null>(null);
+  const [deletingRow, setDeletingRow] = useState<UpcomingEventRow | null>(null);
+  const [deletingEvent, setDeletingEvent] = useState(false);
+  const [events, setEvents] = useState<CalendarEventDto[]>([]);
+  const [eventTypes, setEventTypes] = useState<CalendarEventTypeDto[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const typeById = useMemo(() => {
+    const m = new Map<string, CalendarEventTypeDto>();
+    for (const t of eventTypes) m.set(t._id, t);
+    return m;
+  }, [eventTypes]);
+
+  const calendarItems = useMemo(
+    () => dtoToCalendarItems(events, typeById),
+    [events, typeById],
+  );
+
+  const upcomingRows = useMemo(() => buildUpcomingEventRows(events), [events]);
+
+  const loadData = useCallback(async () => {
+    if (!currentLocation?._id) {
+      setEvents([]);
+      setEventTypes([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const { timeMin, timeMax } = visibleRange(currentDate);
+    try {
+      const [typeList, eventList] = await Promise.all([
+        calendarService.listEventTypesActive(),
+        calendarService.listEvents(currentLocation._id, timeMin, timeMax),
+      ]);
+      setEventTypes(typeList);
+      setEvents(eventList);
+    } catch {
+      setEvents([]);
+      toast.error('Failed to load calendar.');
+    } finally {
+      setLoading(false);
+    }
+  }, [currentLocation?._id, currentDate]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!currentLocation?._id) return;
+    const { timeMin, timeMax } = visibleRange(currentDate);
+    calendarService.syncEvents(timeMin, timeMax).catch(() => {});
+  }, [currentLocation?._id, currentDate]);
 
   const handleNavigate = (date: Date) => {
     setCurrentDate(date);
@@ -157,28 +143,79 @@ export const CalendarEvents = () => {
           </button>
         </div>
 
-        <div className="space-y-6">
-          <CalendarCard
-            events={calendarEvents}
-            date={currentDate}
-            view={currentView}
-            onView={setCurrentView}
-            selectedDate={selectedDate}
-            onNavigate={handleNavigate}
-            onSelectSlot={handleSelectSlot}
-            onSelectEvent={handleSelectEvent}
-            onDrillDown={handleDrillDown}
-          />
-          <UpcomingEventsCard
-            events={calendarEventsToUpcoming(calendarEvents)}
-            pageSize={5}
-          />
-        </div>
+        {currentLocation?._id == null && (
+          <p className="text-sm text-secondary">Select a location to view and manage events.</p>
+        )}
+        {currentLocation?._id != null && loading && (
+          <div className="flex justify-center py-16">
+            <Spinner />
+          </div>
+        )}
+        {currentLocation?._id != null && !loading && (
+          <div className="space-y-6">
+            <CalendarCard
+              events={calendarItems}
+              date={currentDate}
+              view={currentView}
+              onView={setCurrentView}
+              selectedDate={selectedDate}
+              onNavigate={handleNavigate}
+              onSelectSlot={handleSelectSlot}
+              onSelectEvent={handleSelectEvent}
+              onDrillDown={handleDrillDown}
+            />
+            <UpcomingEventsCard
+              rows={upcomingRows}
+              pageSize={5}
+              onEdit={(row) => setEditingEvent(row.event)}
+              onDelete={(row) => setDeletingRow(row)}
+            />
+          </div>
+        )}
       </div>
 
       <AddEventModal
         isOpen={addEventModalOpen}
         onClose={() => setAddEventModalOpen(false)}
+        locationId={currentLocation?._id ?? null}
+        locationTimezone={currentLocation?.timezone}
+        onCreated={loadData}
+      />
+      <EditEventModal
+        isOpen={editingEvent != null}
+        event={editingEvent}
+        onClose={() => setEditingEvent(null)}
+        locationTimezone={currentLocation?.timezone}
+        onUpdated={loadData}
+      />
+      <ConfirmDialog
+        isOpen={deletingRow != null}
+        onClose={() => setDeletingRow(null)}
+        title="Delete event"
+        message={
+          deletingRow
+            ? `Delete “${deletingRow.eventName}”? This removes the event from Google Calendar and the dashboard. Scheduled notifications for this event will be cancelled.`
+            : ''
+        }
+        confirmLabel="Delete"
+        variant="danger"
+        isLoading={deletingEvent}
+        onConfirm={async () => {
+          if (!deletingRow) return;
+          setDeletingEvent(true);
+          try {
+            await calendarService.deleteEvent(deletingRow.event._id);
+            toast.success('Event deleted.');
+            setDeletingRow(null);
+            await loadData();
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Failed to delete event.';
+            toast.error(msg);
+            throw err;
+          } finally {
+            setDeletingEvent(false);
+          }
+        }}
       />
     </Layout>
   );

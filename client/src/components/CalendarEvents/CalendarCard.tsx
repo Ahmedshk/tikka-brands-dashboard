@@ -14,21 +14,16 @@ const localizer = dateFnsLocalizer({
   locales: { en: enUS },
 });
 
-export type CalendarEventType = 'manager-meeting' | 'catering' | 'delivery';
+const DEFAULT_EVENT_BG = 'rgba(107, 114, 128, 0.35)';
 
 export interface CalendarEventItem {
+  id?: string;
   start: Date;
   end: Date;
   title: string;
-  type?: CalendarEventType;
-  resourceId?: string;
+  /** Cell background (rgba / hex). */
+  color?: string;
 }
-
-const EVENT_TYPE_COLORS: Record<CalendarEventType, string> = {
-  'manager-meeting': 'rgba(251,197,42,0.3)',
-  catering: 'rgba(93,197,79,0.3)',
-  delivery: 'rgba(0,155,190,0.3)',
-};
 
 export interface CalendarCardProps {
   events: CalendarEventItem[];
@@ -60,8 +55,7 @@ export const CalendarCard = ({
   const defaultDate = useMemo(() => date ?? new Date(), [date]);
 
   const eventPropGetter = (event: CalendarEventItem) => {
-    const type = event.type ?? 'manager-meeting';
-    const color = EVENT_TYPE_COLORS[type] ?? EVENT_TYPE_COLORS['manager-meeting'];
+    const color = event.color ?? DEFAULT_EVENT_BG;
     return { style: { backgroundColor: color } };
   };
 

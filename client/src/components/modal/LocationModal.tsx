@@ -41,7 +41,11 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const modalContentRef = useRef<HTMLDivElement>(null);
+  const modalPanelRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  /** MUI pickers portal to body by default; native dialog top layer sits above that, so anchor poppers inside the dialog element. */
+  const [pickerPopperContainer, setPickerPopperContainer] = useState<HTMLElement | null>(null);
+  const [pickerModalPanel, setPickerModalPanel] = useState<HTMLElement | null>(null);
   const [pickerPaperWidth, setPickerPaperWidth] = useState(400);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -52,8 +56,8 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !modalContentRef.current) return;
-    const el = modalContentRef.current;
+    if (!isOpen || !modalPanelRef.current) return;
+    const el = modalPanelRef.current;
     const updateWidth = () => setPickerPaperWidth(el.getBoundingClientRect().width);
     updateWidth();
     const ro = new ResizeObserver(updateWidth);
@@ -157,9 +161,14 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
 
   const submitButtonLabel = isEdit ? 'Update' : 'Add Location';
 
+  const setDialogEl = (el: HTMLDialogElement | null) => {
+    dialogRef.current = el;
+    setPickerPopperContainer(el);
+  };
+
   return createPortal(
     <dialog
-      ref={dialogRef}
+      ref={setDialogEl}
       className="modal-full-viewport z-[300] m-0 grid place-items-center border-0 bg-transparent p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
       aria-labelledby="location-modal-title"
       onClose={onClose}
@@ -177,7 +186,13 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
         >
           <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
         </button>
-        <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+        <div
+          ref={(el) => {
+            modalPanelRef.current = el;
+            setPickerModalPanel(el);
+          }}
+          className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden"
+        >
           <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
             <h2 id="location-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
               {isEdit ? 'Edit Location' : 'Add Location'}
@@ -204,6 +219,8 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
                 businessStartTimeDate={businessStartTimeDate}
                 setBusinessStartTime={setBusinessStartTime}
                 pickerPaperWidth={pickerPaperWidth}
+                pickerPopperContainer={pickerPopperContainer}
+                pickerModalPanel={pickerModalPanel}
                 logoDataUrl={logoDataUrl}
                 setLogoId={setLogoId}
                 setLogoDataUrl={setLogoDataUrl}

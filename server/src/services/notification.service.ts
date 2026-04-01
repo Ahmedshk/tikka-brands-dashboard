@@ -8,6 +8,18 @@ import type {
 
 export class NotificationService {
   async send(options: SendNotificationOptions): Promise<void> {
+    await this.deliver(options);
+  }
+
+  /**
+   * True if at least one enabled channel succeeded (in-app row created, email reported sent, or SMS reported sent).
+   * Used by calendar jobs to roll back dedupe logs when nothing was delivered so the next run can retry.
+   */
+  async sendReturningDelivered(options: SendNotificationOptions): Promise<boolean> {
+    return this.deliver(options);
+  }
+
+  private async deliver(options: SendNotificationOptions): Promise<boolean> {
     const {
       recipientId,
       type,
@@ -16,6 +28,8 @@ export class NotificationService {
       data,
       channels,
     } = options;
+
+    let delivered = false;
 
     const shouldInApp =
       channels.includes("in_app") || channels.includes("all");
@@ -33,6 +47,7 @@ export class NotificationService {
           message,
           data,
         });
+        delivered = true;
 
         try {
           const io = getIO();
@@ -76,6 +91,7 @@ export class NotificationService {
           const html = options.emailHtml ?? `<p>${message}</p>${options.actionUrl ? `<p><a href="${options.actionUrl}">Click here</a></p>` : ""}`;
           sent = await sendTransactionalEmail({ recipientUserId: recipientId, subject, html });
         }
+        if (sent) delivered = true;
         if (!sent) {
           logger.warn("Email notification not sent (SendGrid/SMTP unavailable or failed)", {
             recipientId,
@@ -92,11 +108,14 @@ export class NotificationService {
       try {
         const { sendSMSToUser } = await import("./sms.service.js");
         const body = options.smsBody ?? message;
-        await sendSMSToUser(recipientId, body);
+        const sent = await sendSMSToUser(recipientId, body);
+        if (sent) delivered = true;
       } catch (err) {
         logger.error("Failed to send SMS notification", { recipientId, err });
       }
     }
+
+    return delivered;
   }
 
   async getForUser(userId: string, query: NotificationListQuery = {}) {

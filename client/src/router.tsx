@@ -20,6 +20,7 @@ import { LocationManagement } from './pages/dashboard/LocationManagement';
 import { ReviewSettings } from './pages/dashboard/ReviewSettings';
 import { DisciplinarySettings } from './pages/dashboard/DisciplinarySettings';
 import { TrainingSettings } from './pages/dashboard/TrainingSettings';
+import { EventsNotificationsSettings } from './pages/dashboard/EventsNotificationsSettings';
 import { KitchenPerformance } from './pages/dashboard/KitchenPerformance';
 import { KitchenPerformanceDetails } from './pages/dashboard/KitchenPerformanceDetails';
 import { ActivityLog } from './pages/dashboard/ActivityLog';
@@ -270,6 +271,17 @@ export const router = createBrowserRouter([
       <ErrorBoundary>
         <ProtectedRoute>
           <TrainingSettings />
+        </ProtectedRoute>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/dashboard/events-notifications-settings',
+    element: (
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <EventsNotificationsSettings />
         </ProtectedRoute>
       </ErrorBoundary>
     ),

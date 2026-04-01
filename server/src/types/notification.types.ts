@@ -25,6 +25,9 @@ export const NOTIFICATION_TYPES = [
   "disciplinary_employee_sign_pending",
   "disciplinary_manager_signed",
   "disciplinary_signing_aborted",
+  "calendar_event_reminder",
+  "calendar_event_hour_before",
+  "calendar_event_start",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
@@ -11,6 +12,32 @@ import {
   formatBusinessStartFromDate,
   getLogoListButtonLabel,
 } from '../../utils/locationModalHelpers';
+
+/** MUI anchors the picker to the inner input; shift horizontally so the popover centers on the modal card. */
+function locationModalPanelXAlignModifier(panelEl: HTMLElement) {
+  return {
+    name: 'locationModalPanelXAlign',
+    enabled: true,
+    phase: 'main' as const,
+    requires: ['popperOffsets'] as const,
+    fn({
+      state,
+    }: {
+      state: {
+        rects: { reference: { x: number; width: number } };
+        modifiersData: { popperOffsets?: { x: number; y: number } };
+      };
+    }) {
+      const panel = panelEl.getBoundingClientRect();
+      const ref = state.rects.reference;
+      const modalCenterX = panel.left + panel.width / 2;
+      const refCenterX = ref.x + ref.width / 2;
+      const shift = modalCenterX - refCenterX;
+      const o = state.modifiersData.popperOffsets;
+      if (o) o.x += shift;
+    },
+  };
+}
 
 function SquareCredentialsField(props: Readonly<{
   isEdit: boolean;
@@ -151,6 +178,10 @@ export interface LocationModalFormBodyProps {
   businessStartTimeDate: Date;
   setBusinessStartTime: (v: string) => void;
   pickerPaperWidth: number;
+  /** Portal target for TimePicker Popper so it renders above native modal backdrop */
+  pickerPopperContainer?: HTMLElement | null;
+  /** Modal card element — used to center the time picker popover horizontally */
+  pickerModalPanel?: HTMLElement | null;
   logoDataUrl: string | null;
   setLogoId: (v: string | null) => void;
   setLogoDataUrl: (v: string | null) => void;
@@ -206,6 +237,8 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
     businessStartTimeDate,
     setBusinessStartTime,
     pickerPaperWidth,
+    pickerPopperContainer,
+    pickerModalPanel,
     logoDataUrl,
     setLogoId,
     setLogoDataUrl,
@@ -243,6 +276,11 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
     onClose,
     showFormActions = true,
   } = props;
+
+  const locationModalPopperModifiers = useMemo(
+    () => (pickerModalPanel ? [locationModalPanelXAlignModifier(pickerModalPanel)] : []),
+    [pickerModalPanel],
+  );
 
   const handleLogoListToggle = async () => {
     if (!logoListOpen) {
@@ -349,6 +387,7 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
           <div className="location-modal-time-picker" aria-labelledby="businessStartTime-label">
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <TimePicker
+                desktopModeMediaQuery="@media (min-width: 0px)"
                 label=""
                 value={businessStartTimeDate}
                 onChange={(date) => setBusinessStartTime(formatBusinessStartFromDate(date))}
@@ -360,6 +399,11 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
                 slotProps={{
                   desktopPaper: {
                     sx: { width: pickerPaperWidth, maxWidth: '100%', boxSizing: 'border-box' },
+                  },
+                  popper: {
+                    placement: 'bottom',
+                    ...(pickerPopperContainer ? { container: pickerPopperContainer } : {}),
+                    ...(locationModalPopperModifiers.length > 0 ? { modifiers: locationModalPopperModifiers } : {}),
                   },
                 }}
                 sx={{
