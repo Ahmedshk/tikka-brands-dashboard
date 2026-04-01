@@ -15,6 +15,35 @@ $event-color: #000;
 
 @import 'react-big-calendar/lib/sass/styles';
 
+// App primary (#5B6B79 from tailwind.config) — weekday / day-column headers only
+$rbc-app-primary: #5b6b79;
+
+.rbc-calendar.calendar-card {
+  .rbc-month-header .rbc-header,
+  .rbc-row.rbc-time-header-cell .rbc-header {
+    background-color: $rbc-app-primary;
+    color: #fff;
+    border-bottom-color: rgba(255, 255, 255, 0.25);
+
+    & > a,
+    & > button {
+      color: #fff;
+    }
+  }
+
+  .rbc-month-header .rbc-header + .rbc-header,
+  .rbc-row.rbc-time-header-cell .rbc-header + .rbc-header {
+    border-left-color: rgba(255, 255, 255, 0.25);
+  }
+
+  // Library tints “off range” day labels; keep readable on primary bar
+  .rbc-month-header .rbc-header.rbc-off-range,
+  .rbc-row.rbc-time-header-cell .rbc-header.rbc-off-range {
+    color: #fff;
+    opacity: 0.85;
+  }
+}
+
 // Agenda view: do not color the date column (override row/event styling)
 .rbc-agenda-view {
   .rbc-agenda-date-cell {
