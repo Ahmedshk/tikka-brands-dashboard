@@ -31,9 +31,8 @@ import type { RootState } from "../../store/store";
 import TeamHrIcon from "@assets/icons/team_and_hr.svg?react";
 import ViewIcon from "@assets/icons/view.svg?react";
 import SearchIcon from "@assets/icons/search.svg?react";
-import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
+import { useReviewsManagementSectionAccess } from "../../utils/reviewsManagementPermissionHelpers";
 
-const PAGE_ID = "reviews-management";
 const CARD_ROW_LIMIT = 5;
 const MODAL_PAGE_SIZE = 10;
 
@@ -136,8 +135,7 @@ export const ReviewsManagement = () => {
   const [reviewCyclesPage, setReviewCyclesPage] = useState(1);
   const [pastReviewsPage, setPastReviewsPage] = useState(1);
 
-  const canStaffList = useCanAccessComponent(PAGE_ID, "staff-list");
-  const canReviewTracker = useCanAccessComponent(PAGE_ID, "review-tracker-chart");
+  const { canShowDonut, canPastReviews, canReviewCycles } = useReviewsManagementSectionAccess();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -379,6 +377,11 @@ export const ReviewsManagement = () => {
     }));
   }, [activeCycles]);
 
+  const visibleTrackerDonuts = useMemo(
+    () => trackerDonuts.filter((d) => canShowDonut(d.id)),
+    [trackerDonuts, canShowDonut]
+  );
+
   const openAction = (cycle: ReviewCycle) => {
     const s = cycle.status;
     if (isEmployee && SELF_REVIEW_STATUSES.has(s)) {
@@ -446,9 +449,9 @@ export const ReviewsManagement = () => {
           )}
         </div>
 
-            {canReviewTracker && trackerDonuts.length > 0 && (
+            {visibleTrackerDonuts.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6 items-stretch">
-                {trackerDonuts.map((donut) => (
+                {visibleTrackerDonuts.map((donut) => (
                   <div key={donut.id} className="min-h-0 flex flex-col">
                     <ReviewTrackerCard donut={donut} loading={loading} />
                   </div>
@@ -456,6 +459,7 @@ export const ReviewsManagement = () => {
               </div>
             )}
 
+            {canReviewCycles() && (
             <div className="mb-6">
                 <div className="min-h-0 flex flex-col">
                   <div className="bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden flex flex-col h-full min-h-0">
@@ -692,8 +696,9 @@ export const ReviewsManagement = () => {
                   </div>
                 </div>
               </div>
+            )}
 
-            {canStaffList && (
+            {canPastReviews() && (
               <div className="grid grid-cols-1 gap-6 mb-6 items-stretch">
                 <div className="min-h-0 flex flex-col">
                   <div className="bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden flex flex-col h-full min-h-0">
@@ -858,7 +863,7 @@ export const ReviewsManagement = () => {
 
       </div>
 
-      {showAllReviewCycles && (
+      {canReviewCycles() && showAllReviewCycles && (
         <div className="fixed inset-0 z-[300] grid place-items-center bg-black/50 p-4">
           <div className="relative w-full max-w-6xl">
             <button
@@ -1081,7 +1086,7 @@ export const ReviewsManagement = () => {
         </div>
       )}
 
-      {showAllPastReviews && (
+      {canPastReviews() && showAllPastReviews && (
         <div className="fixed inset-0 z-[300] grid place-items-center bg-black/50 p-4">
           <div className="relative w-full max-w-4xl">
             <button
@@ -1269,7 +1274,10 @@ export const ReviewsManagement = () => {
       )}
 
       <PastReviewDetailModal
-        isOpen={pastDetailCycleId != null}
+        isOpen={
+          pastDetailCycleId != null &&
+          (detailViewType === "active" ? canReviewCycles() : canPastReviews())
+        }
         onClose={() => {
           setPastDetailCycleId(null);
           setDetailViewType("past");

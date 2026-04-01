@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
@@ -12,13 +12,19 @@ import TeamHrIcon from '@assets/icons/team_and_hr.svg?react';
 import CriticalIcon from '@assets/icons/critical.svg?react';
 import DisciplinaryReviewsDueIcon from '@assets/icons/disciplinary_reviews_due.svg?react';
 import TotalTeamMembersIcon from '@assets/icons/total_team_members.svg?react';
+import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 400;
+const PAGE_ID = 'disciplinary-management';
 
 export const DisciplinaryManagement = () => {
   const navigate = useNavigate();
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const canTotalTeamKpi = useCanAccessComponent(PAGE_ID, 'total-team-members-kpi');
+  const canPendingPipsKpi = useCanAccessComponent(PAGE_ID, 'pending-pips-kpi');
+  const canCriticalKpi = useCanAccessComponent(PAGE_ID, 'critical-kpi');
+  const canDisciplinaryRecords = useCanAccessComponent(PAGE_ID, 'disciplinary-records');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -38,8 +44,10 @@ export const DisciplinaryManagement = () => {
     return () => globalThis.clearTimeout(timeout);
   }, [search]);
 
+  const needsKpiData = canTotalTeamKpi || canPendingPipsKpi || canCriticalKpi;
+
   const fetchKPIs = useCallback(async () => {
-    if (!currentLocation?._id) {
+    if (!currentLocation?._id || !needsKpiData) {
       setCriticalCount(0);
       setPendingCount(0);
       setTotalActive(0);
@@ -64,14 +72,14 @@ export const DisciplinaryManagement = () => {
     } finally {
       setKpiLoading(false);
     }
-  }, [currentLocation?._id]);
+  }, [currentLocation?._id, needsKpiData]);
 
   useEffect(() => {
     fetchKPIs();
   }, [fetchKPIs]);
 
   const fetchEmployees = useCallback(async () => {
-    if (!currentLocation?._id) {
+    if (!currentLocation?._id || !canDisciplinaryRecords) {
       setRows([]);
       setTotalItems(0);
       setTotalPages(1);
@@ -99,35 +107,60 @@ export const DisciplinaryManagement = () => {
     } finally {
       setTableLoading(false);
     }
-  }, [currentLocation?._id, debouncedSearch, page]);
+  }, [currentLocation?._id, debouncedSearch, page, canDisciplinaryRecords]);
 
   useEffect(() => {
     fetchEmployees();
   }, [fetchEmployees]);
 
-  const disciplinaryKPIs = [
-    {
-      title: 'Total Team Members',
-      value: `${totalActive} Active`,
-      accentColor: 'blue' as const,
-      rightIcon: <TotalTeamMembersIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      loading: kpiLoading,
+  const disciplinaryKPIs = useMemo(
+    () => {
+      const items: Array<{
+        title: string;
+        value: string;
+        accentColor: 'blue' | 'gold' | 'red';
+        rightIcon: ReactNode;
+        loading: boolean;
+      }> = [];
+      if (canTotalTeamKpi) {
+        items.push({
+          title: 'Total Team Members',
+          value: `${totalActive} Active`,
+          accentColor: 'blue',
+          rightIcon: <TotalTeamMembersIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+          loading: kpiLoading,
+        });
+      }
+      if (canPendingPipsKpi) {
+        items.push({
+          title: 'Pending PIPs',
+          value: `${pendingCount} PIP${pendingCount === 1 ? '' : 's'}`,
+          accentColor: 'gold',
+          rightIcon: <DisciplinaryReviewsDueIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+          loading: kpiLoading,
+        });
+      }
+      if (canCriticalKpi) {
+        items.push({
+          title: 'Critical',
+          value: `${criticalCount} Member${criticalCount === 1 ? '' : 's'}`,
+          accentColor: 'red',
+          rightIcon: <CriticalIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
+          loading: kpiLoading,
+        });
+      }
+      return items;
     },
-    {
-      title: 'Pending PIPs',
-      value: `${pendingCount} PIP${pendingCount === 1 ? '' : 's'}`,
-      accentColor: 'gold' as const,
-      rightIcon: <DisciplinaryReviewsDueIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      loading: kpiLoading,
-    },
-    {
-      title: 'Critical',
-      value: `${criticalCount} Member${criticalCount === 1 ? '' : 's'}`,
-      accentColor: 'red' as const,
-      rightIcon: <CriticalIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-      loading: kpiLoading,
-    },
-  ];
+    [
+      canTotalTeamKpi,
+      canPendingPipsKpi,
+      canCriticalKpi,
+      totalActive,
+      pendingCount,
+      criticalCount,
+      kpiLoading,
+    ]
+  );
 
   useEffect(() => {
     if (page > totalPages) setPage(1);
@@ -143,32 +176,36 @@ export const DisciplinaryManagement = () => {
           </h2>
         </div>
 
-        <CommandCenterKPICards items={disciplinaryKPIs} />
+        {disciplinaryKPIs.length > 0 ? <CommandCenterKPICards items={disciplinaryKPIs} /> : null}
 
-        <DisciplinaryToolbar
-          searchValue={search}
-          onSearchChange={(value) => {
-            setSearch(value);
-            setPage(1);
-          }}
-        />
+        {canDisciplinaryRecords ? (
+          <>
+            <DisciplinaryToolbar
+              searchValue={search}
+              onSearchChange={(value) => {
+                setSearch(value);
+                setPage(1);
+              }}
+            />
 
-        <DisciplinaryTableCard
-          rows={rows}
-          loading={tableLoading}
-          onView={(row) => {
-            if (row.id) {
-              navigate(`/dashboard/disciplinary-management/${row.id}`);
-            }
-          }}
-          pagination={{
-            currentPage: page,
-            totalPages,
-            totalItems,
-            pageSize: PAGE_SIZE,
-            onPageChange: setPage,
-          }}
-        />
+            <DisciplinaryTableCard
+              rows={rows}
+              loading={tableLoading}
+              onView={(row) => {
+                if (row.id) {
+                  navigate(`/dashboard/disciplinary-management/${row.id}`);
+                }
+              }}
+              pagination={{
+                currentPage: page,
+                totalPages,
+                totalItems,
+                pageSize: PAGE_SIZE,
+                onPageChange: setPage,
+              }}
+            />
+          </>
+        ) : null}
       </div>
     </Layout>
   );

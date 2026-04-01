@@ -18,6 +18,9 @@ import {
   kitchenPerformanceService,
 } from "../../services/kitchenPerformance.service";
 import type { RootState } from "../../store/store";
+import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
+
+const DETAILS_PAGE_ID = "kitchen-performance-details";
 import type {
   KitchenPerformanceDetails as KitchenPerformanceDetailsData,
   KitchenPerformanceTicketRow,
@@ -87,6 +90,7 @@ export const KitchenPerformanceDetails = () => {
   const currentLocation = useSelector(
     (state: RootState) => state.location.currentLocation,
   );
+  const canFullPage = useCanAccessComponent(DETAILS_PAGE_ID, "full-page");
   const [activeTab, setActiveTab] = useState<DetailsTab>("ticket-performance");
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<KitchenPerformanceDetailsData | null>(null);
@@ -111,7 +115,7 @@ export const KitchenPerformanceDetails = () => {
   );
 
   const fetchDetails = useCallback(async () => {
-    if (!currentLocation?._id || !deviceName) {
+    if (!currentLocation?._id || !deviceName || !canFullPage) {
       setDetails(null);
       setLoading(false);
       return;
@@ -130,7 +134,7 @@ export const KitchenPerformanceDetails = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentLocation?._id, deviceName, selectedDate]);
+  }, [currentLocation?._id, deviceName, selectedDate, canFullPage]);
 
   useEffect(() => {
     fetchDetails();
@@ -511,32 +515,40 @@ export const KitchenPerformanceDetails = () => {
           </span>
         </div>
 
-        <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-white p-1">
-          <button
-            type="button"
-            onClick={() => setActiveTab("ticket-performance")}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              activeTab === "ticket-performance"
-                ? "bg-button-secondary text-primary"
-                : "text-secondary hover:bg-gray-50"
-            }`}
-          >
-            Ticket Performance
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("item-performance")}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              activeTab === "item-performance"
-                ? "bg-button-secondary text-primary"
-                : "text-secondary hover:bg-gray-50"
-            }`}
-          >
-            Item Performance
-          </button>
-        </div>
+        {canFullPage ? (
+          <>
+            <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-white p-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab("ticket-performance")}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === "ticket-performance"
+                    ? "bg-button-secondary text-primary"
+                    : "text-secondary hover:bg-gray-50"
+                }`}
+              >
+                Ticket Performance
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("item-performance")}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === "item-performance"
+                    ? "bg-button-secondary text-primary"
+                    : "text-secondary hover:bg-gray-50"
+                }`}
+              >
+                Item Performance
+              </button>
+            </div>
 
-        {content}
+            {content}
+          </>
+        ) : (
+          <p className="text-sm text-secondary">
+            You do not have access to view kitchen performance details.
+          </p>
+        )}
       </div>
     </Layout>
   );

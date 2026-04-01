@@ -147,8 +147,8 @@ export function AddEditRoleModalBody(props: Readonly<AddEditRoleModalBodyProps>)
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col flex-1 min-h-0">
-      <div className="px-6 py-4 overflow-y-auto flex-1 space-y-4">
+    <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 space-y-4">
         <div>
           <label htmlFor="role-name" className="block text-sm font-medium text-primary mb-1">
             Role name <span className="text-negative">*</span>
@@ -384,7 +384,7 @@ export function AddEditRoleModalBody(props: Readonly<AddEditRoleModalBodyProps>)
         </div>
       </div>
 
-      <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-2">
+      <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-6 py-4">
         <button
           type="button"
           onClick={onClose}

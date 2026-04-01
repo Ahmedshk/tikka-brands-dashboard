@@ -20,6 +20,9 @@ import { calendarService } from '../../services/calendar.service';
 import type { CalendarEventDto, CalendarEventTypeDto } from '../../types/calendar.types';
 import { colorHexToCalendarBackground } from '../../utils/calendarColors';
 import toast from 'react-hot-toast';
+import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
+
+const PAGE_ID = 'calendar-events';
 
 function visibleRange(anchor: Date): { timeMin: Date; timeMax: Date } {
   const timeMin = startOfMonth(subMonths(anchor, 1));
@@ -45,6 +48,9 @@ function dtoToCalendarItems(
 
 export const CalendarEvents = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const canAddEvents = useCanAccessComponent(PAGE_ID, 'add-events');
+  const canCalendar = useCanAccessComponent(PAGE_ID, 'calendar');
+  const canUpcomingEvents = useCanAccessComponent(PAGE_ID, 'upcoming-events');
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [currentView, setCurrentView] = useState<View>('month');
   const [selectedDate] = useState<Date | null>(null);
@@ -70,7 +76,7 @@ export const CalendarEvents = () => {
   const upcomingRows = useMemo(() => buildUpcomingEventRows(events), [events]);
 
   const loadData = useCallback(async () => {
-    if (!currentLocation?._id) {
+    if (!currentLocation?._id || (!canCalendar && !canUpcomingEvents)) {
       setEvents([]);
       setEventTypes([]);
       setLoading(false);
@@ -91,17 +97,17 @@ export const CalendarEvents = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentLocation?._id, currentDate]);
+  }, [currentLocation?._id, currentDate, canCalendar, canUpcomingEvents]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   useEffect(() => {
-    if (!currentLocation?._id) return;
+    if (!currentLocation?._id || (!canCalendar && !canUpcomingEvents)) return;
     const { timeMin, timeMax } = visibleRange(currentDate);
     calendarService.syncEvents(timeMin, timeMax).catch(() => {});
-  }, [currentLocation?._id, currentDate]);
+  }, [currentLocation?._id, currentDate, canCalendar, canUpcomingEvents]);
 
   const handleNavigate = (date: Date) => {
     setCurrentDate(date);
@@ -134,13 +140,15 @@ export const CalendarEvents = () => {
             <CalendarEventsIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
             Calendar & Events
           </h2>
-          <button
-            type="button"
-            onClick={() => setAddEventModalOpen(true)}
-            className="self-start sm:self-center px-4 py-2 bg-button-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity"
-          >
-            + Add Events
-          </button>
+          {canAddEvents ? (
+            <button
+              type="button"
+              onClick={() => setAddEventModalOpen(true)}
+              className="self-start sm:self-center px-4 py-2 bg-button-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity"
+            >
+              + Add Events
+            </button>
+          ) : null}
         </div>
 
         {currentLocation?._id == null && (
@@ -151,31 +159,35 @@ export const CalendarEvents = () => {
             <Spinner />
           </div>
         )}
-        {currentLocation?._id != null && !loading && (
+        {currentLocation?._id != null && !loading && (canCalendar || canUpcomingEvents) && (
           <div className="space-y-6">
-            <CalendarCard
-              events={calendarItems}
-              date={currentDate}
-              view={currentView}
-              onView={setCurrentView}
-              selectedDate={selectedDate}
-              onNavigate={handleNavigate}
-              onSelectSlot={handleSelectSlot}
-              onSelectEvent={handleSelectEvent}
-              onDrillDown={handleDrillDown}
-            />
-            <UpcomingEventsCard
-              rows={upcomingRows}
-              pageSize={5}
-              onEdit={(row) => setEditingEvent(row.event)}
-              onDelete={(row) => setDeletingRow(row)}
-            />
+            {canCalendar ? (
+              <CalendarCard
+                events={calendarItems}
+                date={currentDate}
+                view={currentView}
+                onView={setCurrentView}
+                selectedDate={selectedDate}
+                onNavigate={handleNavigate}
+                onSelectSlot={handleSelectSlot}
+                onSelectEvent={handleSelectEvent}
+                onDrillDown={handleDrillDown}
+              />
+            ) : null}
+            {canUpcomingEvents ? (
+              <UpcomingEventsCard
+                rows={upcomingRows}
+                pageSize={5}
+                onEdit={(row) => setEditingEvent(row.event)}
+                onDelete={(row) => setDeletingRow(row)}
+              />
+            ) : null}
           </div>
         )}
       </div>
 
       <AddEventModal
-        isOpen={addEventModalOpen}
+        isOpen={canAddEvents && addEventModalOpen}
         onClose={() => setAddEventModalOpen(false)}
         locationId={currentLocation?._id ?? null}
         locationTimezone={currentLocation?.timezone}

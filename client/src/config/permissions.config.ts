@@ -63,6 +63,25 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     ],
   },
   {
+    pageId: 'kitchen-performance',
+    pageLabel: 'Kitchen Performance',
+    components: [
+      FULL_PAGE_ACCESS,
+      { id: 'import-csv', label: 'Import CSV' },
+      { id: 'kitchen-performance', label: 'Kitchen Performance' },
+    ],
+  },
+  {
+    pageId: 'kitchen-performance-details',
+    pageLabel: 'Kitchen Performance Details',
+    components: [FULL_PAGE_ACCESS],
+  },
+  {
+    pageId: 'activity-log',
+    pageLabel: 'Activity Log',
+    components: [FULL_PAGE_ACCESS],
+  },
+  {
     pageId: 'inventory-food-cost',
     pageLabel: 'Inventory & Food Cost',
     components: [
@@ -92,37 +111,48 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     pageLabel: 'Reviews Management',
     components: [
       FULL_PAGE_ACCESS,
-      { id: 'kpi-office-staff', label: 'Staff in Review' },
-      { id: 'kpi-reviews-due', label: 'Reviews Due' },
-      { id: 'staff-list', label: 'Staff List' },
-      { id: 'review-tracker-chart', label: 'Review Tracker Chart' },
-      { id: 'recently-completed-reviews', label: 'Recently Completed Reviews' },
+      { id: 'self-review-completion-chart', label: 'Self Review Completion Chart' },
+      { id: 'manager-review-completion-chart', label: 'Manager Review Completion Chart' },
+      { id: 'do-review-completion-chart', label: 'DO Review Completion Chart' },
+      { id: 'final-review-completion-chart', label: 'Final Review Completion Chart' },
+      { id: 'checkin-30-completion-chart', label: '30 Day Check-in Completion Chart' },
+      { id: 'checkin-60-completion-chart', label: '60 Day Check-in Completion Chart' },
+      { id: 'review-cycles', label: 'Review Cycles' },
+      { id: 'past-reviews', label: 'Past Reviews' },
     ],
   },
   {
     pageId: 'disciplinary-management',
     pageLabel: 'Disciplinary Management',
-    components: [FULL_PAGE_ACCESS],
+    components: [
+      FULL_PAGE_ACCESS,
+      { id: 'total-team-members-kpi', label: 'Total Team Members KPI' },
+      { id: 'pending-pips-kpi', label: 'Pending PIPs KPI' },
+      { id: 'critical-kpi', label: 'Critical KPI' },
+      { id: 'disciplinary-records', label: 'Disciplinary Records' },
+    ],
   },
   {
     pageId: 'disciplinary-management-details',
     pageLabel: 'Disciplinary Management Details',
-    components: [FULL_PAGE_ACCESS],
+    components: [
+      FULL_PAGE_ACCESS,
+      { id: 'assign-points', label: 'Assign Points' },
+      { id: 'employee-card', label: 'Employee Card' },
+      { id: 'incident-history-90-days', label: 'Incident History (90 Days)' },
+      { id: 'required-protocol', label: 'Required Protocol' },
+      { id: 'prior-incidents', label: 'Prior Incidents' },
+    ],
   },
   {
     pageId: 'calendar-events',
     pageLabel: 'Calendar & Events',
-    components: [FULL_PAGE_ACCESS],
-  },
-  {
-    pageId: 'kitchen-performance',
-    pageLabel: 'Kitchen Performance',
-    components: [FULL_PAGE_ACCESS],
-  },
-  {
-    pageId: 'activity-log',
-    pageLabel: 'Activity Log',
-    components: [FULL_PAGE_ACCESS],
+    components: [
+      FULL_PAGE_ACCESS,
+      { id: 'add-events', label: 'Add Events' },
+      { id: 'calendar', label: 'Calendar' },
+      { id: 'upcoming-events', label: 'Upcoming Events' },
+    ],
   },
   {
     pageId: 'user-management',
@@ -152,6 +182,11 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     components: [FULL_PAGE_ACCESS],
   },
   {
+    pageId: 'training-settings',
+    pageLabel: 'Training Settings',
+    components: [FULL_PAGE_ACCESS, { id: 'trainings', label: 'Trainings' }],
+  },
+  {
     pageId: 'review-settings',
     pageLabel: 'Review Settings',
     components: [FULL_PAGE_ACCESS],
@@ -160,11 +195,6 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     pageId: 'disciplinary-settings',
     pageLabel: 'Disciplinary Settings',
     components: [FULL_PAGE_ACCESS],
-  },
-  {
-    pageId: 'training-settings',
-    pageLabel: 'Training Settings',
-    components: [FULL_PAGE_ACCESS, { id: 'trainings', label: 'Trainings' }],
   },
   {
     pageId: 'events-notifications-settings',
@@ -193,6 +223,9 @@ export function getPageIdFromPath(path: string): string | null {
   if (!firstSegment) return 'command-center';
   if (firstSegment === 'disciplinary-management' && parts.length > 1) {
     return 'disciplinary-management-details';
+  }
+  if (firstSegment === 'kitchen-performance' && parts.length > 1) {
+    return 'kitchen-performance-details';
   }
   return firstSegment;
 }

@@ -12,6 +12,9 @@ import { ActivityLogDetailsModal, ActivityLogTableCard } from "../../components/
 import { activityLogService } from "../../services/activityLog.service";
 import type { RootState } from "../../store/store";
 import type { ActivityLogRow } from "../../types/activityLog.types";
+import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
+
+const PAGE_ID = "activity-log";
 
 type ActivityLogEventFilter = "all" | ActivityLogRow["eventType"];
 
@@ -36,6 +39,7 @@ export const ActivityLog = () => {
   const currentLocation = useSelector(
     (state: RootState) => state.location.currentLocation,
   );
+  const canFullPage = useCanAccessComponent(PAGE_ID, "full-page");
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [rows, setRows] = useState<ActivityLogRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,7 +60,7 @@ export const ActivityLog = () => {
   }, [eventFilter]);
 
   const fetchRows = useCallback(async () => {
-    if (!currentLocation?._id) {
+    if (!currentLocation?._id || !canFullPage) {
       setRows([]);
       setLoading(false);
       return;
@@ -71,7 +75,7 @@ export const ActivityLog = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentLocation?._id, selectedDate]);
+  }, [currentLocation?._id, selectedDate, canFullPage]);
 
   useEffect(() => {
     fetchRows();
@@ -86,6 +90,7 @@ export const ActivityLog = () => {
             Activity Log
           </h2>
 
+          {canFullPage ? (
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto sm:shrink-0">
             <Dropdown
               options={[...EVENT_FILTER_OPTIONS]}
@@ -118,21 +123,30 @@ export const ActivityLog = () => {
               />
             </LocalizationProvider>
           </div>
+          ) : null}
         </div>
 
-        <ActivityLogTableCard
-          rows={filteredRows}
-          loading={loading}
-          onView={(row) => {
-            setSelectedRow(row);
-          }}
-        />
+        {canFullPage ? (
+          <>
+            <ActivityLogTableCard
+              rows={filteredRows}
+              loading={loading}
+              onView={(row) => {
+                setSelectedRow(row);
+              }}
+            />
 
-        <ActivityLogDetailsModal
-          open={selectedRow != null}
-          row={selectedRow}
-          onClose={() => setSelectedRow(null)}
-        />
+            <ActivityLogDetailsModal
+              open={selectedRow != null}
+              row={selectedRow}
+              onClose={() => setSelectedRow(null)}
+            />
+          </>
+        ) : (
+          <p className="text-sm text-secondary">
+            You do not have access to view the activity log content.
+          </p>
+        )}
       </div>
     </Layout>
   );

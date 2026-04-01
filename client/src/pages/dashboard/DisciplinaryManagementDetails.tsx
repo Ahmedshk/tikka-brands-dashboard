@@ -22,6 +22,9 @@ import {
 import type { NotificationItem } from '../../services/notification.service';
 import { getSocket } from '../../services/socket.service';
 import type { IncidentHistoryItem } from '../../types/disciplinaryManagement.types';
+import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
+
+const PAGE_ID = 'disciplinary-management-details';
 
 function formatDateRange(date: Date): string {
   return date.toLocaleDateString('en-US', {
@@ -108,6 +111,11 @@ export const DisciplinaryManagementDetails = () => {
   const { employeeId } = useParams<{ employeeId: string }>();
   const navigate = useNavigate();
   const user = useSelector((state: RootState) => state.auth.user);
+  const canAssignPoints = useCanAccessComponent(PAGE_ID, 'assign-points');
+  const canEmployeeCard = useCanAccessComponent(PAGE_ID, 'employee-card');
+  const canIncidentHistory90 = useCanAccessComponent(PAGE_ID, 'incident-history-90-days');
+  const canRequiredProtocol = useCanAccessComponent(PAGE_ID, 'required-protocol');
+  const canPriorIncidents = useCanAccessComponent(PAGE_ID, 'prior-incidents');
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   const notifications = useSelector((state: RootState) => state.notification.notifications);
   const [incidentModalOpen, setIncidentModalOpen] = useState(false);
@@ -318,73 +326,82 @@ export const DisciplinaryManagementDetails = () => {
           dateWindowEnd={windowRange.end}
           onBack={() => navigate('/dashboard/disciplinary-management')}
           onAssignPoints={() => setAssignPointsOpen(true)}
+          showAssignPoints={canAssignPoints}
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-          <div className="order-1 lg:order-none lg:col-span-1 min-h-0">
-            {isCardLoading ? (
-              <CardLoader message="Loading employee details..." />
-            ) : (
-              <EmployeeWithRollingTotalCard
-                name={employee!.name}
-                role={employee!.role}
-                status={employee!.status}
-                avatarUrl={employee!.avatarUrl}
-                currentPoints={employee!.activePoints}
-                maxPoints={employee!.pointsThreshold}
-              />
-            )}
-          </div>
-          <div className="order-3 lg:order-none lg:col-span-2 min-h-0">
-            {isCardLoading ? (
-              <CardLoader message="Loading incident history..." />
-            ) : (
-              <IncidentHistoryCard
-                items={recentIncidentsPreview}
-                emptyMessage={`No incidents found in the last ${rollingDays} days.`}
-                canSign={(item) =>
-                  item.signingPhase === 'pending_manager' &&
-                  currentUserId != null &&
-                  item.assignerId === currentUserId
-                }
-                signLoadingIncidentId={signingLoadingIncidentId}
-                onSign={(item) => {
-                  void handleSignIncident(item);
-                }}
-                onView={handleViewIncident}
-                onViewAll={() => setIncidentModalOpen(true)}
-              />
-            )}
-          </div>
-          <div className="order-2 lg:order-none lg:col-span-1 min-h-0">
-            {isCardLoading ? (
-              <CardLoader message="Loading required protocol..." />
-            ) : (
-              <RequiredProtocolCard
-                message={protocol!.message}
-                currentAction={protocol!.currentAction}
-              />
-            )}
-          </div>
-          <div className="order-4 lg:order-none lg:col-span-2 min-h-0">
-            {isCardLoading ? (
-              <CardLoader message="Loading prior incidents..." />
-            ) : (
-              <IncidentHistoryCard
-                title={`Incidents Prior To ${rollingDays} Days`}
-                items={priorIncidentsPreview}
-                emptyMessage={`No incidents found prior to ${rollingDays} days.`}
-                canSign={() => false}
-                onView={handleViewIncident}
-                onViewAll={() => setPriorIncidentModalOpen(true)}
-              />
-            )}
-          </div>
+          {canEmployeeCard ? (
+            <div className="order-1 lg:order-none lg:col-span-1 min-h-0">
+              {isCardLoading ? (
+                <CardLoader message="Loading employee details..." />
+              ) : (
+                <EmployeeWithRollingTotalCard
+                  name={employee!.name}
+                  role={employee!.role}
+                  status={employee!.status}
+                  avatarUrl={employee!.avatarUrl}
+                  currentPoints={employee!.activePoints}
+                  maxPoints={employee!.pointsThreshold}
+                />
+              )}
+            </div>
+          ) : null}
+          {canIncidentHistory90 ? (
+            <div className="order-3 lg:order-none lg:col-span-2 min-h-0">
+              {isCardLoading ? (
+                <CardLoader message="Loading incident history..." />
+              ) : (
+                <IncidentHistoryCard
+                  items={recentIncidentsPreview}
+                  emptyMessage={`No incidents found in the last ${rollingDays} days.`}
+                  canSign={(item) =>
+                    item.signingPhase === 'pending_manager' &&
+                    currentUserId != null &&
+                    item.assignerId === currentUserId
+                  }
+                  signLoadingIncidentId={signingLoadingIncidentId}
+                  onSign={(item) => {
+                    void handleSignIncident(item);
+                  }}
+                  onView={handleViewIncident}
+                  onViewAll={() => setIncidentModalOpen(true)}
+                />
+              )}
+            </div>
+          ) : null}
+          {canRequiredProtocol ? (
+            <div className="order-2 lg:order-none lg:col-span-1 min-h-0">
+              {isCardLoading ? (
+                <CardLoader message="Loading required protocol..." />
+              ) : (
+                <RequiredProtocolCard
+                  message={protocol!.message}
+                  currentAction={protocol!.currentAction}
+                />
+              )}
+            </div>
+          ) : null}
+          {canPriorIncidents ? (
+            <div className="order-4 lg:order-none lg:col-span-2 min-h-0">
+              {isCardLoading ? (
+                <CardLoader message="Loading prior incidents..." />
+              ) : (
+                <IncidentHistoryCard
+                  title={`Incidents Prior To ${rollingDays} Days`}
+                  items={priorIncidentsPreview}
+                  emptyMessage={`No incidents found prior to ${rollingDays} days.`}
+                  canSign={() => false}
+                  onView={handleViewIncident}
+                  onViewAll={() => setPriorIncidentModalOpen(true)}
+                />
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
 
       <IncidentHistoryModal
-        isOpen={incidentModalOpen}
+        isOpen={canIncidentHistory90 && incidentModalOpen}
         onClose={() => setIncidentModalOpen(false)}
         title={`Incident History (${rollingDays} Days)`}
         items={recentIncidents}
@@ -400,7 +417,7 @@ export const DisciplinaryManagementDetails = () => {
         onView={handleViewIncident}
       />
       <IncidentHistoryModal
-        isOpen={priorIncidentModalOpen}
+        isOpen={canPriorIncidents && priorIncidentModalOpen}
         onClose={() => setPriorIncidentModalOpen(false)}
         title={`Incidents Prior To ${rollingDays} Days`}
         items={priorIncidents}
@@ -409,7 +426,7 @@ export const DisciplinaryManagementDetails = () => {
       />
 
       <IncidentDetailsModal
-        isOpen={incidentDetailsOpen}
+        isOpen={incidentDetailsOpen && (canIncidentHistory90 || canPriorIncidents)}
         incident={selectedIncident}
         onClose={() => {
           setIncidentDetailsOpen(false);
@@ -419,12 +436,12 @@ export const DisciplinaryManagementDetails = () => {
         onDownloadAuditTrail={handleDownloadIncidentAuditTrail}
       />
 
-      {employeeId && details && (
+      {employeeId && details && canAssignPoints && (
         <AssignPointsModal
           isOpen={assignPointsOpen}
           onClose={() => setAssignPointsOpen(false)}
           employeeId={employeeId}
-          employeeName={employee.name}
+          employeeName={employee?.name ?? ''}
           locationId={currentLocation?._id ?? ''}
           onSuccess={fetchDetails}
         />

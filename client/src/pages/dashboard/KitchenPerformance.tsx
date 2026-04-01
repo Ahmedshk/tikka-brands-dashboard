@@ -19,8 +19,10 @@ import {
   KitchenPerformanceImportModal,
   KitchenPerformanceTableCard,
 } from "../../components/KitchenPerformance";
+import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
 
 const PAGE_SIZE = 10;
+const PAGE_ID = "kitchen-performance";
 const GREY_FOCUS_FIELD_SX = {
   "& .MuiOutlinedInput-root": {
     "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
@@ -45,6 +47,8 @@ export const KitchenPerformance = () => {
   const currentLocation = useSelector(
     (state: RootState) => state.location.currentLocation,
   );
+  const canImportCsv = useCanAccessComponent(PAGE_ID, "import-csv");
+  const canKitchenTable = useCanAccessComponent(PAGE_ID, "kitchen-performance");
   const [selectedDate, setSelectedDate] = useState<Date>(
     () => parseDateQueryParam(searchParams.get("date")) ?? new Date(),
   );
@@ -56,7 +60,7 @@ export const KitchenPerformance = () => {
   const [importModalOpen, setImportModalOpen] = useState(false);
 
   const fetchKitchenRows = useCallback(async () => {
-    if (!currentLocation?._id) {
+    if (!currentLocation?._id || !canKitchenTable) {
       setRows([]);
       setTotalItems(0);
       setTotalPages(1);
@@ -85,7 +89,7 @@ export const KitchenPerformance = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentLocation?._id, page, selectedDate]);
+  }, [currentLocation?._id, page, selectedDate, canKitchenTable]);
 
   useEffect(() => {
     fetchKitchenRows();
@@ -127,58 +131,68 @@ export const KitchenPerformance = () => {
           </h2>
 
           <div className="flex flex-wrap items-center gap-2">
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <DatePicker
-                value={selectedDate}
-                onChange={(date) => {
-                  if (date) {
-                    setSelectedDate(date);
-                    setPage(1);
-                  }
-                }}
-                disableFuture
-                enableAccessibleFieldDOMStructure={false}
-                slots={{ textField: TextField }}
-                slotProps={{
-                  textField: {
-                    size: "small",
-                    placeholder: "MM/DD/YYYY",
-                    sx: { minWidth: 180, ...GREY_FOCUS_FIELD_SX },
-                  },
-                }}
-              />
-            </LocalizationProvider>
-            <button
-              type="button"
-              onClick={() => setImportModalOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
-              <ImportIcon className="w-4 h-4" />
-              Import CSV
-            </button>
+            {canKitchenTable ? (
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <DatePicker
+                  value={selectedDate}
+                  onChange={(date) => {
+                    if (date) {
+                      setSelectedDate(date);
+                      setPage(1);
+                    }
+                  }}
+                  disableFuture
+                  enableAccessibleFieldDOMStructure={false}
+                  slots={{ textField: TextField }}
+                  slotProps={{
+                    textField: {
+                      size: "small",
+                      placeholder: "MM/DD/YYYY",
+                      sx: { minWidth: 180, ...GREY_FOCUS_FIELD_SX },
+                    },
+                  }}
+                />
+              </LocalizationProvider>
+            ) : null}
+            {canImportCsv ? (
+              <button
+                type="button"
+                onClick={() => setImportModalOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+              >
+                <ImportIcon className="w-4 h-4" />
+                Import CSV
+              </button>
+            ) : null}
           </div>
         </div>
 
-        <KitchenPerformanceTableCard
-          rows={rows}
-          loading={loading}
-          onView={(row) => {
-            const encoded = encodeURIComponent(row.deviceName);
-            const date = formatDateToIso(selectedDate);
-            navigate(`/dashboard/kitchen-performance/${encoded}?date=${date}`);
-          }}
-          pagination={{
-            currentPage: page,
-            totalPages,
-            totalItems,
-            pageSize: PAGE_SIZE,
-            onPageChange: setPage,
-          }}
-        />
+        {canKitchenTable ? (
+          <KitchenPerformanceTableCard
+            rows={rows}
+            loading={loading}
+            onView={(row) => {
+              const encoded = encodeURIComponent(row.deviceName);
+              const date = formatDateToIso(selectedDate);
+              navigate(`/dashboard/kitchen-performance/${encoded}?date=${date}`);
+            }}
+            pagination={{
+              currentPage: page,
+              totalPages,
+              totalItems,
+              pageSize: PAGE_SIZE,
+              onPageChange: setPage,
+            }}
+          />
+        ) : (
+          <p className="text-sm text-secondary">
+            You do not have access to view kitchen performance data.
+          </p>
+        )}
       </div>
 
       <KitchenPerformanceImportModal
-        isOpen={importModalOpen}
+        isOpen={canImportCsv && importModalOpen}
         onClose={() => setImportModalOpen(false)}
         onImport={handleImport}
         defaultDate={selectedDate}

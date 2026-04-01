@@ -5,6 +5,8 @@ export interface DetailsPageHeaderProps {
   dateWindowEnd: string;
   onBack: () => void;
   onAssignPoints: () => void;
+  /** When false, the Assign Points button is hidden (RBAC). */
+  showAssignPoints?: boolean;
 }
 
 export const DetailsPageHeader = (props: DetailsPageHeaderProps) => {
@@ -13,6 +15,7 @@ export const DetailsPageHeader = (props: DetailsPageHeaderProps) => {
     dateWindowEnd,
     onBack,
     onAssignPoints,
+    showAssignPoints = true,
   } = props;
   return (
     <div className="mb-6 flex flex-col gap-4">
@@ -35,16 +38,18 @@ export const DetailsPageHeader = (props: DetailsPageHeaderProps) => {
         >
           ← Back
         </button>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onAssignPoints}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-          >
-            <AddIcon className="w-4 h-4 shrink-0" aria-hidden />
-            Assign Points
-          </button>
-        </div>
+        {showAssignPoints ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onAssignPoints}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+            >
+              <AddIcon className="w-4 h-4 shrink-0" aria-hidden />
+              Assign Points
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
