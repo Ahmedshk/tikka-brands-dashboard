@@ -18,6 +18,8 @@ import {
   updateTraining,
   deleteTraining,
 } from '../controllers/training.controller.js';
+import { listRoleHierarchySnapshot } from '../controllers/role.controller.js';
+import { listRolesQuerySchema } from '../validators/role.validators.js';
 import trainingAssignmentRoutes from './trainingAssignment.routes.js';
 
 const router = Router();
@@ -33,6 +35,9 @@ const trainingCatalogAuth = requireAnyPermission([
 /** Assignments stay on Training Management only. */
 const assignmentsAuth = requirePermission('training-management');
 
+/** Role tree for training hierarchy filtering (no full RBAC payload). */
+const trainingRoleHierarchyAuth = requireAnyPermission(['training-management', 'rbac-management']);
+
 router.post(
   '/upload-document',
   trainingCatalogAuth,
@@ -42,6 +47,12 @@ router.post(
 router.post('/', trainingCatalogAuth, validate(createTrainingSchema), createTraining);
 router.get('/', trainingCatalogAuth, listTrainings);
 router.use('/assignments', assignmentsAuth, trainingAssignmentRoutes);
+router.get(
+  '/role-hierarchy',
+  trainingRoleHierarchyAuth,
+  validate(listRolesQuerySchema),
+  listRoleHierarchySnapshot
+);
 router.get('/:id', trainingCatalogAuth, validate(getTrainingByIdSchema), getTrainingById);
 router.put('/:id', trainingCatalogAuth, validate(updateTrainingSchema), updateTraining);
 router.delete('/:id', trainingCatalogAuth, validate(deleteTrainingSchema), deleteTraining);

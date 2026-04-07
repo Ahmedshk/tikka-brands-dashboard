@@ -13,6 +13,17 @@ export const errorHandler = (
     appError = err;
   } else if (err.code === 'LIMIT_FILE_SIZE') {
     appError = new AppError('File too large. Profile image must be 2 MB or less.', 400);
+  } else if (err instanceof SyntaxError) {
+    const pe = err as Error & { status?: number; type?: string };
+    if (
+      pe.status === 400 ||
+      pe.type === 'entity.parse.failed' ||
+      /unexpected token|invalid json/i.test(err.message)
+    ) {
+      appError = new AppError('Invalid JSON body', 400);
+    } else {
+      appError = new AppError(err.message || 'Internal server error', 500);
+    }
   } else {
     appError = new AppError(err.message || 'Internal server error', 500);
   }

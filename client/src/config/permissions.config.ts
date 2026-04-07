@@ -201,6 +201,11 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     pageLabel: 'Events & Notifications',
     components: [FULL_PAGE_ACCESS],
   },
+  {
+    pageId: 'data-sync-settings',
+    pageLabel: 'Data sync',
+    components: [FULL_PAGE_ACCESS],
+  },
 ];
 
 /** All page IDs in order (for path → pageId mapping). */

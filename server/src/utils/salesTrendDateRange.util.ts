@@ -49,24 +49,64 @@ export interface GetSalesTrendComparisonRangeOptions {
   periodType?: PeriodType;
 }
 
-/** Start of a calendar day in timezone as UTC Date (midnight in that TZ). Exported for TZ-aware monthly bucket iteration. */
+/** Calendar (y, month 0-based, d) for an instant in `timezone` (DST-safe). */
+function getCalendarYmdInTz(utcMs: number, timezone: string): { y: number; m: number; d: number } {
+  const tz = timezone.trim();
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date(utcMs));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
+  return {
+    y: Number.parseInt(get("year"), 10),
+    m: Number.parseInt(get("month"), 10) - 1,
+    d: Number.parseInt(get("day"), 10),
+  };
+}
+
+function compareCalendarYmd(
+  a: { y: number; m: number; d: number },
+  b: { y: number; m: number; d: number },
+): number {
+  if (a.y !== b.y) return a.y - b.y;
+  if (a.m !== b.m) return a.m - b.m;
+  return a.d - b.d;
+}
+
+/**
+ * Start of a calendar day in timezone as UTC Date (first instant of that local date).
+ * Uses binary search so DST transitions (e.g. US spring forward) are correct; the old
+ * noon-offset formula could map “Mar 8” to 06:00Z so daily buckets began on Mar 7.
+ */
 export function getStartOfDayUtc(
   y: number,
   m: number,
   d: number,
   timezone: string,
 ): Date {
-  const utcNoon = Date.UTC(y, m, d, 12, 0, 0, 0);
-  const hourFormatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-  });
-  const hourStr = hourFormatter.format(utcNoon);
-  const hour = Number.parseInt(hourStr.split(":")[0] ?? "0", 10);
-  const offsetHours = hour - 12;
-  return new Date(Date.UTC(y, m, d, -offsetHours, 0, 0, 0));
+  const tz = timezone.trim();
+  const target = { y, m, d };
+  const dayMs = 24 * 60 * 60 * 1000;
+  let lo = Date.UTC(y, m, d, 12, 0, 0, 0) - 72 * 60 * 60 * 1000;
+  let hi = Date.UTC(y, m, d, 12, 0, 0, 0) + 72 * 60 * 60 * 1000;
+  while (compareCalendarYmd(getCalendarYmdInTz(lo, tz), target) >= 0) {
+    lo -= dayMs;
+  }
+  while (compareCalendarYmd(getCalendarYmdInTz(hi, tz), target) < 0) {
+    hi += dayMs;
+  }
+  while (lo < hi) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (compareCalendarYmd(getCalendarYmdInTz(mid, tz), target) < 0) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return new Date(lo);
 }
 
 /** Get (year, month 0-based, day) of "now" in the given timezone. */
@@ -111,25 +151,29 @@ function getDayOfWeekInTz(
   return map[weekday] ?? 0;
 }
 
-/** Add days to a calendar date (y, m, d), return new (y, m, d). */
+/**
+ * Add days to a civil calendar date (y, month 0-based, d). Uses UTC date math so
+ * results do not depend on the Node process timezone (host-local `Date(y,m,d)` was wrong).
+ */
 function addDays(y: number, m: number, d: number, delta: number): { y: number; m: number; d: number } {
-  const date = new Date(y, m, d + delta);
+  const x = new Date(Date.UTC(y, m, d + delta));
   return {
-    y: date.getFullYear(),
-    m: date.getMonth(),
-    d: date.getDate(),
+    y: x.getUTCFullYear(),
+    m: x.getUTCMonth(),
+    d: x.getUTCDate(),
   };
 }
 
-/** End of day (23:59:59.999) in TZ for (y,m,d). */
+/** End of day (last ms before next local calendar day) in TZ for (y,m,d). */
 export function getEndOfDayUtc(
   y: number,
   m: number,
   d: number,
   timezone: string,
 ): Date {
-  const start = getStartOfDayUtc(y, m, d, timezone);
-  return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  const next = addDays(y, m, d, 1);
+  const startNext = getStartOfDayUtc(next.y, next.m, next.d, timezone);
+  return new Date(startNext.getTime() - 1);
 }
 
 import {
@@ -178,19 +222,7 @@ export function getSalesTrendPeriodRange(
 
 /** Get (year, month 0-based, day) of a date in the given timezone. Exported for TZ-aware monthly bucket iteration. */
 export function getDatePartsInTz(date: Date, timezone: string): { y: number; m: number; d: number } {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = formatter.formatToParts(date);
-  const get = (type: string) =>
-    parts.find((p) => p.type === type)?.value ?? "0";
-  const y = Number.parseInt(get("year"), 10);
-  const m = Number.parseInt(get("month"), 10) - 1;
-  const d = Number.parseInt(get("day"), 10);
-  return { y, m, d };
+  return getCalendarYmdInTz(date.getTime(), timezone);
 }
 
 /** Number of calendar days (in the given timezone) covered by the range. Used for KPI numDays so single-day ranges yield 1. */
@@ -507,14 +539,11 @@ function getLastWeekOfMonth(
   return { start, end };
 }
 
-const PERIOD_TYPES_WITH_WEEK_LOGIC = new Set<PeriodType>([
-  "last7days",
-  "last30days",
-  "last52weeks",
+/** Week-of-month comparison alignment applies only to calendar-bound periods, not rolling windows. */
+const CALENDAR_BOUNDED_PERIOD_TYPES_FOR_WEEK_COMPARISON = new Set<PeriodType>([
   "thisWeek",
   "thisMonth",
   "thisYear",
-  "custom",
 ]);
 const COMPARISON_TYPES_WITH_WEEK_LOGIC = new Set<ComparisonType>([
   "samePeriodPreviousWeek",
@@ -524,6 +553,13 @@ const COMPARISON_TYPES_WITH_WEEK_LOGIC = new Set<ComparisonType>([
   "year2Before",
   "year3Before",
   "year4Before",
+]);
+
+/** Rolling/custom spans where "same period previous month" keeps length: start → previous month, end → start + (n−1) days. */
+const ROLLING_PERIOD_TYPES_FOR_PREV_MONTH = new Set<PeriodType>([
+  "last7days",
+  "last30days",
+  "custom",
 ]);
 
 function getComparisonRangeWithWeekLogic(
@@ -865,12 +901,32 @@ function prevMonthDate(
   return { y: newY, m: newM, d: Math.min(d, maxDay) };
 }
 
+function getSamePeriodPreviousMonthRollingRange(
+  periodStartAt: string,
+  periodEndAt: string,
+  tz: string,
+  bizStart: string,
+  useBiz: boolean,
+): ComparisonRangeResult {
+  const nDays = getCalendarDayCountInRange(
+    { startAt: periodStartAt, endAt: periodEndAt },
+    tz,
+  );
+  const startParts = getDatePartsInTz(new Date(periodStartAt), tz);
+  const compStart = prevMonthDate(startParts.y, startParts.m, startParts.d);
+  const compEnd = addDays(compStart.y, compStart.m, compStart.d, Math.max(0, nDays - 1));
+  return rangeFromCalendar(tz, bizStart, useBiz, compStart, compEnd);
+}
+
 /**
  * Get the comparison period range given the primary period range and comparison type.
  * Returns same-length range aligned with comparison option; same granularity as primary.
  * For custom, pass customComparisonStart and customComparisonEnd in options (both ISO or YYYY-MM-DD).
  * Optional businessStartTime in options ensures custom comparison uses store business day boundaries.
- * When periodType in options is "thisWeek", samePeriodPreviousWeek / samePeriodPreviousMonth / priorYear use week-of-month semantics.
+ * For thisWeek/thisMonth/thisYear, some comparisons use week-of-month alignment; rolling periods use calendar
+ * math in the location timezone (e.g. last7days + priorYear → same dates one year earlier).
+ * For last7days / last30days / custom, samePeriodPreviousMonth uses the previous calendar month of the range
+ * start and preserves the inclusive day count (not previous month of each endpoint).
  */
 export function getSalesTrendComparisonRange(
   comparisonType: ComparisonType,
@@ -896,10 +952,29 @@ export function getSalesTrendComparisonRange(
   const bizStart = (businessStartTime ?? "00:00").trim();
   const useBiz = useBusinessDayBoundaries(businessStartTime);
 
+  if (
+    comparisonType === "samePeriodPreviousMonth" &&
+    periodType != null &&
+    ROLLING_PERIOD_TYPES_FOR_PREV_MONTH.has(periodType)
+  ) {
+    return getSamePeriodPreviousMonthRollingRange(
+      periodStartAt,
+      periodEndAt,
+      tz,
+      bizStart,
+      useBiz,
+    );
+  }
+
+  // Week-of-month alignment (getComparisonRangeWithWeekLogic) is only for thisWeek/thisMonth/thisYear.
+  // Rolling periods (last7days, last30days, last52weeks, custom) use the switch path (e.g. prior year −1 calendar year in TZ).
+  const sameWeekUsesWeekOfMonth =
+    comparisonType === "samePeriodPreviousWeek" && periodType === "thisWeek";
   const useWeekLogic =
     periodType != null &&
-    PERIOD_TYPES_WITH_WEEK_LOGIC.has(periodType) &&
-    COMPARISON_TYPES_WITH_WEEK_LOGIC.has(comparisonType);
+    CALENDAR_BOUNDED_PERIOD_TYPES_FOR_WEEK_COMPARISON.has(periodType) &&
+    COMPARISON_TYPES_WITH_WEEK_LOGIC.has(comparisonType) &&
+    (comparisonType !== "samePeriodPreviousWeek" || sameWeekUsesWeekOfMonth);
 
   if (useWeekLogic) {
     return getComparisonRangeWithWeekLogic(

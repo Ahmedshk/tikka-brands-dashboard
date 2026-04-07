@@ -7,10 +7,15 @@ import {
   getOrderTimeSeriesInRange,
   getOrderTimeSeriesBySourceInRange,
   getOrderedBucketsAndLabels,
+  type SquareServiceOptions,
   type SalesTrendGranularity,
   type OrderTimeSeriesBySourceSeries,
 } from "../services/square.service.js";
-import { getLaborAndHoursTimeSeriesInRange } from "../services/homebase.service.js";
+import {
+  loadSquareOrdersForMongoRange,
+  createMongoCatalogBatchRetrieve,
+  getLaborAndHoursTimeSeriesInRangeFromCache,
+} from "../services/integrationCacheRead.service.js";
 import type {
   Granularity,
   PeriodRangeResult,
@@ -47,6 +52,8 @@ export interface SalesTrendQueryParams {
 }
 
 export interface SalesTrendContext {
+  /** Mongo ObjectId string for EXTERNAL_DATA_CACHE_READ Square order/catalog paths. */
+  locationMongoId?: string;
   location: {
     squareLocationId?: string | null;
     homebaseLocationId?: string | null;
@@ -98,13 +105,33 @@ export function buildSalesTrendContext(
   location: SalesTrendContext["location"],
   squareAccessToken: string | null,
   homebaseApiKey: string | null,
+  locationMongoId?: string | null,
 ): SalesTrendContext {
+  const id = locationMongoId?.trim();
   return {
+    ...(id ? { locationMongoId: id } : {}),
     location,
     squareAccessToken,
     homebaseApiKey,
     timezone: location.timezone?.trim() ?? "UTC",
     businessStartTime: location.businessStartTime?.trim() ?? "00:00",
+  };
+}
+
+async function buildSquareOrderCacheOptions(
+  locationMongoId: string | undefined,
+  range: TimeRange,
+  base?: SquareServiceOptions,
+): Promise<SquareServiceOptions | undefined> {
+  if (!locationMongoId?.trim()) {
+    return base;
+  }
+  const id = locationMongoId.trim();
+  const orders = await loadSquareOrdersForMongoRange(id, range);
+  return {
+    ...base,
+    ordersOverride: orders,
+    batchRetrieveCatalogOverride: createMongoCatalogBatchRetrieve(id),
   };
 }
 
@@ -158,18 +185,24 @@ export interface FetchBySourceOptions {
   useDisplayRange: boolean;
   periodType: string;
   accessToken: string | undefined;
+  locationMongoId?: string;
 }
 
 export async function fetchSalesTrendBySource(
   squareLocationId: string,
   opts: FetchBySourceOptions,
 ): Promise<SalesTrendBySourceData | null> {
+  const squareOpts = await buildSquareOrderCacheOptions(
+    opts.locationMongoId,
+    opts.dataRange,
+    { accessToken: opts.accessToken, periodType: opts.periodType },
+  );
   const result = await getOrderTimeSeriesBySourceInRange(
     squareLocationId,
     opts.dataRange,
     opts.timezone,
     opts.seriesGranularity,
-    { accessToken: opts.accessToken, periodType: opts.periodType },
+    squareOpts ?? { accessToken: opts.accessToken, periodType: opts.periodType },
   );
   let xAxisLabelsSource = result.labels;
   let seriesSource = result.series;
@@ -274,22 +307,39 @@ export interface FetchOrderMetricsOptions {
   metric: string;
   comparisonRange: TimeRange | null;
   accessToken: string | undefined;
+  locationMongoId?: string;
 }
 
 export async function fetchSalesTrendOrderMetrics(
   squareLocationId: string,
   opts: FetchOrderMetricsOptions,
 ): Promise<{ xAxisLabels: string[]; currentPeriod: (number | null)[]; comparisonPeriod: (number | null)[] }> {
-  const [current, comp] = await Promise.all([
-    getOrderTimeSeriesInRange(squareLocationId, opts.dataRange, opts.timezone, opts.seriesGranularity, {
-      accessToken: opts.accessToken,
-      periodType: opts.periodType,
-    }),
+  const baseOpts: SquareServiceOptions = {
+    accessToken: opts.accessToken,
+    periodType: opts.periodType,
+  };
+  const [currentOpts, compOpts] = await Promise.all([
+    buildSquareOrderCacheOptions(opts.locationMongoId, opts.dataRange, baseOpts),
     opts.comparisonRange
-      ? getOrderTimeSeriesInRange(squareLocationId, opts.comparisonRange, opts.timezone, opts.seriesGranularity, {
-          accessToken: opts.accessToken,
-          periodType: opts.periodType,
-        })
+      ? buildSquareOrderCacheOptions(opts.locationMongoId, opts.comparisonRange, baseOpts)
+      : Promise.resolve(undefined),
+  ]);
+  const [current, comp] = await Promise.all([
+    getOrderTimeSeriesInRange(
+      squareLocationId,
+      opts.dataRange,
+      opts.timezone,
+      opts.seriesGranularity,
+      currentOpts ?? baseOpts,
+    ),
+    opts.comparisonRange
+      ? getOrderTimeSeriesInRange(
+          squareLocationId,
+          opts.comparisonRange,
+          opts.timezone,
+          opts.seriesGranularity,
+          compOpts ?? baseOpts,
+        )
       : null,
   ]);
   if (opts.useDisplayRange) {
@@ -335,6 +385,41 @@ export interface FetchLaborMetricsOptions {
   metric: string;
   comparisonRange: TimeRange | null;
   apiKey: string | undefined;
+  /** Mongo location id: labor series use synced Homebase timecards only. */
+  locationMongoId?: string;
+}
+
+async function laborSeriesForRange(
+  _homebaseLocationId: string,
+  range: TimeRange,
+  timezone: string,
+  granularity: SalesTrendGranularity,
+  periodType: string,
+  _apiKey: string | undefined,
+  locationMongoId: string | undefined,
+): Promise<
+  Awaited<ReturnType<typeof getLaborAndHoursTimeSeriesInRangeFromCache>>
+> {
+  if (!locationMongoId?.trim()) {
+    const { keys, labels } = getOrderedBucketsAndLabels(
+      range,
+      timezone,
+      granularity,
+      periodType ? { periodType } : undefined,
+    );
+    return {
+      labels,
+      laborCost: keys.map(() => 0),
+      hours: keys.map(() => 0),
+    };
+  }
+  return getLaborAndHoursTimeSeriesInRangeFromCache(
+    locationMongoId.trim(),
+    range,
+    timezone,
+    granularity,
+    periodType,
+  );
 }
 
 export async function fetchSalesTrendLaborMetrics(
@@ -342,17 +427,24 @@ export async function fetchSalesTrendLaborMetrics(
   opts: FetchLaborMetricsOptions,
 ): Promise<{ xAxisLabels: string[]; currentPeriod: (number | null)[]; comparisonPeriod: (number | null)[] }> {
   const [current, comp] = await Promise.all([
-    getLaborAndHoursTimeSeriesInRange(homebaseLocationId, opts.dataRange, opts.timezone, opts.seriesGranularity, {
-      apiKey: opts.apiKey,
-      periodType: opts.periodType,
-    }),
+    laborSeriesForRange(
+      homebaseLocationId,
+      opts.dataRange,
+      opts.timezone,
+      opts.seriesGranularity,
+      opts.periodType,
+      opts.apiKey,
+      opts.locationMongoId,
+    ),
     opts.comparisonRange
-      ? getLaborAndHoursTimeSeriesInRange(
+      ? laborSeriesForRange(
           homebaseLocationId,
           opts.comparisonRange,
           opts.timezone,
           opts.seriesGranularity,
-          { apiKey: opts.apiKey, periodType: opts.periodType },
+          opts.periodType,
+          opts.apiKey,
+          opts.locationMongoId,
         )
       : null,
   ]);
@@ -546,6 +638,7 @@ async function fetchSeriesMetricsPayload(
       ...opts,
       metric,
       accessToken: ctx.squareAccessToken ?? undefined,
+      ...(ctx.locationMongoId != null ? { locationMongoId: ctx.locationMongoId } : {}),
     });
   }
   if (!homebaseLocationId) return empty;
@@ -554,6 +647,7 @@ async function fetchSeriesMetricsPayload(
       ...opts,
       metric,
       apiKey: ctx.homebaseApiKey ?? undefined,
+      ...(ctx.locationMongoId != null ? { locationMongoId: ctx.locationMongoId } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -586,6 +680,7 @@ export async function getSalesTrendData(
       useDisplayRange,
       periodType,
       accessToken: ctx.squareAccessToken ?? undefined,
+      ...(ctx.locationMongoId != null ? { locationMongoId: ctx.locationMongoId } : {}),
     });
     return { kind: "bySource", data: bySource! };
   }
@@ -696,16 +791,32 @@ async function fetchSquareKpiTotals(
   seriesGranularity: SalesTrendGranularity,
   periodType: string,
 ): Promise<KpiTotals> {
-  const [current, comp] = await Promise.all([
-    getOrderTimeSeriesInRange(squareLocationId, dataRange, ctx.timezone, seriesGranularity, {
-      accessToken: ctx.squareAccessToken ?? undefined,
-      periodType,
-    }),
+  const baseOpts: SquareServiceOptions = {
+    accessToken: ctx.squareAccessToken ?? undefined,
+    periodType,
+  };
+  const [currentOpts, compOpts] = await Promise.all([
+    buildSquareOrderCacheOptions(ctx.locationMongoId, dataRange, baseOpts),
     comparisonRange
-      ? getOrderTimeSeriesInRange(squareLocationId, comparisonRange, ctx.timezone, seriesGranularity, {
-          accessToken: ctx.squareAccessToken ?? undefined,
-          periodType,
-        })
+      ? buildSquareOrderCacheOptions(ctx.locationMongoId, comparisonRange, baseOpts)
+      : Promise.resolve(undefined),
+  ]);
+  const [current, comp] = await Promise.all([
+    getOrderTimeSeriesInRange(
+      squareLocationId,
+      dataRange,
+      ctx.timezone,
+      seriesGranularity,
+      currentOpts ?? baseOpts,
+    ),
+    comparisonRange
+      ? getOrderTimeSeriesInRange(
+          squareLocationId,
+          comparisonRange,
+          ctx.timezone,
+          seriesGranularity,
+          compOpts ?? baseOpts,
+        )
       : null,
   ]);
   return {
@@ -730,17 +841,24 @@ async function fetchLaborKpiTotals(
   periodType: string,
 ): Promise<LaborKpiTotals> {
   const [current, comp] = await Promise.all([
-    getLaborAndHoursTimeSeriesInRange(homebaseLocationId, dataRange, ctx.timezone, seriesGranularity, {
-      apiKey: ctx.homebaseApiKey ?? undefined,
+    laborSeriesForRange(
+      homebaseLocationId,
+      dataRange,
+      ctx.timezone,
+      seriesGranularity,
       periodType,
-    }),
+      ctx.homebaseApiKey ?? undefined,
+      ctx.locationMongoId ?? undefined,
+    ),
     comparisonRange
-      ? getLaborAndHoursTimeSeriesInRange(
+      ? laborSeriesForRange(
           homebaseLocationId,
           comparisonRange,
           ctx.timezone,
           seriesGranularity,
-          { apiKey: ctx.homebaseApiKey ?? undefined, periodType },
+          periodType,
+          ctx.homebaseApiKey ?? undefined,
+          ctx.locationMongoId ?? undefined,
         )
       : null,
   ]);

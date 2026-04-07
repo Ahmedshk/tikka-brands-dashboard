@@ -6,6 +6,7 @@ import { locationService } from '../../services/location.service';
 import type { RoleRow, RolePermissions, RoleLocationsResponse } from '../../types/rbac.types';
 import type { UserRow } from '../../types/userManagement.types';
 import type { LocationListItem } from '../../types';
+import { AnalogDatePickerField } from '../common/AnalogDatePickerField';
 import { ConfirmDialog } from '../modal/ConfirmDialog';
 import { FilterSelect } from '../common/FilterSelect';
 import { EditUserOverridesSection } from './EditUserOverridesSection';
@@ -14,7 +15,7 @@ import {
   resolveProfileImagePublicId,
   getSaveErrorMessage,
   getProfileAvatarContent,
-  formatToMmDdYyyy,
+  userRowStartDateToYmd,
 } from '../../utils/addUserModalHelpers';
 import { normalizeLocationsToIds } from '../../utils/addEditRoleModalHelpers';
 
@@ -53,8 +54,16 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
   const [additionalLocationsOpen, setAdditionalLocationsOpen] = useState(false);
   const [additionalPermissionsOpen, setAdditionalPermissionsOpen] = useState(false);
   const [startDate, setStartDate] = useState('');
+  const [pickerPopperContainer, setPickerPopperContainer] = useState<HTMLElement | null>(null);
+  const [pickerModalPanel, setPickerModalPanel] = useState<HTMLElement | null>(null);
+  const [pickerPaperWidth, setPickerPaperWidth] = useState(400);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
+
+  const setDialogEl = (el: HTMLDialogElement | null) => {
+    dialogRef.current = el;
+    setPickerPopperContainer(el);
+  };
 
   const isEdit = Boolean(initialUser?._id);
   const selectedRole = roleId ? roles.find((r) => r.id === roleId) : null;
@@ -94,7 +103,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
         setPermissionRemovals(null);
       }
       setLocationRemovals(initialUser.locationRemovals ?? []);
-      setStartDate(initialUser.startDate ? formatToMmDdYyyy(initialUser.startDate) : '');
+      setStartDate(userRowStartDateToYmd(initialUser.startDate));
     } else {
       setFirstName('');
       setLastName('');
@@ -118,6 +127,16 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
     roleService.list().then(setRoles).catch(() => setRoles([]));
     locationService.getAll().then(setLocations).catch(() => setLocations([]));
   }, [open, initialUser]);
+
+  useEffect(() => {
+    if (!open || !pickerModalPanel) return;
+    const el = pickerModalPanel;
+    const updateWidth = () => setPickerPaperWidth(el.getBoundingClientRect().width);
+    updateWidth();
+    const ro = new ResizeObserver(updateWidth);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open, pickerModalPanel]);
 
   useEffect(() => {
     if (!profileImageFile) {
@@ -231,7 +250,7 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
 
   return createPortal(
     <dialog
-      ref={dialogRef}
+      ref={setDialogEl}
       className="modal-full-viewport z-50 m-0 grid place-items-center border-0 bg-transparent p-4 outline-none [&::backdrop]:bg-black/50 [&::backdrop]:cursor-pointer"
       aria-labelledby="add-user-title"
       onClose={onClose}
@@ -249,7 +268,10 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
         >
           <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
         </button>
-        <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+        <div
+          ref={setPickerModalPanel}
+          className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden"
+        >
           <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
             <h2 id="add-user-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
               {isEdit ? 'Edit User' : 'Add User'}
@@ -351,19 +373,17 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
               placeholder="email@example.com"
             />
           </div>
-          <div>
-            <label htmlFor="user-start-date" className="block text-sm font-medium text-primary mb-1">
+          <div className="min-w-0">
+            <span id="user-start-date-label" className="block text-sm font-medium text-primary mb-1">
               Start date <span className="text-negative">*</span>
-            </label>
-            <input
-              id="user-start-date"
-              type="text"
+            </span>
+            <AnalogDatePickerField
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
-              placeholder="MM/DD/YYYY"
-              aria-label="Start date (MM/DD/YYYY)"
-              required
+              onChange={setStartDate}
+              pickerPaperWidth={pickerPaperWidth}
+              pickerPopperContainer={pickerPopperContainer}
+              pickerModalPanel={pickerModalPanel}
+              labelledBy="user-start-date-label"
             />
           </div>
           <div>

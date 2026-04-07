@@ -18,6 +18,8 @@ import kitchenPerformanceRoutes from "./kitchenPerformance.routes.js";
 import activityLogRoutes from "./activityLog.routes.js";
 import calendarRoutes from "./calendar.routes.js";
 import adobeSignWebhookRoutes from "./adobeSignWebhook.routes.js";
+import marketManWebhookRoutes from "./marketManWebhook.routes.js";
+import integrationSyncRoutes from "./integrationSync.routes.js";
 import {
   getSelfReviewByToken,
   getSelfReviewDocumentByToken,
@@ -35,6 +37,8 @@ router.get("/health", healthCheck);
 
 // Adobe Sign webhook (no auth — Adobe POSTs from their servers)
 router.use("/webhooks", adobeSignWebhookRoutes);
+// MarketMan order webhooks (no shared-secret verification)
+router.use("/webhooks", marketManWebhookRoutes);
 
 // Proxy image (no auth so img src works)
 router.get("/proxy/image/:userId", proxyProfileImage);
@@ -100,5 +104,8 @@ router.use("/activity-log", activityLogRoutes);
 
 // Calendar & event notification settings
 router.use("/calendar", calendarRoutes);
+
+// Integration data sync (admin)
+router.use("/integration-sync", integrationSyncRoutes);
 
 export default router;

@@ -24,6 +24,12 @@ const locationSchema = new Schema<LocationDocument>(
       required: true,
       trim: true,
     },
+    squareMerchantId: {
+      type: String,
+      required: false,
+      trim: true,
+      default: undefined,
+    },
     homebaseLocationId: {
       type: String,
       required: true,
@@ -45,6 +51,12 @@ const locationSchema = new Schema<LocationDocument>(
       default: undefined,
     },
     homebaseApiKeyEnc: {
+      type: String,
+      required: false,
+      default: undefined,
+    },
+    /** AES-GCM encrypted Square webhook signature key for this location (multi-Square apps). */
+    squareWebhookSignatureKeyEnc: {
       type: String,
       required: false,
       default: undefined,

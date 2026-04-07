@@ -131,6 +131,11 @@ export const navigationConfig: NavigationConfig = [
         path: "/dashboard/events-notifications-settings",
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
       },
+      {
+        label: "Data sync",
+        path: "/dashboard/data-sync-settings",
+        allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
+      },
     ],
   },
 ];

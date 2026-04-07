@@ -26,8 +26,9 @@ function getComparisonEndFromStart(
   periodType: SalesTrendPeriodType,
   customRangeDays?: number,
 ): string {
-  const start = new Date(startIso);
-  if (Number.isNaN(start.getTime())) return startIso;
+  // Do not use new Date(iso): yyyy-MM-dd is parsed as UTC midnight and formats as the prior local day in US TZs.
+  const start = parseISODateToLocal(startIso);
+  if (!start) return startIso;
   if (periodType === 'today') return startIso;
   if (periodType === 'last7days' || periodType === 'thisWeek') {
     return format(addDays(start, 6), 'yyyy-MM-dd');
@@ -195,7 +196,8 @@ export function ComparisonPeriodPicker({
     const s = parseISODateToLocal(period.periodStart);
     const e = parseISODateToLocal(period.periodEnd);
     if (!s || !e) return undefined;
-    return differenceInCalendarDays(e, s);
+    // Inclusive calendar span offset: same start/end → 0 → comparison auto end matches start.
+    return Math.max(0, differenceInCalendarDays(e, s));
   }, [periodType, period.periodStart, period.periodEnd]);
 
   const comparisonOptions = useMemo(() => {
@@ -225,7 +227,14 @@ export function ComparisonPeriodPicker({
         comparisonEnd: newEnd,
       });
     }
-  }, [periodType, customRangeDays]);
+  }, [
+    periodType,
+    customRangeDays,
+    autoEndDate,
+    value.comparisonType,
+    value.comparisonStart,
+    value.comparisonEnd,
+  ]);
 
   const open = Boolean(anchorEl);
   const isCustom = value.comparisonType === 'custom';

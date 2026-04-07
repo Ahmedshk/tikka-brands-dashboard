@@ -1,7 +1,9 @@
 import type { TimeRange } from "./businessHours.util.js";
-import { getLaborCostInRange } from "../services/homebase.service.js";
 import type { GoalService } from "../services/goal.service.js";
-import { getNetSalesInRange } from "../services/square.service.js";
+import {
+  getNetSalesDollarsInRangeFromCache,
+  getLaborCostInRangeFromCache,
+} from "../services/integrationCacheRead.service.js";
 import {
   getBusinessStartTimeRange,
   getTodayInTimezone,
@@ -73,21 +75,19 @@ function wrapLaborCostErr(label: string): (err: unknown) => null {
 }
 
 export async function fetchTodayOnlyKpis(
+  locationMongoId: string | undefined,
   location: LocationForKpi,
-  squareAccessToken: string | null,
-  homebaseApiKey: string | null,
   rangeToday: TimeRange,
   wantNetSales: boolean,
   wantLaborCost: boolean,
   laborCostGoal: number,
 ): Promise<TodayOnlyKpis> {
   let netSalesToday: number | null = null;
-  if (wantNetSales && location.squareLocationId?.trim()) {
+  if (wantNetSales && location.squareLocationId?.trim() && locationMongoId) {
     try {
-      netSalesToday = await getNetSalesInRange(
-        location.squareLocationId,
+      netSalesToday = await getNetSalesDollarsInRangeFromCache(
+        locationMongoId,
         rangeToday,
-        { accessToken: squareAccessToken ?? undefined },
       );
     } catch (err) {
       console.error(`${LOG_PREFIX} Square net sales error:`, err);
@@ -95,12 +95,15 @@ export async function fetchTodayOnlyKpis(
   }
 
   let laborCostToday: number | null = null;
-  if (wantLaborCost && location.homebaseLocationId?.trim()) {
+  if (
+    wantLaborCost &&
+    location.homebaseLocationId?.trim() &&
+    locationMongoId
+  ) {
     try {
-      laborCostToday = await getLaborCostInRange(
-        location.homebaseLocationId,
+      laborCostToday = await getLaborCostInRangeFromCache(
+        locationMongoId,
         rangeToday,
-        { apiKey: homebaseApiKey ?? undefined },
       );
     } catch (err) {
       console.error(`${LOG_PREFIX} Homebase labor cost error:`, err);
@@ -139,9 +142,8 @@ export async function fetchWeekToDateKpis(
   params: FetchWeekToDateKpisParams,
 ): Promise<WeekToDateKpis> {
   const {
+    locationMongoId,
     location,
-    squareAccessToken,
-    homebaseApiKey,
     rangeToday,
     rangeWeekToDate,
     wantNetSales,
@@ -152,27 +154,36 @@ export async function fetchWeekToDateKpis(
   const laborCostPromises: Promise<number | null>[] = [];
 
   if (wantNetSales && location.squareLocationId?.trim()) {
-    netSalesPromises.push(
-      getNetSalesInRange(location.squareLocationId, rangeToday, {
-        accessToken: squareAccessToken ?? undefined,
-      }).catch(wrapNetSalesErr("today")),
-      getNetSalesInRange(location.squareLocationId, rangeWeekToDate, {
-        accessToken: squareAccessToken ?? undefined,
-      }).catch(wrapNetSalesErr("WTD")),
-    );
+    if (locationMongoId) {
+      netSalesPromises.push(
+        getNetSalesDollarsInRangeFromCache(locationMongoId, rangeToday).catch(
+          wrapNetSalesErr("today"),
+        ),
+        getNetSalesDollarsInRangeFromCache(
+          locationMongoId,
+          rangeWeekToDate,
+        ).catch(wrapNetSalesErr("WTD")),
+      );
+    } else {
+      netSalesPromises.push(Promise.resolve(null), Promise.resolve(null));
+    }
   } else {
     netSalesPromises.push(Promise.resolve(null), Promise.resolve(null));
   }
 
   if (wantLaborCost && location.homebaseLocationId?.trim()) {
-    laborCostPromises.push(
-      getLaborCostInRange(location.homebaseLocationId, rangeToday, {
-        apiKey: homebaseApiKey ?? undefined,
-      }).catch(wrapLaborCostErr("today")),
-      getLaborCostInRange(location.homebaseLocationId, rangeWeekToDate, {
-        apiKey: homebaseApiKey ?? undefined,
-      }).catch(wrapLaborCostErr("WTD")),
-    );
+    if (locationMongoId) {
+      laborCostPromises.push(
+        getLaborCostInRangeFromCache(locationMongoId, rangeToday).catch(
+          wrapLaborCostErr("today"),
+        ),
+        getLaborCostInRangeFromCache(locationMongoId, rangeWeekToDate).catch(
+          wrapLaborCostErr("WTD"),
+        ),
+      );
+    } else {
+      laborCostPromises.push(Promise.resolve(null), Promise.resolve(null));
+    }
   } else {
     laborCostPromises.push(Promise.resolve(null), Promise.resolve(null));
   }

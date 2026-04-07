@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
-import { roleService } from '../services/role.service';
+import { trainingService, type TrainingRoleHierarchyRow } from '../services/training.service';
 import { getDescendantIds } from '../utils/hierarchyTreeHelpers';
-import type { RoleRow } from '../types/rbac.types';
 import type { RootState } from '../store/store';
 
 export interface TrainingHierarchyAllowed {
@@ -19,14 +18,14 @@ export interface TrainingHierarchyAllowed {
  */
 export function useTrainingHierarchyAllowed(): TrainingHierarchyAllowed {
   const user = useSelector((state: RootState) => state.auth.user);
-  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [roles, setRoles] = useState<TrainingRoleHierarchyRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    roleService
-      .list(true)
+    trainingService
+      .listRoleHierarchySnapshot(true)
       .then((list) => {
         if (!cancelled) setRoles(list);
       })
@@ -72,7 +71,7 @@ export function useTrainingHierarchyAllowed(): TrainingHierarchyAllowed {
     const descendantIds = getDescendantIds(currentRoleId, hierarchyMap);
     const allowedRoleIds = new Set<string>(descendantIds);
 
-    const roleById = new Map(roles.map((r) => [r.id!, r]));
+    const roleById = new Map(roles.map((r) => [r.id, r]));
     const allowedRoleNames = new Set(
       [...allowedRoleIds].map((id) => roleById.get(id)?.roleName).filter(Boolean) as string[]
     );

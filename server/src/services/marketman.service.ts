@@ -17,8 +17,21 @@ import {
   mergeActualTheoIntoResult,
   mergePendingOrdersIntoResult,
   filterResultByRequestedMetrics,
+  parseActualTheoApiResponse,
   type ActualTheoFetchers,
+  type ActualTheoValue,
 } from "../utils/marketmanKpiHelpers.js";
+import mongoose from "mongoose";
+import { MarketManActualTheoSnapshotModel } from "../models/marketmanActualTheoSnapshot.model.js";
+import { MarketManValidCountDatesModel } from "../models/marketmanValidCountDates.model.js";
+import { MarketManOrderCacheModel } from "../models/marketmanOrderCache.model.js";
+import {
+  marketManLazyActualTheoSyncDateKey,
+  marketManUtcDatePrefix,
+  parseMarketManUtcToDate,
+} from "../utils/marketmanUtcDateParse.util.js";
+import { isExternalDataCacheReadEnabled } from "../config/externalDataCache.config.js";
+import { upsertMarketManActualTheoSnapshot } from "./integrationCacheWrite.service.js";
 
 export interface VarianceItem {
   label: string;
@@ -74,6 +87,26 @@ export interface GetOrdersBySentDateResponse {
   ErrorCode?: string | null;
 }
 
+/** Row from POST /buyers/orders/GetCatalogItems (subset used for webhook enrichment). */
+export interface MarketManCatalogItem {
+  Name?: string;
+  PackQty?: number | null;
+  PacksPerCase?: number | null;
+  UOMName?: string;
+  UOMID?: number | null;
+  ProductCode?: string | number | null;
+  TaxLevelID?: number | null;
+  TaxValue?: number | null;
+  CatalogItemCode?: number | null;
+}
+
+export interface GetCatalogItemsResponse {
+  CatalogItems?: MarketManCatalogItem[];
+  IsSuccess?: boolean;
+  ErrorMessage?: string | null;
+  ErrorCode?: string | null;
+}
+
 export interface InventoryKPIsResult {
   currentFoodCost: number | null;
   inventoryValue: number | null;
@@ -87,10 +120,6 @@ export interface InventoryKPIsResult {
   countPeriodEnd?: string | null;
   pendingOrdersPeriodStart?: string | null;
   pendingOrdersPeriodEnd?: string | null;
-}
-
-function roundTo2(value: number): number {
-  return Math.round(value * 100) / 100;
 }
 
 function addDays(
@@ -120,7 +149,7 @@ function getEndOfDayUtc(
 /**
  * Get start and end of "today" in a given timezone as UTC Dates.
  */
-function getTodayUtcRange(timezone: string): { from: Date; to: Date } {
+export function getTodayUtcRange(timezone: string): { from: Date; to: Date } {
   const now = new Date();
   const { y, m, d } = getDatePartsInTz(now, timezone);
   const from = getStartOfDayUtc(y, m, d, timezone);
@@ -223,6 +252,7 @@ export async function getInventoryKPIs(
   pendingOrdersPeriod: PendingOrdersPeriod = "thisWeek",
   countPeriodStart?: string | null,
   countPeriodEnd?: string | null,
+  cacheLocationMongoId?: string | null,
 ): Promise<InventoryKPIsResult> {
   const result: InventoryKPIsResult = {
     currentFoodCost: null,
@@ -252,19 +282,37 @@ export async function getInventoryKPIs(
 
   await getMarketManToken();
 
-  const actualTheoPromise = needActualTheo
-    ? buildActualTheoPromise(buyerGuid, countPeriodStart, countPeriodEnd, {
+  const useCache =
+    Boolean(cacheLocationMongoId?.trim()) &&
+    isExternalDataCacheReadEnabled();
+  const actualTheoFetchers: ActualTheoFetchers = useCache
+    ? createMarketManLazyActualTheoFetchers(cacheLocationMongoId!.trim())
+    : {
         getValidCountDates,
         fetchActualTheoDataByDateRange,
-        fetchActualTheoDataForCountDate,
-      } as ActualTheoFetchers)
+      };
+
+  const actualTheoPromise = needActualTheo
+    ? buildActualTheoPromise(
+        buyerGuid,
+        countPeriodStart,
+        countPeriodEnd,
+        actualTheoFetchers,
+      )
     : Promise.resolve(null);
   const pendingOrdersPromise = needPendingOrders
-    ? fetchPendingOrdersByDeliveryDate(
-        buyerGuid,
-        timezone,
-        pendingOrdersPeriod,
-      )
+    ? useCache && cacheLocationMongoId
+      ? fetchPendingOrdersDeliveryFromCache(
+          cacheLocationMongoId.trim(),
+          buyerGuid,
+          timezone,
+          pendingOrdersPeriod,
+        )
+      : fetchPendingOrdersByDeliveryDate(
+          buyerGuid,
+          timezone,
+          pendingOrdersPeriod,
+        )
     : Promise.resolve(null);
 
   const [actualTheoResult, pendingOrdersResult] = await Promise.allSettled([
@@ -328,6 +376,121 @@ export async function getValidCountDates(buyerGuid: string): Promise<{
   }
 }
 
+/** Mongo only when cache reads are enabled; no live MarketMan call for this saved model. */
+export async function getValidCountDatesWithCacheFallback(
+  locationMongoId: string | undefined,
+  buyerGuid: string,
+): Promise<{ startDates: string[]; endDates: string[] } | null> {
+  if (locationMongoId?.trim() && isExternalDataCacheReadEnabled()) {
+    return getValidCountDatesFromMongo(locationMongoId.trim(), buyerGuid);
+  }
+  return getValidCountDates(buyerGuid);
+}
+
+async function getValidCountDatesFromMongo(
+  locationMongoId: string,
+  buyerGuid: string,
+): Promise<{ startDates: string[]; endDates: string[] } | null> {
+  const doc = await MarketManValidCountDatesModel.findOne({
+    locationId: new mongoose.Types.ObjectId(locationMongoId),
+    buyerGuid,
+  })
+    .sort({ fetchedAt: -1 })
+    .lean()
+    .exec();
+  if (!doc?.startDates?.length || !doc?.endDates?.length) return null;
+  return { startDates: doc.startDates, endDates: doc.endDates };
+}
+
+async function findActualTheoSnapshotForCountPeriod(
+  locationMongoId: string,
+  buyerGuid: string,
+  countStart: string,
+  countEnd: string,
+): Promise<{ raw: Record<string, unknown> } | null> {
+  const oid = new mongoose.Types.ObjectId(locationMongoId);
+  const startNorm = marketManUtcDatePrefix(
+    String(countStart).trim().replaceAll("-", "/"),
+  );
+  const endNorm = marketManUtcDatePrefix(
+    String(countEnd).trim().replaceAll("-", "/"),
+  );
+  const candidates = await MarketManActualTheoSnapshotModel.find({
+    locationId: oid,
+    buyerGuid,
+  })
+    .sort({ fetchedAt: -1 })
+    .limit(80)
+    .lean()
+    .exec();
+  for (const c of candidates) {
+    if (
+      marketManUtcDatePrefix(c.startDateUTC) === startNorm &&
+      marketManUtcDatePrefix(c.endDateUTC) === endNorm
+    ) {
+      return { raw: c.raw as Record<string, unknown> };
+    }
+  }
+  return null;
+}
+
+/**
+ * Inventory-food-cost path: read Mongo for this count period if present; otherwise
+ * call MarketMan, persist raw response, then parse. (Waste cost on that page comes
+ * from this same API.) No TTL on snapshots yet.
+ */
+function createMarketManLazyActualTheoFetchers(
+  locationMongoId: string,
+): ActualTheoFetchers {
+  return {
+    getValidCountDates: async (bg) =>
+      getValidCountDatesFromMongo(locationMongoId, bg),
+    fetchActualTheoDataByDateRange: async (bg, start, end) => {
+      const cached = await findActualTheoSnapshotForCountPeriod(
+        locationMongoId,
+        bg,
+        start,
+        end,
+      );
+      if (cached?.raw) {
+        return parseActualTheoApiResponse(cached.raw, start, end);
+      }
+      const raw = await fetchActualTheoRawByDateRange(bg, start, end);
+      if (raw) {
+        await upsertMarketManActualTheoSnapshot(
+          locationMongoId,
+          bg,
+          marketManLazyActualTheoSyncDateKey(start, end),
+          start,
+          end,
+          raw,
+        );
+      }
+      return parseActualTheoApiResponse(raw, start, end);
+    },
+  };
+}
+
+async function fetchActualTheoRawByDateRange(
+  buyerGuid: string,
+  countStart: string,
+  countEnd: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    return await marketManRequest<Record<string, unknown>>(
+      "/buyers/inventory/GetActualTheoDataByBuyer",
+      {
+        StartDateUTC: countStart,
+        EndDateUTC: countEnd,
+      },
+      buyerGuid,
+    );
+  } catch (err) {
+    console.error("[MarketMan] GetActualTheoDataByBuyer error:", err);
+    return null;
+  }
+}
+
 /**
  * Fetches GetActualTheoDataByBuyer for the given count start/end and returns
  * current food cost, inventory value, variance, and period for display.
@@ -336,235 +499,26 @@ async function fetchActualTheoDataByDateRange(
   buyerGuid: string,
   countStart: string,
   countEnd: string,
-): Promise<{
-  currentFoodCost: number | null;
-  inventoryValue: number | null;
-  wasteCost: number | null;
-  foodCostPercent: number | null;
-  theoreticalUsage: number | null;
-  theoreticalUsagePercent: number | null;
-  varianceItems: VarianceItem[];
-  countPeriodStart: string;
-  countPeriodEnd: string;
-}> {
-  try {
-    const data = await marketManRequest<{
-      ActualTheoDataRows?: Array<{
-        COGS?: number;
-        ClosingValue?: number;
-        ItemName?: string;
-        VarianceValue?: number;
-        TheoreticalUsageCost?: number;
-        ActualUsage?: number;
-        TheoreticalUsage?: number;
-        UOM?: string;
-      }>;
-      ActualTheoCategoriesTotalsRows?: Array<{
-        ActualUsage?: number;
-        ActualUsagePercent?: number;
-        TheoreticalUsage?: number;
-        TheoreticalUsagePercent?: number;
-        WasteValue?: number;
-      }>;
-    }>(
-      "/buyers/inventory/GetActualTheoDataByBuyer",
-      {
-        StartDateUTC: countStart,
-        EndDateUTC: countEnd,
-      },
-      buyerGuid,
-    );
-    if (!Array.isArray(data?.ActualTheoDataRows))
-      return {
-        currentFoodCost: null,
-        inventoryValue: null,
-        wasteCost: null,
-        foodCostPercent: null,
-        theoreticalUsage: null,
-        theoreticalUsagePercent: null,
-        varianceItems: [],
-        countPeriodStart: countStart,
-        countPeriodEnd: countEnd,
-      };
-    const categoryTotals = data.ActualTheoCategoriesTotalsRows;
-    const hasCategoryTotals =
-      Array.isArray(categoryTotals) && categoryTotals.length > 0;
-    const firstCategory = hasCategoryTotals ? categoryTotals[0] : undefined;
-    const currentFoodCost = roundTo2(
-      firstCategory?.ActualUsage == null
-        ? data.ActualTheoDataRows.reduce(
-            (s, row) => s + (Number(row.COGS) || 0),
-            0,
-          )
-        : Number(firstCategory.ActualUsage),
-    );
-    const wasteCost =
-      firstCategory?.WasteValue == null
-        ? null
-        : roundTo2(Number(firstCategory.WasteValue));
-    const rawPercent = firstCategory?.ActualUsagePercent;
-    const foodCostPercent =
-      rawPercent == null ? null : roundTo2(Number(rawPercent) * 100);
-    const theoreticalUsage =
-      firstCategory?.TheoreticalUsage == null
-        ? roundTo2(
-            data.ActualTheoDataRows.reduce(
-              (s, row) => s + (Number(row.TheoreticalUsageCost) || 0),
-              0,
-            ),
-          )
-        : roundTo2(Number(firstCategory.TheoreticalUsage));
-    const rawTheoPercent = firstCategory?.TheoreticalUsagePercent;
-    const theoreticalUsagePercent =
-      rawTheoPercent == null ? null : roundTo2(Number(rawTheoPercent) * 100);
-    const inventoryValue = roundTo2(
-      data.ActualTheoDataRows.reduce(
-        (s, row) => s + (Number(row.ClosingValue) || 0),
-        0,
-      ),
-    );
-    const varianceItems: VarianceItem[] = data.ActualTheoDataRows.map((row) => {
-      const item: VarianceItem = {
-        label: row.ItemName ?? "—",
-        varianceCost: roundTo2(Number(row.VarianceValue) || 0),
-      };
-      if (row.COGS != null) item.actualCost = roundTo2(Number(row.COGS));
-      if (row.TheoreticalUsageCost != null)
-        item.theoreticalCost = roundTo2(Number(row.TheoreticalUsageCost));
-      if (row.ActualUsage != null)
-        item.actualQuantity = Number(row.ActualUsage);
-      if (row.TheoreticalUsage != null)
-        item.theoreticalQuantity = Number(row.TheoreticalUsage);
-      if (row.UOM != null && String(row.UOM).trim() !== "")
-        item.uom = String(row.UOM).trim();
-      return item;
-    });
-    return {
-      currentFoodCost,
-      inventoryValue,
-      wasteCost,
-      foodCostPercent,
-      theoreticalUsage,
-      theoreticalUsagePercent,
-      varianceItems,
-      countPeriodStart: countStart,
-      countPeriodEnd: countEnd,
-    };
-  } catch (err) {
-    console.error("[MarketMan] GetActualTheoDataByBuyer error:", err);
-    return {
-      currentFoodCost: null,
-      inventoryValue: null,
-      wasteCost: null,
-      foodCostPercent: null,
-      theoreticalUsage: null,
-      theoreticalUsagePercent: null,
-      varianceItems: [],
-      countPeriodStart: countStart,
-      countPeriodEnd: countEnd,
-    };
-  }
-}
-
-/**
- * Fetches GetActualTheoDataByBuyer for the count period (auto-picked last two valid count dates)
- * and returns current food cost, inventory value, and the period start/end for display.
- */
-async function fetchActualTheoDataForCountDate(buyerGuid: string): Promise<{
-  currentFoodCost: number | null;
-  inventoryValue: number | null;
-  wasteCost: number | null;
-  foodCostPercent: number | null;
-  theoreticalUsage: number | null;
-  theoreticalUsagePercent: number | null;
-  varianceItems: VarianceItem[];
-  countPeriodStart: string | null;
-  countPeriodEnd: string | null;
-}> {
-  const validCountDates = await getValidCountDates(buyerGuid);
-  if (!validCountDates)
-    return {
-      currentFoodCost: null,
-      inventoryValue: null,
-      wasteCost: null,
-      foodCostPercent: null,
-      theoreticalUsage: null,
-      theoreticalUsagePercent: null,
-      varianceItems: [],
-      countPeriodStart: null,
-      countPeriodEnd: null,
-    };
-  const countEnd: string | null = validCountDates.endDates.at(-1) ?? null;
-  if (!countEnd)
-    return {
-      currentFoodCost: null,
-      inventoryValue: null,
-      wasteCost: null,
-      foodCostPercent: null,
-      theoreticalUsage: null,
-      theoreticalUsagePercent: null,
-      varianceItems: [],
-      countPeriodStart: null,
-      countPeriodEnd: null,
-    };
-  const startNotAfterEnd = validCountDates.startDates.filter(
-    (d) => d <= countEnd,
-  );
-  const countStart: string | null =
-    startNotAfterEnd.length > 0
-      ? ([...startNotAfterEnd].sort((a, b) => (a < b ? -1 : 1)).at(-1) ?? null)
-      : null;
-  if (!countStart)
-    return {
-      currentFoodCost: null,
-      inventoryValue: null,
-      wasteCost: null,
-      foodCostPercent: null,
-      theoreticalUsage: null,
-      theoreticalUsagePercent: null,
-      varianceItems: [],
-      countPeriodStart: null,
-      countPeriodEnd: null,
-    };
-  const result = await fetchActualTheoDataByDateRange(
+): Promise<ActualTheoValue> {
+  const raw = await fetchActualTheoRawByDateRange(
     buyerGuid,
     countStart,
     countEnd,
   );
-  return {
-    ...result,
-    countPeriodStart: result.countPeriodStart,
-    countPeriodEnd: result.countPeriodEnd,
-  };
-}
-
-async function fetchWeeklyWasteCost(
-  buyerGuid: string,
-  fromDate: string,
-  toDate: string,
-): Promise<number | null> {
-  try {
-    const data = await marketManRequest<{
-      Events?: Array<{ Cost?: number; Amount?: number; TotalCost?: number }>;
-      Items?: Array<{ Cost?: number; Amount?: number }>;
-    }>(
-      "/buyers/inventory/GetWasteEvents",
-      { StartDateUTC: fromDate, EndDateUTC: toDate },
-      buyerGuid,
-    );
-    let list: Array<{ Cost?: number; Amount?: number; TotalCost?: number }> =
-      [];
-    if (Array.isArray(data.Events)) list = data.Events;
-    else if (Array.isArray(data.Items)) list = data.Items;
-    const sum = list.reduce(
-      (s, e) => s + (Number(e.Cost ?? e.Amount ?? e.TotalCost) || 0),
-      0,
-    );
-    return sum > 0 ? sum : null;
-  } catch (err) {
-    console.error("[MarketMan] GetWasteEvents error:", err);
+  if (!raw) {
+    return {
+      currentFoodCost: null,
+      inventoryValue: null,
+      wasteCost: null,
+      foodCostPercent: null,
+      theoreticalUsage: null,
+      theoreticalUsagePercent: null,
+      varianceItems: [],
+      countPeriodStart: countStart,
+      countPeriodEnd: countEnd,
+    };
   }
-  return null;
+  return parseActualTheoApiResponse(raw, countStart, countEnd);
 }
 
 /** Format date-only yyyy/MM/dd from timezone-local (y, m, d) with m 0-based. */
@@ -573,11 +527,71 @@ function formatDateOnly(y: number, m: number, d: number): string {
 }
 
 /** Orders with OrderStatusUIName "Received" or containing "cancelled" are not pending. */
-function isReceivedOrCancelled(order: { OrderStatusUIName?: string }): boolean {
+export function marketManOrderIsTerminalForPending(order: {
+  OrderStatusUIName?: string;
+}): boolean {
   const s = String(order.OrderStatusUIName ?? "").toLowerCase();
   if (s === "received") return true;
   if (s.includes("cancelled")) return true;
   return false;
+}
+
+/** UTC window and MarketMan query params for pending-orders card (this week / last week). */
+export function getPendingOrdersDeliveryUtcWindow(
+  period: PendingOrdersPeriod,
+  timezone: string,
+): {
+  dateTimeFromUTC: string;
+  dateTimeToUTC: string;
+  periodStart: string;
+  periodEnd: string;
+} {
+  const range =
+    period === "lastWeek"
+      ? getLastWeekUtcRangeWithPeriod(timezone)
+      : getThisWeekThroughTodayUtcRange(timezone);
+  return {
+    dateTimeFromUTC: formatMarketManDateUtc(range.from),
+    dateTimeToUTC: formatMarketManDateUtc(range.to),
+    periodStart: range.periodStart,
+    periodEnd: range.periodEnd,
+  };
+}
+
+async function fetchPendingOrdersDeliveryFromCache(
+  locationMongoId: string,
+  buyerGuid: string,
+  timezone: string,
+  period: PendingOrdersPeriod,
+): Promise<{ count: number; periodStart: string; periodEnd: string } | null> {
+  const win = getPendingOrdersDeliveryUtcWindow(period, timezone);
+  const fromMs = parseMarketManUtcToDate(win.dateTimeFromUTC)?.getTime();
+  const toMs = parseMarketManUtcToDate(win.dateTimeToUTC)?.getTime();
+  if (fromMs == null || toMs == null) return null;
+
+  const oid = new mongoose.Types.ObjectId(locationMongoId);
+  const docs = await MarketManOrderCacheModel.find({
+    locationId: oid,
+    buyerGuid,
+    apiKind: "delivery",
+    businessDateAt: {
+      $gte: new Date(fromMs),
+      $lte: new Date(toMs),
+    },
+  })
+    .lean()
+    .exec();
+
+  let pending = 0;
+  for (const d of docs) {
+    const o = d.raw as MarketManOrder;
+    if (!marketManOrderIsTerminalForPending(o)) pending += 1;
+  }
+  return {
+    count: pending,
+    periodStart: win.periodStart,
+    periodEnd: win.periodEnd,
+  };
 }
 
 /**
@@ -592,29 +606,25 @@ async function fetchPendingOrdersByDeliveryDate(
   period: PendingOrdersPeriod = "thisWeek",
 ): Promise<{ count: number; periodStart: string; periodEnd: string } | null> {
   try {
-    const range =
-      period === "lastWeek"
-        ? getLastWeekUtcRangeWithPeriod(timezone)
-        : getThisWeekThroughTodayUtcRange(timezone);
-    const dateTimeFromUTC = formatMarketManDateUtc(range.from);
-    const dateTimeToUTC = formatMarketManDateUtc(range.to);
-
+    const win = getPendingOrdersDeliveryUtcWindow(period, timezone);
     const data = await marketManRequest<{
       Orders?: Array<{ OrderStatusUIName?: string }>;
     }>(
       "/buyers/orders/GetOrdersByDeliveryDate",
       {
-        DateTimeFromUTC: dateTimeFromUTC,
-        DateTimeToUTC: dateTimeToUTC,
+        DateTimeFromUTC: win.dateTimeFromUTC,
+        DateTimeToUTC: win.dateTimeToUTC,
       },
       buyerGuid,
     );
     const orders = Array.isArray(data.Orders) ? data.Orders : [];
-    const pendingCount = orders.filter((o) => !isReceivedOrCancelled(o)).length;
+    const pendingCount = orders.filter(
+      (o) => !marketManOrderIsTerminalForPending(o),
+    ).length;
     return {
       count: pendingCount,
-      periodStart: range.periodStart,
-      periodEnd: range.periodEnd,
+      periodStart: win.periodStart,
+      periodEnd: win.periodEnd,
     };
   } catch (err) {
     console.error("[MarketMan] GetOrdersByDeliveryDate error:", err);
@@ -897,4 +907,24 @@ export async function getOrdersBySentDate(
     buyerGuid,
   );
   return Array.isArray(data.Orders) ? data.Orders : [];
+}
+
+/**
+ * Buyer + vendor catalog (SKU / ProductCode mapping) for order line enrichment.
+ */
+export async function getMarketManCatalogItems(
+  buyerGuid: string,
+  vendorGuid: string,
+): Promise<MarketManCatalogItem[]> {
+  const data = await marketManRequest<GetCatalogItemsResponse>(
+    "/buyers/orders/GetCatalogItems",
+    { VendorGuid: vendorGuid.trim() },
+    buyerGuid.trim(),
+  );
+  if (!data.IsSuccess) {
+    throw new Error(
+      (data.ErrorMessage && data.ErrorMessage.trim()) || "GetCatalogItems failed",
+    );
+  }
+  return Array.isArray(data.CatalogItems) ? data.CatalogItems : [];
 }

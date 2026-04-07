@@ -4,6 +4,10 @@
  * See: GET /locations/{location_uuid}/timecards (start_date, end_date, date_filter=clock_in).
  */
 import type { TimeRange } from "../utils/businessHours.util.js";
+import {
+  logExternalApiResult,
+  truncateForExternalApiLog,
+} from "../utils/externalApiCallLog.util.js";
 import { computeLaborCostPerHourFromTimecards } from "../utils/homebaseLaborHelpers.js";
 import {
   getOrderedBucketsAndLabels,
@@ -151,25 +155,63 @@ async function homebasePublicFetch(
   const url = new URL(fullPath, HOMEBASE_PUBLIC_ORIGIN);
   Object.entries(searchParams).forEach(([k, v]) => url.searchParams.set(k, v));
 
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      Accept: "application/vnd.homebase-v1+json",
-    },
-  });
+  const op = "GET app.joinhomebase.com (public)";
+  const t0 = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        Accept: "application/vnd.homebase-v1+json",
+      },
+    });
+  } catch (e) {
+    const durationMs = Date.now() - t0;
+    logExternalApiResult("Homebase", op, {
+      outcome: "error",
+      durationMs,
+      path: url.pathname,
+      error: truncateForExternalApiLog(
+        e instanceof Error ? e.message : String(e),
+      ),
+    });
+    throw e;
+  }
+  const durationMs = Date.now() - t0;
 
   if (res.status === 429) {
     const body = await res.text();
+    logExternalApiResult("Homebase", op, {
+      outcome: "error",
+      durationMs,
+      httpStatus: 429,
+      path: url.pathname,
+      error: truncateForExternalApiLog(body || "429"),
+    });
     throw new Error(`Homebase API rate limit exceeded: ${body || "429"}`);
   }
 
   if (!res.ok) {
     const body = await res.text();
+    logExternalApiResult("Homebase", op, {
+      outcome: "error",
+      durationMs,
+      httpStatus: res.status,
+      path: url.pathname,
+      error: truncateForExternalApiLog(body || res.statusText),
+    });
     throw new Error(
       `Homebase API error ${res.status}: ${body || res.statusText}`,
     );
   }
+
+  logExternalApiResult("Homebase", op, {
+    outcome: "ok",
+    durationMs,
+    httpStatus: res.status,
+    path: url.pathname,
+  });
 
   return res;
 }

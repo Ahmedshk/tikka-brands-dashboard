@@ -59,6 +59,18 @@ export class RoleRepository {
       .exec() as RoleDocument[];
   }
 
+  /** Id, name, and hierarchy only — for training page without rbac-management. */
+  async findAllHierarchySnapshot(activeOnly = false): Promise<
+    Array<{ _id: Types.ObjectId; name: string; reportsTo: Types.ObjectId | null | undefined }>
+  > {
+    const query = activeOnly ? { isActive: true } : {};
+    return (await RoleModel.find(query)
+      .select("_id name reportsTo")
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec()) as Array<{ _id: Types.ObjectId; name: string; reportsTo: Types.ObjectId | null | undefined }>;
+  }
+
   async findByReportsTo(parentId: string): Promise<RoleDocument[]> {
     return await RoleModel.find({ reportsTo: new Types.ObjectId(parentId) })
       .populate("locationIds", "storeName")

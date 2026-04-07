@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { LocationService } from '../services/location.service.js';
 import {
   getInventoryKPIs,
-  getValidCountDates,
+  getValidCountDatesWithCacheFallback,
   getOrderTrackerRanges,
   getOrdersByDeliveryDate,
   getOrdersBySentDate,
@@ -10,6 +10,10 @@ import {
   type MarketManOrder,
   type OrderTrackerPeriodType,
 } from '../services/marketman.service.js';
+import { isExternalDataCacheReadEnabled } from '../config/externalDataCache.config.js';
+import {
+  loadMarketManOrdersFromOrderCacheByKindInRange,
+} from '../utils/inventoryOrderCacheRead.util.js';
 import type { OrderTrackerOrderDto } from '../types/inventory.types.js';
 import { NotFoundError } from '../utils/errors.util.js';
 import {
@@ -140,6 +144,8 @@ export const getInventoryKPIsHandler = async (
       typeof req.query.countPeriodEnd === 'string'
         ? req.query.countPeriodEnd.trim()
         : undefined;
+    const useCacheRead =
+      isExternalDataCacheReadEnabled() && Boolean(locationId.trim());
     const data = await getInventoryKPIs(
       buyerGuid,
       timezone,
@@ -147,6 +153,7 @@ export const getInventoryKPIsHandler = async (
       pendingOrdersPeriod,
       countPeriodStart,
       countPeriodEnd,
+      useCacheRead ? locationId : null,
     );
 
     res.status(200).json({
@@ -183,7 +190,10 @@ export const getValidCountDatesHandler = async (
       });
       return;
     }
-    const result = await getValidCountDates(buyerGuid);
+    const result = await getValidCountDatesWithCacheFallback(
+      locationId,
+      buyerGuid,
+    );
     if (!result) {
       res.status(200).json({
         success: true,
@@ -239,8 +249,49 @@ export const getOrdersHandler = async (
       periodEnd,
     );
 
+    const useOrderCache =
+      isExternalDataCacheReadEnabled() && Boolean(locationId.trim());
+
     let results: MarketManOrder[][];
-    if (apiType === 'both') {
+    if (useOrderCache) {
+      if (apiType === 'both') {
+        const range = ranges[0];
+        if (!range) {
+          res.status(400).json({
+            success: false,
+            message: 'Invalid order tracker period or range.',
+          });
+          return;
+        }
+        const [allDelivery, allSent] = await Promise.all([
+          loadMarketManOrdersFromOrderCacheByKindInRange(
+            locationId,
+            buyerGuid,
+            'delivery',
+            range,
+          ),
+          loadMarketManOrdersFromOrderCacheByKindInRange(
+            locationId,
+            buyerGuid,
+            'sent',
+            range,
+          ),
+        ]);
+        results = [allDelivery, allSent];
+      } else {
+        const kind = apiType === 'sent' ? 'sent' : 'delivery';
+        results = await Promise.all(
+          ranges.map((r) =>
+            loadMarketManOrdersFromOrderCacheByKindInRange(
+              locationId,
+              buyerGuid,
+              kind,
+              r,
+            ),
+          ),
+        );
+      }
+    } else if (apiType === 'both') {
       const range = ranges[0];
       if (!range) {
         res.status(400).json({

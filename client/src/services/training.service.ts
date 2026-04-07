@@ -5,6 +5,13 @@ import type { Training, TrainingDetail } from '../types/trainingReviews.types';
 
 const BASE = API_ENDPOINTS.TRAININGS;
 
+/** Minimal role row from GET /trainings/role-hierarchy (for hierarchy without rbac-management). */
+export interface TrainingRoleHierarchyRow {
+  id: string;
+  roleName: string;
+  reportsTo: string | null;
+}
+
 export interface TrainingModuleFilePayload {
   publicId: string;
   resourceType: 'image' | 'raw';
@@ -99,6 +106,22 @@ export const trainingService = {
       return [];
     }
     return res.data.data.trainings.map(toTraining);
+  },
+
+  async listRoleHierarchySnapshot(activeOnly = false): Promise<TrainingRoleHierarchyRow[]> {
+    const res = await api.get<
+      ApiResponse<{ roles: Array<{ id: string; name: string; reportsTo: string | null }> }>
+    >(`${BASE}/role-hierarchy`, {
+      params: activeOnly ? { activeOnly: 'true' } : undefined,
+    });
+    if (!res.data.success || !Array.isArray(res.data.data?.roles)) {
+      throw new Error(res.data.message ?? 'Failed to load role hierarchy');
+    }
+    return res.data.data.roles.map((r) => ({
+      id: r.id,
+      roleName: r.name,
+      reportsTo: r.reportsTo ?? null,
+    }));
   },
 
   async getById(id: string): Promise<TrainingDetail | null> {

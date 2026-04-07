@@ -218,6 +218,7 @@ export function CountDateRangePicker({
                 onChange={handleStartChange}
                 slots={startSlots}
                 showDaysOutsideCurrentMonth
+                disableHighlightToday
                 sx={{ width: '100%', maxWidth: '100%', }}
               />
             </LocalizationProvider>
@@ -232,6 +233,7 @@ export function CountDateRangePicker({
                 onChange={handleEndChange}
                 slots={endSlots}
                 showDaysOutsideCurrentMonth
+                disableHighlightToday
                 sx={{ width: '100%', maxWidth: '100%', }}
               />
             </LocalizationProvider>

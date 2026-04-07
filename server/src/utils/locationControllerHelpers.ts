@@ -33,6 +33,7 @@ export function buildUpdateLocationData(body: Record<string, unknown>): UpdateLo
     storeName,
     address,
     squareLocationId,
+    squareMerchantId,
     homebaseLocationId,
     timezone,
     businessStartTime,
@@ -40,6 +41,7 @@ export function buildUpdateLocationData(body: Record<string, unknown>): UpdateLo
     homebaseApiKey,
     logoId,
     marketManBuyerGuid,
+    squareWebhookSignatureKey,
   } = body;
 
   const squareTrim =
@@ -53,6 +55,10 @@ export function buildUpdateLocationData(body: Record<string, unknown>): UpdateLo
   if (address !== undefined) updateData.address = address as string;
   if (squareLocationId !== undefined)
     updateData.squareLocationId = squareLocationId as string;
+  if (squareMerchantId !== undefined) {
+    const s = typeof squareMerchantId === "string" ? squareMerchantId.trim() : "";
+    updateData.squareMerchantId = s === "" ? "" : s;
+  }
   if (homebaseLocationId !== undefined)
     updateData.homebaseLocationId = homebaseLocationId as string;
   if (timezone !== undefined) updateData.timezone = timezone as string;
@@ -63,6 +69,12 @@ export function buildUpdateLocationData(body: Record<string, unknown>): UpdateLo
   if (logoId !== undefined) updateData.logoId = normalizeLogoId(logoId);
   if (marketManBuyerGuid !== undefined)
     updateData.marketManBuyerGuid = normalizeMarketManBuyerGuid(marketManBuyerGuid);
+  if (Object.prototype.hasOwnProperty.call(body, "squareWebhookSignatureKey")) {
+    updateData.squareWebhookSignatureKey =
+      typeof squareWebhookSignatureKey === "string"
+        ? squareWebhookSignatureKey.trim()
+        : "";
+  }
 
   return updateData;
 }

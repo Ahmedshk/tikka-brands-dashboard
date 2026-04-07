@@ -1,7 +1,14 @@
 import { Request, Response, NextFunction } from "express";
-import { getTimecardsForDateRange } from "../services/homebase.service.js";
+import {
+  loadHomebaseTimecardsForMongoRange,
+  loadSquareOrdersForMongoRange,
+  createMongoCatalogBatchRetrieve,
+} from "../services/integrationCacheRead.service.js";
 import { LocationService } from "../services/location.service.js";
-import { getNetSalesByCategoryInRange } from "../services/square.service.js";
+import {
+  getNetSalesByCategoryInRange,
+  type SquareServiceOptions,
+} from "../services/square.service.js";
 import {
   getSalesTrendPeriodRange,
   getSalesTrendComparisonRange,
@@ -130,14 +137,16 @@ export const getSalesLaborKPIs = async (
         ? fetchSquareOrderStatsAndSources(
             squareLocationId,
             range,
-            squareAccessToken ?? undefined
+            squareAccessToken ?? undefined,
+            locationId,
           )
         : Promise.resolve(null),
       homebaseLocationId
         ? fetchLaborCostAndHours(
             homebaseLocationId,
             range,
-            homebaseApiKey ?? undefined
+            homebaseApiKey ?? undefined,
+            locationId,
           )
         : Promise.resolve(null),
     ]);
@@ -195,7 +204,8 @@ export const getHourlyBreakdown = async (
             range,
             timezone,
             businessStartTime,
-            squareAccessToken ?? undefined
+            squareAccessToken ?? undefined,
+            locationId,
           )
         : Promise.resolve(new Array<number>(24).fill(0)),
       homebaseLocationId
@@ -204,7 +214,8 @@ export const getHourlyBreakdown = async (
             range,
             timezone,
             businessStartTime,
-            homebaseApiKey ?? undefined
+            homebaseApiKey ?? undefined,
+            locationId,
           )
         : Promise.resolve(new Array<number>(24).fill(0)),
     ]);
@@ -243,6 +254,7 @@ export const getSalesTrend = async (
       withCreds.location,
       withCreds.squareAccessToken,
       withCreds.homebaseApiKey,
+      withCreds.location._id,
     );
     const result = await getSalesTrendData(ctx, params);
     res.status(200).json({ success: true, data: result.data });
@@ -270,6 +282,7 @@ export const getSalesTrendKpi = async (
       withCreds.location,
       withCreds.squareAccessToken,
       withCreds.homebaseApiKey,
+      withCreds.location._id,
     );
     const data = await getSalesTrendKpiData(ctx, params);
     res.status(200).json({ success: true, data });
@@ -326,15 +339,42 @@ export const getSalesByCategory = async (
 
     const squareLocationId = location.squareLocationId?.trim();
     const squareOptions = { accessToken: squareAccessToken ?? undefined };
+    const mongoId = location._id?.trim();
+    const useCategoryCache = Boolean(mongoId);
 
     let currentResult = { categories: [] as Array<{ name: string; netSalesCents: number }>, totalNetSalesCents: 0 };
     let comparisonResult = { categories: [] as Array<{ name: string; netSalesCents: number }>, totalNetSalesCents: 0 };
 
     if (squareLocationId) {
+      let currentCatOpts: SquareServiceOptions = squareOptions;
+      let comparisonCatOpts: SquareServiceOptions = squareOptions;
+      if (useCategoryCache && mongoId) {
+        const [currentOrders, comparisonOrders] = await Promise.all([
+          loadSquareOrdersForMongoRange(mongoId, dataRange),
+          comparisonRange
+            ? loadSquareOrdersForMongoRange(mongoId, comparisonRange)
+            : Promise.resolve([]),
+        ]);
+        const batchRetrieve = createMongoCatalogBatchRetrieve(mongoId);
+        currentCatOpts = {
+          ...squareOptions,
+          ordersOverride: currentOrders,
+          batchRetrieveCatalogOverride: batchRetrieve,
+        };
+        comparisonCatOpts = {
+          ...squareOptions,
+          ordersOverride: comparisonOrders,
+          batchRetrieveCatalogOverride: batchRetrieve,
+        };
+      }
       const [current, comp] = await Promise.all([
-        getNetSalesByCategoryInRange(squareLocationId, dataRange, squareOptions),
+        getNetSalesByCategoryInRange(squareLocationId, dataRange, currentCatOpts),
         comparisonRange
-          ? getNetSalesByCategoryInRange(squareLocationId, comparisonRange, squareOptions)
+          ? getNetSalesByCategoryInRange(
+              squareLocationId,
+              comparisonRange,
+              comparisonCatOpts,
+            )
           : Promise.resolve({ categories: [], totalNetSalesCents: 0 }),
       ]);
       currentResult = current;
@@ -366,7 +406,7 @@ export const getTimesheet = async (
     if (!withCreds) {
       throw new NotFoundError("Location not found");
     }
-    const { location, homebaseApiKey } = withCreds;
+    const { location } = withCreds;
 
     const timezone = location.timezone?.trim() || "UTC";
     const homebaseLocationId = location.homebaseLocationId?.trim();
@@ -379,12 +419,10 @@ export const getTimesheet = async (
     const startAt = getStartOfDayUtc(y, m, d, timezone).toISOString();
     const endAt = getEndOfDayUtc(y, m, d, timezone).toISOString();
 
-    const timecards = await getTimecardsForDateRange(
-      homebaseLocationId,
+    const timecards = await loadHomebaseTimecardsForMongoRange(locationId, {
       startAt,
       endAt,
-      { apiKey: homebaseApiKey ?? undefined },
-    );
+    });
 
     const rows = timecards.map((tc) => {
       const name = [tc.first_name, tc.last_name].filter(Boolean).join(" ") || "Unknown";

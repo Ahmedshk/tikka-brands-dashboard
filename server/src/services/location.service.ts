@@ -1,4 +1,6 @@
+import type { UpdateQuery } from 'mongoose';
 import { LocationRepository } from '../repositories/location.repository.js';
+import type { LocationDocument } from '../models/location.model.js';
 import { LogoService } from './logo.service.js';
 import {
   ILocation,
@@ -43,11 +45,22 @@ export class LocationService {
       storeName: data.storeName,
       address: data.address,
       squareLocationId: data.squareLocationId,
+      ...(data.squareMerchantId != null &&
+      String(data.squareMerchantId).trim() !== ""
+        ? { squareMerchantId: String(data.squareMerchantId).trim() }
+        : {}),
       homebaseLocationId: data.homebaseLocationId,
       timezone: data.timezone,
       businessStartTime: data.businessStartTime,
       squareAccessTokenEnc,
       homebaseApiKeyEnc,
+      ...(data.squareWebhookSignatureKey?.trim()
+        ? {
+            squareWebhookSignatureKeyEnc: encryptCredentials(
+              data.squareWebhookSignatureKey.trim(),
+            ),
+          }
+        : {}),
       ...(data.logoId && { logoId: data.logoId }),
       ...(data.marketManBuyerGuid != null && data.marketManBuyerGuid !== '' && { marketManBuyerGuid: data.marketManBuyerGuid.trim() }),
     } as Omit<ILocation, '_id' | 'createdAt' | 'updatedAt'>);
@@ -104,24 +117,63 @@ export class LocationService {
   }
 
   async update(id: string, data: UpdateLocationData): Promise<ILocationResponse> {
-    const { squareAccessToken, homebaseApiKey, ...rest } = data;
-    const updatePayload: Parameters<LocationRepository['updateById']>[1] = { ...rest };
+    const { squareAccessToken, homebaseApiKey, squareWebhookSignatureKey, ...rest } = data;
+    const $set: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(rest)) {
+      if (value !== undefined) $set[key] = value;
+    }
     const squareTrim = squareAccessToken?.trim();
     const homebaseTrim = homebaseApiKey?.trim();
     if (squareTrim) {
-      updatePayload.squareAccessTokenEnc = encryptCredentials(squareTrim);
+      $set.squareAccessTokenEnc = encryptCredentials(squareTrim);
     }
     if (homebaseTrim) {
-      updatePayload.homebaseApiKeyEnc = encryptCredentials(homebaseTrim);
+      $set.homebaseApiKeyEnc = encryptCredentials(homebaseTrim);
     }
     if (data.logoId !== undefined) {
-      (updatePayload as { logoId?: string | null }).logoId = data.logoId === null || data.logoId === '' ? null : data.logoId;
+      $set.logoId = data.logoId === null || data.logoId === '' ? null : data.logoId;
     }
-    const doc = await this.locationRepository.updateById(id, updatePayload);
+    const $unset: Record<string, 1> = {};
+    if (squareWebhookSignatureKey !== undefined) {
+      const w = squareWebhookSignatureKey.trim();
+      if (w === '') {
+        $unset.squareWebhookSignatureKeyEnc = 1;
+      } else {
+        $set.squareWebhookSignatureKeyEnc = encryptCredentials(w);
+      }
+    }
+    const updateQuery: UpdateQuery<LocationDocument> = {};
+    if (Object.keys($set).length > 0) updateQuery.$set = $set;
+    if (Object.keys($unset).length > 0) updateQuery.$unset = $unset;
+    if (Object.keys(updateQuery).length === 0) {
+      const existing = await this.locationRepository.findById(id);
+      if (!existing) {
+        throw new NotFoundError('Location not found');
+      }
+      return this.enrichWithLogo(this.toLocationResponse(existing), existing.logoId);
+    }
+    const doc = await this.locationRepository.updateById(id, updateQuery);
     if (!doc) {
       throw new NotFoundError('Location not found');
     }
     return this.enrichWithLogo(this.toLocationResponse(doc), doc.logoId);
+  }
+
+  /**
+   * All active Square webhook signature keys: optional legacy env key first, then each
+   * location's decrypted per-location key (for POST /api/webhooks/square verification).
+   */
+  async getAllSquareWebhookSignatureKeysForVerification(): Promise<string[]> {
+    const keys: string[] = [];
+    const globalKey = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY?.trim();
+    if (globalKey) keys.push(globalKey);
+    const docs = await this.locationRepository.findAll();
+    for (const d of docs) {
+      if (!d.squareWebhookSignatureKeyEnc) continue;
+      const k = decryptCredentials(d.squareWebhookSignatureKeyEnc);
+      if (k) keys.push(k);
+    }
+    return keys;
   }
 
   async delete(id: string): Promise<void> {
@@ -136,6 +188,7 @@ export class LocationService {
     storeName: string;
     address: string;
     squareLocationId: string;
+    squareMerchantId?: string;
     homebaseLocationId?: string;
     timezone?: string;
     businessStartTime?: string;
@@ -151,11 +204,15 @@ export class LocationService {
       storeName: doc.storeName,
       address: doc.address,
       squareLocationId: doc.squareLocationId,
+      ...(doc.squareMerchantId != null && doc.squareMerchantId !== ''
+        ? { squareMerchantId: doc.squareMerchantId }
+        : {}),
       homebaseLocationId: doc.homebaseLocationId ?? '',
       timezone: doc.timezone ?? '',
       businessStartTime: doc.businessStartTime ?? '00:00',
       hasSquareAccessToken: Boolean(doc.squareAccessTokenEnc),
       hasHomebaseApiKey: Boolean(doc.homebaseApiKeyEnc),
+      hasSquareWebhookSignatureKey: Boolean(doc.squareWebhookSignatureKeyEnc),
       ...(() => {
         const id = toLogoIdString(doc.logoId);
         return id == null ? {} : { logoId: id };

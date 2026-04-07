@@ -73,6 +73,8 @@ export interface Location {
   storeName: string;
   address: string;
   squareLocationId: string;
+  /** Square merchant id (webhook / multi-location mapping). */
+  squareMerchantId?: string;
   homebaseLocationId: string;
   timezone: string;
   businessStartTime: string;
@@ -80,6 +82,8 @@ export interface Location {
   hasSquareAccessToken?: boolean;
   /** True when location has a stored Homebase API key (value never sent to client). */
   hasHomebaseApiKey?: boolean;
+  /** True when location has a stored Square webhook signature key (value never sent to client). */
+  hasSquareWebhookSignatureKey?: boolean;
   /** Reference to logo document; when set, logoDataUrl is populated for display. */
   logoId?: string;
   /** Data URL for the location logo (populated by API when logoId is set). */

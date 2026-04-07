@@ -93,6 +93,9 @@ export async function submitLocationForm(params: {
   homebaseApiKey: string;
   updateSquareCredentials: boolean;
   updateHomebaseCredentials: boolean;
+  hasStoredSquareWebhookSignature: boolean;
+  updateSquareWebhookSignature: boolean;
+  squareWebhookSignatureKey: string;
   logoId: string | null;
 }): Promise<Location | undefined> {
   const {
@@ -111,8 +114,18 @@ export async function submitLocationForm(params: {
     homebaseApiKey,
     updateSquareCredentials,
     updateHomebaseCredentials,
+    hasStoredSquareWebhookSignature,
+    updateSquareWebhookSignature,
+    squareWebhookSignatureKey,
     logoId,
   } = params;
+  const trimmedWebhookKey = squareWebhookSignatureKey.trim();
+  const squareWebhookPayload =
+    updateSquareWebhookSignature
+      ? { squareWebhookSignatureKey: trimmedWebhookKey }
+      : !hasStoredSquareWebhookSignature && trimmedWebhookKey !== ''
+        ? { squareWebhookSignatureKey: trimmedWebhookKey }
+        : {};
   if (isEdit && editLocation) {
     const updatePayload = {
       storeName: storeName.trim(),
@@ -125,6 +138,7 @@ export async function submitLocationForm(params: {
       marketManBuyerGuid: marketManBuyerGuid.trim(),
       ...((updateSquareCredentials || !hasStoredSquare) && squareAccessToken.trim() && { squareAccessToken: squareAccessToken.trim() }),
       ...((updateHomebaseCredentials || !hasStoredHomebase) && homebaseApiKey.trim() && { homebaseApiKey: homebaseApiKey.trim() }),
+      ...squareWebhookPayload,
     };
     return locationService.update(editLocation._id, updatePayload);
   }
@@ -139,6 +153,7 @@ export async function submitLocationForm(params: {
     homebaseApiKey: homebaseApiKey.trim(),
     marketManBuyerGuid: marketManBuyerGuid.trim(),
     ...(logoId ? { logoId } : {}),
+    ...(trimmedWebhookKey !== '' ? { squareWebhookSignatureKey: trimmedWebhookKey } : {}),
   });
   return undefined;
 }

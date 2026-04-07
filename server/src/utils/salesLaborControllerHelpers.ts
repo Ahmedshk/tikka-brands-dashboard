@@ -2,17 +2,15 @@ import type { Response } from "express";
 import { assertCanAccessMetrics, type RolePermissions } from "../config/kpi-metrics.config.js";
 import { ForbiddenError } from "./errors.util.js";
 import {
-  getLaborCostInRange,
-  getTotalHoursInRange,
-  getLaborCostPerHourInRange,
-} from "../services/homebase.service.js";
-import {
-  getOrderStatsAndSourcesInRange,
-  searchOrdersInRange,
-} from "../services/square.service.js";
+  getOrderStatsAndSourcesFromCache,
+  getLaborCostInRangeFromCache,
+  getTotalHoursInRangeFromCache,
+  fetchHourlyNetSalesCentsBySlotFromCache,
+  fetchHourlyLaborCostPerHourFromCache,
+} from "../services/integrationCacheRead.service.js";
 import type { SalesLaborKPIsData } from "../types/salesLabor.types.js";
 import type { TimeRange } from "./businessHours.util.js";
-import { getBusinessStartTimeRange, getBusinessHourIndex } from "./timezone.util.js";
+import { getBusinessStartTimeRange } from "./timezone.util.js";
 
 const LOG_PREFIX = "[Sales Labor]";
 
@@ -91,31 +89,45 @@ export function getSalesLaborTimeRange(location: LocationForSalesLabor): TimeRan
  * Fetches Square order stats and sources; returns null on error.
  */
 export async function fetchSquareOrderStatsAndSources(
-  squareLocationId: string,
+  _squareLocationId: string,
   range: TimeRange,
-  accessToken: string | undefined
+  _accessToken: string | undefined,
+  cacheLocationId?: string,
 ): Promise<{
   actualTotalSales: number;
   transactionCount: number;
   totalDiscounts: number;
   totalRefunds: number;
   totalRefundCount: number;
-  sourcesOfSales: Awaited<ReturnType<typeof getOrderStatsAndSourcesInRange>>["sourcesOfSales"];
+  sourcesOfSales: NonNullable<
+    Awaited<ReturnType<typeof getOrderStatsAndSourcesFromCache>>
+  >["sourcesOfSales"];
 } | null> {
   try {
-    const { orderStats, sourcesOfSales } = await getOrderStatsAndSourcesInRange(
-      squareLocationId,
+    if (!cacheLocationId?.trim()) {
+      return {
+        actualTotalSales: 0,
+        transactionCount: 0,
+        totalDiscounts: 0,
+        totalRefunds: 0,
+        totalRefundCount: 0,
+        sourcesOfSales: [],
+      };
+    }
+    const cached = await getOrderStatsAndSourcesFromCache(
+      cacheLocationId.trim(),
       range,
-      { accessToken }
     );
-    return {
-      actualTotalSales: orderStats.netSalesCents / 100,
-      transactionCount: orderStats.orderCount,
-      totalDiscounts: orderStats.totalDiscountCents / 100,
-      totalRefunds: orderStats.totalRefundCents / 100,
-      totalRefundCount: orderStats.refundCount,
-      sourcesOfSales,
-    };
+    return (
+      cached ?? {
+        actualTotalSales: 0,
+        transactionCount: 0,
+        totalDiscounts: 0,
+        totalRefunds: 0,
+        totalRefundCount: 0,
+        sourcesOfSales: [],
+      }
+    );
   } catch (err) {
     console.error(`${LOG_PREFIX} Square order stats error:`, err);
     return null;
@@ -126,15 +138,19 @@ export async function fetchSquareOrderStatsAndSources(
  * Fetches labor cost and total hours; returns null on error.
  */
 export async function fetchLaborCostAndHours(
-  homebaseLocationId: string,
+  _homebaseLocationId: string,
   range: TimeRange,
-  apiKey: string | undefined
+  _apiKey: string | undefined,
+  cacheLocationId?: string,
 ): Promise<{ laborCost: number; totalHours: number } | null> {
   try {
-    const homebaseOptions = { apiKey };
+    if (!cacheLocationId?.trim()) {
+      return { laborCost: 0, totalHours: 0 };
+    }
+    const id = cacheLocationId.trim();
     const [laborCost, totalHours] = await Promise.all([
-      getLaborCostInRange(homebaseLocationId, range, homebaseOptions),
-      getTotalHoursInRange(homebaseLocationId, range, homebaseOptions),
+      getLaborCostInRangeFromCache(id, range),
+      getTotalHoursInRangeFromCache(id, range),
     ]);
     return { laborCost, totalHours };
   } catch (err) {
@@ -240,48 +256,46 @@ export function buildHourlyBreakdownLabels(businessStartTime: string): string[] 
 }
 
 export async function fetchHourlyNetSalesCentsBySlot(
-  squareLocationId: string,
+  _squareLocationId: string,
   range: TimeRange,
   timezone: string,
   businessStartTime: string,
-  accessToken: string | undefined
+  _accessToken: string | undefined,
+  cacheLocationId?: string,
 ): Promise<number[]> {
-  const netSalesCentsBySlot = new Array<number>(24).fill(0);
-  try {
-    const orders = await searchOrdersInRange(squareLocationId, range, {
-      accessToken,
-    });
-    for (const order of orders) {
-      const slot = getBusinessHourIndex(
-        order.created_at,
-        timezone,
-        businessStartTime
-      );
-      if (slot >= 0 && slot < 24) {
-        netSalesCentsBySlot[slot] =
-          (netSalesCentsBySlot[slot] ?? 0) + order.amountCents;
-      }
-    }
-  } catch (err) {
-    console.error(`${LOG_PREFIX} Square hourly orders error:`, err);
+  if (!cacheLocationId?.trim()) {
+    return new Array<number>(24).fill(0);
   }
-  return netSalesCentsBySlot;
-}
-
-export async function fetchHourlyLaborCostPerHour(
-  homebaseLocationId: string,
-  range: TimeRange,
-  timezone: string,
-  businessStartTime: string,
-  apiKey: string | undefined
-): Promise<number[]> {
   try {
-    return await getLaborCostPerHourInRange(
-      homebaseLocationId,
+    return fetchHourlyNetSalesCentsBySlotFromCache(
+      cacheLocationId.trim(),
       range,
       timezone,
       businessStartTime,
-      { apiKey }
+    );
+  } catch (err) {
+    console.error(`${LOG_PREFIX} Square hourly orders error:`, err);
+    return new Array<number>(24).fill(0);
+  }
+}
+
+export async function fetchHourlyLaborCostPerHour(
+  _homebaseLocationId: string,
+  range: TimeRange,
+  timezone: string,
+  businessStartTime: string,
+  _apiKey: string | undefined,
+  cacheLocationId?: string,
+): Promise<number[]> {
+  if (!cacheLocationId?.trim()) {
+    return new Array<number>(24).fill(0);
+  }
+  try {
+    return fetchHourlyLaborCostPerHourFromCache(
+      cacheLocationId.trim(),
+      range,
+      timezone,
+      businessStartTime,
     );
   } catch (err) {
     console.error(`${LOG_PREFIX} Homebase hourly labor error:`, err);

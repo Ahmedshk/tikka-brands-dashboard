@@ -61,4 +61,9 @@ export const API_ENDPOINTS = {
     DASHBOARD: "/reviews/dashboard",
     SETTINGS: "/reviews/settings",
   },
+  INTEGRATION_SYNC: {
+    RUN: "/integration-sync/run",
+    RUN_ALL_TODAY: "/integration-sync/run-all-today",
+    LOGS: "/integration-sync/logs",
+  },
 } as const;

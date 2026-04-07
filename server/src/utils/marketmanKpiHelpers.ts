@@ -111,7 +111,151 @@ export interface ActualTheoFetchers {
     countStart: string,
     countEnd: string,
   ) => Promise<ActualTheoValue>;
-  fetchActualTheoDataForCountDate: (buyerGuid: string) => Promise<ActualTheoValue>;
+}
+
+function roundTo2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Parse GetActualTheoDataByBuyer JSON (same shape as live API) into KPI fields.
+ */
+export function parseActualTheoApiResponse(
+  data: unknown,
+  countStart: string,
+  countEnd: string,
+): ActualTheoValue {
+  const d = data as {
+    ActualTheoDataRows?: Array<{
+      COGS?: number;
+      ClosingValue?: number;
+      ItemName?: string;
+      VarianceValue?: number;
+      TheoreticalUsageCost?: number;
+      ActualUsage?: number;
+      TheoreticalUsage?: number;
+      UOM?: string;
+    }>;
+    ActualTheoCategoriesTotalsRows?: Array<{
+      ActualUsage?: number;
+      ActualUsagePercent?: number;
+      TheoreticalUsage?: number;
+      TheoreticalUsagePercent?: number;
+      WasteValue?: number;
+    }>;
+  } | null;
+
+  if (!Array.isArray(d?.ActualTheoDataRows)) {
+    return {
+      currentFoodCost: null,
+      inventoryValue: null,
+      wasteCost: null,
+      foodCostPercent: null,
+      theoreticalUsage: null,
+      theoreticalUsagePercent: null,
+      varianceItems: [],
+      countPeriodStart: countStart,
+      countPeriodEnd: countEnd,
+    };
+  }
+  const categoryTotals = d.ActualTheoCategoriesTotalsRows;
+  const hasCategoryTotals =
+    Array.isArray(categoryTotals) && categoryTotals.length > 0;
+  const firstCategory = hasCategoryTotals ? categoryTotals[0] : undefined;
+  const currentFoodCost = roundTo2(
+    firstCategory?.ActualUsage == null
+      ? d.ActualTheoDataRows.reduce((s, row) => s + (Number(row.COGS) || 0), 0)
+      : Number(firstCategory.ActualUsage),
+  );
+  const wasteCost =
+    firstCategory?.WasteValue == null
+      ? null
+      : roundTo2(Number(firstCategory.WasteValue));
+  const rawPercent = firstCategory?.ActualUsagePercent;
+  const foodCostPercent =
+    rawPercent == null ? null : roundTo2(Number(rawPercent) * 100);
+  const theoreticalUsage =
+    firstCategory?.TheoreticalUsage == null
+      ? roundTo2(
+          d.ActualTheoDataRows.reduce(
+            (s, row) => s + (Number(row.TheoreticalUsageCost) || 0),
+            0,
+          ),
+        )
+      : roundTo2(Number(firstCategory.TheoreticalUsage));
+  const rawTheoPercent = firstCategory?.TheoreticalUsagePercent;
+  const theoreticalUsagePercent =
+    rawTheoPercent == null ? null : roundTo2(Number(rawTheoPercent) * 100);
+  const inventoryValue = roundTo2(
+    d.ActualTheoDataRows.reduce(
+      (s, row) => s + (Number(row.ClosingValue) || 0),
+      0,
+    ),
+  );
+  const varianceItems: ActualTheoValue["varianceItems"] =
+    d.ActualTheoDataRows.map((row) => {
+      const item: ActualTheoValue["varianceItems"][number] = {
+        label: row.ItemName ?? "—",
+        varianceCost: roundTo2(Number(row.VarianceValue) || 0),
+      };
+      if (row.COGS != null) item.actualCost = roundTo2(Number(row.COGS));
+      if (row.TheoreticalUsageCost != null)
+        item.theoreticalCost = roundTo2(Number(row.TheoreticalUsageCost));
+      if (row.ActualUsage != null) item.actualQuantity = Number(row.ActualUsage);
+      if (row.TheoreticalUsage != null)
+        item.theoreticalQuantity = Number(row.TheoreticalUsage);
+      if (row.UOM != null && String(row.UOM).trim() !== "")
+        item.uom = String(row.UOM).trim();
+      return item;
+    });
+  return {
+    currentFoodCost,
+    inventoryValue,
+    wasteCost,
+    foodCostPercent,
+    theoreticalUsage,
+    theoreticalUsagePercent,
+    varianceItems,
+    countPeriodStart: countStart,
+    countPeriodEnd: countEnd,
+  };
+}
+
+function emptyActualTheoValue(): ActualTheoValue {
+  return {
+    currentFoodCost: null,
+    inventoryValue: null,
+    wasteCost: null,
+    foodCostPercent: null,
+    theoreticalUsage: null,
+    theoreticalUsagePercent: null,
+    varianceItems: [],
+    countPeriodStart: null,
+    countPeriodEnd: null,
+  };
+}
+
+/**
+ * Resolve latest valid count start/end (same rules as live MarketMan flow) and fetch actual/theo.
+ */
+export async function fetchActualTheoForDefaultCountPeriod(
+  buyerGuid: string,
+  f: Pick<
+    ActualTheoFetchers,
+    "getValidCountDates" | "fetchActualTheoDataByDateRange"
+  >,
+): Promise<ActualTheoValue> {
+  const validCountDates = await f.getValidCountDates(buyerGuid);
+  if (!validCountDates) return emptyActualTheoValue();
+  const countEnd: string | null = validCountDates.endDates.at(-1) ?? null;
+  if (!countEnd) return emptyActualTheoValue();
+  const startNotAfterEnd = validCountDates.startDates.filter((d) => d <= countEnd);
+  const countStart: string | null =
+    startNotAfterEnd.length > 0
+      ? ([...startNotAfterEnd].sort((a, b) => (a < b ? -1 : 1)).at(-1) ?? null)
+      : null;
+  if (!countStart) return emptyActualTheoValue();
+  return f.fetchActualTheoDataByDateRange(buyerGuid, countStart, countEnd);
 }
 
 /**
@@ -130,7 +274,7 @@ export async function buildActualTheoPromise(
     String(countPeriodEnd).trim() !== "";
 
   if (!hasCountPeriodOverride) {
-    return fetchers.fetchActualTheoDataForCountDate(buyerGuid);
+    return fetchActualTheoForDefaultCountPeriod(buyerGuid, fetchers);
   }
 
   const validCountDates = await fetchers.getValidCountDates(buyerGuid);
@@ -145,5 +289,5 @@ export async function buildActualTheoPromise(
   if (validCountDates && startValid && endValid && orderValid) {
     return fetchers.fetchActualTheoDataByDateRange(buyerGuid, startNorm, endNorm);
   }
-  return fetchers.fetchActualTheoDataForCountDate(buyerGuid);
+  return fetchActualTheoForDefaultCountPeriod(buyerGuid, fetchers);
 }

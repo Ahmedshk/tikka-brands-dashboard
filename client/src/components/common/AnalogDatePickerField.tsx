@@ -36,9 +36,9 @@ function parseYmdToDate(ymd: string): Date | null {
   return isValid(d) ? d : null;
 }
 
-/** Same chevron as `Dropdown` time fields (navbar-style). */
-const DatePickerChevronIcon = forwardRef<SVGSVGElement, SVGProps<SVGSVGElement>>(
-  function DatePickerChevronIcon(props, ref) {
+/** Calendar outline for the open-picker control (matches stroke weight of prior chevron). */
+const DatePickerCalendarIcon = forwardRef<SVGSVGElement, SVGProps<SVGSVGElement>>(
+  function DatePickerCalendarIcon(props, ref) {
     return (
       <svg
         ref={ref}
@@ -49,7 +49,10 @@ const DatePickerChevronIcon = forwardRef<SVGSVGElement, SVGProps<SVGSVGElement>>
         className="w-4 h-4 shrink-0"
         {...props}
       >
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+        <line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+        <line x1="8" y1="2" x2="8" y2="6" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+        <line x1="3" y1="10" x2="21" y2="10" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
       </svg>
     );
   },
@@ -92,7 +95,7 @@ export function AnalogDatePickerField({
           format="MM/dd/yyyy"
           minDate={minDate}
           value={valueDate}
-          slots={{ openPickerIcon: DatePickerChevronIcon }}
+          slots={{ openPickerIcon: DatePickerCalendarIcon }}
           onChange={(date) => {
             if (date && isValid(date)) {
               onChange(format(date, 'yyyy-MM-dd'));

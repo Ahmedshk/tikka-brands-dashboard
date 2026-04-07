@@ -7,7 +7,7 @@ const SOCKET_URL = (() => {
   try {
     return new URL(import.meta.env.VITE_API_BASE_URL as string).origin;
   } catch {
-    return window.location.origin;
+    return globalThis.location.origin;
   }
 })();
 
@@ -27,8 +27,11 @@ export function connectSocket(token: string): void {
   });
 
   socket.on("notification:new", (notification) => {
+    const alreadyHave = store
+      .getState()
+      .notification.notifications.some((n) => n._id === notification._id);
     store.dispatch(addNotification(notification));
-    store.dispatch(incrementUnreadCount());
+    if (!alreadyHave) store.dispatch(incrementUnreadCount());
     showInAppNotificationToast(notification);
   });
 

@@ -29,6 +29,7 @@ export const createLocation = async (
       storeName,
       address,
       squareLocationId,
+      squareMerchantId,
       homebaseLocationId,
       timezone,
       businessStartTime,
@@ -36,11 +37,17 @@ export const createLocation = async (
       homebaseApiKey,
       logoId,
       marketManBuyerGuid,
+      squareWebhookSignatureKey,
     } = req.body;
     const location = await locationService.create({
       storeName,
       address,
       squareLocationId,
+      ...(squareMerchantId != null &&
+      typeof squareMerchantId === "string" &&
+      squareMerchantId.trim() !== ""
+        ? { squareMerchantId: squareMerchantId.trim() }
+        : {}),
       homebaseLocationId,
       timezone,
       businessStartTime,
@@ -48,6 +55,10 @@ export const createLocation = async (
       homebaseApiKey,
       ...(logoId != null && logoId !== '' && { logoId: String(logoId).trim() }),
       marketManBuyerGuid: typeof marketManBuyerGuid === 'string' ? marketManBuyerGuid.trim() : '',
+      ...(typeof squareWebhookSignatureKey === "string" &&
+      squareWebhookSignatureKey.trim() !== ""
+        ? { squareWebhookSignatureKey: squareWebhookSignatureKey.trim() }
+        : {}),
     });
     res.status(201).json({
       success: true,

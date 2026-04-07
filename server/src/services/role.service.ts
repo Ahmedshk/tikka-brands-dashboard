@@ -29,6 +29,18 @@ export class RoleService {
     return docs.map((d) => this.toRole(d));
   }
 
+  /** Minimal role rows for training hierarchy (no permissions or locations). */
+  async listHierarchySnapshot(
+    activeOnly = false
+  ): Promise<Array<{ id: string; name: string; reportsTo: string | null }>> {
+    const docs = await this.roleRepository.findAllHierarchySnapshot(activeOnly);
+    return docs.map((d) => ({
+      id: d._id.toString(),
+      name: d.name,
+      reportsTo: d.reportsTo != null ? d.reportsTo.toString() : null,
+    }));
+  }
+
   async getById(id: string): Promise<IRole | null> {
     const doc = await this.roleRepository.findById(id);
     return doc ? this.toRole(doc) : null;

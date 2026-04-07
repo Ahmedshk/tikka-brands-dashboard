@@ -16,10 +16,20 @@ import {
   type OrderInRange,
 } from "../utils/squareOrderSearchHelpers.js";
 import {
+  getSquareOrderStateFromPayload,
+  isSquareOrderStateCanceled,
+  filterSquareOrdersForDashboardDisplay,
+  squareTendersListHasSuccessfulPayment,
+} from "../utils/squareOrderCacheHelpers.js";
+import {
   getOrderedBucketsAndLabels,
   getBucketKeyForDate,
   type SalesTrendGranularity,
 } from "../utils/homebaseOrderedBuckets.util.js";
+import {
+  logExternalApiResult,
+  truncateForExternalApiLog,
+} from "../utils/externalApiCallLog.util.js";
 
 const SQUARE_BASE = "https://connect.squareup.com";
 
@@ -142,11 +152,11 @@ interface SquareOrderLineItem {
   }>;
 }
 
-interface SquareOrder {
+export interface SquareOrder {
   id?: string;
   created_at?: string;
   updated_at?: string;
-  /** Order state (e.g. OPEN, COMPLETED, CANCELED). CANCELED orders are excluded from net sales. */
+  /** Order state (e.g. OPEN, COMPLETED, CANCELED). CANCELED is excluded from net sales (see `isOrderCountedForNetSales`). */
   state?: string;
   total_money?: Money;
   total_discount_money?: Money;
@@ -254,6 +264,10 @@ export interface SquareServiceOptions {
   accessToken?: string | undefined;
   /** Used for label formatting: last52weeks = month+year on all monthly; daily day-name when not today/last52weeks/thisYear */
   periodType?: string | undefined;
+  /** Skip SearchOrders when provided (e.g. Mongo-backed orders). */
+  ordersOverride?: SquareOrder[] | undefined;
+  /** Resolve catalog chunks from DB or another source instead of Square batch-retrieve. */
+  batchRetrieveCatalogOverride?: BatchRetrieveCatalogFn;
 }
 
 function resolveAccessToken(override?: string): string {
@@ -334,24 +348,66 @@ export async function getPaymentById(
   options?: SquareServiceOptions,
 ): Promise<SquarePaymentDetails | null> {
   const token = resolveAccessToken(options?.accessToken);
-  const res = await fetch(
-    `${SQUARE_BASE}/v2/payments/${encodeURIComponent(paymentId)}`,
-    {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
+  const op = "GET /v2/payments/{id}";
+  const t0 = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(
+      `${SQUARE_BASE}/v2/payments/${encodeURIComponent(paymentId)}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    },
-  );
+    );
+  } catch (e) {
+    const durationMs = Date.now() - t0;
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      error: truncateForExternalApiLog(
+        e instanceof Error ? e.message : String(e),
+      ),
+    });
+    throw e;
+  }
+  const durationMs = Date.now() - t0;
   if (!res.ok) {
-    if (res.status === 404) return null;
+    if (res.status === 404) {
+      logExternalApiResult("Square", op, {
+        outcome: "ok",
+        durationMs,
+        httpStatus: 404,
+        notFound: true,
+      });
+      return null;
+    }
     const errText = await res.text();
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      httpStatus: res.status,
+      error: truncateForExternalApiLog(errText),
+    });
     throw new Error(`Square Payment API error ${res.status}: ${errText}`);
   }
   const data = (await res.json()) as RetrievePaymentResponse;
   if (data.errors?.length) {
-    throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+    const errMsg = data.errors.map((e) => e.detail ?? e.code).join("; ");
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      httpStatus: res.status,
+      error: truncateForExternalApiLog(errMsg),
+    });
+    throw new Error(errMsg);
   }
+  logExternalApiResult("Square", op, {
+    outcome: "ok",
+    durationMs,
+    httpStatus: res.status,
+  });
   const payment = data.payment;
   if (!payment?.id) return null;
   return {
@@ -377,24 +433,66 @@ export async function getTeamMemberById(
   options?: SquareServiceOptions,
 ): Promise<SquareTeamMemberDetails | null> {
   const token = resolveAccessToken(options?.accessToken);
-  const res = await fetch(
-    `${SQUARE_BASE}/v2/team-members/${encodeURIComponent(teamMemberId)}`,
-    {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
+  const op = "GET /v2/team-members/{id}";
+  const t0 = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(
+      `${SQUARE_BASE}/v2/team-members/${encodeURIComponent(teamMemberId)}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    },
-  );
+    );
+  } catch (e) {
+    const durationMs = Date.now() - t0;
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      error: truncateForExternalApiLog(
+        e instanceof Error ? e.message : String(e),
+      ),
+    });
+    throw e;
+  }
+  const durationMs = Date.now() - t0;
   if (!res.ok) {
-    if (res.status === 404) return null;
+    if (res.status === 404) {
+      logExternalApiResult("Square", op, {
+        outcome: "ok",
+        durationMs,
+        httpStatus: 404,
+        notFound: true,
+      });
+      return null;
+    }
     const errText = await res.text();
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      httpStatus: res.status,
+      error: truncateForExternalApiLog(errText),
+    });
     throw new Error(`Square Team API error ${res.status}: ${errText}`);
   }
   const data = (await res.json()) as RetrieveTeamMemberResponse;
   if (data.errors?.length) {
-    throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+    const errMsg = data.errors.map((e) => e.detail ?? e.code).join("; ");
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      httpStatus: res.status,
+      error: truncateForExternalApiLog(errMsg),
+    });
+    throw new Error(errMsg);
   }
+  logExternalApiResult("Square", op, {
+    outcome: "ok",
+    durationMs,
+    httpStatus: res.status,
+  });
   const member = data.team_member;
   if (!member?.id) return null;
   const jobTitleRaw =
@@ -418,24 +516,66 @@ export async function getSquareLocation(
   options?: SquareServiceOptions,
 ): Promise<SquareLocationForHours | null> {
   const token = resolveAccessToken(options?.accessToken);
-  const res = await fetch(
-    `${SQUARE_BASE}/v2/locations/${encodeURIComponent(squareLocationId)}`,
-    {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
+  const op = "GET /v2/locations/{id}";
+  const t0 = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(
+      `${SQUARE_BASE}/v2/locations/${encodeURIComponent(squareLocationId)}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    },
-  );
+    );
+  } catch (e) {
+    const durationMs = Date.now() - t0;
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      error: truncateForExternalApiLog(
+        e instanceof Error ? e.message : String(e),
+      ),
+    });
+    throw e;
+  }
+  const durationMs = Date.now() - t0;
   if (!res.ok) {
-    if (res.status === 404) return null;
+    if (res.status === 404) {
+      logExternalApiResult("Square", op, {
+        outcome: "ok",
+        durationMs,
+        httpStatus: 404,
+        notFound: true,
+      });
+      return null;
+    }
     const errText = await res.text();
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      httpStatus: res.status,
+      error: truncateForExternalApiLog(errText),
+    });
     throw new Error(`Square API error ${res.status}: ${errText}`);
   }
   const data = (await res.json()) as SquareLocationResponse;
   if (data.errors?.length) {
-    throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+    const errMsg = data.errors.map((e) => e.detail ?? e.code).join("; ");
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      httpStatus: res.status,
+      error: truncateForExternalApiLog(errMsg),
+    });
+    throw new Error(errMsg);
   }
+  logExternalApiResult("Square", op, {
+    outcome: "ok",
+    durationMs,
+    httpStatus: res.status,
+  });
   const loc = data.location;
   if (!loc) return null;
   const result: SquareLocationForHours = {};
@@ -536,26 +676,35 @@ function discountOrderLineItemFromSquare(lineItem: {
 }
 
 function isPaidOrder(order: SquareOrder): boolean {
+  const tenderList = order.tenders ?? [];
+  if (tenderList.length > 0) {
+    return squareTendersListHasSuccessfulPayment(tenderList);
+  }
   return (
-    (order.tenders?.length ?? 0) > 0 ||
     (order.tender_ids?.length ?? 0) > 0 ||
     (order.payment_ids?.length ?? 0) > 0
   );
 }
 
 /**
- * True if order is paid and not CANCELED; use for net sales and discount/refund aggregation.
+ * True if order is paid (successful tender or ids-only) and not CANCELED; use for net sales and discount/refund aggregation.
+ * CANCELED is excluded first so orders that still list tenders/payment_ids after cancel never count.
+ * When `tenders[]` is present, only tenders that represent a successful payment count as paid (see
+ * `squareTenderRepresentsSuccessfulPayment`: card/BNPL/wallet/Square Account/bank ACH statuses, cash, etc.).
+ * Reads `state` from the order root, or nested `order` / `raw` (Mongo/sync shapes).
  * For transaction/order count we only include orders with positive net sales (see orderCount and countByKey below).
  */
-function isOrderCountedForNetSales(order: SquareOrder): boolean {
-  return isPaidOrder(order) && order.state !== "CANCELED";
+export function isOrderCountedForNetSales(order: SquareOrder): boolean {
+  const state = getSquareOrderStateFromPayload(order);
+  if (isSquareOrderStateCanceled(state)) return false;
+  return isPaidOrder(order);
 }
 
 /**
  * Per-order net sales in cents (Gross - Returns - Discounts, excluding tax, tips, card surcharge).
  * Returns 0 if order has no net_amounts or total_money; otherwise total_money - tax - tip - card_surcharge, clamped to >= 0.
  */
-function orderNetSalesCents(order: SquareOrder): number {
+export function orderNetSalesCents(order: SquareOrder): number {
   const net = order.net_amounts;
   if (net?.total_money?.amount == null) return 0;
   const total = moneyToCents(net.total_money);
@@ -569,7 +718,7 @@ function orderNetSalesCents(order: SquareOrder): number {
  * Shared SearchOrders pagination: fetches all orders in the given location and created_at range.
  * Used so we can run both order stats and sources-of-sales aggregation in one pass.
  */
-async function fetchOrdersInRange(
+export async function fetchOrdersInRange(
   squareLocationId: string,
   range: TimeRange,
   accessToken?: string,
@@ -606,24 +755,66 @@ async function fetchOrdersInRange(
     };
     if (cursor) body.cursor = cursor;
 
-    const res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
+    const op = "POST /v2/orders/search";
+    const t0 = Date.now();
+    let res: Response;
+    try {
+      res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      const durationMs = Date.now() - t0;
+      logExternalApiResult("Square", op, {
+        outcome: "error",
+        durationMs,
+        paginated: Boolean(cursor),
+        source: "fetchOrdersInRange",
+        error: truncateForExternalApiLog(
+          e instanceof Error ? e.message : String(e),
+        ),
+      });
+      throw e;
+    }
+    const durationMs = Date.now() - t0;
 
     if (!res.ok) {
       const errText = await res.text();
+      logExternalApiResult("Square", op, {
+        outcome: "error",
+        durationMs,
+        httpStatus: res.status,
+        paginated: Boolean(cursor),
+        source: "fetchOrdersInRange",
+        error: truncateForExternalApiLog(errText),
+      });
       throw new Error(`Square API error ${res.status}: ${errText}`);
     }
 
     const data = (await res.json()) as SearchOrdersResponse;
     if (data.errors && data.errors.length > 0) {
-      throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+      const errMsg = data.errors.map((e) => e.detail ?? e.code).join("; ");
+      logExternalApiResult("Square", op, {
+        outcome: "error",
+        durationMs,
+        httpStatus: res.status,
+        paginated: Boolean(cursor),
+        source: "fetchOrdersInRange",
+        error: truncateForExternalApiLog(errMsg),
+      });
+      throw new Error(errMsg);
     }
+    logExternalApiResult("Square", op, {
+      outcome: "ok",
+      durationMs,
+      httpStatus: res.status,
+      paginated: Boolean(cursor),
+      source: "fetchOrdersInRange",
+    });
 
     const orders = data.orders ?? [];
     all.push(...orders);
@@ -633,17 +824,11 @@ async function fetchOrdersInRange(
   return all;
 }
 
-export async function searchOrdersWithDiscountsInRange(
-  squareLocationId: string,
-  range: TimeRange,
-  options?: SquareServiceOptions,
-): Promise<SquareOrderWithDiscount[]> {
-  const orders = await fetchOrdersInRange(
-    squareLocationId,
-    range,
-    options?.accessToken,
-  );
-  return orders
+/** Map Square API orders to activity-log discount rows (same rules as search). */
+export function squareOrdersToWithDiscounts(
+  orders: SquareOrder[],
+): SquareOrderWithDiscount[] {
+  return filterSquareOrdersForDashboardDisplay(orders)
     .filter(
       (order) =>
         (order.discounts?.length ?? 0) > 0 || (order.returns?.length ?? 0) > 0,
@@ -760,10 +945,23 @@ export async function searchOrdersWithDiscountsInRange(
     .filter((order) => order.id.length > 0);
 }
 
+export async function searchOrdersWithDiscountsInRange(
+  squareLocationId: string,
+  range: TimeRange,
+  options?: SquareServiceOptions,
+): Promise<SquareOrderWithDiscount[]> {
+  const orders = await fetchOrdersInRange(
+    squareLocationId,
+    range,
+    options?.accessToken,
+  );
+  return squareOrdersToWithDiscounts(orders);
+}
+
 /**
  * Aggregate order stats from an array of orders (same logic as getOrderStatsInRange).
  */
-function getOrderStatsFromOrders(orders: SquareOrder[]): OrderStatsInRange {
+export function getOrderStatsFromOrders(orders: SquareOrder[]): OrderStatsInRange {
   const stats: OrderStatsInRange = {
     orderCount: 0,
     netSalesCents: 0,
@@ -772,7 +970,7 @@ function getOrderStatsFromOrders(orders: SquareOrder[]): OrderStatsInRange {
     refundCount: 0,
   };
 
-  for (const order of orders) {
+  for (const order of filterSquareOrdersForDashboardDisplay(orders)) {
     const countedForNetSales = isOrderCountedForNetSales(order);
     const netCents = orderNetSalesCents(order);
     const refundCents = moneyToCents(order.return_amounts?.total_money);
@@ -852,12 +1050,12 @@ function segmentKeyToLabel(key: string): string {
  * Aggregate net sales by source/fulfillment from an array of orders.
  * Returns segments with id, label, value (percentage 0-100), amount (formatted), color.
  */
-function getSourcesOfSalesFromOrders(
+export function getSourcesOfSalesFromOrders(
   orders: SquareOrder[],
 ): SourcesOfSalesSegment[] {
   const byKey: Record<string, number> = {};
 
-  for (const order of orders) {
+  for (const order of filterSquareOrdersForDashboardDisplay(orders)) {
     if (!isOrderCountedForNetSales(order)) continue;
     const cents = orderNetSalesCents(order);
     if (cents <= 0) continue;
@@ -948,24 +1146,66 @@ export async function getNetSalesInRange(
     };
     if (cursor) body.cursor = cursor;
 
-    const res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
+    const op = "POST /v2/orders/search";
+    const t0 = Date.now();
+    let res: Response;
+    try {
+      res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      const durationMs = Date.now() - t0;
+      logExternalApiResult("Square", op, {
+        outcome: "error",
+        durationMs,
+        paginated: Boolean(cursor),
+        source: "getNetSalesInRange",
+        error: truncateForExternalApiLog(
+          e instanceof Error ? e.message : String(e),
+        ),
+      });
+      throw e;
+    }
+    const durationMs = Date.now() - t0;
 
     if (!res.ok) {
       const errText = await res.text();
+      logExternalApiResult("Square", op, {
+        outcome: "error",
+        durationMs,
+        httpStatus: res.status,
+        paginated: Boolean(cursor),
+        source: "getNetSalesInRange",
+        error: truncateForExternalApiLog(errText),
+      });
       throw new Error(`Square API error ${res.status}: ${errText}`);
     }
 
     const data = (await res.json()) as SearchOrdersResponse;
     if (data.errors && data.errors.length > 0) {
-      throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+      const errMsg = data.errors.map((e) => e.detail ?? e.code).join("; ");
+      logExternalApiResult("Square", op, {
+        outcome: "error",
+        durationMs,
+        httpStatus: res.status,
+        paginated: Boolean(cursor),
+        source: "getNetSalesInRange",
+        error: truncateForExternalApiLog(errMsg),
+      });
+      throw new Error(errMsg);
     }
+    logExternalApiResult("Square", op, {
+      outcome: "ok",
+      durationMs,
+      httpStatus: res.status,
+      paginated: Boolean(cursor),
+      source: "getNetSalesInRange",
+    });
 
     const orders = data.orders ?? [];
     for (const order of orders) {
@@ -1023,24 +1263,66 @@ export async function searchOrdersInRange(
     };
     if (cursor) body.cursor = cursor;
 
-    const res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
+    const op = "POST /v2/orders/search";
+    const t0 = Date.now();
+    let res: Response;
+    try {
+      res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      const durationMs = Date.now() - t0;
+      logExternalApiResult("Square", op, {
+        outcome: "error",
+        durationMs,
+        paginated: Boolean(cursor),
+        source: "searchOrdersInRange",
+        error: truncateForExternalApiLog(
+          e instanceof Error ? e.message : String(e),
+        ),
+      });
+      throw e;
+    }
+    const durationMs = Date.now() - t0;
 
     if (!res.ok) {
       const errText = await res.text();
+      logExternalApiResult("Square", op, {
+        outcome: "error",
+        durationMs,
+        httpStatus: res.status,
+        paginated: Boolean(cursor),
+        source: "searchOrdersInRange",
+        error: truncateForExternalApiLog(errText),
+      });
       throw new Error(`Square API error ${res.status}: ${errText}`);
     }
 
     const data = (await res.json()) as SearchOrdersResponse;
     if (data.errors && data.errors.length > 0) {
-      throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+      const errMsg = data.errors.map((e) => e.detail ?? e.code).join("; ");
+      logExternalApiResult("Square", op, {
+        outcome: "error",
+        durationMs,
+        httpStatus: res.status,
+        paginated: Boolean(cursor),
+        source: "searchOrdersInRange",
+        error: truncateForExternalApiLog(errMsg),
+      });
+      throw new Error(errMsg);
     }
+    logExternalApiResult("Square", op, {
+      outcome: "ok",
+      durationMs,
+      httpStatus: res.status,
+      paginated: Boolean(cursor),
+      source: "searchOrdersInRange",
+    });
 
     const pageOrders = ordersFromSearchPage(
       data.orders ?? [],
@@ -1126,25 +1408,67 @@ async function batchRetrieveCatalog(
   accessToken: string,
   includeRelated = false,
 ): Promise<BatchRetrieveCatalogResponse> {
-  const res = await fetch(`${SQUARE_BASE}/v2/catalog/batch-retrieve`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({
-      object_ids: objectIds,
-      include_related_objects: includeRelated,
-    }),
-  });
+  const op = "POST /v2/catalog/batch-retrieve";
+  const t0 = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(`${SQUARE_BASE}/v2/catalog/batch-retrieve`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        object_ids: objectIds,
+        include_related_objects: includeRelated,
+      }),
+    });
+  } catch (e) {
+    const durationMs = Date.now() - t0;
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      objectCount: objectIds.length,
+      includeRelated,
+      error: truncateForExternalApiLog(
+        e instanceof Error ? e.message : String(e),
+      ),
+    });
+    throw e;
+  }
+  const durationMs = Date.now() - t0;
   if (!res.ok) {
     const errText = await res.text();
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      httpStatus: res.status,
+      objectCount: objectIds.length,
+      includeRelated,
+      error: truncateForExternalApiLog(errText),
+    });
     throw new Error(`Square Catalog API error ${res.status}: ${errText}`);
   }
   const data = (await res.json()) as BatchRetrieveCatalogResponse;
   if (data.errors?.length) {
-    throw new Error(data.errors.map((e) => e.detail ?? e.code).join("; "));
+    const errMsg = data.errors.map((e) => e.detail ?? e.code).join("; ");
+    logExternalApiResult("Square", op, {
+      outcome: "error",
+      durationMs,
+      httpStatus: res.status,
+      objectCount: objectIds.length,
+      includeRelated,
+      error: truncateForExternalApiLog(errMsg),
+    });
+    throw new Error(errMsg);
   }
+  logExternalApiResult("Square", op, {
+    outcome: "ok",
+    durationMs,
+    httpStatus: res.status,
+    objectCount: objectIds.length,
+    includeRelated,
+  });
   return data;
 }
 
@@ -1163,11 +1487,13 @@ export async function getNetSalesByCategoryInRange(
   options?: SquareServiceOptions,
 ): Promise<NetSalesByCategoryResult> {
   const token = resolveAccessToken(options?.accessToken);
-  const orders = await fetchOrdersInRange(
-    squareLocationId,
-    range,
-    options?.accessToken,
-  );
+  const orders =
+    options?.ordersOverride ??
+    (await fetchOrdersInRange(
+      squareLocationId,
+      range,
+      options?.accessToken,
+    ));
 
   const { variationToCents, totalNetSalesCents, uncategorizedLineCents } =
     aggregateVariationCentsFromOrders(
@@ -1190,10 +1516,14 @@ export async function getNetSalesByCategoryInRange(
     return { categories: [], totalNetSalesCents };
   }
 
+  const batchRetrieve: BatchRetrieveCatalogFn =
+    options?.batchRetrieveCatalogOverride ??
+    ((ids, tok, inc) => batchRetrieveCatalog(ids, tok, inc));
+
   const { variationToItemId, itemIdToCategoryId } =
     await resolveVariationToItemAndCategoryIds(
       variationIds,
-      batchRetrieveCatalog as BatchRetrieveCatalogFn,
+      batchRetrieve,
       token,
       BATCH_RETRIEVE_CATALOG_LIMIT,
     );
@@ -1208,7 +1538,7 @@ export async function getNetSalesByCategoryInRange(
 
   const categoryIdToName = await resolveCategoryIdToName(
     categoryIds,
-    batchRetrieveCatalog as BatchRetrieveCatalogFn,
+    batchRetrieve,
     token,
     BATCH_RETRIEVE_CATALOG_LIMIT,
   );
@@ -1258,10 +1588,13 @@ export async function getOrderTimeSeriesInRange(
     countByKey[k] = 0;
   }
 
-  const orders = await fetchOrdersInRange(
-    squareLocationId,
-    range,
-    options?.accessToken,
+  const orders = filterSquareOrdersForDashboardDisplay(
+    options?.ordersOverride ??
+      (await fetchOrdersInRange(
+        squareLocationId,
+        range,
+        options?.accessToken,
+      )),
   );
   for (const order of orders) {
     if (!isOrderCountedForNetSales(order)) continue;
@@ -1313,10 +1646,13 @@ export async function getOrderTimeSeriesBySourceInRange(
   );
   const bySourceAndKey: Record<string, Record<string, number>> = {};
 
-  const orders = await fetchOrdersInRange(
-    squareLocationId,
-    range,
-    options?.accessToken,
+  const orders = filterSquareOrdersForDashboardDisplay(
+    options?.ordersOverride ??
+      (await fetchOrdersInRange(
+        squareLocationId,
+        range,
+        options?.accessToken,
+      )),
   );
   for (const order of orders) {
     if (!isOrderCountedForNetSales(order)) continue;

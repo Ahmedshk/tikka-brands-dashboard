@@ -1,9 +1,9 @@
 import { LocationService } from "./location.service.js";
 import {
-  getPaymentById,
-  getTeamMemberById,
-  searchOrdersWithDiscountsInRange,
-} from "./square.service.js";
+  getSquarePaymentDetailsFromCache,
+  getSquareTeamMemberRawFromCache,
+  searchOrdersWithDiscountsFromCache,
+} from "./integrationCacheRead.service.js";
 import { ValidationError } from "../utils/errors.util.js";
 import { getBusinessDayRangeForDate } from "../utils/timezone.util.js";
 import type {
@@ -11,10 +11,17 @@ import type {
   ActivityLogRowDto,
 } from "../types/activityLog.types.js";
 
-type PaymentDetails = Awaited<ReturnType<typeof getPaymentById>> | null;
-type TeamMemberDetails = Awaited<ReturnType<typeof getTeamMemberById>> | null;
+type PaymentDetails = Awaited<
+  ReturnType<typeof getSquarePaymentDetailsFromCache>
+>;
+type TeamMemberDetails = {
+  id?: string;
+  givenName: string | null;
+  familyName: string | null;
+  jobTitle?: string;
+} | null;
 type ActivityOrder = Awaited<
-  ReturnType<typeof searchOrdersWithDiscountsInRange>
+  ReturnType<typeof searchOrdersWithDiscountsFromCache>
 >[number];
 
 function parseYmdDate(date: string): {
@@ -300,16 +307,15 @@ export class ActivityLogService {
 
   private async getCachedPayment(
     paymentId: string | null,
-    squareToken: string | undefined,
     paymentCache: Map<string, PaymentDetails>,
   ): Promise<PaymentDetails> {
     if (!paymentId) return null;
     if (!paymentCache.has(paymentId)) {
       try {
-        const fetched = await getPaymentById(paymentId, {
-          accessToken: squareToken,
-        });
-        paymentCache.set(paymentId, fetched);
+        paymentCache.set(
+          paymentId,
+          await getSquarePaymentDetailsFromCache(paymentId),
+        );
       } catch {
         paymentCache.set(paymentId, null);
       }
@@ -319,16 +325,23 @@ export class ActivityLogService {
 
   private async getCachedTeamMember(
     teamMemberId: string | null,
-    squareToken: string | undefined,
     teamMemberCache: Map<string, TeamMemberDetails>,
   ): Promise<TeamMemberDetails> {
     if (!teamMemberId) return null;
     if (!teamMemberCache.has(teamMemberId)) {
       try {
-        const fetched = await getTeamMemberById(teamMemberId, {
-          accessToken: squareToken,
-        });
-        teamMemberCache.set(teamMemberId, fetched);
+        const fromDb = await getSquareTeamMemberRawFromCache(teamMemberId);
+        teamMemberCache.set(
+          teamMemberId,
+          fromDb
+            ? {
+                id: fromDb.id,
+                givenName: fromDb.givenName,
+                familyName: fromDb.familyName,
+                ...(fromDb.jobTitle != null ? { jobTitle: fromDb.jobTitle } : {}),
+              }
+            : null,
+        );
       } catch {
         teamMemberCache.set(teamMemberId, null);
       }
@@ -353,18 +366,12 @@ export class ActivityLogService {
     const { year, month0, day } = parseYmdDate(date);
     const range = getBusinessDayRangeForDate(
       location.timezone || "UTC",
-      "00:00",
+      location.businessStartTime?.trim() ?? "00:00",
       year,
       month0,
       day,
     );
-    const squareToken = locationWithCredentials.squareAccessToken ?? undefined;
-
-    const orders = await searchOrdersWithDiscountsInRange(
-      location.squareLocationId,
-      range,
-      { accessToken: squareToken },
-    );
+    const orders = await searchOrdersWithDiscountsFromCache(locationId, range);
 
     const paymentCache = new Map<string, PaymentDetails>();
     const teamMemberCache = new Map<string, TeamMemberDetails>();
@@ -375,21 +382,18 @@ export class ActivityLogService {
       const firstPaymentId = order.paymentIds[0] ?? null;
       const payment = await this.getCachedPayment(
         firstPaymentId,
-        squareToken,
         paymentCache,
       );
       const refundPaymentId =
         order.refunds.length > 0 ? order.refunds[0]?.tenderId ?? null : null;
       const refundPayment = await this.getCachedPayment(
         refundPaymentId,
-        squareToken,
         paymentCache,
       );
 
       const teamMemberId = payment?.employeeId ?? payment?.teamMemberId ?? null;
       const teamMember = await this.getCachedTeamMember(
         teamMemberId,
-        squareToken,
         teamMemberCache,
       );
 

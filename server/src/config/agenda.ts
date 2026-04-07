@@ -42,8 +42,16 @@ export async function initializeAgenda(): Promise<Agenda> {
   );
   registerCalendarJobs(agenda);
 
+  const {
+    registerIntegrationJobs,
+    runCatchUpMarketManValidCountDatesIfMissedToday,
+  } = await import("../jobs/integration.jobs.js");
+  registerIntegrationJobs(agenda);
+
   await agenda.start();
   logger.info("Agenda: scheduler started");
+
+  void runCatchUpMarketManValidCountDatesIfMissedToday();
 
   const schedule = isTestMode() ? "*/15 * * * * *" : "0 6 * * *";
   if (isTestMode()) logger.info("Agenda: REVIEW_TEST_MODE enabled — running jobs every 15 seconds");
@@ -59,6 +67,17 @@ export async function initializeAgenda(): Promise<Agenda> {
   await agenda.every("0 0 * * *", "disciplinary:check-expiry");
 
   await agenda.every(isTestMode() ? "*/1 * * * * *" : "*/15 * * * *", "calendar:reconcile");
+
+  await agenda.every(
+    isTestMode() ? "*/2 * * * *" : "*/15 * * * *",
+    "integration:poll-15m",
+  );
+
+  /** Square catalog full sync once per UTC day (~3–5am MT depending on DST). Deduped by Denver calendar date in the job. */
+  await agenda.every(
+    isTestMode() ? "*/3 * * * *" : "0 10 * * *",
+    "integration:catalog-daily",
+  );
   if (process.env.SKIP_CALENDAR_STARTUP_BACKFILL !== "1") {
     queueCalendarNotificationBackfill(agenda);
   }

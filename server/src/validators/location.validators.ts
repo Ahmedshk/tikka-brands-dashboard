@@ -6,6 +6,7 @@ const locationBodySchema = z.object({
   storeName: z.string().min(1, "Store name is required").trim(),
   address: z.string().min(1, "Address is required").trim(),
   squareLocationId: z.string().min(1, "Square location ID is required").trim(),
+  squareMerchantId: z.string().trim().optional(),
   homebaseLocationId: z.string().min(1, "Homebase location ID is required").trim(),
   timezone: z.string().min(1, "Timezone is required").trim(),
   businessStartTime: z
@@ -16,6 +17,7 @@ const locationBodySchema = z.object({
   homebaseApiKey: z.string().min(1, "Homebase API key is required").trim(),
   logoId: z.string().trim().optional().nullable(),
   marketManBuyerGuid: z.string().min(1, "MarketMan buyer GUID is required").trim(),
+  squareWebhookSignatureKey: z.string().optional(),
 });
 
 export const createLocationSchema = z.object({
@@ -27,10 +29,12 @@ export const updateLocationSchema = z.object({
     id: z.string().min(1, "Location ID is required"),
   }),
   body: locationBodySchema.partial().extend({
+    squareMerchantId: z.string().trim().optional(),
     squareAccessToken: z.string().trim().optional(),
     homebaseApiKey: z.string().trim().optional(),
     logoId: z.string().trim().optional().nullable(),
     marketManBuyerGuid: z.string().min(1, "MarketMan buyer GUID is required").trim().optional(),
+    squareWebhookSignatureKey: z.string().optional(),
   }),
 });
 

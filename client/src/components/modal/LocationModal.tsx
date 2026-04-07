@@ -29,8 +29,11 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
   const [businessStartTime, setBusinessStartTime] = useState(DEFAULT_BUSINESS_START_TIME);
   const [showSquareToken, setShowSquareToken] = useState(false);
   const [showHomebaseKey, setShowHomebaseKey] = useState(false);
+  const [squareWebhookSignatureKey, setSquareWebhookSignatureKey] = useState('');
+  const [showSquareWebhookKey, setShowSquareWebhookKey] = useState(false);
   const [updateSquareCredentials, setUpdateSquareCredentials] = useState(false);
   const [updateHomebaseCredentials, setUpdateHomebaseCredentials] = useState(false);
+  const [updateSquareWebhookSignature, setUpdateSquareWebhookSignature] = useState(false);
   const [logoId, setLogoId] = useState<string | null>(null);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [marketManBuyerGuid, setMarketManBuyerGuid] = useState('');
@@ -68,6 +71,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
   const isEdit = Boolean(editLocation);
   const hasStoredSquare = Boolean(editLocation?.hasSquareAccessToken);
   const hasStoredHomebase = Boolean(editLocation?.hasHomebaseApiKey);
+  const hasStoredSquareWebhookSignature = Boolean(editLocation?.hasSquareWebhookSignatureKey);
   const { canSubmit } = getLocationFormValidation({
     isEdit,
     hasStoredSquare,
@@ -100,8 +104,11 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
       setBusinessStartTime(editLocation.businessStartTime ?? DEFAULT_BUSINESS_START_TIME);
       setSquareAccessToken('');
       setHomebaseApiKey('');
+      setSquareWebhookSignatureKey('');
+      setShowSquareWebhookKey(false);
       setUpdateSquareCredentials(false);
       setUpdateHomebaseCredentials(false);
+      setUpdateSquareWebhookSignature(false);
       setLogoId(editLocation.logoId ?? null);
       setLogoDataUrl(editLocation.logoDataUrl ?? null);
       setMarketManBuyerGuid(editLocation.marketManBuyerGuid ?? '');
@@ -112,10 +119,13 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
       setSquareAccessToken('');
       setHomebaseLocationId('');
       setHomebaseApiKey('');
+      setSquareWebhookSignatureKey('');
+      setShowSquareWebhookKey(false);
       setTimezone('');
       setBusinessStartTime(DEFAULT_BUSINESS_START_TIME);
       setUpdateSquareCredentials(false);
       setUpdateHomebaseCredentials(false);
+      setUpdateSquareWebhookSignature(false);
       setLogoId(null);
       setLogoDataUrl(null);
       setMarketManBuyerGuid('');
@@ -146,6 +156,9 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
         homebaseApiKey,
         updateSquareCredentials,
         updateHomebaseCredentials,
+        hasStoredSquareWebhookSignature,
+        updateSquareWebhookSignature,
+        squareWebhookSignatureKey,
         logoId,
       });
       onSaved(updated);
@@ -254,6 +267,13 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
                 setHomebaseApiKey={setHomebaseApiKey}
                 showHomebaseKey={showHomebaseKey}
                 setShowHomebaseKey={setShowHomebaseKey}
+                hasStoredSquareWebhookSignature={hasStoredSquareWebhookSignature}
+                updateSquareWebhookSignature={updateSquareWebhookSignature}
+                setUpdateSquareWebhookSignature={setUpdateSquareWebhookSignature}
+                squareWebhookSignatureKey={squareWebhookSignatureKey}
+                setSquareWebhookSignatureKey={setSquareWebhookSignatureKey}
+                showSquareWebhookKey={showSquareWebhookKey}
+                setShowSquareWebhookKey={setShowSquareWebhookKey}
                 logoId={logoId}
                 onClose={onClose}
                 showFormActions={false}

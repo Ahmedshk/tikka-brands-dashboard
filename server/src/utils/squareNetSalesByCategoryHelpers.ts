@@ -72,6 +72,8 @@ export interface CatalogObjectForCategory {
   item_variation_data?: { item_id?: string };
   item_data?: {
     category_id?: string;
+    /** Preferred for reporting; matches Square Dashboard category sales. */
+    reporting_category?: { id?: string };
     categories?: Array<{ id?: string }>;
   };
   category_data?: { name?: string };
@@ -80,7 +82,10 @@ export interface CatalogObjectForCategory {
 export function categoryIdFromItem(obj: CatalogObjectForCategory): string | undefined {
   const data = obj.item_data;
   if (data == null) return undefined;
-  if (data.category_id != null) return data.category_id;
+  const reportingId = data.reporting_category?.id;
+  if (reportingId != null && reportingId !== "") return reportingId;
+  if (data.category_id != null && data.category_id !== "")
+    return data.category_id;
   const first = data.categories?.[0];
   return first?.id;
 }

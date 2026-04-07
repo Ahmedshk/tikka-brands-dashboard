@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { GoalService } from "../services/goal.service.js";
 import { LocationService } from "../services/location.service.js";
-import { searchOrdersInRange } from "../services/square.service.js";
+import { searchOrdersInRangeWithCacheFallback } from "../services/integrationCacheRead.service.js";
 import { NotFoundError } from "../utils/errors.util.js";
 import {
   parseMetricsQuery,
@@ -99,7 +99,7 @@ export const getCommandCenterKPIs = async (
     if (!withCreds) {
       throw new NotFoundError("Location not found");
     }
-    const { location, squareAccessToken, homebaseApiKey } = withCreds;
+    const { location } = withCreds;
     const loc = toLocationForKpi(location);
 
     const { wantNetSales, wantLaborCost, wantReviewRating } =
@@ -117,9 +117,8 @@ export const getCommandCenterKPIs = async (
     if (wantWeekToDate) {
       const rangeWeekToDate = getRangeWeekToDate(loc);
       const kpis = await fetchWeekToDateKpis({
+        locationMongoId: locationId,
         location: loc,
-        squareAccessToken,
-        homebaseApiKey,
         rangeToday,
         rangeWeekToDate,
         wantNetSales,
@@ -143,9 +142,8 @@ export const getCommandCenterKPIs = async (
     }
 
     const kpis = await fetchTodayOnlyKpis(
+      locationId,
       loc,
-      squareAccessToken,
-      homebaseApiKey,
       rangeToday,
       wantNetSales,
       wantLaborCost,
@@ -214,8 +212,18 @@ export const getHourlySales = async (
     const lastWeekRange = getSameDayLastWeekRange(timezone);
 
     const [todayOrders, lastWeekOrders] = await Promise.all([
-      searchOrdersInRange(squareLocationId, todayRange, squareOptions),
-      searchOrdersInRange(squareLocationId, lastWeekRange, squareOptions),
+      searchOrdersInRangeWithCacheFallback(
+        locationId,
+        squareLocationId,
+        todayRange,
+        squareOptions,
+      ),
+      searchOrdersInRangeWithCacheFallback(
+        locationId,
+        squareLocationId,
+        lastWeekRange,
+        squareOptions,
+      ),
     ]);
 
     const todayBuckets = new Array<number>(24).fill(0);

@@ -1,3 +1,4 @@
+import type { UpdateQuery } from 'mongoose';
 import { LocationModel, LocationDocument } from '../models/location.model.js';
 import { ILocation } from '../types/location.types.js';
 
@@ -23,12 +24,33 @@ export class LocationRepository {
     return await LocationModel.countDocuments();
   }
 
-  async updateById(id: string, updateData: Partial<Omit<ILocation, '_id' | 'createdAt' | 'updatedAt'>>): Promise<LocationDocument | null> {
+  async updateById(
+    id: string,
+    updateData: UpdateQuery<LocationDocument> | Partial<Omit<ILocation, '_id' | 'createdAt' | 'updatedAt'>>,
+  ): Promise<LocationDocument | null> {
     return await LocationModel.findByIdAndUpdate(id, updateData, { new: true }).lean().exec() as LocationDocument | null;
   }
 
   async deleteById(id: string): Promise<boolean> {
     const result = await LocationModel.findByIdAndDelete(id);
     return result !== null;
+  }
+
+  async findBySquareLocationId(squareLocationId: string): Promise<LocationDocument | null> {
+    return await LocationModel.findOne({ squareLocationId: squareLocationId.trim() })
+      .lean()
+      .exec() as LocationDocument | null;
+  }
+
+  async findBySquareMerchantId(squareMerchantId: string): Promise<LocationDocument | null> {
+    return await LocationModel.findOne({ squareMerchantId: squareMerchantId.trim() })
+      .lean()
+      .exec() as LocationDocument | null;
+  }
+
+  async findByMarketManBuyerGuid(buyerGuid: string): Promise<LocationDocument | null> {
+    return await LocationModel.findOne({ marketManBuyerGuid: buyerGuid.trim() })
+      .lean()
+      .exec() as LocationDocument | null;
   }
 }

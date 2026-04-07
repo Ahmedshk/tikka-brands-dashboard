@@ -1,10 +1,16 @@
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
+import IncreaseUpIcon from '@assets/icons/increase_up.svg?react';
+import DecreaseDownIcon from '@assets/icons/decrease_down.svg?react';
 import { TimeSeriesLineChart } from '../charts/TimeSeriesLineChart';
 import type { TimeSeriesSeries, TimeSeriesLineChartYAxisOverrides } from '../charts/TimeSeriesLineChart';
 import { Spinner } from '../common/Spinner';
 import { Dropdown } from '../common/Dropdown';
-import { getTooltipSeriesOrder } from '../../utils/salesTrendChartCardHelpers';
+import {
+  formatPercentForLegend,
+  getTooltipSeriesOrder,
+  sumTimeSeriesDataPoints,
+} from '../../utils/salesTrendChartCardHelpers';
 import { SalesTrendStackedChart } from './SalesTrendStackedChart';
 
 export interface SalesTrendChartCardProps {
@@ -27,6 +33,14 @@ export interface SalesTrendChartCardProps {
   periodDateRange?: string;
   /** Formatted date range for comparison period; shown with legend when present */
   comparisonDateRange?: string;
+  /** Sum of current-period series points (line chart); shown next to legend like Command Center hourly net sales */
+  currentPeriodTotal?: number;
+  /** Sum of comparison-period points when comparison is enabled */
+  comparisonPeriodTotal?: number;
+  /** vs comparison baseline; null renders "—" in badge when comparison is on */
+  periodPercentChange?: number | null;
+  /** Formats legend totals (typically same as y-axis) */
+  legendValueFormatter?: (value: number) => string;
 }
 
 const desktopMargin = { top: 10, right: 25, bottom: 0, left: 0 };
@@ -48,12 +62,17 @@ export const SalesTrendChartCard = ({
   loading = false,
   periodDateRange,
   comparisonDateRange,
+  currentPeriodTotal,
+  comparisonPeriodTotal,
+  periodPercentChange,
+  legendValueFormatter,
 }: SalesTrendChartCardProps) => {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
   const margin = isDesktop ? desktopMargin : mobileMargin;
 
   const isStacked = variant === 'stackedArea';
+  const formatLegendForStacked = legendValueFormatter ?? ((v: number) => v.toLocaleString());
   const chartSeries = series.map((s) => ({
     id: s.id,
     data: s.data as number[],
@@ -127,34 +146,72 @@ export const SalesTrendChartCard = ({
       {!loading && !isStacked && series.length >= 1 && (() => {
         const current = series.find((s) => s.id === 'current') ?? series[0];
         const comparisonSeries = series.find((s) => s.id === 'comparison') ?? series[1];
+        const formatLegend = legendValueFormatter ?? String;
+        const showTotals = currentPeriodTotal !== undefined;
+        const showComparisonTotals = comparisonPeriodTotal !== undefined;
+        const hasIncrease = periodPercentChange !== null && periodPercentChange !== undefined && periodPercentChange >= 0;
+        const hasDecrease = periodPercentChange !== null && periodPercentChange !== undefined && periodPercentChange < 0;
+        let percentBadgeClass = 'bg-gray-100 text-secondary';
+        if (hasIncrease) percentBadgeClass = 'bg-positive/10 text-positive';
+        else if (hasDecrease) percentBadgeClass = 'bg-negative/10 text-negative';
+
         return (
-          <div className="px-5 pb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-            <span className="flex items-center gap-2 text-xs text-primary">
-              <span
-                className="w-3 h-3 rounded-full shrink-0"
-                style={{ backgroundColor: current?.color ?? '#FBC52A' }}
-                aria-hidden
-              />
-              <span>
-                {current?.label ?? 'This period'}
-                {(periodDateRange != null && periodDateRange !== '') && (
-                  <span className="block text-[10px] text-gray-500 font-normal">{periodDateRange}</span>
-                )}
-              </span>
-            </span>
-            {series.length >= 2 && comparisonSeries && (
-              <span className="flex items-center gap-2 text-xs text-primary">
+          <div className="px-5 pb-2 flex flex-col gap-2 items-center min-[500px]:flex-row min-[500px]:items-center min-[500px]:flex-wrap min-[500px]:gap-4 relative">
+            <span className="flex items-center justify-center gap-4 flex-wrap min-[500px]:justify-start">
+              <span className="flex items-start gap-2 text-xs text-primary">
                 <span
-                  className="rounded-full border-2 border-dashed bg-transparent box-content shrink-0"
-                  style={{ width: 10, height: 10, borderColor: comparisonSeries?.color ?? '#9ca3af' }}
+                  className="w-3 h-3 rounded-full shrink-0 mt-0.5"
+                  style={{ backgroundColor: current?.color ?? '#FBC52A' }}
                   aria-hidden
                 />
-                <span>
-                  {comparisonSeries?.label ?? 'Comparison'}
-                  {comparisonDateRange && (
-                    <span className="block text-[10px] text-gray-500 font-normal">{comparisonDateRange}</span>
+                <span className="flex flex-col gap-0.5 min-w-0">
+                  <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
+                    <span>{current?.label ?? 'This period'}</span>
+                    {showTotals && (
+                      <span className="font-medium tabular-nums">{formatLegend(currentPeriodTotal)}</span>
+                    )}
+                  </span>
+                  {periodDateRange != null && periodDateRange !== '' && (
+                    <span className="text-[10px] text-gray-500 font-normal">{periodDateRange}</span>
                   )}
                 </span>
+              </span>
+              {series.length >= 2 && comparisonSeries && (
+                <span className="flex items-start gap-2 text-xs text-primary">
+                  <span
+                    className="rounded-full border-2 border-dashed bg-transparent box-content shrink-0 mt-0.5"
+                    style={{ width: 10, height: 10, borderColor: comparisonSeries?.color ?? '#9ca3af' }}
+                    aria-hidden
+                  />
+                  <span className="flex flex-col gap-0.5 min-w-0">
+                    <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
+                      <span>{comparisonSeries?.label ?? 'Comparison'}</span>
+                      {showComparisonTotals && (
+                        <span className="font-medium tabular-nums">{formatLegend(comparisonPeriodTotal)}</span>
+                      )}
+                    </span>
+                    {comparisonDateRange && (
+                      <span className="text-[10px] text-gray-500 font-normal">{comparisonDateRange}</span>
+                    )}
+                  </span>
+                </span>
+              )}
+            </span>
+            {showComparisonTotals && (
+              <span className="flex justify-center min-[500px]:absolute min-[500px]:top-1/2 min-[500px]:right-5 min-[500px]:left-auto min-[500px]:-translate-y-1/2 min-[1367px]:left-1/2 min-[1367px]:right-auto min-[1367px]:-translate-x-1/2">
+                {periodPercentChange === null || periodPercentChange === undefined ? (
+                  <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-secondary tabular-nums">
+                    —
+                  </span>
+                ) : (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold tabular-nums ${percentBadgeClass}`}
+                  >
+                    {hasIncrease && <IncreaseUpIcon className="w-3 h-3 shrink-0 [&_path]:fill-current" aria-hidden />}
+                    {hasDecrease && <DecreaseDownIcon className="w-3 h-3 shrink-0 [&_path]:fill-current" aria-hidden />}
+                    {formatPercentForLegend(periodPercentChange)}
+                  </span>
+                )}
               </span>
             )}
           </div>
@@ -169,7 +226,10 @@ export const SalesTrendChartCard = ({
                 style={{ backgroundColor: s.color ?? '#6D6D6D' }}
                 aria-hidden
               />
-              {s.label}
+              <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
+                <span>{s.label}</span>
+                <span className="font-medium tabular-nums">{formatLegendForStacked(sumTimeSeriesDataPoints(s.data))}</span>
+              </span>
             </span>
           ))}
         </div>

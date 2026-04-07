@@ -28,6 +28,11 @@ import {
 import type { TimeSeriesSeries } from '../../components/charts/TimeSeriesLineChart';
 import type { RootState } from '../../store/store';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
+import {
+  sumTimeSeriesDataPoints,
+  computePeriodOverPeriodPercentChange,
+  salesTrendLineChartPropsToLegendTotals,
+} from '../../utils/salesTrendChartCardHelpers';
 
 const PAGE_ID = 'sales-trend-reports';
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
@@ -600,6 +605,15 @@ export const SalesTrendReports = () => {
       data: trendData.comparisonPeriod,
       color: '#9ca3af',
     };
+    const currentTotal = sumTimeSeriesDataPoints(trendData.currentPeriod);
+    const comparisonTotalPts = sumTimeSeriesDataPoints(trendData.comparisonPeriod);
+    const lineLegend = showComparison
+      ? {
+          currentTotal,
+          comparisonTotal: comparisonTotalPts,
+          percentChange: computePeriodOverPeriodPercentChange(currentTotal, comparisonTotalPts),
+        }
+      : { currentTotal };
     return {
       variant: 'line' as const,
       xAxisData,
@@ -607,8 +621,11 @@ export const SalesTrendReports = () => {
         ? [comparisonSeries, currentSeries]
         : [currentSeries],
       yAxis,
+      lineLegend,
     };
   }, [trendData, metric, comparison]);
+
+  const trendChartLegendTotals = salesTrendLineChartPropsToLegendTotals(chartProps);
 
   const categoryItems = useMemo(() => buildCategoryItems(categoryData), [categoryData]);
   const categoryTop5 = useMemo(() => categoryItems.slice(0, 5), [categoryItems]);
@@ -706,6 +723,10 @@ export const SalesTrendReports = () => {
                 ? formatDateRange(trendData.comparisonRange.startAt, trendData.comparisonRange.endAt, currentLocation?.timezone)
                 : undefined
             }
+            legendValueFormatter={getYAxisFormatter(metric)}
+            currentPeriodTotal={trendChartLegendTotals.currentPeriodTotal}
+            comparisonPeriodTotal={trendChartLegendTotals.comparisonPeriodTotal}
+            periodPercentChange={trendChartLegendTotals.periodPercentChange}
           />
         )}
 

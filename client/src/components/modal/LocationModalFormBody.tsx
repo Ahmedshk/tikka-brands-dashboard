@@ -51,8 +51,23 @@ function SquareCredentialsField(props: Readonly<{
   placeholder: string;
   inputId: string;
   label: string;
+  /** When false, the value is optional (e.g. Square webhook signature key). */
+  credentialRequired?: boolean;
 }>) {
-  const { isEdit, hasStored, updateCredentials, onUpdateClick, value, onChange, showValue, onToggleShow, placeholder, inputId, label } = props;
+  const {
+    isEdit,
+    hasStored,
+    updateCredentials,
+    onUpdateClick,
+    value,
+    onChange,
+    showValue,
+    onToggleShow,
+    placeholder,
+    inputId,
+    label,
+    credentialRequired = true,
+  } = props;
   const showMasked = isEdit && hasStored && !updateCredentials;
   if (showMasked) {
     return (
@@ -82,7 +97,7 @@ function SquareCredentialsField(props: Readonly<{
         type={showValue ? 'text' : 'password'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        required={!isEdit || !hasStored}
+        required={credentialRequired && (!isEdit || !hasStored)}
         autoComplete="off"
         className="w-full px-4 py-3 pr-14 bg-[#F9F9F9] border border-[#DBDBDB] rounded-xl text-sm md:text-base 2xl:text-lg placeholder:text-sm md:placeholder:text-base 2xl:placeholder:text-lg"
         placeholder={placeholder}
@@ -215,6 +230,13 @@ export interface LocationModalFormBodyProps {
   setHomebaseApiKey: (v: string) => void;
   showHomebaseKey: boolean;
   setShowHomebaseKey: (v: boolean | ((s: boolean) => boolean)) => void;
+  hasStoredSquareWebhookSignature: boolean;
+  updateSquareWebhookSignature: boolean;
+  setUpdateSquareWebhookSignature: (v: boolean) => void;
+  squareWebhookSignatureKey: string;
+  setSquareWebhookSignatureKey: (v: string) => void;
+  showSquareWebhookKey: boolean;
+  setShowSquareWebhookKey: (v: boolean | ((s: boolean) => boolean)) => void;
   logoId: string | null;
   onClose: () => void;
   /** When false, Cancel/Submit are omitted so the parent can render a modal footer (e.g. dialog shell). */
@@ -272,6 +294,13 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
     setHomebaseApiKey,
     showHomebaseKey,
     setShowHomebaseKey,
+    hasStoredSquareWebhookSignature,
+    updateSquareWebhookSignature,
+    setUpdateSquareWebhookSignature,
+    squareWebhookSignatureKey,
+    setSquareWebhookSignatureKey,
+    showSquareWebhookKey,
+    setShowSquareWebhookKey,
     logoId,
     onClose,
     showFormActions = true,
@@ -563,6 +592,32 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
             placeholder={isEdit && hasStoredSquare ? 'Enter new token to replace' : 'Square access token'}
             inputId="squareAccessToken"
             label="token"
+          />
+        </div>
+        <div>
+          <label htmlFor="squareWebhookSignatureKey" className="block text-sm font-medium text-primary mb-1">
+            Square webhook signature key
+          </label>
+          <p className="text-xs text-gray-500 mb-2">
+            Optional. From each Square app&apos;s webhook subscription — used to verify POSTs to your API. Stored encrypted. Leave empty when updating to remove.
+          </p>
+          <SquareCredentialsField
+            isEdit={isEdit}
+            hasStored={hasStoredSquareWebhookSignature}
+            updateCredentials={updateSquareWebhookSignature}
+            onUpdateClick={() => setUpdateSquareWebhookSignature(true)}
+            value={squareWebhookSignatureKey}
+            onChange={setSquareWebhookSignatureKey}
+            showValue={showSquareWebhookKey}
+            onToggleShow={() => setShowSquareWebhookKey((s) => !s)}
+            placeholder={
+              isEdit && hasStoredSquareWebhookSignature
+                ? 'Enter new key or leave empty to remove'
+                : 'Signature key from Square Developer Dashboard'
+            }
+            inputId="squareWebhookSignatureKey"
+            label="webhook key"
+            credentialRequired={false}
           />
         </div>
       </section>

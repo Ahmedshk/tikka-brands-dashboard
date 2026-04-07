@@ -6,11 +6,13 @@ import { setCurrentLocation, getStoredLocationId } from '../../store/slices/loca
 import {
   setUnreadCount,
   setNotifications,
+  appendNotifications,
   markNotificationRead,
   markAllNotificationsRead,
 } from '../../store/slices/notification.slice';
 import { locationService } from '../../services/location.service';
 import { notificationService } from '../../services/notification.service';
+import type { NotificationItem } from '../../services/notification.service';
 import { useAuth } from '../../hooks/useAuth';
 import type { LocationListItem } from '../../types';
 import { Spinner } from './Spinner';
@@ -49,6 +51,122 @@ function formatTimeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
+const NOTIFICATIONS_PAGE_SIZE = 10;
+const LG_BREAKPOINT_PX = 1024;
+
+type NavbarNotificationListProps = {
+  notifications: NotificationItem[];
+  loadingInitial: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
+  /** Only attach infinite-scroll observer when this panel is visible (avoids duplicate loads from hidden duplicate DOM). */
+  infiniteScrollActive: boolean;
+  onLoadMore: () => void;
+  dense?: boolean;
+  onMarkRead: (id: string) => void;
+};
+
+function NavbarNotificationList({
+  notifications,
+  loadingInitial,
+  loadingMore,
+  hasMore,
+  infiniteScrollActive,
+  onLoadMore,
+  dense,
+  onMarkRead,
+}: Readonly<NavbarNotificationListProps>) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (
+      !infiniteScrollActive ||
+      loadingInitial ||
+      notifications.length === 0 ||
+      !hasMore ||
+      loadingMore
+    ) {
+      return;
+    }
+    const root = scrollRef.current;
+    const sentinel = sentinelRef.current;
+    if (!root || !sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) onLoadMore();
+      },
+      { root, rootMargin: '0px 0px 120px 0px', threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [
+    infiniteScrollActive,
+    loadingInitial,
+    notifications.length,
+    hasMore,
+    loadingMore,
+    onLoadMore,
+  ]);
+
+  if (loadingInitial) {
+    return (
+      <div className="overflow-y-auto flex-1 min-h-[200px] flex items-center justify-center py-8">
+        <Spinner size="lg" className="text-button-primary" />
+      </div>
+    );
+  }
+
+  if (notifications.length === 0) {
+    return (
+      <div className="overflow-y-auto flex-1">
+        <p className="text-sm text-gray-500 p-4 text-center">No notifications</p>
+      </div>
+    );
+  }
+
+  const itemPy = dense ? 'py-2.5' : 'py-3';
+  const titleClass = dense ? 'text-xs font-medium text-primary truncate' : 'text-sm font-medium text-primary truncate';
+  const timeClass = dense ? 'text-xs text-gray-400 mt-0.5' : 'text-xs text-gray-400 mt-1';
+
+  return (
+    <>
+      <div ref={scrollRef} className="overflow-y-auto flex-1 min-h-0">
+        {notifications.map((n) => (
+          <button
+            key={n._id}
+            type="button"
+            onClick={() => {
+              if (n.isRead) return;
+              onMarkRead(n._id);
+            }}
+            className={`w-full text-left px-4 ${itemPy} border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${n.isRead ? '' : 'bg-blue-50/40'}`}
+          >
+            <div className="flex items-start gap-2">
+              {!n.isRead && <span className="w-2 h-2 rounded-full bg-button-primary mt-1.5 flex-shrink-0" />}
+              <div className="min-w-0 flex-1">
+                <p className={titleClass}>{n.title}</p>
+                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
+                <p className={timeClass}>{formatTimeAgo(n.createdAt)}</p>
+              </div>
+            </div>
+          </button>
+        ))}
+        {hasMore && !loadingMore && (
+          <div ref={sentinelRef} className="h-2 w-full shrink-0" aria-hidden />
+        )}
+      </div>
+      {loadingMore && (
+        <div className="flex-shrink-0 flex justify-center items-center min-h-12 py-3 px-4 border-t border-gray-100 bg-gray-50/50">
+          <span className="sr-only">Loading more notifications</span>
+          <Spinner size="sm" className="text-button-primary" />
+        </div>
+      )}
+    </>
+  );
+}
+
 const LOCATION_MANAGEMENT_PATH = '/dashboard/location-management';
 const USER_MANAGEMENT_PATH = '/dashboard/user-management';
 const RBAC_MANAGEMENT_PATH = '/dashboard/rbac-management';
@@ -57,6 +175,7 @@ const TRAINING_SETTINGS_PATH = '/dashboard/training-settings';
 const REVIEW_SETTINGS_PATH = '/dashboard/review-settings';
 const DISCIPLINARY_SETTINGS_PATH = '/dashboard/disciplinary-settings';
 const EVENTS_NOTIFICATIONS_SETTINGS_PATH = '/dashboard/events-notifications-settings';
+const DATA_SYNC_SETTINGS_PATH = '/dashboard/data-sync-settings';
 
 export const Navbar = () => {
   const { pathname } = useLocation();
@@ -73,26 +192,113 @@ export const Navbar = () => {
     pathname === TRAINING_SETTINGS_PATH ||
     pathname === REVIEW_SETTINGS_PATH ||
     pathname === DISCIPLINARY_SETTINGS_PATH ||
-    pathname === EVENTS_NOTIFICATIONS_SETTINGS_PATH;
+    pathname === EVENTS_NOTIFICATIONS_SETTINGS_PATH ||
+    pathname === DATA_SYNC_SETTINGS_PATH;
   const [locationsLoading, setLocationsLoading] = useState(true);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const notificationCount = useSelector((state: RootState) => state.notification.unreadCount);
   const notifications = useSelector((state: RootState) => state.notification.notifications);
-  const notificationsLoaded = useSelector((state: RootState) => state.notification.isLoaded);
+  const notificationListLoaded = useSelector((state: RootState) => state.notification.isLoaded);
+  const notificationListPage = useSelector((state: RootState) => state.notification.listPage);
+  const notificationListHasMore = useSelector((state: RootState) => state.notification.listHasMore);
+  /** Must not be in the fetch effect deps: when the fetch succeeds, `isLoaded` flips true and would re-run the effect, run cleanup (`cancelled = true`), and skip `setNotifLoadingInitial(false)` in `finally`. */
+  const notificationListLoadedRef = useRef(notificationListLoaded);
+  notificationListLoadedRef.current = notificationListLoaded;
+
+  const [notifLoadingInitial, setNotifLoadingInitial] = useState(false);
+  const [notifLoadingMore, setNotifLoadingMore] = useState(false);
+  const [isLgUp, setIsLgUp] = useState(() =>
+    typeof globalThis.matchMedia === 'function'
+      ? globalThis.matchMedia(`(min-width: ${LG_BREAKPOINT_PX}px)`).matches
+      : false,
+  );
+  const loadMoreInFlightRef = useRef(false);
+
+  useEffect(() => {
+    const mq = globalThis.matchMedia(`(min-width: ${LG_BREAKPOINT_PX}px)`);
+    setIsLgUp(mq.matches);
+    const onChange = () => setIsLgUp(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
     notificationService.getUnreadCount().then((c) => dispatch(setUnreadCount(c))).catch(() => {});
   }, [user?._id, dispatch]);
 
-  const loadNotifications = useCallback(() => {
-    if (notificationsLoaded) return;
-    notificationService.getNotifications({ limit: 20 }).then((res) => {
-      dispatch(setNotifications(res.notifications));
-    }).catch(() => {});
-  }, [notificationsLoaded, dispatch]);
+  useEffect(() => {
+    if (!notificationDropdownOpen || notificationListLoadedRef.current) return;
+    let cancelled = false;
+    setNotifLoadingInitial(true);
+    notificationService
+      .getNotifications({ page: 1, limit: NOTIFICATIONS_PAGE_SIZE })
+      .then((res) => {
+        if (cancelled) return;
+        dispatch(
+          setNotifications({
+            notifications: res.notifications,
+            page: res.page,
+            totalPages: res.totalPages,
+          }),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          dispatch(
+            setNotifications({
+              notifications: [],
+              page: 1,
+              totalPages: 0,
+            }),
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setNotifLoadingInitial(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [notificationDropdownOpen, dispatch]);
+
+  const loadMoreNotifications = useCallback(() => {
+    if (
+      !notificationListHasMore ||
+      notifLoadingMore ||
+      notifLoadingInitial ||
+      loadMoreInFlightRef.current
+    ) {
+      return;
+    }
+    loadMoreInFlightRef.current = true;
+    setNotifLoadingMore(true);
+    const nextPage = notificationListPage + 1;
+    notificationService
+      .getNotifications({ page: nextPage, limit: NOTIFICATIONS_PAGE_SIZE })
+      .then((res) => {
+        dispatch(
+          appendNotifications({
+            notifications: res.notifications,
+            page: res.page,
+            totalPages: res.totalPages,
+          }),
+        );
+      })
+      .catch(() => {})
+      .finally(() => {
+        loadMoreInFlightRef.current = false;
+        setNotifLoadingMore(false);
+      });
+  }, [
+    notificationListHasMore,
+    notificationListPage,
+    notifLoadingMore,
+    notifLoadingInitial,
+    dispatch,
+  ]);
 
   const handleMarkRead = useCallback((id: string) => {
     dispatch(markNotificationRead(id));
@@ -276,10 +482,7 @@ export const Navbar = () => {
           <div className="relative" ref={notificationRef}>
             <button
               type="button"
-              onClick={() => {
-                setNotificationDropdownOpen(!notificationDropdownOpen);
-                if (!notificationDropdownOpen) loadNotifications();
-              }}
+              onClick={() => setNotificationDropdownOpen(!notificationDropdownOpen)}
               className="relative p-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
             >
               <NotificationIcon className="w-6 h-6" />
@@ -303,29 +506,15 @@ export const Navbar = () => {
                     </button>
                   )}
                 </div>
-                <div className="overflow-y-auto flex-1">
-                  {notifications.length === 0 ? (
-                    <p className="text-sm text-gray-500 p-4 text-center">No notifications</p>
-                  ) : (
-                    notifications.map((n) => (
-                      <button
-                        key={n._id}
-                        type="button"
-                        onClick={() => { if (!n.isRead) handleMarkRead(n._id); }}
-                        className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${!n.isRead ? 'bg-blue-50/40' : ''}`}
-                      >
-                        <div className="flex items-start gap-2">
-                          {!n.isRead && <span className="w-2 h-2 rounded-full bg-button-primary mt-1.5 flex-shrink-0" />}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-primary truncate">{n.title}</p>
-                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
-                            <p className="text-xs text-gray-400 mt-1">{formatTimeAgo(n.createdAt)}</p>
-                          </div>
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
+                <NavbarNotificationList
+                  notifications={notifications}
+                  loadingInitial={notifLoadingInitial}
+                  loadingMore={notifLoadingMore}
+                  hasMore={notificationListHasMore}
+                  infiniteScrollActive={isLgUp}
+                  onLoadMore={loadMoreNotifications}
+                  onMarkRead={handleMarkRead}
+                />
               </div>
             )}
           </div>
@@ -401,10 +590,7 @@ export const Navbar = () => {
             <div className="relative flex-shrink-0" ref={notificationMobileRef}>
               <button
                 type="button"
-                onClick={() => {
-                  setNotificationDropdownOpen(!notificationDropdownOpen);
-                  if (!notificationDropdownOpen) loadNotifications();
-                }}
+                onClick={() => setNotificationDropdownOpen(!notificationDropdownOpen)}
                 className="relative p-2 hover:opacity-80 rounded-lg transition-opacity cursor-pointer"
               >
                 <NotificationIcon className="w-5 h-5 text-quaternary" />
@@ -424,24 +610,16 @@ export const Navbar = () => {
                       </button>
                     )}
                   </div>
-                  <div className="overflow-y-auto flex-1">
-                    {notifications.length === 0 ? (
-                      <p className="text-sm text-gray-500 p-4 text-center">No notifications</p>
-                    ) : (
-                      notifications.slice(0, 10).map((n) => (
-                        <button
-                          key={n._id}
-                          type="button"
-                          onClick={() => { if (!n.isRead) handleMarkRead(n._id); }}
-                          className={`w-full text-left px-4 py-2.5 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${!n.isRead ? 'bg-blue-50/40' : ''}`}
-                        >
-                          <p className="text-xs font-medium text-primary truncate">{n.title}</p>
-                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">{formatTimeAgo(n.createdAt)}</p>
-                        </button>
-                      ))
-                    )}
-                  </div>
+                  <NavbarNotificationList
+                    notifications={notifications}
+                    loadingInitial={notifLoadingInitial}
+                    loadingMore={notifLoadingMore}
+                    hasMore={notificationListHasMore}
+                    infiniteScrollActive={!isLgUp && mobileMenuOpen}
+                    onLoadMore={loadMoreNotifications}
+                    dense
+                    onMarkRead={handleMarkRead}
+                  />
                 </div>
               )}
             </div>

@@ -3,11 +3,14 @@ export interface ILocation {
   storeName: string;
   address: string;
   squareLocationId: string;
+  /** Optional Square merchant id for webhook routing (same app, multiple locations). */
+  squareMerchantId?: string;
   homebaseLocationId: string;
   timezone: string;
   businessStartTime: string;
   squareAccessTokenEnc?: string;
   homebaseApiKeyEnc?: string;
+  squareWebhookSignatureKeyEnc?: string;
   logoId?: string | null;
   marketManBuyerGuid?: string;
   createdAt?: Date;
@@ -34,19 +37,35 @@ export interface ILocationResponse extends Omit<ILocation, 'squareAccessTokenEnc
   hasSquareAccessToken?: boolean;
   /** True when this location has a stored Homebase API key (value never sent to client). */
   hasHomebaseApiKey?: boolean;
+  /** True when this location has a stored Square webhook signature key (value never sent to client). */
+  hasSquareWebhookSignatureKey?: boolean;
   /** Populated when location has a logo; data URL for display (e.g. sidebar). */
   logoDataUrl?: string;
 }
 
-export type CreateLocationData = Omit<ILocation, '_id' | 'createdAt' | 'updatedAt' | 'squareAccessTokenEnc' | 'homebaseApiKeyEnc'> & {
+export type CreateLocationData = Omit<
+  ILocation,
+  '_id' | 'createdAt' | 'updatedAt' | 'squareAccessTokenEnc' | 'homebaseApiKeyEnc' | 'squareWebhookSignatureKeyEnc'
+> & {
   squareAccessToken: string;
   homebaseApiKey: string;
+  squareMerchantId?: string;
+  /** Plaintext; stored encrypted. Optional per-location Square webhook subscription key. */
+  squareWebhookSignatureKey?: string;
 };
 
-export type UpdateLocationData = Partial<Omit<ILocation, '_id' | 'createdAt' | 'updatedAt' | 'squareAccessTokenEnc' | 'homebaseApiKeyEnc'>> & {
+export type UpdateLocationData = Partial<
+  Omit<ILocation, '_id' | 'createdAt' | 'updatedAt' | 'squareAccessTokenEnc' | 'homebaseApiKeyEnc' | 'squareWebhookSignatureKeyEnc'>
+> & {
   squareAccessToken?: string;
   homebaseApiKey?: string;
   logoId?: string | null;
+  squareMerchantId?: string;
+  /**
+   * When provided: non-empty string encrypts and stores; empty string removes stored key.
+   * When omitted: leave existing value unchanged.
+   */
+  squareWebhookSignatureKey?: string;
 };
 
 export interface LocationWithCredentials {

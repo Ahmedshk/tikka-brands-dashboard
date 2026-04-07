@@ -1,16 +1,29 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import type { NotificationItem } from "../../services/notification.service";
 
+export type NotificationListPagePayload = {
+  notifications: NotificationItem[];
+  page: number;
+  totalPages: number;
+};
+
 interface NotificationState {
   unreadCount: number;
   notifications: NotificationItem[];
+  /** True after the first successful list fetch this session (cleared on logout / full refresh). */
   isLoaded: boolean;
+  /** Last page number fetched from the API (1-based). */
+  listPage: number;
+  /** Whether more pages exist beyond `listPage`. */
+  listHasMore: boolean;
 }
 
 const initialState: NotificationState = {
   unreadCount: 0,
   notifications: [],
   isLoaded: false,
+  listPage: 0,
+  listHasMore: false,
 };
 
 const notificationSlice = createSlice({
@@ -23,11 +36,27 @@ const notificationSlice = createSlice({
     incrementUnreadCount(state) {
       state.unreadCount += 1;
     },
-    setNotifications(state, action: PayloadAction<NotificationItem[]>) {
-      state.notifications = action.payload;
+    setNotifications(state, action: PayloadAction<NotificationListPagePayload>) {
+      const { notifications, page, totalPages } = action.payload;
+      state.notifications = notifications;
+      state.listPage = page;
+      state.listHasMore = page < totalPages;
       state.isLoaded = true;
     },
+    appendNotifications(state, action: PayloadAction<NotificationListPagePayload>) {
+      const { notifications, page, totalPages } = action.payload;
+      const existing = new Set(state.notifications.map((n) => n._id));
+      for (const n of notifications) {
+        if (!existing.has(n._id)) {
+          state.notifications.push(n);
+          existing.add(n._id);
+        }
+      }
+      state.listPage = page;
+      state.listHasMore = page < totalPages;
+    },
     addNotification(state, action: PayloadAction<NotificationItem>) {
+      if (state.notifications.some((n) => n._id === action.payload._id)) return;
       state.notifications.unshift(action.payload);
     },
     markNotificationRead(state, action: PayloadAction<string>) {
@@ -48,7 +77,7 @@ const notificationSlice = createSlice({
       state.unreadCount = 0;
     },
     clearNotifications() {
-      return initialState;
+      return { ...initialState };
     },
   },
 });
@@ -57,6 +86,7 @@ export const {
   setUnreadCount,
   incrementUnreadCount,
   setNotifications,
+  appendNotifications,
   addNotification,
   markNotificationRead,
   markAllNotificationsRead,

@@ -163,13 +163,9 @@ export function getBusinessDayRangeForDate(
   const startMs = parseBusinessStartTime(businessStartTime);
   const startOfDay = getStartOfDayUtc(y, m, d, tz);
   const startAt = new Date(startOfDay.getTime() + startMs);
-  const nextDay = new Date(y, m, d + 1);
-  const startOfNextDay = getStartOfDayUtc(
-    nextDay.getFullYear(),
-    nextDay.getMonth(),
-    nextDay.getDate(),
-    tz,
-  );
+  // Next calendar day in the same (y,m,d) space as getStartOfDayUtc — do not use
+  // `new Date(y, m, d + 1)` (that is interpreted in the *server* local timezone).
+  const startOfNextDay = getStartOfDayUtc(y, m, d + 1, tz);
   const endAt = new Date(startOfNextDay.getTime() + startMs - 1000);
   return {
     startAt: startAt.toISOString(),

@@ -8,6 +8,24 @@ import {
   getDatePartsInTz,
 } from "./salesTrendDateRange.util.js";
 
+/** Lexicographically later civil date (for aligning daily buckets when UTC vs local disagree). */
+function laterCalendarYmd(
+  a: { y: number; m: number; d: number },
+  b: { y: number; m: number; d: number },
+): { y: number; m: number; d: number } {
+  if (a.y !== b.y) return a.y > b.y ? a : b;
+  if (a.m !== b.m) return a.m > b.m ? a : b;
+  return a.d >= b.d ? a : b;
+}
+
+function utcCalendarYmd(d: Date): { y: number; m: number; d: number } {
+  return {
+    y: d.getUTCFullYear(),
+    m: d.getUTCMonth(),
+    d: d.getUTCDate(),
+  };
+}
+
 export type SalesTrendGranularity = "hourly" | "daily" | "weekly" | "monthly";
 
 export interface GetOrderedBucketsAndLabelsOptions {
@@ -157,7 +175,10 @@ function buildDailyBuckets(
     month: "short",
     day: "numeric",
   });
-  const startParts = getDatePartsInTz(start, tz);
+  // Legacy startAt used noon-offset "midnight" (e.g. 06:00Z on spring-forward days), which is
+  // still the *previous* local calendar day. Period intent matches the later of UTC vs local
+  // civil date (Tokyo midnight → UTC prior day also prefers the local start day).
+  const startParts = laterCalendarYmd(getDatePartsInTz(start, tz), utcCalendarYmd(start));
   const endParts = getDatePartsInTz(end, tz);
   let y = startParts.y;
   let m = startParts.m;

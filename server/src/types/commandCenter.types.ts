@@ -53,9 +53,9 @@ export interface WeekToDateKpis {
 }
 
 export interface FetchWeekToDateKpisParams {
+  /** MongoDB location id (Square/Homebase KPI reads use synced data in DB). */
+  locationMongoId?: string;
   location: LocationForKpi;
-  squareAccessToken: string | null;
-  homebaseApiKey: string | null;
   rangeToday: { startAt: string; endAt: string };
   rangeWeekToDate: { startAt: string; endAt: string };
   wantNetSales: boolean;

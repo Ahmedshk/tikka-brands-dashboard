@@ -1,4 +1,5 @@
 import { createElement, type ReactNode } from 'react';
+import { format, isValid, parse } from 'date-fns';
 
 export interface ValidatedUserForm {
   trimmedFirst: string;
@@ -17,9 +18,11 @@ export function parseMmDdYyyy(value: string): Date | null {
   const trimmed = value.trim();
   const m = MM_DD_YYYY_REG.exec(trimmed);
   if (!m) return null;
-  const month = Number.parseInt(m[1], 10);
-  const day = Number.parseInt(m[2], 10);
-  const year = Number.parseInt(m[3], 10);
+  const [, mo, da, yr] = m;
+  if (mo == null || da == null || yr == null) return null;
+  const month = Number.parseInt(mo, 10);
+  const day = Number.parseInt(da, 10);
+  const year = Number.parseInt(yr, 10);
   if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2100) return null;
   const d = new Date(year, month - 1, day);
   if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
@@ -36,6 +39,22 @@ export function formatToMmDdYyyy(date: Date | string): string {
   const day = d.getDate();
   const year = d.getFullYear();
   return `${month.toString().padStart(2, '0')}/${day.toString().padStart(2, '0')}/${year}`;
+}
+
+/**
+ * Normalizes API / user row startDate to yyyy-MM-dd for AnalogDatePickerField.
+ */
+export function userRowStartDateToYmd(value: string | null | undefined): string {
+  if (value == null || !String(value).trim()) return '';
+  const s = String(value).trim();
+  const ymdPrefix = s.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymdPrefix)) {
+    const d = parse(ymdPrefix, 'yyyy-MM-dd', new Date());
+    return isValid(d) ? ymdPrefix : '';
+  }
+  const fromSlash = parseMmDdYyyy(s);
+  if (fromSlash) return format(fromSlash, 'yyyy-MM-dd');
+  return '';
 }
 
 /**

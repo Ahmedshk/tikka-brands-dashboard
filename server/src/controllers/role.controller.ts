@@ -21,6 +21,24 @@ export const listRoles = async (
   }
 };
 
+/** Training hierarchy only: id, name, reportsTo. Allowed for training-management (not full /roles list). */
+export const listRoleHierarchySnapshot = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const activeOnly = req.query.activeOnly === "true";
+    const roles = await roleService.listHierarchySnapshot(activeOnly);
+    res.status(200).json({
+      success: true,
+      data: { roles },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getRole = async (
   req: Request,
   res: Response,

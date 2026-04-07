@@ -79,6 +79,7 @@ export const locationService = {
     homebaseApiKey: string;
     logoId?: string | null;
     marketManBuyerGuid?: string;
+    squareWebhookSignatureKey?: string;
   }): Promise<Location> {
     const res = await api.post<ApiResponse<{ location: Location }>>(
       BASE,
@@ -102,6 +103,7 @@ export const locationService = {
     }> & {
       squareAccessToken?: string;
       homebaseApiKey?: string;
+      squareWebhookSignatureKey?: string;
       logoId?: string | null;
       marketManBuyerGuid?: string | null;
     }
