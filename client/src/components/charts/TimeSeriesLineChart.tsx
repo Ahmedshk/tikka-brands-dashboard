@@ -1,4 +1,5 @@
-import { createContext, useContext, type ComponentProps } from 'react';
+import { createContext, useContext, useMemo, type ComponentProps } from 'react';
+import { axisTooltipRowDateSubline } from '../../utils/timeSeriesAxisTooltipHelpers';
 import { createTheme, ThemeProvider, useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { LineChart } from '@mui/x-charts/LineChart';
@@ -10,6 +11,8 @@ export interface TimeSeriesSeries {
   /** Y values; null skips/breaks the line (e.g. future hours). */
   data: (number | null)[];
   color?: string;
+  /** Optional per-index label (e.g. calendar date) shown in axis tooltip for this series. */
+  tooltipLabels?: string[];
 }
 
 export interface TimeSeriesLineChartYAxisOverrides {
@@ -43,6 +46,7 @@ const mobileMargin = { top: 4, right: 25, bottom: 0, left: 0 };
 
 const TooltipSeriesOrderContext = createContext<string[] | undefined>(undefined);
 const TooltipValueFormatterContext = createContext<((value: number) => string) | undefined>(undefined);
+const TooltipLabelsBySeriesIdContext = createContext<Map<string, string[]> | undefined>(undefined);
 
 function formatTooltipValue(
   value: unknown,
@@ -63,10 +67,13 @@ function formatTooltipValue(
 function TimeSeriesAxisTooltipContent() {
   const seriesOrder = useContext(TooltipSeriesOrderContext);
   const valueFormatter = useContext(TooltipValueFormatterContext);
+  const tooltipLabelsBySeriesId = useContext(TooltipLabelsBySeriesIdContext);
   const axesTooltipData = useAxesTooltip();
   const firstAxis = axesTooltipData?.[0];
   if (!firstAxis || !axesTooltipData?.length) return null;
   const header = firstAxis.axisFormattedValue ?? String(firstAxis.axisValue ?? '—');
+  const dataIndex =
+    typeof firstAxis.dataIndex === 'number' && firstAxis.dataIndex >= 0 ? firstAxis.dataIndex : null;
   let rows = firstAxis.seriesItems ?? [];
   if (seriesOrder?.length) {
     const order = new Map(seriesOrder.map((id, i) => [id, i]));
@@ -82,21 +89,34 @@ function TimeSeriesAxisTooltipContent() {
         {header}
       </p>
       <div className="space-y-2">
-        {rows.map((item) => (
-          <div key={item.seriesId} className="flex items-center gap-2 w-full">
-            <span
-              className="shrink-0 rounded-sm"
-              style={{ width: 12, height: 3, backgroundColor: item.color }}
-              aria-hidden
-            />
-            <span className="text-xs text-secondary flex-1">
-              {item.formattedLabel ?? item.seriesId}
-            </span>
-            <span className="text-xs font-medium text-primary tabular-nums">
-              {formatTooltipValue(item.value, item.formattedValue, valueFormatter)}
-            </span>
-          </div>
-        ))}
+        {rows.map((item) => {
+          const sid = String(item.seriesId);
+          const perSeriesLabels = tooltipLabelsBySeriesId?.get(sid);
+          const dateSubline = axisTooltipRowDateSubline(
+            dataIndex,
+            perSeriesLabels,
+            sid,
+            header,
+          );
+          return (
+            <div key={item.seriesId} className="flex items-center gap-2 w-full">
+              <span
+                className="shrink-0 rounded-sm"
+                style={{ width: 12, height: 3, backgroundColor: item.color }}
+                aria-hidden
+              />
+              <span className="text-xs text-secondary flex-1 min-w-0 flex flex-col gap-0.5">
+                <span>{item.formattedLabel ?? item.seriesId}</span>
+                {dateSubline != null && (
+                  <span className="text-[10px] text-gray-500 font-normal">{dateSubline}</span>
+                )}
+              </span>
+              <span className="text-xs font-medium text-primary tabular-nums shrink-0">
+                {formatTooltipValue(item.value, item.formattedValue, valueFormatter)}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -122,6 +142,16 @@ export const TimeSeriesLineChart = ({
 }: TimeSeriesLineChartProps) => {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
+
+  const tooltipLabelsBySeriesId = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const s of series) {
+      if (s.tooltipLabels != null && s.tooltipLabels.length > 0) {
+        m.set(s.id, s.tooltipLabels);
+      }
+    }
+    return m.size > 0 ? m : undefined;
+  }, [series]);
 
   const chartSeries = series.map((s, index) => ({
     id: s.id,
@@ -161,6 +191,7 @@ export const TimeSeriesLineChart = ({
     <ThemeProvider theme={defaultTheme}>
       <TooltipSeriesOrderContext.Provider value={tooltipSeriesOrder}>
         <TooltipValueFormatterContext.Provider value={yAxisOverrides?.valueFormatter}>
+          <TooltipLabelsBySeriesIdContext.Provider value={tooltipLabelsBySeriesId}>
           <LineChart
             xAxis={[xAxisConfig]}
             yAxis={[yAxisConfig]}
@@ -172,6 +203,7 @@ export const TimeSeriesLineChart = ({
             slots={{ tooltip: TimeSeriesAxisTooltip }}
             slotProps={{ tooltip: { trigger: 'axis' } }}
           />
+          </TooltipLabelsBySeriesIdContext.Provider>
         </TooltipValueFormatterContext.Provider>
       </TooltipSeriesOrderContext.Provider>
     </ThemeProvider>

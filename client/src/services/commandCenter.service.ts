@@ -206,6 +206,10 @@ export interface SalesTrendLineData {
   periodRange?: { startAt: string; endAt: string };
   /** Comparison date range (ISO) when comparison is not none */
   comparisonRange?: { startAt: string; endAt: string } | null;
+  /** Comparison bucket label per x index (tooltips when overlaid on current-period axis). */
+  comparisonPeriodTooltipLabels?: string[];
+  /** Current-period tooltip per x index (full date/time from bucket keys; use when x-axis omits date). */
+  currentPeriodTooltipLabels?: string[];
 }
 
 export interface SalesTrendStackedSeriesItem {

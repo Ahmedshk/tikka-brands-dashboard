@@ -1,5 +1,17 @@
 import type { TimeSeriesSeries } from '../components/charts/TimeSeriesLineChart';
 
+/** Pad tooltip label arrays to the x-axis length (sales trend current vs comparison). */
+export function padTooltipLabelsToAxisLength(
+  axisLength: number,
+  labels: string[] | undefined | null,
+): string[] {
+  if (axisLength <= 0) return [];
+  const src = labels ?? [];
+  return Array.from({ length: axisLength }, (_, i) =>
+    i < src.length ? (src[i] ?? '').trim() : '',
+  );
+}
+
 /** Sum finite numeric points; null and non-finite values contribute 0. */
 export function sumTimeSeriesDataPoints(data: (number | null)[] | undefined): number {
   if (data == null || data.length === 0) return 0;

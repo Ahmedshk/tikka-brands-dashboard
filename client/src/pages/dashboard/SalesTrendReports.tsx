@@ -32,6 +32,7 @@ import {
   sumTimeSeriesDataPoints,
   computePeriodOverPeriodPercentChange,
   salesTrendLineChartPropsToLegendTotals,
+  padTooltipLabelsToAxisLength,
 } from '../../utils/salesTrendChartCardHelpers';
 
 const PAGE_ID = 'sales-trend-reports';
@@ -592,18 +593,35 @@ export const SalesTrendReports = () => {
         yAxis,
       };
     }
+    const showComparison = comparison.comparisonType !== 'none';
+    const axisLen = trendData.xAxisLabels.length;
     const currentSeries: TimeSeriesSeries = {
       id: 'current',
       label: 'This period',
       data: trendData.currentPeriod,
       color: '#FBC52A',
+      ...(axisLen > 0
+        ? {
+            tooltipLabels: padTooltipLabelsToAxisLength(
+              axisLen,
+              trendData.currentPeriodTooltipLabels ?? trendData.xAxisLabels,
+            ),
+          }
+        : {}),
     };
-    const showComparison = comparison.comparisonType !== 'none';
     const comparisonSeries: TimeSeriesSeries = {
       id: 'comparison',
       label: getComparisonLabel(comparison),
       data: trendData.comparisonPeriod,
       color: '#9ca3af',
+      ...(showComparison && axisLen > 0
+        ? {
+            tooltipLabels: padTooltipLabelsToAxisLength(
+              axisLen,
+              trendData.comparisonPeriodTooltipLabels,
+            ),
+          }
+        : {}),
     };
     const currentTotal = sumTimeSeriesDataPoints(trendData.currentPeriod);
     const comparisonTotalPts = sumTimeSeriesDataPoints(trendData.comparisonPeriod);

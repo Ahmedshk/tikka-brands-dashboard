@@ -29,6 +29,10 @@ import {
   getCalendarDayCountInRange,
 } from "../utils/salesTrendDateRange.util.js";
 import type { TimeRange } from "../utils/businessHours.util.js";
+import {
+  formatSalesTrendTooltipLabelFromBucketKey,
+  hourlyBucketKeyToDate,
+} from "./salesTrendTooltipFromBucket.util.js";
 
 export class LaborDateRangeError extends Error {
   constructor(message: string) {
@@ -78,6 +82,10 @@ export interface SalesTrendSeriesData {
   comparisonPeriod: (number | null)[];
   periodRange: TimeRange;
   comparisonRange: TimeRange | null;
+  /** Comparison bucket label per x index (for tooltips when overlaid on current-period axis). */
+  comparisonPeriodTooltipLabels?: string[];
+  /** Current-period tooltip label per x index (full date/time from bucket keys; hourly includes calendar date). */
+  currentPeriodTooltipLabels?: string[];
 }
 
 export function toSeriesGranularity(g: Granularity): SalesTrendGranularity {
@@ -573,9 +581,13 @@ export interface AlignComparisonOptions {
   comparisonPeriod: (number | null)[];
 }
 
-export function alignComparisonAndMaskFuture(
-  opts: AlignComparisonOptions,
-): { xAxisLabels: string[]; currentPeriod: (number | null)[]; comparisonPeriod: (number | null)[] } {
+export function alignComparisonAndMaskFuture(opts: AlignComparisonOptions): {
+  xAxisLabels: string[];
+  currentPeriod: (number | null)[];
+  comparisonPeriod: (number | null)[];
+  comparisonPeriodTooltipLabels?: string[];
+  currentPeriodTooltipLabels?: string[];
+} {
   let labels = opts.xAxisLabels;
   let current = opts.currentPeriod;
   let comp = opts.comparisonPeriod;
@@ -598,48 +610,38 @@ export function alignComparisonAndMaskFuture(
     );
     const currentByKey = new Map<string, number | null>();
     currentBuckets.keys.forEach((k, i) => currentByKey.set(k, current[i] ?? null));
-    const compByKey = new Map<string, number | null>();
-    compBuckets.keys.forEach((k, i) => compByKey.set(k, comp[i] ?? null));
-    const currentKeySet = new Set(currentBuckets.keys);
-    const compKeySet = new Set(compBuckets.keys);
-    const hasExtraCompKeys = compBuckets.keys.some((k) => !currentKeySet.has(k));
-    const hasOverlap = currentBuckets.keys.some((k) => compKeySet.has(k));
-    let finalKeys: string[];
-    if (hasExtraCompKeys && hasOverlap) {
-      const now = new Date();
-      const mergedStart = new Date(
-        Math.min(
-          new Date(opts.currentRange.startAt).getTime(),
-          new Date(opts.comparisonRange.startAt).getTime(),
-        ),
-      ).toISOString();
-      const mergedEnd = new Date(
-        Math.min(
-          Math.max(
-            new Date(opts.currentRange.endAt).getTime(),
-            new Date(opts.comparisonRange.endAt).getTime(),
-          ),
-          now.getTime(),
-        ),
-      ).toISOString();
-      const mergedBuckets = getOrderedBucketsAndLabels(
-        { startAt: mergedStart, endAt: mergedEnd },
-        opts.timezone,
-        opts.seriesGranularity,
-        bucketOpts,
+    const n = currentBuckets.keys.length;
+    labels = currentBuckets.labels;
+    current = currentBuckets.keys.map((k) => currentByKey.get(k) ?? null);
+    const currentPeriodTooltipLabels = currentBuckets.keys.map((k) =>
+      formatSalesTrendTooltipLabelFromBucketKey(k, opts.seriesGranularity, opts.timezone),
+    );
+    const comparisonPeriodTooltipLabels: string[] = [];
+    const compKeysForMask: string[] = [];
+    const compAligned: (number | null)[] = [];
+    for (let i = 0; i < n; i++) {
+      comparisonPeriodTooltipLabels.push(
+        i < compBuckets.keys.length
+          ? formatSalesTrendTooltipLabelFromBucketKey(
+              compBuckets.keys[i]!,
+              opts.seriesGranularity,
+              opts.timezone,
+            )
+          : "",
       );
-      finalKeys = mergedBuckets.keys;
-      labels = mergedBuckets.labels;
-      current = mergedBuckets.keys.map((k) => (currentByKey.has(k) ? currentByKey.get(k)! : null));
-      comp = mergedBuckets.keys.map((k) => (compByKey.has(k) ? compByKey.get(k)! : null));
-    } else {
-      finalKeys = hasExtraCompKeys ? currentBuckets.keys : compBuckets.keys;
-      if (hasExtraCompKeys && !hasOverlap && comp.length !== current.length) {
-        comp = current.map((_, i) => (i < comp.length ? comp[i]! : null));
-      }
+      compKeysForMask.push(i < compBuckets.keys.length ? compBuckets.keys[i]! : "");
+      compAligned.push(i < comp.length ? comp[i] ?? null : null);
     }
-    comp = maskFutureBuckets(comp, finalKeys, opts.timezone, opts.seriesGranularity);
-  } else if (comp.length > 0 && comp.length !== current.length) {
+    comp = maskFutureBuckets(compAligned, compKeysForMask, opts.timezone, opts.seriesGranularity);
+    return {
+      xAxisLabels: labels,
+      currentPeriod: current,
+      comparisonPeriod: comp,
+      comparisonPeriodTooltipLabels,
+      currentPeriodTooltipLabels,
+    };
+  }
+  if (comp.length > 0 && comp.length !== current.length) {
     comp = current.map(() => 0);
   }
   return { xAxisLabels: labels, currentPeriod: current, comparisonPeriod: comp };
@@ -655,8 +657,15 @@ function maskFutureBuckets(
   return comparisonPeriod.map((val, i) => {
     const key = finalKeys[i];
     if (!key) return val;
-    const parts = key.split("-").map((p) => Number.parseInt(p, 10));
-    const bucketDate = parseBucketKeyToDate(parts, timezone, seriesGranularity);
+    let bucketDate: Date;
+    if (seriesGranularity === "hourly" && key.includes("T")) {
+      const parsed = hourlyBucketKeyToDate(key, timezone);
+      if (!parsed) return val;
+      bucketDate = parsed;
+    } else {
+      const parts = key.split("-").map((p) => Number.parseInt(p, 10));
+      bucketDate = parseBucketKeyToDate(parts, timezone, seriesGranularity);
+    }
     return bucketDate > now ? null : val;
   });
 }
@@ -786,6 +795,29 @@ export async function getSalesTrendData(
     currentPeriod: seriesPayload.currentPeriod,
     comparisonPeriod: seriesPayload.comparisonPeriod,
   });
+
+  const bucketOpts = {
+    periodType,
+    businessStartTime: ctx.businessStartTime,
+  };
+  let currentPeriodTooltipLabels = aligned.currentPeriodTooltipLabels;
+  if (currentPeriodTooltipLabels == null) {
+    const tooltipBuckets = getOrderedBucketsAndLabels(
+      currentRange,
+      ctx.timezone,
+      seriesGranularity,
+      bucketOpts,
+    );
+    if (
+      tooltipBuckets.keys.length === aligned.xAxisLabels.length &&
+      tooltipBuckets.keys.length > 0
+    ) {
+      currentPeriodTooltipLabels = tooltipBuckets.keys.map((k) =>
+        formatSalesTrendTooltipLabelFromBucketKey(k, seriesGranularity, ctx.timezone),
+      );
+    }
+  }
+
   return {
     kind: "series",
     data: {
@@ -795,6 +827,12 @@ export async function getSalesTrendData(
       comparisonPeriod: aligned.comparisonPeriod,
       periodRange: { startAt: period.startAt, endAt: period.endAt },
       comparisonRange,
+      ...(currentPeriodTooltipLabels != null
+        ? { currentPeriodTooltipLabels }
+        : {}),
+      ...(aligned.comparisonPeriodTooltipLabels != null
+        ? { comparisonPeriodTooltipLabels: aligned.comparisonPeriodTooltipLabels }
+        : {}),
     },
   };
 }
