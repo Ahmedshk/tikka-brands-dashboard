@@ -235,8 +235,8 @@ function buildKpiRows(data: SalesTrendKpiData | null): KPIsTableRow[] {
     },
     {
       label: 'Average Sales Per Hour (SPH)',
-      current: sphCur > 0 ? currencyFmt(sphCur) : '—',
-      previous: sphComp > 0 ? currencyFmt(sphComp) : '—',
+      current: sphCur > 0 ? `${currencyFmt(sphCur)}/hr` : '—',
+      previous: sphComp > 0 ? `${currencyFmt(sphComp)}/hr` : '—',
       percent: percentDiff(sphCur, sphComp),
       tooltip: 'Total Net Sales / Total hours in period',
     },

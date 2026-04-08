@@ -1,5 +1,37 @@
+/** Calendar (y, month 0-based, d) for an instant in `timezone` (DST-safe). */
+export function getCalendarYmdInTz(
+  utcMs: number,
+  timezone: string,
+): { y: number; m: number; d: number } {
+  const tz = timezone.trim();
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date(utcMs));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
+  return {
+    y: Number.parseInt(get("year"), 10),
+    m: Number.parseInt(get("month"), 10) - 1,
+    d: Number.parseInt(get("day"), 10),
+  };
+}
+
+function compareCalendarYmd(
+  a: { y: number; m: number; d: number },
+  b: { y: number; m: number; d: number },
+): number {
+  if (a.y !== b.y) return a.y - b.y;
+  if (a.m !== b.m) return a.m - b.m;
+  return a.d - b.d;
+}
+
 /**
- * Get start of a calendar day in timezone as UTC Date (midnight in that TZ).
+ * Start of a calendar day in timezone as UTC Date (first instant of that local date).
+ * Binary search so DST transitions (e.g. US spring forward) are correct; the old
+ * noon-offset formula could map “Mar 8” to the wrong UTC instant.
  */
 export function getStartOfDayUtc(
   y: number,
@@ -7,17 +39,52 @@ export function getStartOfDayUtc(
   d: number,
   timezone: string,
 ): Date {
-  const utcNoon = Date.UTC(y, m, d, 12, 0, 0, 0);
-  const hourFormatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-  });
-  const hourStr = hourFormatter.format(utcNoon);
-  const hour = Number.parseInt(hourStr.split(":")[0] ?? "0", 10);
-  const offsetHours = hour - 12;
-  return new Date(Date.UTC(y, m, d, -offsetHours, 0, 0, 0));
+  const tz = timezone.trim();
+  const target = { y, m, d };
+  const dayMs = 24 * 60 * 60 * 1000;
+  let lo = Date.UTC(y, m, d, 12, 0, 0, 0) - 72 * 60 * 60 * 1000;
+  let hi = Date.UTC(y, m, d, 12, 0, 0, 0) + 72 * 60 * 60 * 1000;
+  while (compareCalendarYmd(getCalendarYmdInTz(lo, tz), target) >= 0) {
+    lo -= dayMs;
+  }
+  while (compareCalendarYmd(getCalendarYmdInTz(hi, tz), target) < 0) {
+    hi += dayMs;
+  }
+  while (lo < hi) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (compareCalendarYmd(getCalendarYmdInTz(mid, tz), target) < 0) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return new Date(lo);
+}
+
+/** Add days to civil (y, month 0-based, d); uses UTC calendar math (host-TZ agnostic). */
+function addDaysUtc(y: number, m: number, d: number, delta: number): {
+  y: number;
+  m: number;
+  d: number;
+} {
+  const x = new Date(Date.UTC(y, m, d + delta));
+  return {
+    y: x.getUTCFullYear(),
+    m: x.getUTCMonth(),
+    d: x.getUTCDate(),
+  };
+}
+
+/** End of local calendar day (last ms before next local day) in `timezone`. */
+export function getEndOfDayUtc(
+  y: number,
+  m: number,
+  d: number,
+  timezone: string,
+): Date {
+  const next = addDaysUtc(y, m, d, 1);
+  const startNext = getStartOfDayUtc(next.y, next.m, next.d, timezone);
+  return new Date(startNext.getTime() - 1);
 }
 
 /**

@@ -49,65 +49,15 @@ export interface GetSalesTrendComparisonRangeOptions {
   periodType?: PeriodType;
 }
 
-/** Calendar (y, month 0-based, d) for an instant in `timezone` (DST-safe). */
-function getCalendarYmdInTz(utcMs: number, timezone: string): { y: number; m: number; d: number } {
-  const tz = timezone.trim();
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = formatter.formatToParts(new Date(utcMs));
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
-  return {
-    y: Number.parseInt(get("year"), 10),
-    m: Number.parseInt(get("month"), 10) - 1,
-    d: Number.parseInt(get("day"), 10),
-  };
-}
+import {
+  getBusinessStartTimeRange,
+  getBusinessDayRangeForDate,
+  getStartOfDayUtc,
+  getEndOfDayUtc,
+  getCalendarYmdInTz,
+} from "./timezone.util.js";
 
-function compareCalendarYmd(
-  a: { y: number; m: number; d: number },
-  b: { y: number; m: number; d: number },
-): number {
-  if (a.y !== b.y) return a.y - b.y;
-  if (a.m !== b.m) return a.m - b.m;
-  return a.d - b.d;
-}
-
-/**
- * Start of a calendar day in timezone as UTC Date (first instant of that local date).
- * Uses binary search so DST transitions (e.g. US spring forward) are correct; the old
- * noon-offset formula could map “Mar 8” to 06:00Z so daily buckets began on Mar 7.
- */
-export function getStartOfDayUtc(
-  y: number,
-  m: number,
-  d: number,
-  timezone: string,
-): Date {
-  const tz = timezone.trim();
-  const target = { y, m, d };
-  const dayMs = 24 * 60 * 60 * 1000;
-  let lo = Date.UTC(y, m, d, 12, 0, 0, 0) - 72 * 60 * 60 * 1000;
-  let hi = Date.UTC(y, m, d, 12, 0, 0, 0) + 72 * 60 * 60 * 1000;
-  while (compareCalendarYmd(getCalendarYmdInTz(lo, tz), target) >= 0) {
-    lo -= dayMs;
-  }
-  while (compareCalendarYmd(getCalendarYmdInTz(hi, tz), target) < 0) {
-    hi += dayMs;
-  }
-  while (lo < hi) {
-    const mid = lo + Math.floor((hi - lo) / 2);
-    if (compareCalendarYmd(getCalendarYmdInTz(mid, tz), target) < 0) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
-  }
-  return new Date(lo);
-}
+export { getStartOfDayUtc, getEndOfDayUtc } from "./timezone.util.js";
 
 /** Get (year, month 0-based, day) of "now" in the given timezone. */
 function getTodayInTz(timezone: string): { y: number; m: number; d: number } {
@@ -163,23 +113,6 @@ function addDays(y: number, m: number, d: number, delta: number): { y: number; m
     d: x.getUTCDate(),
   };
 }
-
-/** End of day (last ms before next local calendar day) in TZ for (y,m,d). */
-export function getEndOfDayUtc(
-  y: number,
-  m: number,
-  d: number,
-  timezone: string,
-): Date {
-  const next = addDays(y, m, d, 1);
-  const startNext = getStartOfDayUtc(next.y, next.m, next.d, timezone);
-  return new Date(startNext.getTime() - 1);
-}
-
-import {
-  getBusinessStartTimeRange,
-  getBusinessDayRangeForDate,
-} from "./timezone.util.js";
 
 /**
  * Get the period range and granularity for Sales Trend.
@@ -306,7 +239,7 @@ function getLast52WeeksPeriodRange(
   tz: string,
   y: number,
   m: number,
-  d: number,
+  _d: number,
   businessStartTime?: string,
 ): PeriodRangeResult {
   const startMonth = new Date(y, m - 12, 1);
@@ -495,6 +428,52 @@ function getCustomPeriodRange(
   return { startAt, endAt, granularity, ...withDisplayEnd };
 }
 
+/** Whole days between two civil dates in `timezone` (non-negative when `early` is on or before `late`). */
+function calendarDayDiff(
+  early: { y: number; m: number; d: number },
+  late: { y: number; m: number; d: number },
+  timezone: string,
+): number {
+  const t0 = getStartOfDayUtc(early.y, early.m, early.d, timezone).getTime();
+  const t1 = getStartOfDayUtc(late.y, late.m, late.d, timezone).getTime();
+  return Math.round((t1 - t0) / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * 1-based week index within the calendar month (y, m): week 1 is the Sun–Sat week that contains the 1st.
+ * Used for rolling last7/last30/custom so e.g. Thu Apr 2 is week 1 of April (not week 5 of March via the Mar 29 Sunday).
+ */
+function getWeekOfMonthFromFirstOfMonth(y: number, m: number, d: number, tz: string): number {
+  const dow1 = getDayOfWeekInTz(y, m, 1, tz);
+  const sunWeekOf1st = addDays(y, m, 1, -dow1);
+  const dowD = getDayOfWeekInTz(y, m, d, tz);
+  const sunWeekOfD = addDays(y, m, d, -dowD);
+  const diff = Math.max(0, calendarDayDiff(sunWeekOf1st, sunWeekOfD, tz));
+  return 1 + Math.floor(diff / 7);
+}
+
+/**
+ * Sunday that starts the `weekNum`-th week (1-based) of calendar month (y, m): same rule as
+ * getWeekOfMonthFromFirstOfMonth (week 1 contains the 1st). Use with anchor-based W for rolling/thisWeek;
+ * legacy getSundayOfWeekInMonth uses “first Sunday on/after the 1st” and disagrees for e.g. April week 2.
+ */
+function getSundayOfNthAnchorWeekInMonth(
+  y: number,
+  m: number,
+  weekNum: number,
+  tz: string,
+): { y: number; m: number; d: number } {
+  const n = Math.max(1, weekNum);
+  const dow1 = getDayOfWeekInTz(y, m, 1, tz);
+  const sunWeekContainingFirst = addDays(y, m, 1, -dow1);
+  return addDays(
+    sunWeekContainingFirst.y,
+    sunWeekContainingFirst.m,
+    sunWeekContainingFirst.d,
+    (n - 1) * 7,
+  );
+}
+
 /** 1-based week number of the month for the week that starts on the given Sunday (calendar date). */
 function getWeekOfMonthForSunday(
   y: number,
@@ -539,7 +518,7 @@ function getLastWeekOfMonth(
   return { start, end };
 }
 
-/** Week-of-month comparison alignment applies only to calendar-bound periods, not rolling windows. */
+/** Calendar-bounded periods that may use week-of-month comparison (thisMonth/thisYear keep legacy week index). */
 const CALENDAR_BOUNDED_PERIOD_TYPES_FOR_WEEK_COMPARISON = new Set<PeriodType>([
   "thisWeek",
   "thisMonth",
@@ -555,12 +534,63 @@ const COMPARISON_TYPES_WITH_WEEK_LOGIC = new Set<ComparisonType>([
   "year4Before",
 ]);
 
-/** Rolling/custom spans where "same period previous month" keeps length: start → previous month, end → start + (n−1) days. */
-const ROLLING_PERIOD_TYPES_FOR_PREV_MONTH = new Set<PeriodType>([
+/**
+ * Periods where week-of-month is the Sun–Sat week that contains the month’s 1st (not “first Sunday on/after the 1st”).
+ * Sunday lookup for comparison uses the same anchor (see getSundayOfNthAnchorWeekInMonth). Rolling/custom ends use
+ * the primary span; **thisWeek** uses a full Sun–Sat comparison window (handled in getComparisonRangeWithWeekLogic).
+ */
+const PERIOD_TYPES_MONTH_ANCHOR_WEEK_AND_SPAN_END = new Set<PeriodType>([
+  "thisWeek",
   "last7days",
   "last30days",
   "custom",
 ]);
+
+/** Full previous calendar month in TZ (for thisMonth + samePeriodPreviousMonth). */
+function getFullPreviousCalendarMonthComparison(
+  periodEndAt: string,
+  tz: string,
+  bizStart: string,
+  useBiz: boolean,
+): ComparisonRangeResult {
+  const endParts = getDatePartsInTz(new Date(periodEndAt), tz);
+  let pm = endParts.m - 1;
+  let py = endParts.y;
+  if (pm < 0) {
+    pm += 12;
+    py -= 1;
+  }
+  const startCal = { y: py, m: pm, d: 1 };
+  const lastD = new Date(py, pm + 1, 0).getDate();
+  const endCal = { y: py, m: pm, d: lastD };
+  return rangeFromCalendar(tz, bizStart, useBiz, startCal, endCal);
+}
+
+/** Full same calendar month in year − 1 (for thisMonth + priorYear). */
+function getFullSameMonthPriorYearComparison(
+  periodStartAt: string,
+  tz: string,
+  bizStart: string,
+  useBiz: boolean,
+): ComparisonRangeResult {
+  const sp = getDatePartsInTz(new Date(periodStartAt), tz);
+  const y = sp.y - 1;
+  const m = sp.m;
+  const lastD = new Date(y, m + 1, 0).getDate();
+  return rangeFromCalendar(tz, bizStart, useBiz, { y, m, d: 1 }, { y, m, d: lastD });
+}
+
+/** Full prior calendar year Jan 1 – Dec 31 (for thisYear + priorYear). */
+function getFullPriorCalendarYearComparison(
+  periodStartAt: string,
+  tz: string,
+  bizStart: string,
+  useBiz: boolean,
+): ComparisonRangeResult {
+  const sp = getDatePartsInTz(new Date(periodStartAt), tz);
+  const y = sp.y - 1;
+  return rangeFromCalendar(tz, bizStart, useBiz, { y, m: 0, d: 1 }, { y, m: 11, d: 31 });
+}
 
 function getComparisonRangeWithWeekLogic(
   comparisonType: ComparisonType,
@@ -569,35 +599,62 @@ function getComparisonRangeWithWeekLogic(
   tz: string,
   bizStart: string,
   useBiz: boolean,
+  periodType?: PeriodType,
 ): ComparisonRangeResult {
   const startParts = getDatePartsInTz(start, tz);
   const endParts = getDatePartsInTz(end, tz);
   const startDayOfWeek = getDayOfWeekInTz(startParts.y, startParts.m, startParts.d, tz);
   const endDayOfWeek = getDayOfWeekInTz(endParts.y, endParts.m, endParts.d, tz);
-  const startSunday = addDays(startParts.y, startParts.m, startParts.d, -startDayOfWeek);
-  const endSunday = addDays(endParts.y, endParts.m, endParts.d, -endDayOfWeek);
-  const W_start = getWeekOfMonthForSunday(startSunday.y, startSunday.m, startSunday.d, tz);
-  const W_end = getWeekOfMonthForSunday(endSunday.y, endSunday.m, endSunday.d, tz);
+  const useMonthAnchorWeekAndSpanEnd =
+    periodType != null && PERIOD_TYPES_MONTH_ANCHOR_WEEK_AND_SPAN_END.has(periodType);
+  let W_start: number;
+  let W_end: number;
+  if (useMonthAnchorWeekAndSpanEnd) {
+    W_start = getWeekOfMonthFromFirstOfMonth(startParts.y, startParts.m, startParts.d, tz);
+    W_end = getWeekOfMonthFromFirstOfMonth(endParts.y, endParts.m, endParts.d, tz);
+  } else {
+    const startSunday = addDays(startParts.y, startParts.m, startParts.d, -startDayOfWeek);
+    const endSunday = addDays(endParts.y, endParts.m, endParts.d, -endDayOfWeek);
+    W_start = getWeekOfMonthForSunday(startSunday.y, startSunday.m, startSunday.d, tz);
+    W_end = getWeekOfMonthForSunday(endSunday.y, endSunday.m, endSunday.d, tz);
+  }
 
   const { prevStartY, prevStartM, prevEndY, prevEndM, targetW_start, targetW_end } =
     computeWeekLogicTargets(comparisonType, startParts, endParts, W_start, W_end);
 
+  const useAnchorWeek = useMonthAnchorWeekAndSpanEnd;
   const sunStart = getSunStartForWeekLogic(
     comparisonType,
     prevStartY,
     prevStartM,
     targetW_start,
     tz,
+    useAnchorWeek,
   );
-  const sunEnd = getSunEndForWeekLogic(
-    comparisonType,
-    prevEndY,
-    prevEndM,
-    targetW_end,
-    tz,
-  );
-  const compStart = addDays(sunStart.y, sunStart.m, sunStart.d, startDayOfWeek);
-  const compEnd = addDays(sunEnd.y, sunEnd.m, sunEnd.d, endDayOfWeek);
+  /** thisWeek: always compare against the full Sun–Sat week in the aligned prior week / month / year (chart may still clip the current period to “today”). */
+  let compStart: { y: number; m: number; d: number };
+  let compEnd: { y: number; m: number; d: number };
+  if (periodType === "thisWeek") {
+    compStart = { y: sunStart.y, m: sunStart.m, d: sunStart.d };
+    compEnd = addDays(sunStart.y, sunStart.m, sunStart.d, 6);
+  } else {
+    compStart = addDays(sunStart.y, sunStart.m, sunStart.d, startDayOfWeek);
+    /** Month-anchor rolling/custom: span matches primary; mapping end by week alone can clamp (e.g. Feb has no “week 5”). */
+    if (useMonthAnchorWeekAndSpanEnd) {
+      const spanDays = calendarDayDiff(startParts, endParts, tz);
+      compEnd = addDays(compStart.y, compStart.m, compStart.d, spanDays);
+    } else {
+      const sunEnd = getSunEndForWeekLogic(
+        comparisonType,
+        prevEndY,
+        prevEndM,
+        targetW_end,
+        tz,
+        useAnchorWeek,
+      );
+      compEnd = addDays(sunEnd.y, sunEnd.m, sunEnd.d, endDayOfWeek);
+    }
+  }
 
   if (useBiz) {
     const startR = getBusinessDayRangeForDate(tz, bizStart, compStart.y, compStart.m, compStart.d);
@@ -671,12 +728,25 @@ function computeWeekLogicTargets(
   };
 }
 
+function weekSundayInMonth(
+  y: number,
+  m: number,
+  weekNum: number,
+  tz: string,
+  useAnchorWeek: boolean,
+): { y: number; m: number; d: number } {
+  return useAnchorWeek
+    ? getSundayOfNthAnchorWeekInMonth(y, m, weekNum, tz)
+    : getSundayOfWeekInMonth(y, m, weekNum, tz);
+}
+
 function getSunStartForWeekLogic(
   comparisonType: ComparisonType,
   prevStartY: number,
   prevStartM: number,
   targetW_start: number,
   tz: string,
+  useAnchorWeek: boolean,
 ): { y: number; m: number; d: number } {
   if (comparisonType === "samePeriodPreviousWeek" && targetW_start <= 1) {
     const py = prevStartM === 0 ? prevStartY - 1 : prevStartY;
@@ -685,9 +755,15 @@ function getSunStartForWeekLogic(
     return lastStart;
   }
   if (comparisonType === "samePeriodPreviousWeek") {
-    return getSundayOfWeekInMonth(prevStartY, prevStartM, targetW_start - 1, tz);
+    return weekSundayInMonth(
+      prevStartY,
+      prevStartM,
+      targetW_start - 1,
+      tz,
+      useAnchorWeek,
+    );
   }
-  return getSundayOfWeekInMonth(prevStartY, prevStartM, targetW_start, tz);
+  return weekSundayInMonth(prevStartY, prevStartM, targetW_start, tz, useAnchorWeek);
 }
 
 function getSunEndForWeekLogic(
@@ -696,6 +772,7 @@ function getSunEndForWeekLogic(
   prevEndM: number,
   targetW_end: number,
   tz: string,
+  useAnchorWeek: boolean,
 ): { y: number; m: number; d: number } {
   if (comparisonType === "samePeriodPreviousWeek" && targetW_end <= 1) {
     const py = prevEndM === 0 ? prevEndY - 1 : prevEndY;
@@ -704,9 +781,9 @@ function getSunEndForWeekLogic(
     return lastStart;
   }
   if (comparisonType === "samePeriodPreviousWeek") {
-    return getSundayOfWeekInMonth(prevEndY, prevEndM, targetW_end - 1, tz);
+    return weekSundayInMonth(prevEndY, prevEndM, targetW_end - 1, tz, useAnchorWeek);
   }
-  return getSundayOfWeekInMonth(prevEndY, prevEndM, targetW_end, tz);
+  return weekSundayInMonth(prevEndY, prevEndM, targetW_end, tz, useAnchorWeek);
 }
 
 function getCustomComparisonRange(
@@ -813,7 +890,19 @@ function getComparisonRangeFromSwitch(
   tz: string,
   bizStart: string,
   useBiz: boolean,
+  periodType?: PeriodType,
 ): ComparisonRangeResult | null {
+  if (periodType === "thisWeek" && COMPARISON_TYPES_WITH_WEEK_LOGIC.has(comparisonType)) {
+    return getComparisonRangeWithWeekLogic(
+      comparisonType,
+      start,
+      end,
+      tz,
+      bizStart,
+      useBiz,
+      periodType,
+    );
+  }
   const fromCalendar = (
     startParts: { y: number; m: number; d: number },
     endParts: { y: number; m: number; d: number },
@@ -901,32 +990,17 @@ function prevMonthDate(
   return { y: newY, m: newM, d: Math.min(d, maxDay) };
 }
 
-function getSamePeriodPreviousMonthRollingRange(
-  periodStartAt: string,
-  periodEndAt: string,
-  tz: string,
-  bizStart: string,
-  useBiz: boolean,
-): ComparisonRangeResult {
-  const nDays = getCalendarDayCountInRange(
-    { startAt: periodStartAt, endAt: periodEndAt },
-    tz,
-  );
-  const startParts = getDatePartsInTz(new Date(periodStartAt), tz);
-  const compStart = prevMonthDate(startParts.y, startParts.m, startParts.d);
-  const compEnd = addDays(compStart.y, compStart.m, compStart.d, Math.max(0, nDays - 1));
-  return rangeFromCalendar(tz, bizStart, useBiz, compStart, compEnd);
-}
-
 /**
  * Get the comparison period range given the primary period range and comparison type.
  * Returns same-length range aligned with comparison option; same granularity as primary.
  * For custom, pass customComparisonStart and customComparisonEnd in options (both ISO or YYYY-MM-DD).
  * Optional businessStartTime in options ensures custom comparison uses store business day boundaries.
- * For thisWeek/thisMonth/thisYear, some comparisons use week-of-month alignment; rolling periods use calendar
- * math in the location timezone (e.g. last7days + priorYear → same dates one year earlier).
- * For last7days / last30days / custom, samePeriodPreviousMonth uses the previous calendar month of the range
- * start and preserves the inclusive day count (not previous month of each endpoint).
+ * Week-of-month + DOW alignment (Sunday-based weeks) applies to thisWeek/thisMonth/thisYear and
+ * last7days/last30days/custom for supported comparisons. Rolling/custom use the week containing the month’s 1st
+ * and a comparison end aligned to the primary span. **thisWeek** uses the aligned Sun–Sat week in the comparison
+ * month/year (full 7 days), independent of how many days have elapsed in the current week.
+ * Special cases: thisMonth + samePeriodPreviousMonth → full previous calendar month; thisMonth + priorYear →
+ * full same month prior year; thisYear + priorYear → full prior calendar year.
  */
 export function getSalesTrendComparisonRange(
   comparisonType: ComparisonType,
@@ -952,29 +1026,24 @@ export function getSalesTrendComparisonRange(
   const bizStart = (businessStartTime ?? "00:00").trim();
   const useBiz = useBusinessDayBoundaries(businessStartTime);
 
-  if (
-    comparisonType === "samePeriodPreviousMonth" &&
-    periodType != null &&
-    ROLLING_PERIOD_TYPES_FOR_PREV_MONTH.has(periodType)
-  ) {
-    return getSamePeriodPreviousMonthRollingRange(
-      periodStartAt,
-      periodEndAt,
-      tz,
-      bizStart,
-      useBiz,
-    );
+  if (periodType === "thisMonth" && comparisonType === "samePeriodPreviousMonth") {
+    return getFullPreviousCalendarMonthComparison(periodEndAt, tz, bizStart, useBiz);
+  }
+  if (periodType === "thisMonth" && comparisonType === "priorYear") {
+    return getFullSameMonthPriorYearComparison(periodStartAt, tz, bizStart, useBiz);
+  }
+  if (periodType === "thisYear" && comparisonType === "priorYear") {
+    return getFullPriorCalendarYearComparison(periodStartAt, tz, bizStart, useBiz);
   }
 
-  // Week-of-month alignment (getComparisonRangeWithWeekLogic) is only for thisWeek/thisMonth/thisYear.
-  // Rolling periods (last7days, last30days, last52weeks, custom) use the switch path (e.g. prior year −1 calendar year in TZ).
   const sameWeekUsesWeekOfMonth =
     comparisonType === "samePeriodPreviousWeek" && periodType === "thisWeek";
   const useWeekLogic =
     periodType != null &&
-    CALENDAR_BOUNDED_PERIOD_TYPES_FOR_WEEK_COMPARISON.has(periodType) &&
     COMPARISON_TYPES_WITH_WEEK_LOGIC.has(comparisonType) &&
-    (comparisonType !== "samePeriodPreviousWeek" || sameWeekUsesWeekOfMonth);
+    (comparisonType !== "samePeriodPreviousWeek" || sameWeekUsesWeekOfMonth) &&
+    (CALENDAR_BOUNDED_PERIOD_TYPES_FOR_WEEK_COMPARISON.has(periodType) ||
+      PERIOD_TYPES_MONTH_ANCHOR_WEEK_AND_SPAN_END.has(periodType));
 
   if (useWeekLogic) {
     return getComparisonRangeWithWeekLogic(
@@ -984,6 +1053,7 @@ export function getSalesTrendComparisonRange(
       tz,
       bizStart,
       useBiz,
+      periodType,
     );
   }
 
@@ -1005,5 +1075,6 @@ export function getSalesTrendComparisonRange(
     tz,
     bizStart,
     useBiz,
+    periodType,
   );
 }

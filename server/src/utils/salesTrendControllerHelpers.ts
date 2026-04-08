@@ -179,7 +179,7 @@ export function getPeriodAndComparison(
   if (params.comparisonDate !== undefined) comparisonOptions.customComparisonDate = params.comparisonDate;
   if (params.comparisonStart !== undefined) comparisonOptions.customComparisonStart = params.comparisonStart;
   if (params.comparisonEnd !== undefined) comparisonOptions.customComparisonEnd = params.comparisonEnd;
-  if (params.periodType !== undefined) comparisonOptions.periodType = params.periodType as PeriodType;
+  comparisonOptions.periodType = params.periodType as PeriodType;
   const comparison = getSalesTrendComparisonRange(
     params.comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
     period.startAt,
