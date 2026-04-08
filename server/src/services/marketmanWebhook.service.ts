@@ -208,6 +208,7 @@ export async function processMarketManWebhookHttp(
     const businessDateKey = marketManBusinessDateKeyFromUtcDate(
       businessDateAt,
       loc.timezone ?? "UTC",
+      loc.businessStartTime ?? "00:00",
     );
     try {
       await buildMarketManRollupForDay(
@@ -216,6 +217,7 @@ export async function processMarketManWebhookHttp(
         apiKind,
         businessDateKey,
         loc.timezone ?? "UTC",
+        loc.businessStartTime ?? "00:00",
       );
       rollupUpdated = true;
     } catch (err) {

@@ -111,6 +111,7 @@ export const disciplinaryManagementService = {
   async getEmployees(
     locationId: string,
     options: { page?: number; limit?: number; search?: string } = {},
+    config?: { signal?: AbortSignal },
   ): Promise<{
     rows: DisciplinaryRow[];
     meta: {
@@ -134,9 +135,9 @@ export const disciplinaryManagementService = {
     if (search) {
       params.set('search', search);
     }
-    const { data } = await api.get(
-      `/disciplinary/employees?${params.toString()}`,
-    );
+    const { data } = await api.get(`/disciplinary/employees?${params.toString()}`, {
+      signal: config?.signal,
+    });
     const employees: ApiEmployee[] = data.data;
     const rows = employees.map((e) => ({
       id: e.id,

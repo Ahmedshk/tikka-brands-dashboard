@@ -29,8 +29,10 @@ export const notificationService = {
     return data.data;
   },
 
-  async getUnreadCount(): Promise<number> {
-    const { data } = await api.get("/notifications/unread-count");
+  async getUnreadCount(config?: { signal?: AbortSignal }): Promise<number> {
+    const { data } = await api.get("/notifications/unread-count", {
+      signal: config?.signal,
+    });
     return data.data.count;
   },
 

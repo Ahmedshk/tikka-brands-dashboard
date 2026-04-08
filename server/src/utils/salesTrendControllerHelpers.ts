@@ -122,16 +122,28 @@ async function buildSquareOrderCacheOptions(
   locationMongoId: string | undefined,
   range: TimeRange,
   base?: SquareServiceOptions,
+  rollupCtx?: { timezone: string; businessStartTime: string },
 ): Promise<SquareServiceOptions | undefined> {
   if (!locationMongoId?.trim()) {
     return base;
   }
   const id = locationMongoId.trim();
   const orders = await loadSquareOrdersForMongoRange(id, range);
+  const bst = rollupCtx?.businessStartTime?.trim() ?? base?.businessStartTime;
   return {
     ...base,
     ordersOverride: orders,
     batchRetrieveCatalogOverride: createMongoCatalogBatchRetrieve(id),
+    ...(bst != null && bst !== "" ? { businessStartTime: bst } : {}),
+    ...(rollupCtx != null
+      ? {
+          rollupRead: {
+            locationMongoId: id,
+            timezone: rollupCtx.timezone,
+            businessStartTime: rollupCtx.businessStartTime,
+          },
+        }
+      : {}),
   };
 }
 
@@ -181,6 +193,7 @@ export interface FetchBySourceOptions {
   dataRange: TimeRange;
   displayRange: TimeRange;
   timezone: string;
+  businessStartTime: string;
   seriesGranularity: SalesTrendGranularity;
   useDisplayRange: boolean;
   periodType: string;
@@ -196,13 +209,21 @@ export async function fetchSalesTrendBySource(
     opts.locationMongoId,
     opts.dataRange,
     { accessToken: opts.accessToken, periodType: opts.periodType },
+    {
+      timezone: opts.timezone,
+      businessStartTime: opts.businessStartTime,
+    },
   );
   const result = await getOrderTimeSeriesBySourceInRange(
     squareLocationId,
     opts.dataRange,
     opts.timezone,
     opts.seriesGranularity,
-    squareOpts ?? { accessToken: opts.accessToken, periodType: opts.periodType },
+    squareOpts ?? {
+      accessToken: opts.accessToken,
+      periodType: opts.periodType,
+      businessStartTime: opts.businessStartTime,
+    },
   );
   let xAxisLabelsSource = result.labels;
   let seriesSource = result.series;
@@ -211,13 +232,19 @@ export async function fetchSalesTrendBySource(
       opts.displayRange,
       opts.timezone,
       opts.seriesGranularity,
-      { periodType: opts.periodType },
+      {
+        periodType: opts.periodType,
+        businessStartTime: opts.businessStartTime,
+      },
     );
     const dataBuckets = getOrderedBucketsAndLabels(
       opts.dataRange,
       opts.timezone,
       opts.seriesGranularity,
-      { periodType: opts.periodType },
+      {
+        periodType: opts.periodType,
+        businessStartTime: opts.businessStartTime,
+      },
     );
     xAxisLabelsSource = displayBuckets.labels;
     const dataLen = dataBuckets.keys.length;
@@ -301,6 +328,7 @@ export interface FetchOrderMetricsOptions {
   dataRange: TimeRange;
   displayRange: TimeRange;
   timezone: string;
+  businessStartTime: string;
   seriesGranularity: SalesTrendGranularity;
   useDisplayRange: boolean;
   periodType: string;
@@ -317,11 +345,26 @@ export async function fetchSalesTrendOrderMetrics(
   const baseOpts: SquareServiceOptions = {
     accessToken: opts.accessToken,
     periodType: opts.periodType,
+    businessStartTime: opts.businessStartTime,
+  };
+  const rollupCtx = {
+    timezone: opts.timezone,
+    businessStartTime: opts.businessStartTime,
   };
   const [currentOpts, compOpts] = await Promise.all([
-    buildSquareOrderCacheOptions(opts.locationMongoId, opts.dataRange, baseOpts),
+    buildSquareOrderCacheOptions(
+      opts.locationMongoId,
+      opts.dataRange,
+      baseOpts,
+      rollupCtx,
+    ),
     opts.comparisonRange
-      ? buildSquareOrderCacheOptions(opts.locationMongoId, opts.comparisonRange, baseOpts)
+      ? buildSquareOrderCacheOptions(
+          opts.locationMongoId,
+          opts.comparisonRange,
+          baseOpts,
+          rollupCtx,
+        )
       : Promise.resolve(undefined),
   ]);
   const [current, comp] = await Promise.all([
@@ -347,13 +390,19 @@ export async function fetchSalesTrendOrderMetrics(
       opts.displayRange,
       opts.timezone,
       opts.seriesGranularity,
-      { periodType: opts.periodType },
+      {
+        periodType: opts.periodType,
+        businessStartTime: opts.businessStartTime,
+      },
     );
     const dataBuckets = getOrderedBucketsAndLabels(
       opts.dataRange,
       opts.timezone,
       opts.seriesGranularity,
-      { periodType: opts.periodType },
+      {
+        periodType: opts.periodType,
+        businessStartTime: opts.businessStartTime,
+      },
     );
     const netSalesByKey: Record<string, number> = {};
     const txnByKey: Record<string, number> = {};
@@ -379,6 +428,7 @@ export interface FetchLaborMetricsOptions {
   dataRange: TimeRange;
   displayRange: TimeRange;
   timezone: string;
+  businessStartTime: string;
   seriesGranularity: SalesTrendGranularity;
   useDisplayRange: boolean;
   periodType: string;
@@ -389,23 +439,32 @@ export interface FetchLaborMetricsOptions {
   locationMongoId?: string;
 }
 
+interface LaborSeriesForRangeOpts {
+  periodType: string;
+  businessStartTime: string;
+  apiKey: string | undefined;
+  locationMongoId: string | undefined;
+}
+
 async function laborSeriesForRange(
   _homebaseLocationId: string,
   range: TimeRange,
   timezone: string,
   granularity: SalesTrendGranularity,
-  periodType: string,
-  _apiKey: string | undefined,
-  locationMongoId: string | undefined,
+  opts: LaborSeriesForRangeOpts,
 ): Promise<
   Awaited<ReturnType<typeof getLaborAndHoursTimeSeriesInRangeFromCache>>
 > {
+  const { periodType, businessStartTime, locationMongoId } = opts;
+  const bucketOpts = periodType
+    ? { periodType, businessStartTime }
+    : { businessStartTime };
   if (!locationMongoId?.trim()) {
     const { keys, labels } = getOrderedBucketsAndLabels(
       range,
       timezone,
       granularity,
-      periodType ? { periodType } : undefined,
+      bucketOpts,
     );
     return {
       labels,
@@ -419,6 +478,7 @@ async function laborSeriesForRange(
     timezone,
     granularity,
     periodType,
+    businessStartTime,
   );
 }
 
@@ -426,15 +486,19 @@ export async function fetchSalesTrendLaborMetrics(
   homebaseLocationId: string,
   opts: FetchLaborMetricsOptions,
 ): Promise<{ xAxisLabels: string[]; currentPeriod: (number | null)[]; comparisonPeriod: (number | null)[] }> {
+  const laborOpts: LaborSeriesForRangeOpts = {
+    periodType: opts.periodType,
+    businessStartTime: opts.businessStartTime,
+    apiKey: opts.apiKey,
+    locationMongoId: opts.locationMongoId,
+  };
   const [current, comp] = await Promise.all([
     laborSeriesForRange(
       homebaseLocationId,
       opts.dataRange,
       opts.timezone,
       opts.seriesGranularity,
-      opts.periodType,
-      opts.apiKey,
-      opts.locationMongoId,
+      laborOpts,
     ),
     opts.comparisonRange
       ? laborSeriesForRange(
@@ -442,9 +506,7 @@ export async function fetchSalesTrendLaborMetrics(
           opts.comparisonRange,
           opts.timezone,
           opts.seriesGranularity,
-          opts.periodType,
-          opts.apiKey,
-          opts.locationMongoId,
+          laborOpts,
         )
       : null,
   ]);
@@ -453,13 +515,19 @@ export async function fetchSalesTrendLaborMetrics(
       opts.displayRange,
       opts.timezone,
       opts.seriesGranularity,
-      { periodType: opts.periodType },
+      {
+        periodType: opts.periodType,
+        businessStartTime: opts.businessStartTime,
+      },
     );
     const dataBuckets = getOrderedBucketsAndLabels(
       opts.dataRange,
       opts.timezone,
       opts.seriesGranularity,
-      { periodType: opts.periodType },
+      {
+        periodType: opts.periodType,
+        businessStartTime: opts.businessStartTime,
+      },
     );
     const laborCostByKey: Record<string, number> = {};
     const hoursByKey: Record<string, number> = {};
@@ -500,6 +568,7 @@ export interface AlignComparisonOptions {
   currentRange: TimeRange;
   comparisonRange: TimeRange | null;
   timezone: string;
+  businessStartTime: string;
   seriesGranularity: SalesTrendGranularity;
   periodType: string;
   xAxisLabels: string[];
@@ -514,17 +583,21 @@ export function alignComparisonAndMaskFuture(
   let current = opts.currentPeriod;
   let comp = opts.comparisonPeriod;
   if (opts.comparisonRange && comp.length > 0) {
+    const bucketOpts = {
+      periodType: opts.periodType,
+      businessStartTime: opts.businessStartTime,
+    };
     const currentBuckets = getOrderedBucketsAndLabels(
       opts.currentRange,
       opts.timezone,
       opts.seriesGranularity,
-      { periodType: opts.periodType },
+      bucketOpts,
     );
     const compBuckets = getOrderedBucketsAndLabels(
       opts.comparisonRange,
       opts.timezone,
       opts.seriesGranularity,
-      { periodType: opts.periodType },
+      bucketOpts,
     );
     const currentByKey = new Map<string, number | null>();
     currentBuckets.keys.forEach((k, i) => currentByKey.set(k, current[i] ?? null));
@@ -556,7 +629,7 @@ export function alignComparisonAndMaskFuture(
         { startAt: mergedStart, endAt: mergedEnd },
         opts.timezone,
         opts.seriesGranularity,
-        { periodType: opts.periodType },
+        bucketOpts,
       );
       finalKeys = mergedBuckets.keys;
       labels = mergedBuckets.labels;
@@ -625,6 +698,7 @@ async function fetchSeriesMetricsPayload(
     dataRange: TimeRange;
     displayRange: TimeRange;
     timezone: string;
+    businessStartTime: string;
     seriesGranularity: SalesTrendGranularity;
     useDisplayRange: boolean;
     periodType: string;
@@ -676,6 +750,7 @@ export async function getSalesTrendData(
       dataRange,
       displayRange,
       timezone: ctx.timezone,
+      businessStartTime: ctx.businessStartTime,
       seriesGranularity,
       useDisplayRange,
       periodType,
@@ -694,6 +769,7 @@ export async function getSalesTrendData(
       dataRange,
       displayRange,
       timezone: ctx.timezone,
+      businessStartTime: ctx.businessStartTime,
       seriesGranularity,
       useDisplayRange,
       periodType,
@@ -706,6 +782,7 @@ export async function getSalesTrendData(
     currentRange,
     comparisonRange,
     timezone: ctx.timezone,
+    businessStartTime: ctx.businessStartTime,
     seriesGranularity,
     periodType,
     xAxisLabels: seriesPayload.xAxisLabels,
@@ -794,11 +871,26 @@ async function fetchSquareKpiTotals(
   const baseOpts: SquareServiceOptions = {
     accessToken: ctx.squareAccessToken ?? undefined,
     periodType,
+    businessStartTime: ctx.businessStartTime,
+  };
+  const rollupCtx = {
+    timezone: ctx.timezone,
+    businessStartTime: ctx.businessStartTime,
   };
   const [currentOpts, compOpts] = await Promise.all([
-    buildSquareOrderCacheOptions(ctx.locationMongoId, dataRange, baseOpts),
+    buildSquareOrderCacheOptions(
+      ctx.locationMongoId,
+      dataRange,
+      baseOpts,
+      rollupCtx,
+    ),
     comparisonRange
-      ? buildSquareOrderCacheOptions(ctx.locationMongoId, comparisonRange, baseOpts)
+      ? buildSquareOrderCacheOptions(
+          ctx.locationMongoId,
+          comparisonRange,
+          baseOpts,
+          rollupCtx,
+        )
       : Promise.resolve(undefined),
   ]);
   const [current, comp] = await Promise.all([
@@ -840,15 +932,19 @@ async function fetchLaborKpiTotals(
   seriesGranularity: SalesTrendGranularity,
   periodType: string,
 ): Promise<LaborKpiTotals> {
+  const laborKpiOpts: LaborSeriesForRangeOpts = {
+    periodType,
+    businessStartTime: ctx.businessStartTime,
+    apiKey: ctx.homebaseApiKey ?? undefined,
+    locationMongoId: ctx.locationMongoId ?? undefined,
+  };
   const [current, comp] = await Promise.all([
     laborSeriesForRange(
       homebaseLocationId,
       dataRange,
       ctx.timezone,
       seriesGranularity,
-      periodType,
-      ctx.homebaseApiKey ?? undefined,
-      ctx.locationMongoId ?? undefined,
+      laborKpiOpts,
     ),
     comparisonRange
       ? laborSeriesForRange(
@@ -856,9 +952,7 @@ async function fetchLaborKpiTotals(
           comparisonRange,
           ctx.timezone,
           seriesGranularity,
-          periodType,
-          ctx.homebaseApiKey ?? undefined,
-          ctx.locationMongoId ?? undefined,
+          laborKpiOpts,
         )
       : null,
   ]);

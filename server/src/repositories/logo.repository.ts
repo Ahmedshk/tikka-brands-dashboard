@@ -1,7 +1,19 @@
+import mongoose from 'mongoose';
 import { LogoModel, LogoDocument } from '../models/logo.model.js';
 import { ILogo } from '../types/logo.types.js';
 
 const LIST_LIMIT = 50;
+
+function toValidObjectIds(ids: string[]): mongoose.Types.ObjectId[] {
+  const out: mongoose.Types.ObjectId[] = [];
+  for (const raw of ids) {
+    const id = raw.trim();
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      out.push(new mongoose.Types.ObjectId(id));
+    }
+  }
+  return out;
+}
 
 export class LogoRepository {
   async create(data: Omit<ILogo, '_id' | 'createdAt' | 'updatedAt'>): Promise<LogoDocument> {
@@ -11,6 +23,16 @@ export class LogoRepository {
 
   async findById(id: string): Promise<LogoDocument | null> {
     return await LogoModel.findById(id).lean().exec() as LogoDocument | null;
+  }
+
+  /** Single query for many logos (e.g. location list). Only `_id` and `dataUrl` are selected. */
+  async findByIds(ids: string[]): Promise<Array<{ _id: unknown; dataUrl: string }>> {
+    const oids = toValidObjectIds(ids);
+    if (oids.length === 0) return [];
+    return (await LogoModel.find({ _id: { $in: oids } })
+      .select({ dataUrl: 1 })
+      .lean()
+      .exec()) as Array<{ _id: unknown; dataUrl: string }>;
   }
 
   async findAll(limit = LIST_LIMIT): Promise<LogoDocument[]> {

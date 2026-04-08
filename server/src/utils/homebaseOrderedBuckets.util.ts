@@ -7,6 +7,14 @@ import {
   getStartOfDayUtc,
   getDatePartsInTz,
 } from "./salesTrendDateRange.util.js";
+import {
+  businessDateKeysIntersectingUtcRange,
+  businessDateKeyForInstant,
+  parseYmdBusinessDateKey,
+} from "./businessDayUtcRange.util.js";
+import {
+  sundayWeekStartYmdForBusinessDateKey,
+} from "./rollupPeriodKeys.util.js";
 
 /** Lexicographically later civil date (for aligning daily buckets when UTC vs local disagree). */
 function laterCalendarYmd(
@@ -30,6 +38,12 @@ export type SalesTrendGranularity = "hourly" | "daily" | "weekly" | "monthly";
 
 export interface GetOrderedBucketsAndLabelsOptions {
   periodType?: string | undefined;
+  /** When set, daily/weekly/monthly keys follow business-day semantics (opening calendar date in TZ). */
+  businessStartTime?: string | undefined;
+}
+
+export interface GetBucketKeyForDateOptions {
+  businessStartTime?: string | undefined;
 }
 
 /** Get bucket key for a date in TZ (same format as Square for alignment). */
@@ -37,9 +51,15 @@ export function getBucketKeyForDate(
   date: Date,
   timezone: string,
   granularity: SalesTrendGranularity,
+  bucketOpts?: GetBucketKeyForDateOptions,
 ): string {
   if (Number.isNaN(date.getTime())) return "";
   const tz = timezone.trim();
+  const bstRaw = bucketOpts?.businessStartTime;
+  const bst =
+    bstRaw != null && String(bstRaw).trim() !== ""
+      ? String(bstRaw).trim()
+      : undefined;
   if (granularity === "hourly") {
     const f = new Intl.DateTimeFormat("en-CA", {
       timeZone: tz,
@@ -54,6 +74,9 @@ export function getBucketKeyForDate(
     return `${get("year")}-${get("month")}-${get("day")}T${get("hour").padStart(2, "0")}`;
   }
   if (granularity === "daily") {
+    if (bst != null) {
+      return businessDateKeyForInstant(date, tz, bst);
+    }
     const f = new Intl.DateTimeFormat("en-CA", {
       timeZone: tz,
       year: "numeric",
@@ -65,6 +88,10 @@ export function getBucketKeyForDate(
     return `${get("year")}-${get("month")}-${get("day")}`;
   }
   if (granularity === "weekly") {
+    if (bst != null) {
+      const bd = businessDateKeyForInstant(date, tz, bst);
+      return sundayWeekStartYmdForBusinessDateKey(bd, tz);
+    }
     const f = new Intl.DateTimeFormat("en-CA", {
       timeZone: tz,
       year: "numeric",
@@ -78,12 +105,16 @@ export function getBucketKeyForDate(
     const d = Number.parseInt(get("day"), 10);
     const dt = new Date(y, m, d);
     const dayOfWeek = dt.getDay();
-    const toMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const mon = new Date(dt);
-    mon.setDate(mon.getDate() - toMonday);
-    return `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, "0")}-${String(mon.getDate()).padStart(2, "0")}`;
+    const toSunday = dayOfWeek;
+    const sun = new Date(dt);
+    sun.setDate(sun.getDate() - toSunday);
+    return `${sun.getFullYear()}-${String(sun.getMonth() + 1).padStart(2, "0")}-${String(sun.getDate()).padStart(2, "0")}`;
   }
   if (granularity === "monthly") {
+    if (bst != null) {
+      const bd = businessDateKeyForInstant(date, tz, bst);
+      return bd.slice(0, 7);
+    }
     const f = new Intl.DateTimeFormat("en-CA", {
       timeZone: tz,
       year: "numeric",
@@ -153,7 +184,40 @@ function buildDailyBuckets(
   range: TimeRange,
   tz: string,
   periodType: string | undefined,
+  businessStartTime?: string | undefined,
 ): { keys: string[]; labels: string[] } {
+  const bst = businessStartTime?.trim();
+  if (bst) {
+    const keys = businessDateKeysIntersectingUtcRange(
+      range.startAt,
+      range.endAt,
+      tz,
+      bst,
+    );
+    const showDayName =
+      periodType != null &&
+      periodType !== "today" &&
+      periodType !== "last52weeks" &&
+      periodType !== "thisYear";
+    const labelF = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      month: "short",
+      day: "numeric",
+    });
+    const labelFWithWeekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+    const labels = keys.map((key) => {
+      const { y, m0, d } = parseYmdBusinessDateKey(key);
+      const cursor = getStartOfDayUtc(y, m0, d, tz);
+      return showDayName ? labelFWithWeekday.format(cursor) : labelF.format(cursor);
+    });
+    return { keys, labels };
+  }
+
   const keys: string[] = [];
   const labels: string[] = [];
   const seen = new Set<string>();
@@ -209,7 +273,30 @@ function buildDailyBuckets(
 function buildWeeklyBuckets(
   range: TimeRange,
   tz: string,
+  businessStartTime?: string | undefined,
 ): { keys: string[]; labels: string[] } {
+  const bst = businessStartTime?.trim();
+  if (bst) {
+    const intersecting = businessDateKeysIntersectingUtcRange(
+      range.startAt,
+      range.endAt,
+      tz,
+      bst,
+    );
+    const keys: string[] = [];
+    const seen = new Set<string>();
+    for (const dkey of intersecting) {
+      const ws = sundayWeekStartYmdForBusinessDateKey(dkey, tz);
+      if (!seen.has(ws)) {
+        seen.add(ws);
+        keys.push(ws);
+      }
+    }
+    let weekNum = 1;
+    const labels = keys.map(() => `Week ${weekNum++}`);
+    return { keys, labels };
+  }
+
   const keys: string[] = [];
   const labels: string[] = [];
   const seen = new Set<string>();
@@ -247,7 +334,60 @@ function buildMonthlyBuckets(
   range: TimeRange,
   tz: string,
   periodType: string | undefined,
+  businessStartTime?: string | undefined,
 ): { keys: string[]; labels: string[] } {
+  const bst = businessStartTime?.trim();
+  if (bst) {
+    const intersecting = businessDateKeysIntersectingUtcRange(
+      range.startAt,
+      range.endAt,
+      tz,
+      bst,
+    );
+    const keys: string[] = [];
+    const seen = new Set<string>();
+    for (const dkey of intersecting) {
+      const mk = dkey.slice(0, 7);
+      if (!seen.has(mk)) {
+        seen.add(mk);
+        keys.push(mk);
+      }
+    }
+    const last52weeksAllYear = periodType === "last52weeks";
+    const labelF = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      month: "short",
+    });
+    const labelFWithYear = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      month: "short",
+      year: "numeric",
+    });
+    const labelFShortYear = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      month: "short",
+      year: "2-digit",
+    });
+    const startYear =
+      keys.length > 0
+        ? Number.parseInt(keys[0]!.slice(0, 4), 10)
+        : new Date().getUTCFullYear();
+    const labels = keys.map((mk) => {
+      const m = /^(\d{4})-(\d{2})$/.exec(mk);
+      if (!m) return mk;
+      const y = Number.parseInt(m[1] ?? "0", 10);
+      const month0 = Number.parseInt(m[2] ?? "0", 10) - 1;
+      const cursor = getStartOfDayUtc(y, month0, 1, tz);
+      if (last52weeksAllYear) {
+        let label = labelFShortYear.format(cursor);
+        label = label.replace(/\s*(\d{2})$/, ", $1");
+        return label;
+      }
+      return y === startYear ? labelF.format(cursor) : labelFWithYear.format(cursor);
+    });
+    return { keys, labels };
+  }
+
   const keys: string[] = [];
   const labels: string[] = [];
   const seen = new Set<string>();
@@ -307,11 +447,15 @@ export function getOrderedBucketsAndLabels(
 ): { keys: string[]; labels: string[] } {
   const tz = timezone.trim();
   const periodType = options?.periodType;
+  const businessStartTime = options?.businessStartTime;
 
   if (granularity === "hourly") return buildHourlyBuckets(range, tz);
-  if (granularity === "daily") return buildDailyBuckets(range, tz, periodType);
-  if (granularity === "weekly") return buildWeeklyBuckets(range, tz);
-  if (granularity === "monthly") return buildMonthlyBuckets(range, tz, periodType);
+  if (granularity === "daily")
+    return buildDailyBuckets(range, tz, periodType, businessStartTime);
+  if (granularity === "weekly")
+    return buildWeeklyBuckets(range, tz, businessStartTime);
+  if (granularity === "monthly")
+    return buildMonthlyBuckets(range, tz, periodType, businessStartTime);
 
   return { keys: [], labels: [] };
 }

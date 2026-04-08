@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
-import { LocationService } from '../services/location.service.js';
+import {
+  LocationService,
+  type GetLocationsPaginatedOptions,
+} from '../services/location.service.js';
 import {
   validateLocationId,
   buildUpdateLocationData,
@@ -80,46 +83,20 @@ export const getLocations = async (
     const limit = Number(req.query.limit) || 10;
     const allowedIds = req.user?.allowedLocationIds;
     const locationRemovals = req.user?.locationRemovals ?? [];
-    const removalSet = locationRemovals.length > 0 ? new Set(locationRemovals) : null;
 
-    const fetchAllForFilter = Array.isArray(allowedIds) || removalSet != null;
-    let result = await locationService.getPaginated(
-      fetchAllForFilter ? 1 : page,
-      fetchAllForFilter ? 10000 : limit
-    );
-    if (Array.isArray(allowedIds)) {
-      const allowedSet = new Set(allowedIds);
-      let filtered = result.locations.filter(
-        (loc) => loc._id != null && allowedSet.has(loc._id)
-      );
-      if (removalSet) {
-        filtered = filtered.filter((loc) => loc._id != null && !removalSet.has(loc._id));
-      }
-      const total = filtered.length;
-      const totalPages = Math.max(1, Math.ceil(total / limit));
-      const start = (page - 1) * limit;
-      result = {
-        locations: filtered.slice(start, start + limit),
-        total,
-        page,
-        limit,
-        totalPages,
-      };
-    } else if (removalSet && result.locations.length > 0) {
-      const filtered = result.locations.filter(
-        (loc) => loc._id != null && !removalSet.has(loc._id)
-      );
-      const total = filtered.length;
-      const totalPages = Math.max(1, Math.ceil(total / limit));
-      const start = (page - 1) * limit;
-      result = {
-        locations: filtered.slice(start, start + limit),
-        total,
-        page,
-        limit,
-        totalPages,
-      };
-    }
+    const listOptions: GetLocationsPaginatedOptions | undefined =
+      Array.isArray(allowedIds) || locationRemovals.length > 0
+        ? {
+            ...(Array.isArray(allowedIds)
+              ? { allowedLocationIds: allowedIds }
+              : {}),
+            ...(locationRemovals.length > 0
+              ? { excludeLocationIds: locationRemovals }
+              : {}),
+          }
+        : undefined;
+
+    const result = await locationService.getPaginated(page, limit, listOptions);
     const listItems: ILocationListItem[] = result.locations.map(toLocationListItem);
     res.status(200).json({
       success: true,

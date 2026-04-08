@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/store';
-import { setCurrentLocation, getStoredLocationId } from '../../store/slices/location.slice';
+import { setCurrentLocation, setLocationListHydrated, getStoredLocationId } from '../../store/slices/location.slice';
 import {
   setUnreadCount,
   setNotifications,
@@ -226,7 +226,12 @@ export const Navbar = () => {
 
   useEffect(() => {
     if (!user) return;
-    notificationService.getUnreadCount().then((c) => dispatch(setUnreadCount(c))).catch(() => {});
+    const ac = new AbortController();
+    notificationService
+      .getUnreadCount({ signal: ac.signal })
+      .then((c) => dispatch(setUnreadCount(c)))
+      .catch(() => {});
+    return () => ac.abort();
   }, [user?._id, dispatch]);
 
   useEffect(() => {
@@ -334,7 +339,10 @@ export const Navbar = () => {
       } catch {
         if (!controller.signal.aborted) setLocations([]);
       } finally {
-        if (!controller.signal.aborted) setLocationsLoading(false);
+        if (!controller.signal.aborted) {
+          setLocationsLoading(false);
+          dispatch(setLocationListHydrated(true));
+        }
       }
     })();
     return () => controller.abort();

@@ -1,20 +1,15 @@
 /**
- * Idempotent: upserts `SquareOrderDailyRollup` per location and business day.
- * Business-day window per location (`businessDateKey` = opening date in TZ). After each daily doc,
- * rebuilds Square hourly + week/month/year period rollups for that day.
+ * Rebuilds only `SquareOrderHourlyRollup` (24 slots) per business day from cached orders.
+ * Requires orders in Mongo for that day; run `rollup-square-orders-daily` first if dailies are missing.
  *
- * Local: npm run rollup-square-orders-daily -- --from 2026-03-01 --to 2026-03-07
- * Optional: `--locationId` (Mongo _id). Omit `--from`/`--to` to use yesterday per location TZ.
+ * Local: npm run rollup-square-orders-hourly -- --from 2026-03-01 --to 2026-03-07
  */
 import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import mongoose from "mongoose";
 import { connectDatabase } from "../config/database.js";
-import {
-  buildSquareOrderRollupForDay,
-} from "../services/dailyRollupBuilder.service.js";
-import { rebuildSquareOrderDerivedRollupsForBusinessDay } from "../services/squareOrderMultiGranularityRollup.service.js";
+import { buildSquareOrderHourlyRollupsForDay } from "../services/squareOrderMultiGranularityRollup.service.js";
 import {
   iterBusinessDateKeysInclusive,
   parseRollupCliArgs,
@@ -44,29 +39,23 @@ async function main(): Promise<void> {
       );
       const days = iterBusinessDateKeysInclusive(fromKey, toKey);
       for (const businessDateKey of days) {
-        await buildSquareOrderRollupForDay(
+        await buildSquareOrderHourlyRollupsForDay(
           String(loc._id),
           businessDateKey,
           loc.timezone,
           loc.businessStartTime,
         );
-        await rebuildSquareOrderDerivedRollupsForBusinessDay(
-          String(loc._id),
-          businessDateKey,
-          loc.timezone,
-          loc.businessStartTime,
-        );
-        logger.info("Square order rollup", {
+        logger.info("Square order hourly rollup", {
           locationId: String(loc._id),
           businessDateKey,
         });
       }
     }
-    console.log("\n✅ Square order daily rollups complete.\n");
+    console.log("\n✅ Square order hourly rollups complete.\n");
     await mongoose.disconnect();
     process.exit(0);
   } catch (error) {
-    logger.error("rollup-square-orders-daily failed", error);
+    logger.error("rollup-square-orders-hourly failed", error);
     console.error("\n❌ Rollup failed:", error);
     try {
       await mongoose.disconnect();

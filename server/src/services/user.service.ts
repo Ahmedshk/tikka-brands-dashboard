@@ -172,6 +172,28 @@ export class UserService {
     }
   }
 
+  private async loadRoleLocationAccessMap(
+    roleIdStrings: string[],
+  ): Promise<Map<string, { locationAccess: string; locationIdStrings: string[] }>> {
+    const roleMap = new Map<
+      string,
+      { locationAccess: string; locationIdStrings: string[] }
+    >();
+    if (roleIdStrings.length === 0) return roleMap;
+    const rows = await this.roleRepository.findByIdsLocationAccessLean(roleIdStrings);
+    for (const role of rows) {
+      const rid = role._id.toString();
+      const locationAccess = (
+        (role as { locationAccess?: string }).locationAccess ?? "all"
+      ).toLowerCase();
+      const locationIdStrings = roleLocationIdStrings(
+        role as { locationIds?: unknown[] },
+      );
+      roleMap.set(rid, { locationAccess, locationIdStrings });
+    }
+    return roleMap;
+  }
+
   async createUser(
     payload: CreateUserPayload,
     options?: { sendInvite?: boolean },
@@ -274,6 +296,16 @@ export class UserService {
     return toIUser(doc);
   }
 
+  async getUsersByIds(ids: string[]): Promise<Map<string, IUser>> {
+    const docs = await this.userRepository.findByIds(ids);
+    const map = new Map<string, IUser>();
+    for (const d of docs) {
+      const id = toIdString(d._id);
+      if (id) map.set(id, toIUser(d));
+    }
+    return map;
+  }
+
   async getUserByEmail(email: string): Promise<IUser | null> {
     const doc = await this.userRepository.findByEmail(email);
     return doc ? toIUser(doc) : null;
@@ -348,22 +380,7 @@ export class UserService {
           .map(String),
       ),
     ];
-    const roleMap = new Map<
-      string,
-      { locationAccess: string; locationIdStrings: string[] }
-    >();
-    for (const rid of roleIdStrings) {
-      const role = await this.roleRepository.findById(rid);
-      if (role) {
-        const locationAccess = (
-          (role as { locationAccess?: string }).locationAccess ?? "all"
-        ).toLowerCase();
-        const locationIdStrings = roleLocationIdStrings(
-          role as { locationIds?: unknown[] },
-        );
-        roleMap.set(rid, { locationAccess, locationIdStrings });
-      }
-    }
+    const roleMap = await this.loadRoleLocationAccessMap(roleIdStrings);
 
     // Include users whose effective locations (role ∪ overrides \ removals) include the selected location,
     // and also include users with no role (e.g. synced-from-Homebase) so they appear in the list and can be assigned a role.
@@ -414,22 +431,7 @@ export class UserService {
           .map(String),
       ),
     ];
-    const roleMap = new Map<
-      string,
-      { locationAccess: string; locationIdStrings: string[] }
-    >();
-    for (const rid of roleIdStrings) {
-      const role = await this.roleRepository.findById(rid);
-      if (role) {
-        const locationAccess = (
-          (role as { locationAccess?: string }).locationAccess ?? "all"
-        ).toLowerCase();
-        const locationIdStrings = roleLocationIdStrings(
-          role as { locationIds?: unknown[] },
-        );
-        roleMap.set(rid, { locationAccess, locationIdStrings });
-      }
-    }
+    const roleMap = await this.loadRoleLocationAccessMap(roleIdStrings);
     const filtered = docs.filter((doc) => {
       if (!doc.roleId) return false;
       const rid = String(doc.roleId);

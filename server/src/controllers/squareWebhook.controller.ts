@@ -1,12 +1,13 @@
 import type { Request, Response } from "express";
-import { formatInTimeZone } from "date-fns-tz";
 import { verifySquareWebhookSignatureWithAnyKey } from "../utils/squareWebhookVerify.util.js";
+import { businessDateKeyForInstant } from "../utils/businessDayUtcRange.util.js";
 import { tryRecordSquareWebhookEvent, upsertSquareOrder, upsertSquarePayment, upsertSquareTeamMember } from "../services/integrationCacheWrite.service.js";
 import { resolveLocationIdForSquare } from "../services/integrationSyncRunner.service.js";
 import {
   buildSquareOrderRollupForDay,
   buildSquarePaymentRollupForDay,
 } from "../services/dailyRollupBuilder.service.js";
+import { rebuildSquareOrderDerivedRollupsForBusinessDay } from "../services/squareOrderMultiGranularityRollup.service.js";
 import { getSquarePaymentMongoIndexFields } from "../utils/squarePaymentMongoIndexFields.util.js";
 import { getSquareOrderMongoIndexFields } from "../utils/squareOrderMongoIndexFields.util.js";
 import { logger } from "../utils/logger.util.js";
@@ -112,10 +113,10 @@ export async function handleSquareWebhook(req: Request, res: Response): Promise<
           locationId,
         });
       } else {
-        const businessDateKey = formatInTimeZone(
+        const businessDateKey = businessDateKeyForInstant(
           paymentCreatedAt,
           timezone,
-          "yyyy-MM-dd",
+          businessStartTime,
         );
         try {
           await buildSquarePaymentRollupForDay(
@@ -165,13 +166,19 @@ export async function handleSquareWebhook(req: Request, res: Response): Promise<
           locationId,
         });
       } else {
-        const businessDateKey = formatInTimeZone(
+        const businessDateKey = businessDateKeyForInstant(
           squareCreatedAt,
           timezone,
-          "yyyy-MM-dd",
+          businessStartTime,
         );
         try {
           await buildSquareOrderRollupForDay(
+            locationId,
+            businessDateKey,
+            timezone,
+            businessStartTime,
+          );
+          await rebuildSquareOrderDerivedRollupsForBusinessDay(
             locationId,
             businessDateKey,
             timezone,

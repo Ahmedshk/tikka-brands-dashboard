@@ -1,6 +1,7 @@
 /**
- * Runs Square orders, Square payments, Homebase timecards, and MarketMan order daily rollups in sequence.
- * Same CLI flags as individual scripts: `--from`, `--to`, `--locationId`.
+ * Runs Square orders (+ hourly & coarse period rollups), Square payments, Homebase, and MarketMan dailies.
+ * Order: Square order daily → derived Square rollups → payments → Homebase → MarketMan.
+ * Same CLI: `--from`, `--to`, `--locationId`. Use `npm run rollup-all` for the same pipeline.
  */
 import dotenv from "dotenv";
 import path from "node:path";
@@ -14,6 +15,7 @@ import {
   buildSquareOrderRollupForDay,
   buildSquarePaymentRollupForDay,
 } from "../services/dailyRollupBuilder.service.js";
+import { rebuildSquareOrderDerivedRollupsForBusinessDay } from "../services/squareOrderMultiGranularityRollup.service.js";
 import {
   distinctBuyerGuidsForMarketManRollup,
   loadLocationsForRollupScript,
@@ -54,6 +56,12 @@ async function main(): Promise<void> {
           loc.timezone,
           loc.businessStartTime,
         );
+        await rebuildSquareOrderDerivedRollupsForBusinessDay(
+          String(loc._id),
+          businessDateKey,
+          loc.timezone,
+          loc.businessStartTime,
+        );
         await buildSquarePaymentRollupForDay(
           String(loc._id),
           businessDateKey,
@@ -78,6 +86,7 @@ async function main(): Promise<void> {
               apiKind,
               businessDateKey,
               loc.timezone,
+              loc.businessStartTime,
             );
           }
         }

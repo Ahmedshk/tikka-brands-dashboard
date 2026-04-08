@@ -119,4 +119,83 @@ export class DisciplinaryIncidentRepository {
       .select("employeeId totalPoints incidentDate")
       .lean() as Promise<DisciplinaryIncidentDocument[]>;
   }
+
+  /** Sum rolling-window active points per employee (same rules as findActiveByEmployeeId). */
+  async aggregateActivePointsByEmployeeIds(
+    employeeIds: string[],
+    cutoffDate: Date,
+  ): Promise<Map<string, number>> {
+    if (employeeIds.length === 0) return new Map();
+    const oids = employeeIds.map((id) => new Types.ObjectId(id));
+    const rows = await DisciplinaryIncidentModel.aggregate<{
+      _id: Types.ObjectId;
+      totalPoints: number;
+    }>([
+      {
+        $match: {
+          employeeId: { $in: oids },
+          signingStatus: { $in: ["pending_employee", "completed"] },
+          incidentDate: { $gte: cutoffDate },
+        },
+      },
+      {
+        $group: {
+          _id: "$employeeId",
+          totalPoints: { $sum: "$totalPoints" },
+        },
+      },
+    ]).exec();
+    return new Map(
+      rows.map((r) => [r._id.toString(), r.totalPoints ?? 0]),
+    );
+  }
+
+  /** Count pending manager/employee signature incidents per employee. */
+  async aggregatePendingSignatureCountsByEmployeeIds(
+    employeeIds: string[],
+  ): Promise<Map<string, number>> {
+    if (employeeIds.length === 0) return new Map();
+    const oids = employeeIds.map((id) => new Types.ObjectId(id));
+    const rows = await DisciplinaryIncidentModel.aggregate<{
+      _id: Types.ObjectId;
+      count: number;
+    }>([
+      {
+        $match: {
+          employeeId: { $in: oids },
+          signingStatus: { $in: ["pending_manager", "pending_employee"] },
+        },
+      },
+      {
+        $group: {
+          _id: "$employeeId",
+          count: { $sum: 1 },
+        },
+      },
+    ]).exec();
+    return new Map(rows.map((r) => [r._id.toString(), r.count ?? 0]));
+  }
+
+  /** Most recent incidentDate per employee (any status). */
+  async aggregateMaxIncidentDateByEmployeeIds(
+    employeeIds: string[],
+  ): Promise<Map<string, Date>> {
+    if (employeeIds.length === 0) return new Map();
+    const oids = employeeIds.map((id) => new Types.ObjectId(id));
+    const rows = await DisciplinaryIncidentModel.aggregate<{
+      _id: Types.ObjectId;
+      maxDate: Date;
+    }>([
+      { $match: { employeeId: { $in: oids } } },
+      {
+        $group: {
+          _id: "$employeeId",
+          maxDate: { $max: "$incidentDate" },
+        },
+      },
+    ]).exec();
+    return new Map(
+      rows.map((r) => [r._id.toString(), r.maxDate]).filter((e) => e[1] != null),
+    );
+  }
 }

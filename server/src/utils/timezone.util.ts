@@ -1,7 +1,7 @@
 /**
  * Get start of a calendar day in timezone as UTC Date (midnight in that TZ).
  */
-function getStartOfDayUtc(
+export function getStartOfDayUtc(
   y: number,
   m: number,
   d: number,

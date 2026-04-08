@@ -1,5 +1,8 @@
 import type { UpdateQuery } from 'mongoose';
-import { LocationRepository } from '../repositories/location.repository.js';
+import {
+  LocationRepository,
+  type LocationListFilter,
+} from '../repositories/location.repository.js';
 import type { LocationDocument } from '../models/location.model.js';
 import { LogoService } from './logo.service.js';
 import {
@@ -27,6 +30,26 @@ function toLogoIdString(val: unknown): string | undefined {
   }
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
   return undefined;
+}
+
+export interface GetLocationsPaginatedOptions {
+  allowedLocationIds?: string[];
+  excludeLocationIds?: string[];
+}
+
+function toLocationListFilter(
+  options?: GetLocationsPaginatedOptions,
+): LocationListFilter | undefined {
+  if (!options) return undefined;
+  const hasAllowed = options.allowedLocationIds != null;
+  const hasExclude =
+    options.excludeLocationIds != null &&
+    options.excludeLocationIds.length > 0;
+  if (!hasAllowed && !hasExclude) return undefined;
+  return {
+    ...(hasAllowed ? { allowedIds: options.allowedLocationIds } : {}),
+    ...(hasExclude ? { excludeIds: options.excludeLocationIds } : {}),
+  };
 }
 
 export class LocationService {
@@ -93,20 +116,32 @@ export class LocationService {
   async getAll(): Promise<ILocationResponse[]> {
     const docs = await this.locationRepository.findAll();
     const responses = docs.map((d) => this.toLocationResponse(d));
-    return Promise.all(responses.map((r, i) => this.enrichWithLogo(r, docs[i]?.logoId)));
+    return this.enrichBatchWithLogos(responses, docs.map((d) => d.logoId));
   }
 
   async getPaginated(
     page: number,
     limit: number,
+    options?: GetLocationsPaginatedOptions,
   ): Promise<{ locations: ILocationResponse[]; total: number; page: number; limit: number; totalPages: number }> {
-    const [docs, total] = await Promise.all([
-      this.locationRepository.findPaginated((page - 1) * limit, limit),
-      this.locationRepository.count(),
-    ]);
+    const filter = toLocationListFilter(options);
+    const skip = (page - 1) * limit;
+    const [docs, total] =
+      filter != null
+        ? await Promise.all([
+            this.locationRepository.findPaginatedWithFilter(skip, limit, filter),
+            this.locationRepository.countWithFilter(filter),
+          ])
+        : await Promise.all([
+            this.locationRepository.findPaginated(skip, limit),
+            this.locationRepository.count(),
+          ]);
     const totalPages = Math.ceil(total / limit) || 1;
     const responses = docs.map((d) => this.toLocationResponse(d));
-    const locations = await Promise.all(responses.map((r, i) => this.enrichWithLogo(r, docs[i]?.logoId)));
+    const locations = await this.enrichBatchWithLogos(
+      responses,
+      docs.map((d) => d.logoId),
+    );
     return {
       locations,
       total,
@@ -194,6 +229,7 @@ export class LocationService {
     businessStartTime?: string;
     squareAccessTokenEnc?: string;
     homebaseApiKeyEnc?: string;
+    squareWebhookSignatureKeyEnc?: string;
     logoId?: unknown;
     marketManBuyerGuid?: string;
     createdAt: Date;
@@ -233,5 +269,25 @@ export class LocationService {
       return logo ? { ...response, logoDataUrl: logo.dataUrl } : response;
     }
     return response;
+  }
+
+  /** One logo query for the whole page (or list). */
+  private async enrichBatchWithLogos(
+    responses: ILocationResponse[],
+    logoIdPerRow: unknown[],
+  ): Promise<ILocationResponse[]> {
+    const unique = new Set<string>();
+    for (let i = 0; i < responses.length; i++) {
+      const id = toLogoIdString(logoIdPerRow[i]);
+      if (id) unique.add(id);
+    }
+    if (unique.size === 0) return responses;
+    const dataUrlMap = await this.logoService.getDataUrlByIdMap([...unique]);
+    return responses.map((r, i) => {
+      const id = toLogoIdString(logoIdPerRow[i]);
+      if (!id) return r;
+      const url = dataUrlMap.get(id);
+      return url != null ? { ...r, logoDataUrl: url } : r;
+    });
   }
 }

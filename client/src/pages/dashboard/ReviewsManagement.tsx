@@ -134,10 +134,12 @@ export const ReviewsManagement = () => {
   const [activeListLoading, setActiveListLoading] = useState(true);
   const [reviewCyclesPage, setReviewCyclesPage] = useState(1);
   const [pastReviewsPage, setPastReviewsPage] = useState(1);
+  /** Total active cycles (no name search) from the same fetch that powers tracker donuts — avoids a second activeOnly request when search is empty. */
+  const [activeCyclesTotalUnfiltered, setActiveCyclesTotalUnfiltered] = useState(0);
 
   const { canShowDonut, canPastReviews, canReviewCycles } = useReviewsManagementSectionAccess();
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
       const params: Record<string, string> = {
@@ -147,15 +149,19 @@ export const ReviewsManagement = () => {
       };
       if (currentLocation?._id) params.locationId = currentLocation._id;
       const [cyclesRes, settingsRes] = await Promise.all([
-        reviewService.getCycles(params),
-        reviewService.getSettings().catch(() => null),
+        reviewService.getCycles(params, { signal }),
+        reviewService.getSettings({ signal }).catch(() => null),
       ]);
+      if (signal?.aborted) return;
       setCycles(cyclesRes.cycles);
+      setActiveCyclesTotalUnfiltered(cyclesRes.total);
       setSettings(settingsRes);
-    } catch {
+    } catch (e: unknown) {
+      if (axios.isCancel(e) || (e as { code?: string })?.code === "ERR_CANCELED") return;
+      if (signal?.aborted) return;
       toast.error("Failed to load review data");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [currentLocation?._id]);
 
@@ -284,6 +290,16 @@ export const ReviewsManagement = () => {
   }, [pastReviewsSearchDebounced, loadPastReviews]);
 
   useEffect(() => {
+    const search = reviewCyclesSearchDebounced.trim();
+    if (search !== "") return;
+    setActivePreviewCycles(cycles.slice(0, CARD_ROW_LIMIT));
+    setActiveListTotal(activeCyclesTotalUnfiltered);
+    setActiveListLoading(false);
+  }, [reviewCyclesSearchDebounced, cycles, activeCyclesTotalUnfiltered]);
+
+  useEffect(() => {
+    const search = reviewCyclesSearchDebounced.trim();
+    if (search === "") return;
     const ac = new AbortController();
     void loadActiveCyclesPreview(reviewCyclesSearchDebounced, ac.signal);
     return () => ac.abort();
@@ -303,7 +319,11 @@ export const ReviewsManagement = () => {
     return () => ac.abort();
   }, [showAllReviewCycles, reviewCyclesPage, reviewCyclesSearchDebounced, loadActiveCyclesModalPage]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    const ac = new AbortController();
+    void fetchData(ac.signal);
+    return () => ac.abort();
+  }, [fetchData]);
 
   const userRoleId = user?.roleId ?? null;
   const currentUserId = user?._id ?? null;
@@ -410,8 +430,10 @@ export const ReviewsManagement = () => {
     void fetchData();
     const acPastPreview = new AbortController();
     void loadPastReviews(pastReviewsSearchDebounced, acPastPreview.signal);
-    const acActivePreview = new AbortController();
-    void loadActiveCyclesPreview(reviewCyclesSearchDebounced, acActivePreview.signal);
+    if (reviewCyclesSearchDebounced.trim() !== "") {
+      const acActivePreview = new AbortController();
+      void loadActiveCyclesPreview(reviewCyclesSearchDebounced, acActivePreview.signal);
+    }
     if (showAllPastReviews) {
       const acPastModal = new AbortController();
       void loadPastModalPage(pastReviewsPage, pastReviewsSearchDebounced, acPastModal.signal);

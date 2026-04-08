@@ -144,10 +144,15 @@ function aggregateSingleBucketAtClockIn(
   granularity: SalesTrendGranularity,
   laborCostByKey: Record<string, number>,
   hoursByKey: Record<string, number>,
+  businessStartTime?: string | undefined,
 ): void {
   const clockIn = tc.clock_in ? new Date(tc.clock_in) : null;
   if (!clockIn || Number.isNaN(clockIn.getTime())) return;
-  const key = getBucketKeyForDate(clockIn, timezone, granularity);
+  const bucketOpts =
+    businessStartTime != null && String(businessStartTime).trim() !== ""
+      ? { businessStartTime: String(businessStartTime).trim() }
+      : undefined;
+  const key = getBucketKeyForDate(clockIn, timezone, granularity, bucketOpts);
   if (!key || !keySet.has(key)) return;
 
   const costs = tc.labor?.costs;
@@ -178,7 +183,15 @@ function aggregateTimecardsIntoHourlyBuckets(
 
     const shiftEndMs = resolveShiftEndMs(tc, clockInMs, hours);
     if (shiftEndMs == null) {
-      aggregateSingleBucketAtClockIn(tc, keySet, tz, "hourly", laborCostByKey, hoursByKey);
+      aggregateSingleBucketAtClockIn(
+        tc,
+        keySet,
+        tz,
+        "hourly",
+        laborCostByKey,
+        hoursByKey,
+        undefined,
+      );
       continue;
     }
 
@@ -208,6 +221,7 @@ export function aggregateTimecardsIntoBuckets(
   granularity: SalesTrendGranularity,
   laborCostByKey: Record<string, number>,
   hoursByKey: Record<string, number>,
+  businessStartTime?: string | undefined,
 ): void {
   const keySet = new Set(keys);
   const tz = timezone.trim();
@@ -231,6 +245,7 @@ export function aggregateTimecardsIntoBuckets(
       granularity,
       laborCostByKey,
       hoursByKey,
+      businessStartTime,
     );
   }
 }

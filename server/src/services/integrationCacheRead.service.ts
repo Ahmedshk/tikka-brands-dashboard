@@ -34,6 +34,11 @@ import {
   getSquareOrderCreatedAtMsFromRaw,
   filterSquareOrdersForDashboardDisplay,
 } from "../utils/squareOrderCacheHelpers.js";
+import {
+  tryGetHourlyNetSalesCentsBySlotFromRollups,
+  tryGetNetSalesDollarsFromDailyRollups,
+  tryGetOrderStatsAndSourcesFromDailyRollups,
+} from "./integrationRollupRead.service.js";
 
 export async function loadSquareOrdersForMongoRange(
   locationMongoId: string,
@@ -53,10 +58,25 @@ export async function loadSquareOrdersForMongoRange(
   return docs.map((d) => d.raw as SquareOrder);
 }
 
+export interface RollupReadContext {
+  timezone: string;
+  businessStartTime: string;
+}
+
 export async function getNetSalesDollarsInRangeFromCache(
   locationMongoId: string,
   range: TimeRange,
+  rollupCtx?: RollupReadContext,
 ): Promise<number> {
+  if (rollupCtx) {
+    const fromRollup = await tryGetNetSalesDollarsFromDailyRollups(
+      locationMongoId,
+      range,
+      rollupCtx.timezone,
+      rollupCtx.businessStartTime,
+    );
+    if (fromRollup != null) return fromRollup;
+  }
   const orders = filterSquareOrdersForDashboardDisplay(
     await loadSquareOrdersForMongoRange(locationMongoId, range),
   );
@@ -132,6 +152,7 @@ export async function loadHomebaseTimecardsForMongoRange(
 export async function getOrderStatsAndSourcesFromCache(
   locationMongoId: string,
   range: TimeRange,
+  rollupCtx?: RollupReadContext,
 ): Promise<{
   actualTotalSales: number;
   transactionCount: number;
@@ -141,6 +162,15 @@ export async function getOrderStatsAndSourcesFromCache(
   sourcesOfSales: ReturnType<typeof getSourcesOfSalesFromOrders>;
 } | null> {
   try {
+    if (rollupCtx) {
+      const rolled = await tryGetOrderStatsAndSourcesFromDailyRollups(
+        locationMongoId,
+        range,
+        rollupCtx.timezone,
+        rollupCtx.businessStartTime,
+      );
+      if (rolled) return rolled;
+    }
     const orders = await loadSquareOrdersForMongoRange(locationMongoId, range);
     const orderStats = getOrderStatsFromOrders(orders);
     const sourcesOfSales = getSourcesOfSalesFromOrders(orders);
@@ -199,12 +229,21 @@ export async function getLaborAndHoursTimeSeriesInRangeFromCache(
   timezone: string,
   granularity: SalesTrendGranularity,
   periodType?: string,
+  businessStartTime?: string,
 ): Promise<LaborHoursTimeSeriesResult> {
+  const bst = businessStartTime?.trim();
+  const bucketOpts =
+    periodType == null && bst == null
+      ? undefined
+      : {
+          periodType,
+          ...(bst != null && bst !== "" ? { businessStartTime: bst } : {}),
+        };
   const { keys, labels } = getOrderedBucketsAndLabels(
     range,
     timezone,
     granularity,
-    periodType == null ? undefined : { periodType },
+    bucketOpts,
   );
   const laborCostByKey: Record<string, number> = {};
   const hoursByKey: Record<string, number> = {};
@@ -223,6 +262,7 @@ export async function getLaborAndHoursTimeSeriesInRangeFromCache(
     granularity,
     laborCostByKey,
     hoursByKey,
+    bst,
   );
   return {
     labels,
@@ -237,6 +277,14 @@ export async function fetchHourlyNetSalesCentsBySlotFromCache(
   timezone: string,
   businessStartTime: string,
 ): Promise<number[]> {
+  const fromRollup = await tryGetHourlyNetSalesCentsBySlotFromRollups(
+    locationMongoId,
+    range,
+    timezone,
+    businessStartTime,
+  );
+  if (fromRollup) return fromRollup;
+
   const netSalesCentsBySlot = new Array<number>(24).fill(0);
   const orders = await searchOrdersInRangeFromCache(locationMongoId, range);
   for (const order of orders) {

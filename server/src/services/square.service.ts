@@ -30,6 +30,7 @@ import {
   logExternalApiResult,
   truncateForExternalApiLog,
 } from "../utils/externalApiCallLog.util.js";
+import { tryGetOrderTimeSeriesFromRollups } from "./integrationRollupRead.service.js";
 
 const SQUARE_BASE = "https://connect.squareup.com";
 
@@ -268,6 +269,14 @@ export interface SquareServiceOptions {
   ordersOverride?: SquareOrder[] | undefined;
   /** Resolve catalog chunks from DB or another source instead of Square batch-retrieve. */
   batchRetrieveCatalogOverride?: BatchRetrieveCatalogFn;
+  /** Location business open time (HH:mm); aligns daily/weekly/monthly buckets with rollups. */
+  businessStartTime?: string | undefined;
+  /** When set with `ordersOverride`, prefer persisted rollups for full-bucket series (see ROLLUP_READ_ENABLED). */
+  rollupRead?: {
+    locationMongoId: string;
+    timezone: string;
+    businessStartTime: string;
+  };
 }
 
 function resolveAccessToken(override?: string): string {
@@ -1575,11 +1584,18 @@ export async function getOrderTimeSeriesInRange(
   granularity: SalesTrendGranularity,
   options?: SquareServiceOptions,
 ): Promise<OrderTimeSeriesResult> {
+  const bucketLabelOpts =
+    options?.periodType == null && options?.businessStartTime == null
+      ? undefined
+      : {
+          periodType: options?.periodType,
+          businessStartTime: options?.businessStartTime,
+        };
   const { keys, labels } = getOrderedBucketsAndLabels(
     range,
     timezone,
     granularity,
-    options?.periodType == null ? undefined : { periodType: options.periodType },
+    bucketLabelOpts,
   );
   const netSalesByKey: Record<string, number> = {};
   const countByKey: Record<string, number> = {};
@@ -1588,6 +1604,35 @@ export async function getOrderTimeSeriesInRange(
     countByKey[k] = 0;
   }
 
+  const rr = options?.rollupRead;
+  if (
+    rr &&
+    options?.ordersOverride != null &&
+    (granularity === "daily" ||
+      granularity === "weekly" ||
+      granularity === "monthly")
+  ) {
+    const rolled = await tryGetOrderTimeSeriesFromRollups(
+      rr.locationMongoId,
+      range,
+      rr.timezone,
+      rr.businessStartTime,
+      granularity,
+      keys,
+    );
+    if (rolled) {
+      return {
+        labels,
+        netSales: rolled.netSales,
+        transactionCount: rolled.transactionCount,
+      };
+    }
+  }
+
+  const bucketOpts =
+    options?.businessStartTime != null
+      ? { businessStartTime: options.businessStartTime }
+      : undefined;
   const orders = filterSquareOrdersForDashboardDisplay(
     options?.ordersOverride ??
       (await fetchOrdersInRange(
@@ -1603,6 +1648,7 @@ export async function getOrderTimeSeriesInRange(
       new Date(order.created_at ?? ""),
       timezone,
       granularity,
+      bucketOpts,
     );
     if (!key || netSalesByKey[key] === undefined) continue;
     netSalesByKey[key] = (netSalesByKey[key] ?? 0) + netCents / 100;
@@ -1638,14 +1684,25 @@ export async function getOrderTimeSeriesBySourceInRange(
   granularity: SalesTrendGranularity,
   options?: SquareServiceOptions,
 ): Promise<OrderTimeSeriesBySourceResult> {
+  const bucketLabelOpts =
+    options?.periodType == null && options?.businessStartTime == null
+      ? undefined
+      : {
+          periodType: options?.periodType,
+          businessStartTime: options?.businessStartTime,
+        };
   const { keys, labels } = getOrderedBucketsAndLabels(
     range,
     timezone,
     granularity,
-    options?.periodType == null ? undefined : { periodType: options.periodType },
+    bucketLabelOpts,
   );
   const bySourceAndKey: Record<string, Record<string, number>> = {};
 
+  const bucketOpts =
+    options?.businessStartTime != null
+      ? { businessStartTime: options.businessStartTime }
+      : undefined;
   const orders = filterSquareOrdersForDashboardDisplay(
     options?.ordersOverride ??
       (await fetchOrdersInRange(
@@ -1663,6 +1720,7 @@ export async function getOrderTimeSeriesBySourceInRange(
       new Date(order.created_at ?? ""),
       timezone,
       granularity,
+      bucketOpts,
     );
     if (!bucketKey || !keys.includes(bucketKey)) continue;
     bySourceAndKey[sourceKey] ??= {};

@@ -1,4 +1,4 @@
-import { formatInTimeZone } from "date-fns-tz";
+import { businessDateKeyForInstant } from "../utils/businessDayUtcRange.util.js";
 import { homebaseSlidingWindowIso } from "./integrationSyncRunner.service.js";
 import {
   buildHomebaseRollupForDay,
@@ -6,12 +6,13 @@ import {
   buildSquareOrderRollupForDay,
   buildSquarePaymentRollupForDay,
 } from "./dailyRollupBuilder.service.js";
+import { rebuildSquareOrderDerivedRollupsForBusinessDay } from "./squareOrderMultiGranularityRollup.service.js";
 import {
   loadLocationsForRollupScript,
   distinctBuyerGuidsForMarketManRollup,
   type LocationRollupContext,
 } from "../utils/rollupLocations.util.js";
-import { businessDateKeysForUtcRange } from "../utils/businessDateKeysForUtcRange.util.js";
+import { businessDateKeysIntersectingUtcRange } from "../utils/businessDayUtcRange.util.js";
 import { logger } from "../utils/logger.util.js";
 import type { IntegrationSyncResource } from "../models/integrationSyncLog.model.js";
 import type { MarketManOrderApiKind } from "../models/marketmanOrderCache.model.js";
@@ -53,6 +54,7 @@ async function safeBuildMarketMan(
   apiKind: MarketManOrderApiKind,
   key: string,
   timezone: string,
+  businessStartTime: string,
 ): Promise<void> {
   try {
     await buildMarketManRollupForDay(
@@ -61,6 +63,7 @@ async function safeBuildMarketMan(
       apiKind,
       key,
       timezone,
+      businessStartTime,
     );
   } catch (err) {
     logger.error("refreshMarketManRollupForDay failed", {
@@ -81,6 +84,12 @@ async function safeBuildSquareOrder(
 ): Promise<void> {
   try {
     await buildSquareOrderRollupForDay(
+      locationMongoId,
+      key,
+      timezone,
+      businessStartTime,
+    );
+    await rebuildSquareOrderDerivedRollupsForBusinessDay(
       locationMongoId,
       key,
       timezone,
@@ -127,10 +136,11 @@ export async function refreshHomebaseRollupsForUtcRange(params: {
     params.locationIds,
   );
   for (const loc of locs) {
-    const keys = businessDateKeysForUtcRange(
+    const keys = businessDateKeysIntersectingUtcRange(
       params.startAtIso,
       params.endAtIso,
       loc.timezone,
+      loc.businessStartTime,
     );
     const id = String(loc._id);
     for (const key of keys) {
@@ -150,10 +160,11 @@ export async function refreshMarketManRollupsForUtcRange(params: {
     params.locationIds,
   );
   for (const loc of locs) {
-    const keys = businessDateKeysForUtcRange(
+    const keys = businessDateKeysIntersectingUtcRange(
       params.startAtIso,
       params.endAtIso,
       loc.timezone,
+      loc.businessStartTime,
     );
     const id = String(loc._id);
     const buyers = await distinctBuyerGuidsForMarketManRollup(
@@ -164,7 +175,14 @@ export async function refreshMarketManRollupsForUtcRange(params: {
     for (const key of keys) {
       for (const bg of buyers) {
         for (const apiKind of params.apiKinds) {
-          await safeBuildMarketMan(id, bg, apiKind, key, loc.timezone);
+          await safeBuildMarketMan(
+            id,
+            bg,
+            apiKind,
+            key,
+            loc.timezone,
+            loc.businessStartTime,
+          );
         }
       }
     }
@@ -181,10 +199,11 @@ export async function refreshSquareOrderRollupsForUtcRange(params: {
     params.locationIds,
   );
   for (const loc of locs) {
-    const keys = businessDateKeysForUtcRange(
+    const keys = businessDateKeysIntersectingUtcRange(
       params.startAtIso,
       params.endAtIso,
       loc.timezone,
+      loc.businessStartTime,
     );
     const id = String(loc._id);
     for (const key of keys) {
@@ -203,10 +222,11 @@ export async function refreshSquarePaymentRollupsForUtcRange(params: {
     params.locationIds,
   );
   for (const loc of locs) {
-    const keys = businessDateKeysForUtcRange(
+    const keys = businessDateKeysIntersectingUtcRange(
       params.startAtIso,
       params.endAtIso,
       loc.timezone,
+      loc.businessStartTime,
     );
     const id = String(loc._id);
     for (const key of keys) {
@@ -232,10 +252,10 @@ export async function refreshMarketManRollupsAfterPoll(): Promise<void> {
   const locs = await loadLocationsForRollupScript();
   const now = new Date();
   for (const loc of locs) {
-    const businessDateKey = formatInTimeZone(
+    const businessDateKey = businessDateKeyForInstant(
       now,
       loc.timezone,
-      "yyyy-MM-dd",
+      loc.businessStartTime,
     );
     const id = String(loc._id);
     const buyers = await distinctBuyerGuidsForMarketManRollup(
@@ -243,13 +263,21 @@ export async function refreshMarketManRollupsAfterPoll(): Promise<void> {
       loc.marketManBuyerGuid,
     );
     for (const bg of buyers) {
-      await safeBuildMarketMan(id, bg, "sent", businessDateKey, loc.timezone);
+      await safeBuildMarketMan(
+        id,
+        bg,
+        "sent",
+        businessDateKey,
+        loc.timezone,
+        loc.businessStartTime,
+      );
       await safeBuildMarketMan(
         id,
         bg,
         "delivery",
         businessDateKey,
         loc.timezone,
+        loc.businessStartTime,
       );
     }
   }
@@ -259,7 +287,11 @@ export async function refreshDailyRollupsAfterRunAllToday(): Promise<void> {
   const locs = await loadLocationsForRollupScript();
   const now = new Date();
   for (const loc of locs) {
-    const key = formatInTimeZone(now, loc.timezone, "yyyy-MM-dd");
+    const key = businessDateKeyForInstant(
+      now,
+      loc.timezone,
+      loc.businessStartTime,
+    );
     const id = String(loc._id);
     await safeBuildSquareOrder(id, key, loc.timezone, loc.businessStartTime);
     await safeBuildSquarePayment(id, key, loc.timezone, loc.businessStartTime);
@@ -269,8 +301,22 @@ export async function refreshDailyRollupsAfterRunAllToday(): Promise<void> {
       loc.marketManBuyerGuid,
     );
     for (const bg of buyers) {
-      await safeBuildMarketMan(id, bg, "sent", key, loc.timezone);
-      await safeBuildMarketMan(id, bg, "delivery", key, loc.timezone);
+      await safeBuildMarketMan(
+        id,
+        bg,
+        "sent",
+        key,
+        loc.timezone,
+        loc.businessStartTime,
+      );
+      await safeBuildMarketMan(
+        id,
+        bg,
+        "delivery",
+        key,
+        loc.timezone,
+        loc.businessStartTime,
+      );
     }
   }
 }

@@ -75,7 +75,11 @@ async function main(): Promise<void> {
       process.exit(1);
       return;
     }
-    const range = timeRangeForBusinessDateKey(loc.timezone, businessDateKey);
+    const range = timeRangeForBusinessDateKey(
+      loc.timezone,
+      loc.businessStartTime,
+      businessDateKey,
+    );
     const locIdStr = String(loc._id);
 
     const cacheOrders = await getOrderStatsAndSourcesFromCache(locIdStr, range);
@@ -144,6 +148,7 @@ async function main(): Promise<void> {
           apiKind,
           businessDateKey,
           loc.timezone,
+          loc.businessStartTime,
         );
         const rollupMm = await MarketManOrderDailyRollupModel.findOne({
           locationId: loc._id,

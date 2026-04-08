@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import axios from 'axios';
 import toast from 'react-hot-toast';
 import { Layout } from '../../components/common/Layout';
 import { CommandCenterKPICards } from '../../components/CommandCenter';
@@ -46,72 +47,87 @@ export const DisciplinaryManagement = () => {
 
   const needsKpiData = canTotalTeamKpi || canPendingPipsKpi || canCriticalKpi;
 
-  const fetchKPIs = useCallback(async () => {
-    if (!currentLocation?._id || !needsKpiData) {
-      setCriticalCount(0);
-      setPendingCount(0);
-      setTotalActive(0);
-      setKpiLoading(false);
-      return;
-    }
-    setKpiLoading(true);
-    try {
-      const data = await disciplinaryManagementService.getEmployees(currentLocation._id, {
-        page: 1,
-        limit: PAGE_SIZE,
-        search: '',
-      });
-      setCriticalCount(data.meta.criticalCount);
-      setPendingCount(data.meta.pendingCount);
-      setTotalActive(data.meta.totalActive);
-    } catch {
-      toast.error('Failed to load KPI metrics');
-      setCriticalCount(0);
-      setPendingCount(0);
-      setTotalActive(0);
-    } finally {
-      setKpiLoading(false);
-    }
-  }, [currentLocation?._id, needsKpiData]);
-
-  useEffect(() => {
-    fetchKPIs();
-  }, [fetchKPIs]);
-
-  const fetchEmployees = useCallback(async () => {
-    if (!currentLocation?._id || !canDisciplinaryRecords) {
-      setRows([]);
-      setTotalItems(0);
-      setTotalPages(1);
-      setTableLoading(false);
-      return;
-    }
-    setTableLoading(true);
-    try {
-      const data = await disciplinaryManagementService.getEmployees(currentLocation._id, {
-        page,
-        limit: PAGE_SIZE,
-        search: debouncedSearch,
-      });
-      setRows(data.rows);
-      setTotalItems(data.meta.total);
-      setTotalPages(data.meta.totalPages);
-      if (data.meta.page !== page) {
-        setPage(data.meta.page);
+  /** One GET /disciplinary/employees per change — KPI cards and table share the same response meta/rows when both are shown. */
+  const loadDisciplinaryData = useCallback(
+    async (signal?: AbortSignal) => {
+      const locId = currentLocation?._id;
+      const needTable = canDisciplinaryRecords;
+      const needKpi = needsKpiData;
+      if (!locId || (!needTable && !needKpi)) {
+        if (!needTable) {
+          setRows([]);
+          setTotalItems(0);
+          setTotalPages(1);
+        }
+        if (!needKpi) {
+          setCriticalCount(0);
+          setPendingCount(0);
+          setTotalActive(0);
+        }
+        setTableLoading(false);
+        setKpiLoading(false);
+        return;
       }
-    } catch {
-      toast.error('Failed to load employees');
-      setRows([]);
-      setTotalItems(0);
-      setTotalPages(1);
-    } finally {
-      setTableLoading(false);
-    }
-  }, [currentLocation?._id, debouncedSearch, page, canDisciplinaryRecords]);
+
+      if (needTable) setTableLoading(true);
+      if (needKpi) setKpiLoading(true);
+      try {
+        const pageParam = needTable ? page : 1;
+        const searchParam = needTable ? debouncedSearch : '';
+        const data = await disciplinaryManagementService.getEmployees(
+          locId,
+          { page: pageParam, limit: PAGE_SIZE, search: searchParam },
+          { signal },
+        );
+        if (signal?.aborted) return;
+        if (needKpi) {
+          setCriticalCount(data.meta.criticalCount);
+          setPendingCount(data.meta.pendingCount);
+          setTotalActive(data.meta.totalActive);
+        }
+        if (needTable) {
+          setRows(data.rows);
+          setTotalItems(data.meta.total);
+          setTotalPages(data.meta.totalPages);
+          if (data.meta.page !== page) {
+            setPage(data.meta.page);
+          }
+        }
+      } catch (e: unknown) {
+        if (axios.isCancel(e) || (e as { code?: string })?.code === 'ERR_CANCELED') return;
+        if (signal?.aborted) return;
+        toast.error(needTable ? 'Failed to load employees' : 'Failed to load KPI metrics');
+        if (needKpi) {
+          setCriticalCount(0);
+          setPendingCount(0);
+          setTotalActive(0);
+        }
+        if (needTable) {
+          setRows([]);
+          setTotalItems(0);
+          setTotalPages(1);
+        }
+      } finally {
+        if (!signal?.aborted) {
+          if (needTable) setTableLoading(false);
+          if (needKpi) setKpiLoading(false);
+        }
+      }
+    },
+    [
+      currentLocation?._id,
+      canDisciplinaryRecords,
+      needsKpiData,
+      debouncedSearch,
+      page,
+    ],
+  );
 
   useEffect(() => {
-    fetchEmployees();
-  }, [fetchEmployees]);
+    const ac = new AbortController();
+    void loadDisciplinaryData(ac.signal);
+    return () => ac.abort();
+  }, [loadDisciplinaryData]);
 
   const disciplinaryKPIs = useMemo(
     () => {

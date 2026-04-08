@@ -15,8 +15,8 @@ import type {
 
 export const reviewService = {
   // --- Review Settings ---
-  async getSettings(): Promise<ReviewSettings | null> {
-    const { data } = await api.get("/reviews/settings");
+  async getSettings(config?: { signal?: AbortSignal }): Promise<ReviewSettings | null> {
+    const { data } = await api.get("/reviews/settings", { signal: config?.signal });
     return data.data;
   },
 

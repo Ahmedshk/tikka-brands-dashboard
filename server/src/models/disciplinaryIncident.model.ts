@@ -115,6 +115,7 @@ const disciplinaryIncidentSchema = new Schema<DisciplinaryIncidentDocument>(
 );
 
 disciplinaryIncidentSchema.index({ employeeId: 1, incidentDate: -1 });
+disciplinaryIncidentSchema.index({ employeeId: 1, signingStatus: 1 });
 disciplinaryIncidentSchema.index({ adobeAgreementId: 1 });
 
 export const DisciplinaryIncidentModel =

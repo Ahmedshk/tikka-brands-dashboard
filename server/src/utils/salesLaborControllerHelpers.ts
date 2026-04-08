@@ -93,6 +93,7 @@ export async function fetchSquareOrderStatsAndSources(
   range: TimeRange,
   _accessToken: string | undefined,
   cacheLocationId?: string,
+  rollupCtx?: { timezone: string; businessStartTime: string },
 ): Promise<{
   actualTotalSales: number;
   transactionCount: number;
@@ -117,6 +118,7 @@ export async function fetchSquareOrderStatsAndSources(
     const cached = await getOrderStatsAndSourcesFromCache(
       cacheLocationId.trim(),
       range,
+      rollupCtx,
     );
     return (
       cached ?? {

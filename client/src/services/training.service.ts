@@ -108,11 +108,15 @@ export const trainingService = {
     return res.data.data.trainings.map(toTraining);
   },
 
-  async listRoleHierarchySnapshot(activeOnly = false): Promise<TrainingRoleHierarchyRow[]> {
+  async listRoleHierarchySnapshot(
+    activeOnly = false,
+    config?: { signal?: AbortSignal },
+  ): Promise<TrainingRoleHierarchyRow[]> {
     const res = await api.get<
       ApiResponse<{ roles: Array<{ id: string; name: string; reportsTo: string | null }> }>
     >(`${BASE}/role-hierarchy`, {
       params: activeOnly ? { activeOnly: 'true' } : undefined,
+      signal: config?.signal,
     });
     if (!res.data.success || !Array.isArray(res.data.data?.roles)) {
       throw new Error(res.data.message ?? 'Failed to load role hierarchy');

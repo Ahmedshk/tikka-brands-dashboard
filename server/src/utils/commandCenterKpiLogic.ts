@@ -88,6 +88,10 @@ export async function fetchTodayOnlyKpis(
       netSalesToday = await getNetSalesDollarsInRangeFromCache(
         locationMongoId,
         rangeToday,
+        {
+          timezone: location.timezone,
+          businessStartTime: location.businessStartTime ?? "00:00",
+        },
       );
     } catch (err) {
       console.error(`${LOG_PREFIX} Square net sales error:`, err);
@@ -155,13 +159,20 @@ export async function fetchWeekToDateKpis(
 
   if (wantNetSales && location.squareLocationId?.trim()) {
     if (locationMongoId) {
+      const rollupCtx = {
+        timezone: location.timezone,
+        businessStartTime: location.businessStartTime ?? "00:00",
+      };
       netSalesPromises.push(
-        getNetSalesDollarsInRangeFromCache(locationMongoId, rangeToday).catch(
-          wrapNetSalesErr("today"),
-        ),
+        getNetSalesDollarsInRangeFromCache(
+          locationMongoId,
+          rangeToday,
+          rollupCtx,
+        ).catch(wrapNetSalesErr("today")),
         getNetSalesDollarsInRangeFromCache(
           locationMongoId,
           rangeWeekToDate,
+          rollupCtx,
         ).catch(wrapNetSalesErr("WTD")),
       );
     } else {

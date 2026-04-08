@@ -64,6 +64,7 @@ async function main(): Promise<void> {
               apiKind,
               businessDateKey,
               loc.timezone,
+              loc.businessStartTime,
             );
             logger.info("MarketMan order rollup", {
               locationId: String(loc._id),

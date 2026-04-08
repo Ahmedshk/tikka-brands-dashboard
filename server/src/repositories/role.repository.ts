@@ -126,4 +126,16 @@ export class RoleRepository {
   async setActive(id: string, isActive: boolean): Promise<RoleDocument | null> {
     return await RoleModel.findByIdAndUpdate(id, { isActive }, { new: true }).lean().exec() as RoleDocument | null;
   }
+
+  /** Location fields only (no populate) for batch user/location filtering. */
+  async findByIdsLocationAccessLean(
+    ids: string[],
+  ): Promise<Array<{ _id: Types.ObjectId; locationAccess?: string; locationIds?: unknown[] }>> {
+    if (ids.length === 0) return [];
+    const oids = ids.map((id) => new Types.ObjectId(id));
+    return (await RoleModel.find({ _id: { $in: oids } })
+      .select("locationAccess locationIds")
+      .lean()
+      .exec()) as Array<{ _id: Types.ObjectId; locationAccess?: string; locationIds?: unknown[] }>;
+  }
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
+import axios from 'axios';
 import { trainingService, type TrainingRoleHierarchyRow } from '../services/training.service';
 import { getDescendantIds } from '../utils/hierarchyTreeHelpers';
 import type { RootState } from '../store/store';
@@ -22,23 +23,23 @@ export function useTrainingHierarchyAllowed(): TrainingHierarchyAllowed {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
+    const ac = new AbortController();
     setLoading(true);
     trainingService
-      .listRoleHierarchySnapshot(true)
+      .listRoleHierarchySnapshot(true, { signal: ac.signal })
       .then((list) => {
-        if (!cancelled) setRoles(list);
+        if (ac.signal.aborted) return;
+        setRoles(list);
       })
-      .catch(() => {
-        if (!cancelled) setRoles([]);
+      .catch((e: unknown) => {
+        if (axios.isCancel(e) || (e as { code?: string })?.code === 'ERR_CANCELED') return;
+        if (!ac.signal.aborted) setRoles([]);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!ac.signal.aborted) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return () => ac.abort();
+  }, [user?._id]);
 
   return useMemo((): TrainingHierarchyAllowed => {
     if (loading || !user?.role || roles.length === 0) {

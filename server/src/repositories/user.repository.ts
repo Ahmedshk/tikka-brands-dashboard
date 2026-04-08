@@ -12,6 +12,13 @@ export class UserRepository {
     return await UserModel.findById(id).lean().exec() as UserDocument | null;
   }
 
+  async findByIds(ids: string[]): Promise<UserDocument[]> {
+    if (ids.length === 0) return [];
+    const unique = [...new Set(ids.filter((id) => id?.trim()))];
+    const oids = unique.map((id) => new Types.ObjectId(id));
+    return (await UserModel.find({ _id: { $in: oids } }).lean().exec()) as UserDocument[];
+  }
+
   async findByEmail(email: string, includePassword = false): Promise<UserDocument | null> {
     const query = UserModel.findOne({ email: email.toLowerCase() });
     if (includePassword) {

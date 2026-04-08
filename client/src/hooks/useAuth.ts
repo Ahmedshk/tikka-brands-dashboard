@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { RootState, AppDispatch } from "../store/store";
 import { setUser, clearUser, setLoading } from "../store/slices/auth.slice";
-import { setCurrentLocation } from "../store/slices/location.slice";
+import { setCurrentLocation, setLocationListHydrated } from "../store/slices/location.slice";
 import { clearNotifications } from "../store/slices/notification.slice";
 import { connectSocket, disconnectSocket } from "../services/socket.service";
 import api from "../services/api.service";
@@ -69,6 +69,7 @@ export const useAuth = () => {
       disconnectSocket();
       dispatch(clearUser());
       dispatch(setCurrentLocation(null));
+      dispatch(setLocationListHydrated(false));
       dispatch(clearNotifications());
       toast.success("Logged out successfully");
       navigate("/login");

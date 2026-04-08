@@ -274,30 +274,16 @@ export class DisciplinaryIncidentService {
     const settings = await this.getSettings();
     const cutoff = this.getCutoffDate(settings.rollingPeriodDays);
 
-    const result: DisciplinaryEmployeeListItem[] = [];
-
     const normalizedLocationId = this.locationIdEntryToString(locationId);
+    const locationMatched: typeof employees = [];
     for (const emp of employees) {
       const empLocs = this.resolveEmployeeLocations(emp as unknown as Record<string, unknown>);
       if (empLocs !== "all" && !empLocs.includes(normalizedLocationId)) continue;
+      locationMatched.push(emp);
+    }
 
-      const empIdStr = emp._id.toString();
-      const incidents = await repo.findActiveByEmployeeId(empIdStr, cutoff);
-      const activePoints = incidents.reduce(
-        (sum, i) => sum + i.totalPoints,
-        0,
-      );
-      const pendingCount = await repo.countPendingSignatures(empIdStr);
-
-      const allIncidents = await repo.findByEmployeeId(empIdStr, {
-        page: 1,
-        limit: 1,
-      });
-      const firstIncident = allIncidents.incidents[0];
-      const mostRecent = firstIncident
-        ? firstIncident.incidentDate.toISOString()
-        : null;
-
+    const searchMatched: { empIdStr: string; employeeName: string; roleName: string }[] = [];
+    for (const emp of locationMatched) {
       const roleName =
         (emp.roleId as unknown as { name?: string })?.name ?? "Unknown";
       const firstName = (emp as unknown as { firstName?: string }).firstName ?? "";
@@ -310,24 +296,44 @@ export class DisciplinaryIncidentService {
       ) {
         continue;
       }
-
-      result.push({
-        id: empIdStr,
-        name: employeeName,
-        role: roleName,
-        activePoints,
-        mostRecentIncidentDate: mostRecent,
-        status: this.deriveStatus(
-          activePoints,
-          settings.disciplineGuidelines,
-          settings.pointsToTermination,
-        ),
-        eSignStatus:
-          pendingCount > 0
-            ? { type: "pending", count: pendingCount }
-            : { type: "compliant" },
+      searchMatched.push({
+        empIdStr: emp._id.toString(),
+        employeeName,
+        roleName,
       });
     }
+
+    const batchIds = searchMatched.map((r) => r.empIdStr);
+    const [activePointsByEmp, pendingByEmp, maxDateByEmp] = await Promise.all([
+      repo.aggregateActivePointsByEmployeeIds(batchIds, cutoff),
+      repo.aggregatePendingSignatureCountsByEmployeeIds(batchIds),
+      repo.aggregateMaxIncidentDateByEmployeeIds(batchIds),
+    ]);
+
+    const result: DisciplinaryEmployeeListItem[] = searchMatched.map(
+      ({ empIdStr, employeeName, roleName }) => {
+        const activePoints = activePointsByEmp.get(empIdStr) ?? 0;
+        const pendingCount = pendingByEmp.get(empIdStr) ?? 0;
+        const maxD = maxDateByEmp.get(empIdStr);
+        const mostRecent = maxD ? maxD.toISOString() : null;
+        return {
+          id: empIdStr,
+          name: employeeName,
+          role: roleName,
+          activePoints,
+          mostRecentIncidentDate: mostRecent,
+          status: this.deriveStatus(
+            activePoints,
+            settings.disciplineGuidelines,
+            settings.pointsToTermination,
+          ),
+          eSignStatus:
+            pendingCount > 0
+              ? { type: "pending", count: pendingCount }
+              : { type: "compliant" },
+        };
+      },
+    );
 
     const total = result.length;
     const totalPages = Math.max(1, Math.ceil(total / limit));

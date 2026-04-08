@@ -22,10 +22,13 @@ function setStoredLocationId(id: string | null) {
 
 interface LocationState {
   currentLocation: LocationListItem | null;
+  /** True after Navbar finishes the initial locations list fetch (or gives up). Pages should wait before calling location-scoped APIs to avoid a duplicate request without locationId. */
+  listHydrated: boolean;
 }
 
 const initialState: LocationState = {
   currentLocation: null,
+  listHydrated: false,
 };
 
 const locationSlice = createSlice({
@@ -36,9 +39,12 @@ const locationSlice = createSlice({
       state.currentLocation = action.payload;
       setStoredLocationId(action.payload?._id ?? null);
     },
+    setLocationListHydrated: (state, action: PayloadAction<boolean>) => {
+      state.listHydrated = action.payload;
+    },
   },
 });
 
-export const { setCurrentLocation } = locationSlice.actions;
+export const { setCurrentLocation, setLocationListHydrated } = locationSlice.actions;
 export { getStoredLocationId };
 export default locationSlice.reducer;

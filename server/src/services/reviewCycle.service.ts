@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { Types } from "mongoose";
 import { ReviewCycleModel } from "../models/reviewCycle.model.js";
 import { SelfReviewModel } from "../models/selfReview.model.js";
 import { ManagerReviewModel } from "../models/managerReview.model.js";
@@ -24,6 +25,33 @@ import {
 } from "../types/reviewCycle.types.js";
 const notificationService = new NotificationService();
 const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
+
+/** Roles change rarely; reuse one snapshot for visibility + navbar filters within TTL. */
+const REVIEW_CYCLE_ROLES_CACHE_TTL_MS = 60_000;
+type ReviewCycleRoleLean = {
+  _id: Types.ObjectId;
+  name?: string;
+  reportsTo?: Types.ObjectId | null;
+  locationAccess?: string;
+  locationIds?: unknown[];
+};
+let reviewCycleRolesCache: { loadedAt: number; docs: ReviewCycleRoleLean[] } | null = null;
+
+async function loadReviewCycleRoleDocsCached(): Promise<ReviewCycleRoleLean[]> {
+  const now = Date.now();
+  if (
+    reviewCycleRolesCache &&
+    now - reviewCycleRolesCache.loadedAt < REVIEW_CYCLE_ROLES_CACHE_TTL_MS
+  ) {
+    return reviewCycleRolesCache.docs;
+  }
+  const docs = (await RoleModel.find()
+    .select("_id name reportsTo locationAccess locationIds")
+    .lean()
+    .exec()) as ReviewCycleRoleLean[];
+  reviewCycleRolesCache = { loadedAt: now, docs };
+  return docs;
+}
 
 function escapeRegexForEmployeeNameSearch(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -443,7 +471,7 @@ export class ReviewCycleService {
       .lean();
     if (users.length === 0) return [];
 
-    const allRoles = await RoleModel.find().select("_id locationAccess locationIds").lean();
+    const allRoles = await loadReviewCycleRoleDocsCached();
     const roleCache = new Map(allRoles.map((r) => [r._id.toString(), r]));
 
     const out: string[] = [];
@@ -471,7 +499,7 @@ export class ReviewCycleService {
     if (!actor?.roleId) return null;
 
     const actorRoleIdStr = actor.roleId.toString();
-    const allRoles = await RoleModel.find().select("_id name reportsTo").lean();
+    const allRoles = await loadReviewCycleRoleDocsCached();
     const hierarchyRoles: HierarchyRole[] = allRoles.map((r) => ({
       _id: r._id.toString(),
       name: r.name,

@@ -34,6 +34,20 @@ export class LogoService {
     return doc ? this.toLogoResponse(doc) : null;
   }
 
+  /** One round-trip for many logo data URLs (dedupe `ids` before calling if needed). */
+  async getDataUrlByIdMap(ids: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))];
+    const map = new Map<string, string>();
+    if (unique.length === 0) return map;
+    const docs = await this.logoRepository.findByIds(unique);
+    for (const d of docs) {
+      if (typeof d.dataUrl === 'string' && d.dataUrl.length > 0) {
+        map.set(String(d._id), d.dataUrl);
+      }
+    }
+    return map;
+  }
+
   async getAll(): Promise<ILogoResponse[]> {
     const docs = await this.logoRepository.findAll();
     return docs.map((d) => this.toLogoResponse(d));

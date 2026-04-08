@@ -1,11 +1,9 @@
 /**
  * Idempotent daily rollups per location (MarketMan: per buyerGuid + apiKind).
- * Business day key: `yyyy-MM-dd` as the **calendar date in the location's timezone**.
- * UTC window for Square orders, payments, and Homebase: local midnight through 23:59:59.999
- * in that timezone (`getZonedCalendarDayUtcBoundsForDateKey`), aligned with zoned sync windows.
+ * Business day key: `yyyy-MM-dd` = calendar date in location TZ when the **business day opens**
+ * (at businessStartTime). UTC window: `getBusinessDayRangeForDate` (business start → next business start − 1s).
  *
- * MarketMan order counts bucket `businessDateAt` by the same calendar date in the location TZ
- * via Mongo `$dateToString` (store inventory parity).
+ * MarketMan: counts orders whose `businessDateAt` falls in that same UTC window.
  */
 import mongoose from "mongoose";
 import { SquareOrderDailyRollupModel } from "../models/squareOrderDailyRollup.model.js";
@@ -16,7 +14,7 @@ import { MarketManOrderDailyRollupModel } from "../models/marketmanOrderDailyRol
 import { SquarePaymentModel } from "../models/squarePayment.model.js";
 import type { MarketManOrderApiKind } from "../models/marketmanOrderCache.model.js";
 import type { TimeRange } from "../utils/businessHours.util.js";
-import { getZonedCalendarDayUtcBoundsForDateKey } from "../utils/integrationSyncZonedDayBounds.util.js";
+import { businessDayUtcRangeIsoStrings } from "../utils/businessDayUtcRange.util.js";
 import {
   getOrderStatsFromOrders,
   getSourcesOfSalesFromOrders,
@@ -34,13 +32,14 @@ import type { HomebaseTimecard } from "./homebase.service.js";
 
 export function timeRangeForBusinessDateKey(
   timezone: string,
+  businessStartTime: string,
   businessDateKey: string,
 ): TimeRange {
-  const { start, end } = getZonedCalendarDayUtcBoundsForDateKey(
+  return businessDayUtcRangeIsoStrings(
     timezone,
+    businessStartTime,
     businessDateKey,
   );
-  return { startAt: start.toISOString(), endAt: end.toISOString() };
 }
 
 function sumHomebaseLaborMetrics(cards: HomebaseTimecard[]): {
@@ -74,9 +73,13 @@ export async function buildSquareOrderRollupForDay(
   locationMongoId: string,
   businessDateKey: string,
   timezone: string,
-  _businessStartTime: string,
+  businessStartTime: string,
 ): Promise<void> {
-  const range = timeRangeForBusinessDateKey(timezone, businessDateKey);
+  const range = timeRangeForBusinessDateKey(
+    timezone,
+    businessStartTime,
+    businessDateKey,
+  );
   const orders = await loadSquareOrdersForMongoRange(locationMongoId, range);
   const stats = getOrderStatsFromOrders(orders);
   const sourcesOfSales = getSourcesOfSalesFromOrders(orders);
@@ -136,9 +139,13 @@ export async function buildSquarePaymentRollupForDay(
   locationMongoId: string,
   businessDateKey: string,
   timezone: string,
-  _businessStartTime: string,
+  businessStartTime: string,
 ): Promise<void> {
-  const range = timeRangeForBusinessDateKey(timezone, businessDateKey);
+  const range = timeRangeForBusinessDateKey(
+    timezone,
+    businessStartTime,
+    businessDateKey,
+  );
   const { paymentCount, totalAmountCents } =
     await computeSquarePaymentMetricsForRange(locationMongoId, range);
   const computedAt = new Date();
@@ -160,9 +167,13 @@ export async function buildHomebaseRollupForDay(
   locationMongoId: string,
   businessDateKey: string,
   timezone: string,
-  _businessStartTime: string,
+  businessStartTime: string,
 ): Promise<void> {
-  const range = timeRangeForBusinessDateKey(timezone, businessDateKey);
+  const range = timeRangeForBusinessDateKey(
+    timezone,
+    businessStartTime,
+    businessDateKey,
+  );
   const cards = await loadHomebaseTimecardsForMongoRange(
     locationMongoId,
     range,
@@ -189,34 +200,24 @@ export async function countMarketManOrdersForBusinessDay(
   apiKind: MarketManOrderApiKind,
   businessDateKey: string,
   timezone: string,
+  businessStartTime: string,
 ): Promise<number> {
-  const tz = timezone.trim() || "UTC";
+  const range = timeRangeForBusinessDateKey(
+    timezone,
+    businessStartTime,
+    businessDateKey,
+  );
+  const startD = new Date(range.startAt);
+  const endD = new Date(range.endAt);
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   const bg = buyerGuid.trim();
-  const agg = await MarketManOrderCacheModel.aggregate<{ c: number }>([
-    {
-      $match: {
-        locationId: oid,
-        buyerGuid: bg,
-        apiKind,
-        businessDateAt: { $ne: null },
-      },
-    },
-    {
-      $addFields: {
-        dayKey: {
-          $dateToString: {
-            format: "%Y-%m-%d",
-            date: "$businessDateAt",
-            timezone: tz,
-          },
-        },
-      },
-    },
-    { $match: { dayKey: businessDateKey } },
-    { $count: "c" },
-  ]).exec();
-  return agg[0]?.c ?? 0;
+  const count = await MarketManOrderCacheModel.countDocuments({
+    locationId: oid,
+    buyerGuid: bg,
+    apiKind,
+    businessDateAt: { $gte: startD, $lte: endD },
+  }).exec();
+  return count;
 }
 
 export async function buildMarketManRollupForDay(
@@ -225,6 +226,7 @@ export async function buildMarketManRollupForDay(
   apiKind: MarketManOrderApiKind,
   businessDateKey: string,
   timezone: string,
+  businessStartTime: string,
 ): Promise<void> {
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   const bg = buyerGuid.trim();
@@ -234,6 +236,7 @@ export async function buildMarketManRollupForDay(
     apiKind,
     businessDateKey,
     timezone,
+    businessStartTime,
   );
   const computedAt = new Date();
   await MarketManOrderDailyRollupModel.replaceOne(

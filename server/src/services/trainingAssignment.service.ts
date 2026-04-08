@@ -3,7 +3,6 @@ import { TrainingAssignmentRepository } from '../repositories/trainingAssignment
 import { RoleRepository } from '../repositories/role.repository.js';
 import { TrainingModel } from '../models/training.model.js';
 import { UserService } from './user.service.js';
-import type { IUser } from '../types/user.types.js';
 import type {
   ICreateAssignmentsPayload,
   IUpdateAssignmentPayload,
@@ -167,23 +166,20 @@ export class TrainingAssignmentService {
     const userIdsFromAssignments = [
       ...new Set(assignments.map((a) => toIdStr(a.userId)).filter(Boolean)),
     ];
-    const [trainings, userResults] = await Promise.all([
+    const [trainings, userMap] = await Promise.all([
       TrainingModel.find({ _id: { $in: trainingIds.map((id) => new Types.ObjectId(id)) } })
         .lean()
         .exec(),
-      Promise.all(userIdsFromAssignments.map((id) => this.userService.getUserById(id))),
+      this.userService.getUsersByIds(userIdsFromAssignments),
     ]);
     const trainingMap = new Map(
       trainings.map((t) => [toIdStr(t._id), t])
-    );
-    const userMap = new Map<string, IUser | null>(
-      userIdsFromAssignments.map((id, i) => [id, userResults[i] ?? null])
     );
     const list: IAssignmentListItem[] = assignments.map((a) => {
       const userId = toIdStr(a.userId);
       const trainingId = toIdStr(a.trainingId);
       const training = trainingMap.get(trainingId);
-      const user = userMap.get(userId);
+      const user = userId ? userMap.get(userId) ?? null : null;
       const totalModules = training?.modules?.length ?? 0;
       const progress = a.moduleProgress ?? [];
       const completedModules = progress.filter((p) => p.status === 'completed').length;

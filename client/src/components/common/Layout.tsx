@@ -1,7 +1,10 @@
 import { ReactNode, useState } from 'react';
+import { useSelector } from 'react-redux';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
+import { Spinner } from './Spinner';
 import { useSidebar } from '../../hooks/useSidebar';
+import type { RootState } from '../../store/store';
 
 const SIDEBAR_STORAGE_KEY = 'sidebarExpanded';
 
@@ -19,6 +22,7 @@ interface LayoutProps {
 
 export const Layout = ({ children }: LayoutProps) => {
   const { activePath, expandedItems, toggleExpand } = useSidebar();
+  const locationListHydrated = useSelector((state: RootState) => state.location.listHydrated);
   const [isSidebarOpen, setIsSidebarOpen] = useState(getInitialSidebarOpen);
 
   const toggleSidebar = () => {
@@ -49,8 +53,18 @@ export const Layout = ({ children }: LayoutProps) => {
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <Navbar />
-        <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-          {children}
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
+          {locationListHydrated ? (
+            children
+          ) : (
+            <div
+              className="flex flex-1 min-h-[40vh] items-center justify-center px-4"
+              aria-busy="true"
+              aria-label="Loading locations"
+            >
+              <Spinner size="lg" className="text-button-primary" />
+            </div>
+          )}
         </main>
       </div>
     </div>

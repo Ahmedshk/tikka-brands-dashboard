@@ -38,28 +38,20 @@ export const TrainingManagement = () => {
   const [searchAssignmentRows, setSearchAssignmentRows] = useState<EmployeeTrainingRow[]>([]);
   const [searchAssignmentsLoading, setSearchAssignmentsLoading] = useState(false);
 
-  const loadFullAssignments = useCallback(async () => {
-    const id = currentLocation?._id;
-    if (!id?.trim()) {
-      setAssignmentRows([]);
-      return;
-    }
-    try {
-      const { rows } = await trainingAssignmentService.listAssignments(id);
-      setAssignmentRows(rows);
-    } catch {
-      setAssignmentRows([]);
-    }
-  }, [currentLocation?._id]);
-
-  const loadSearchAssignments = useCallback(
-    async (search: string, signal?: AbortSignal) => {
+  /**
+   * Single GET /trainings/assignments per change. When search is empty, same rows feed KPIs (assignmentRows) and table (searchAssignmentRows).
+   * When search is non-empty, only the table list updates; KPIs keep the last full (unsearched) snapshot.
+   */
+  const loadAssignments = useCallback(
+    async (signal?: AbortSignal) => {
       const id = currentLocation?._id;
       if (!id?.trim()) {
+        setAssignmentRows([]);
         setSearchAssignmentRows([]);
         setSearchAssignmentsLoading(false);
         return;
       }
+      const search = employeeTrainingSearchDebounced.trim();
       setSearchAssignmentsLoading(true);
       try {
         const { rows } = await trainingAssignmentService.listAssignments(id, {
@@ -68,23 +60,27 @@ export const TrainingManagement = () => {
         });
         if (signal?.aborted) return;
         setSearchAssignmentRows(rows);
+        if (!search) {
+          setAssignmentRows(rows);
+        }
       } catch (e: unknown) {
         if (axios.isCancel(e) || (e as { code?: string })?.code === 'ERR_CANCELED') return;
         if (signal?.aborted) return;
         setSearchAssignmentRows([]);
+        if (!search) {
+          setAssignmentRows([]);
+        }
       } finally {
         if (!signal?.aborted) setSearchAssignmentsLoading(false);
       }
     },
-    [currentLocation?._id],
+    [currentLocation?._id, employeeTrainingSearchDebounced],
   );
 
   const refreshAssignments = useCallback(() => {
-    void loadFullAssignments();
-    if (!currentLocation?._id?.trim()) return;
     const ac = new AbortController();
-    void loadSearchAssignments(employeeTrainingSearchDebounced, ac.signal);
-  }, [loadFullAssignments, loadSearchAssignments, currentLocation?._id, employeeTrainingSearchDebounced]);
+    void loadAssignments(ac.signal);
+  }, [loadAssignments]);
 
   useEffect(() => {
     setEmployeeTrainingSearchInput('');
@@ -104,14 +100,10 @@ export const TrainingManagement = () => {
   }, [employeeTrainingSearchDebounced]);
 
   useEffect(() => {
-    void loadFullAssignments();
-  }, [loadFullAssignments]);
-
-  useEffect(() => {
     const ac = new AbortController();
-    void loadSearchAssignments(employeeTrainingSearchDebounced, ac.signal);
+    void loadAssignments(ac.signal);
     return () => ac.abort();
-  }, [employeeTrainingSearchDebounced, loadSearchAssignments]);
+  }, [loadAssignments]);
 
   const canStaffInTraining = useCanAccessComponent(PAGE_ID, 'kpi-office-staff');
   const canTrainingsOverdue = useCanAccessComponent(PAGE_ID, 'kpi-trainings-overdue');
