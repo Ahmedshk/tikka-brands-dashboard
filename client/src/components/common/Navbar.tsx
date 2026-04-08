@@ -175,6 +175,7 @@ const TRAINING_SETTINGS_PATH = '/dashboard/training-settings';
 const REVIEW_SETTINGS_PATH = '/dashboard/review-settings';
 const DISCIPLINARY_SETTINGS_PATH = '/dashboard/disciplinary-settings';
 const EVENTS_NOTIFICATIONS_SETTINGS_PATH = '/dashboard/events-notifications-settings';
+const ALERTS_NOTIFICATIONS_SETTINGS_PATH = '/dashboard/alerts-notifications-settings';
 const DATA_SYNC_SETTINGS_PATH = '/dashboard/data-sync-settings';
 
 export const Navbar = () => {
@@ -193,6 +194,7 @@ export const Navbar = () => {
     pathname === REVIEW_SETTINGS_PATH ||
     pathname === DISCIPLINARY_SETTINGS_PATH ||
     pathname === EVENTS_NOTIFICATIONS_SETTINGS_PATH ||
+    pathname === ALERTS_NOTIFICATIONS_SETTINGS_PATH ||
     pathname === DATA_SYNC_SETTINGS_PATH;
   const [locationsLoading, setLocationsLoading] = useState(true);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);

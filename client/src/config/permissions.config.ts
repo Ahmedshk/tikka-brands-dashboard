@@ -202,6 +202,11 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     components: [FULL_PAGE_ACCESS],
   },
   {
+    pageId: 'alerts-notifications-settings',
+    pageLabel: 'Alerts & Notifications',
+    components: [FULL_PAGE_ACCESS],
+  },
+  {
     pageId: 'data-sync-settings',
     pageLabel: 'Data sync',
     components: [FULL_PAGE_ACCESS],

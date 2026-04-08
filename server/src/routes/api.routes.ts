@@ -20,6 +20,7 @@ import calendarRoutes from "./calendar.routes.js";
 import adobeSignWebhookRoutes from "./adobeSignWebhook.routes.js";
 import marketManWebhookRoutes from "./marketManWebhook.routes.js";
 import integrationSyncRoutes from "./integrationSync.routes.js";
+import alertNotificationSettingsRoutes from "./alertNotificationSettings.routes.js";
 import {
   getSelfReviewByToken,
   getSelfReviewDocumentByToken,
@@ -104,6 +105,9 @@ router.use("/activity-log", activityLogRoutes);
 
 // Calendar & event notification settings
 router.use("/calendar", calendarRoutes);
+
+// Alert notification settings (Command Center dynamic alerts)
+router.use("/alert-notification-settings", alertNotificationSettingsRoutes);
 
 // Integration data sync (admin)
 router.use("/integration-sync", integrationSyncRoutes);

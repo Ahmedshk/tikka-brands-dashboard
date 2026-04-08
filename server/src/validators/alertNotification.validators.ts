@@ -1,0 +1,77 @@
+import { z } from "zod";
+
+const timeLocalSchema = z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/);
+
+const channelPrefsSchema = z.object({
+  inApp: z.boolean(),
+  email: z.boolean(),
+  sms: z.boolean(),
+});
+
+const intervalSchema = z
+  .object({
+    hours: z.number().int().min(0).max(168),
+    minutes: z.number().int().min(0).max(59),
+  })
+  .refine((v) => v.hours > 0 || v.minutes > 0, {
+    message: "Interval must have hours > 0 or minutes > 0",
+  });
+
+const runScheduleSchema = z.object({
+  scheduleMode: z.enum(["fixed_times", "interval"]),
+  fixedTimesLocal: z.array(timeLocalSchema).max(48),
+  interval: intervalSchema,
+});
+
+const metricToggleSchema = z.object({
+  warnInToleranceZone: z.boolean(),
+  alertBeyondTolerance: z.boolean(),
+  run: runScheduleSchema.optional(),
+});
+
+const roleBindingSchema = z.object({
+  category: z.enum(["financial_labor", "inventory_supply_chain", "reputation_hr"]),
+  roleId: z.string().min(1),
+  channels: channelPrefsSchema,
+});
+
+export const updateAlertNotificationSettingsBodySchema = z.object({
+  body: z.object({
+    financialLabor: z
+      .object({
+        sales: metricToggleSchema.optional(),
+        laborCostPct: metricToggleSchema.optional(),
+        hours: metricToggleSchema.optional(),
+        spmh: metricToggleSchema.optional(),
+        foodCostPct: metricToggleSchema.optional(),
+      })
+      .optional(),
+    inventorySupplyChain: z
+      .object({
+        deliveryOverdueNotReceived: z.boolean().optional(),
+        run: runScheduleSchema.optional(),
+      })
+      .optional(),
+    reputationHr: z
+      .object({
+        trainingOverdue: z.boolean().optional(),
+        trainingRun: runScheduleSchema.optional(),
+        pendingPips: z.boolean().optional(),
+        pendingPipsRun: runScheduleSchema.optional(),
+      })
+      .optional(),
+    roleBindings: z.array(roleBindingSchema).optional(),
+  }),
+});
+
+export const dismissCommandCenterAlertsBodySchema = z.object({
+  body: z.object({
+    notificationIds: z.array(z.string().min(1)).min(1).max(100),
+  }),
+});
+
+export const getCommandCenterAlertsQuerySchema = z.object({
+  query: z.object({
+    locationId: z.string().min(1, "locationId is required"),
+  }),
+});

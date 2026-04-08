@@ -23,10 +23,23 @@ export function parseYmdBusinessDateKey(businessDateKey: string): {
   if (!match) {
     throw new Error(`Invalid businessDateKey (expected yyyy-MM-dd): ${businessDateKey}`);
   }
-  const y = Number.parseInt(match[1], 10);
-  const m0 = Number.parseInt(match[2], 10) - 1;
-  const d = Number.parseInt(match[3], 10);
+  const y = Number.parseInt(match[1]!, 10);
+  const m0 = Number.parseInt(match[2]!, 10) - 1;
+  const d = Number.parseInt(match[3]!, 10);
   return { y, m0, d };
+}
+
+/** Add calendar days to a yyyy-MM-dd key (UTC date arithmetic; matches rollup businessDateKey dates). */
+export function addCalendarDaysToBusinessDateKey(
+  ymd: string,
+  deltaDays: number,
+): string {
+  const { y, m0, d } = parseYmdBusinessDateKey(ymd);
+  const shifted = new Date(Date.UTC(y, m0, d + deltaDays));
+  const y2 = shifted.getUTCFullYear();
+  const m2 = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const d2 = String(shifted.getUTCDate()).padStart(2, "0");
+  return `${y2}-${m2}-${d2}`;
 }
 
 /** RFC 3339 TimeRange for one business day. */

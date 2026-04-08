@@ -28,6 +28,19 @@ export const NOTIFICATION_TYPES = [
   "calendar_event_reminder",
   "calendar_event_hour_before",
   "calendar_event_start",
+  "alert_goal_sales_warning",
+  "alert_goal_sales_critical",
+  "alert_goal_labor_pct_warning",
+  "alert_goal_labor_pct_critical",
+  "alert_goal_hours_warning",
+  "alert_goal_hours_critical",
+  "alert_goal_spmh_warning",
+  "alert_goal_spmh_critical",
+  "alert_goal_food_cost_warning",
+  "alert_goal_food_cost_critical",
+  "alert_inventory_delivery_overdue",
+  "alert_training_overdue",
+  "alert_pip_pending",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

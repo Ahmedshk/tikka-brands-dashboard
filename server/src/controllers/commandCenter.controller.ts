@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { GoalService } from "../services/goal.service.js";
 import { LocationService } from "../services/location.service.js";
-import { searchOrdersInRangeWithCacheFallback } from "../services/integrationCacheRead.service.js";
+import { fetchHourlyNetSalesCentsBySlotFromCache } from "../services/integrationCacheRead.service.js";
 import { NotFoundError } from "../utils/errors.util.js";
 import {
   parseMetricsQuery,
@@ -26,7 +26,12 @@ import {
   buildTodayOnlyData,
   buildWeekToDateData,
 } from "../utils/commandCenterKpiLogic.js";
-import { getTodayRangeFullDay, getSameDayLastWeekRange, getHourInTimezone } from "../utils/timezone.util.js";
+import { getBusinessStartTimeRange } from "../utils/timezone.util.js";
+import {
+  addCalendarDaysToBusinessDateKey,
+  businessDateKeyForInstant,
+  businessDayUtcRangeIsoStrings,
+} from "../utils/businessDayUtcRange.util.js";
 
 const goalService = new GoalService();
 const locationService = new LocationService();
@@ -196,7 +201,7 @@ export const getHourlySales = async (
     if (!withCreds) {
       throw new NotFoundError("Location not found");
     }
-    const { location, squareAccessToken } = withCreds;
+    const { location } = withCreds;
     const timezone = location.timezone?.trim();
     const squareLocationId = location.squareLocationId?.trim();
     if (!timezone || !squareLocationId) {
@@ -207,50 +212,48 @@ export const getHourlySales = async (
       return;
     }
 
-    const squareOptions = { accessToken: squareAccessToken ?? undefined };
-    const todayRange = getTodayRangeFullDay(timezone);
-    const lastWeekRange = getSameDayLastWeekRange(timezone);
+    const businessStartTime = location.businessStartTime?.trim() ?? "00:00";
+    const todayRange = getBusinessStartTimeRange(timezone, businessStartTime);
+    const todayKey = businessDateKeyForInstant(
+      new Date(),
+      timezone,
+      businessStartTime,
+    );
+    const lastWeekKey = addCalendarDaysToBusinessDateKey(todayKey, -7);
+    const lastWeekRange = businessDayUtcRangeIsoStrings(
+      timezone,
+      businessStartTime,
+      lastWeekKey,
+    );
 
-    const [todayOrders, lastWeekOrders] = await Promise.all([
-      searchOrdersInRangeWithCacheFallback(
+    const [todaySlots, lastWeekSlots] = await Promise.all([
+      fetchHourlyNetSalesCentsBySlotFromCache(
         locationId,
-        squareLocationId,
         todayRange,
-        squareOptions,
+        timezone,
+        businessStartTime,
+        "GET /command-center/hourly-sales today (current business day)",
       ),
-      searchOrdersInRangeWithCacheFallback(
+      fetchHourlyNetSalesCentsBySlotFromCache(
         locationId,
-        squareLocationId,
         lastWeekRange,
-        squareOptions,
+        timezone,
+        businessStartTime,
+        "GET /command-center/hourly-sales last week (business date − 7 days)",
       ),
     ]);
 
-    const todayBuckets = new Array<number>(24).fill(0);
-    const lastWeekBuckets = new Array<number>(24).fill(0);
-
-    for (const order of todayOrders) {
-      const hour = getHourInTimezone(order.created_at, timezone);
-      if (hour >= 0 && hour < 24) {
-        todayBuckets[hour] = (todayBuckets[hour] ?? 0) + order.amountCents;
-      }
-    }
-    for (const order of lastWeekOrders) {
-      const hour = getHourInTimezone(order.created_at, timezone);
-      if (hour >= 0 && hour < 24) {
-        lastWeekBuckets[hour] =
-          (lastWeekBuckets[hour] ?? 0) + order.amountCents;
-      }
-    }
-
+    const startHour = Number.parseInt(
+      businessStartTime.split(":")[0] ?? "0",
+      10,
+    );
     const rows: HourlySalesRow[] = [];
-    for (let h = 0; h < 24; h++) {
-      const todayCents = todayBuckets[h] ?? 0;
-      const lastWeekCents = lastWeekBuckets[h] ?? 0;
+    for (let slot = 0; slot < 24; slot++) {
+      const hour24 = (startHour + slot) % 24;
       rows.push({
-        hour: `${String(h).padStart(2, "0")}:00`,
-        today: todayCents / 100,
-        last_week: lastWeekCents / 100,
+        hour: `${String(hour24).padStart(2, "0")}:00`,
+        today: (todaySlots[slot] ?? 0) / 100,
+        last_week: (lastWeekSlots[slot] ?? 0) / 100,
       });
     }
 

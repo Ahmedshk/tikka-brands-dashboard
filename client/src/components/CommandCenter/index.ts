@@ -4,4 +4,5 @@ export { HourlySalesChartCard } from './HourlySalesChartCard';
 export type { HourlySalesChartCardProps } from './HourlySalesChartCard';
 export { LaborCostGaugeCard } from './LaborCostGaugeCard';
 export type { LaborCostGaugeCardProps } from './LaborCostGaugeCard';
-export { AlertsCard } from './AlertsCard';
+export { AlertsCard, financialAlertsIcon, inventoryAlertsIcon, reputationAlertsIcon } from './AlertsCard';
+export type { AlertsCardProps, AlertCategory, AlertItem, AlertSeverity } from './AlertsCard';

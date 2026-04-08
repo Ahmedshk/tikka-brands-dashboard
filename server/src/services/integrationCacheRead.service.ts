@@ -68,6 +68,8 @@ export async function getNetSalesDollarsInRangeFromCache(
   locationMongoId: string,
   range: TimeRange,
   rollupCtx?: RollupReadContext,
+  /** When set, logs whether net sales came from daily rollups or Mongo orders (e.g. command center). */
+  logContext?: string,
 ): Promise<number> {
   if (rollupCtx) {
     const fromRollup = await tryGetNetSalesDollarsFromDailyRollups(
@@ -76,7 +78,28 @@ export async function getNetSalesDollarsInRangeFromCache(
       rollupCtx.timezone,
       rollupCtx.businessStartTime,
     );
-    if (fromRollup != null) return fromRollup;
+    if (fromRollup != null) {
+      if (logContext) {
+        console.log("[api-data-source]", logContext, {
+          netSalesSource: "rollups",
+          detail:
+            "SquareOrderDailyRollup rows (tryGetNetSalesDollarsFromDailyRollups)",
+        });
+      }
+      return fromRollup;
+    }
+    if (logContext) {
+      console.log("[api-data-source]", logContext, {
+        netSalesSource: "mongo_orders",
+        detail:
+          "rollup miss, ROLLUP_READ_ENABLED off, or missing/incomplete daily Square order rollup rows — summed from Mongo orders",
+      });
+    }
+  } else if (logContext) {
+    console.log("[api-data-source]", logContext, {
+      netSalesSource: "mongo_orders",
+      detail: "no rollup context (timezone / businessStartTime) — summed from Mongo orders",
+    });
   }
   const orders = filterSquareOrdersForDashboardDisplay(
     await loadSquareOrdersForMongoRange(locationMongoId, range),
@@ -154,6 +177,8 @@ export async function getOrderStatsAndSourcesFromCache(
   locationMongoId: string,
   range: TimeRange,
   rollupCtx?: RollupReadContext,
+  /** When set, logs rollup vs Mongo orders (e.g. sales-labor KPIs). */
+  logContext?: string,
 ): Promise<{
   actualTotalSales: number;
   transactionCount: number;
@@ -170,7 +195,28 @@ export async function getOrderStatsAndSourcesFromCache(
         rollupCtx.timezone,
         rollupCtx.businessStartTime,
       );
-      if (rolled) return rolled;
+      if (rolled) {
+        if (logContext) {
+          console.log("[api-data-source]", logContext, {
+            orderStatsSource: "rollups",
+            detail:
+              "tryGetOrderStatsAndSourcesFromDailyRollups (net sales, tx count, discounts, refunds, sourcesOfSales merge)",
+          });
+        }
+        return rolled;
+      }
+      if (logContext) {
+        console.log("[api-data-source]", logContext, {
+          orderStatsSource: "mongo_orders",
+          detail:
+            "rollup miss, ROLLUP_READ_ENABLED off, or incomplete daily rows — getOrderStatsFromOrders + getSourcesOfSalesFromOrders",
+        });
+      }
+    } else if (logContext) {
+      console.log("[api-data-source]", logContext, {
+        orderStatsSource: "mongo_orders",
+        detail: "no rollup context — orders from Mongo only",
+      });
     }
     const orders = await loadSquareOrdersForMongoRange(locationMongoId, range);
     const orderStats = getOrderStatsFromOrders(orders);
@@ -287,6 +333,8 @@ export async function fetchHourlyNetSalesCentsBySlotFromCache(
   range: TimeRange,
   timezone: string,
   businessStartTime: string,
+  /** When set, logs rollup vs Mongo order bucketing (e.g. command-center hourly-sales). */
+  logContext?: string,
 ): Promise<number[]> {
   const fromRollup = await tryGetHourlyNetSalesCentsBySlotFromRollups(
     locationMongoId,
@@ -294,7 +342,23 @@ export async function fetchHourlyNetSalesCentsBySlotFromCache(
     timezone,
     businessStartTime,
   );
-  if (fromRollup) return fromRollup;
+  if (fromRollup) {
+    if (logContext) {
+      console.log("[api-data-source]", logContext, {
+        hourlySalesSource: "rollups",
+        detail:
+          "SquareOrderHourlyRollup (24 slots; tryGetHourlyNetSalesCentsBySlotFromRollups)",
+      });
+    }
+    return fromRollup;
+  }
+  if (logContext) {
+    console.log("[api-data-source]", logContext, {
+      hourlySalesSource: "mongo_orders",
+      detail:
+        "rollup miss, ROLLUP_READ_ENABLED off, or incomplete hourly rows — getBusinessHourIndex on Mongo orders",
+    });
+  }
 
   const netSalesCentsBySlot = new Array<number>(24).fill(0);
   const orders = await searchOrdersInRangeFromCache(locationMongoId, range);

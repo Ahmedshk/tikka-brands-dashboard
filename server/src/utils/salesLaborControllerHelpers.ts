@@ -13,6 +13,7 @@ import type { TimeRange } from "./businessHours.util.js";
 import { getBusinessStartTimeRange } from "./timezone.util.js";
 
 const LOG_PREFIX = "[Sales Labor]";
+export const SALES_LABOR_DETAIL_API_LOG = "[sales-labor-detail-api]";
 
 export const SALES_LABOR_KPI_METRICS = [
   "actualTotalSales",
@@ -119,6 +120,7 @@ export async function fetchSquareOrderStatsAndSources(
       cacheLocationId.trim(),
       range,
       rollupCtx,
+      "GET /sales-labor/kpis Square stats + sourcesOfSales",
     );
     return (
       cached ?? {
@@ -154,6 +156,11 @@ export async function fetchLaborCostAndHours(
       getLaborCostInRangeFromCache(id, range),
       getTotalHoursInRangeFromCache(id, range),
     ]);
+    console.log(SALES_LABOR_DETAIL_API_LOG, "GET /sales-labor/kpis labor cost + hours", {
+      laborSource: "mongo_homebase_timecards",
+      detail:
+        "getLaborCostInRangeFromCache + getTotalHoursInRangeFromCache (synced Homebase docs)",
+    });
     return { laborCost, totalHours };
   } catch (err) {
     console.error(`${LOG_PREFIX} Homebase error:`, err);
@@ -274,6 +281,7 @@ export async function fetchHourlyNetSalesCentsBySlot(
       range,
       timezone,
       businessStartTime,
+      "GET /sales-labor/hourly-breakdown net sales by slot",
     );
   } catch (err) {
     console.error(`${LOG_PREFIX} Square hourly orders error:`, err);
@@ -293,12 +301,23 @@ export async function fetchHourlyLaborCostPerHour(
     return new Array<number>(24).fill(0);
   }
   try {
-    return fetchHourlyLaborCostPerHourFromCache(
+    const slots = await fetchHourlyLaborCostPerHourFromCache(
       cacheLocationId.trim(),
       range,
       timezone,
       businessStartTime,
     );
+    console.log(
+      SALES_LABOR_DETAIL_API_LOG,
+      "GET /sales-labor/hourly-breakdown labor cost per hour by slot",
+      {
+        laborHourlySource: "mongo_homebase_timecards",
+        detail:
+          "fetchHourlyLaborCostPerHourFromCache — no labor rollup; aggregated from synced timecards",
+        slotCount: slots.length,
+      },
+    );
+    return slots;
   } catch (err) {
     console.error(`${LOG_PREFIX} Homebase hourly labor error:`, err);
     return new Array<number>(24).fill(0);

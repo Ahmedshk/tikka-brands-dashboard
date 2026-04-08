@@ -52,6 +52,7 @@ import {
   buildEmptyHourlyBreakdownData,
   parseSalesByCategoryQuery,
   buildSalesByCategoryResponseData,
+  SALES_LABOR_DETAIL_API_LOG,
   type LocationForSalesLabor,
 } from "../utils/salesLaborControllerHelpers.js";
 
@@ -262,6 +263,17 @@ export const getSalesTrend = async (
       withCreds.location._id,
     );
     const result = await getSalesTrendData(ctx, params);
+    console.log(
+      SALES_LABOR_DETAIL_API_LOG,
+      "GET /sales-labor/sales-trend",
+      {
+        squareOrderSeries:
+          "rollup attempt when mongo location id present — see server logger [sales-trend] for ROLLUPS vs rollup miss → orders per request",
+        laborSeries:
+          "mongo_homebase_timecards (getLaborAndHoursTimeSeriesInRangeFromCache)",
+        stackedBySource: params.groupBy === "source",
+      },
+    );
     res.status(200).json({ success: true, data: result.data });
   } catch (error) {
     if (isLaborDateRangeError(error)) {
@@ -290,6 +302,11 @@ export const getSalesTrendKpi = async (
       withCreds.location._id,
     );
     const data = await getSalesTrendKpiData(ctx, params);
+    console.log(SALES_LABOR_DETAIL_API_LOG, "GET /sales-labor/sales-trend-kpi", {
+      squareTotals:
+        "rollup-first KPI totals when applicable — see server logger [sales-trend] for path details",
+      laborTotals: "mongo_homebase_timecards for hours/labor in range",
+    });
     res.status(200).json({ success: true, data });
   } catch (error) {
     if (isLaborDateRangeError(error)) {
@@ -428,6 +445,18 @@ export const getSalesByCategory = async (
       ]);
       currentResult = current;
       comparisonResult = comp;
+      let comparisonSource: string = "n/a";
+      if (comparisonRange != null) {
+        comparisonSource =
+          rollupComparison != null
+            ? "rollups"
+            : "mongo_orders_getNetSalesByCategoryInRange";
+      }
+      console.log(SALES_LABOR_DETAIL_API_LOG, "GET /sales-labor/sales-by-category", {
+        currentSource:
+          rollupCurrent != null ? "rollups" : "mongo_orders_getNetSalesByCategoryInRange",
+        comparisonSource,
+      });
     }
 
     const data = buildSalesByCategoryResponseData(
@@ -471,6 +500,12 @@ export const getTimesheet = async (
     const timecards = await loadHomebaseTimecardsForMongoRange(locationId, {
       startAt,
       endAt,
+    });
+
+    console.log(SALES_LABOR_DETAIL_API_LOG, "GET /sales-labor/timesheet", {
+      source: "mongo_homebase_timecards",
+      rowCount: timecards.length,
+      range: { startAt, endAt },
     });
 
     const rows = timecards.map((tc) => {

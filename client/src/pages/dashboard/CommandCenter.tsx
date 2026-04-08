@@ -1,10 +1,17 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { Layout } from '../../components/common/Layout';
 import {
   CommandCenterKPICards,
   HourlySalesChartCard,
   LaborCostGaugeCard,
   AlertsCard,
+  financialAlertsIcon,
+  inventoryAlertsIcon,
+  reputationAlertsIcon,
+  type AlertCategory,
+  type AlertItem,
+  type CommandCenterKPIItem,
+  type CommandCenterKPIPeriod,
 } from '../../components/CommandCenter';
 import CommandCenterIcon from '@assets/icons/command_center.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
@@ -17,13 +24,10 @@ import {
   type HourlySalesRow,
   isCommandCenterKPIsDual,
 } from '../../services/commandCenter.service';
-import type {
-  CommandCenterKPIItem,
-  CommandCenterKPIPeriod,
-} from '../../components/CommandCenter';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 import { formatCurrency, formatHourToAmPm } from '../../utils/commandCenterHelpers';
 import { buildCommandCenterKPIItems } from '../../utils/commandCenterKpiBuilder';
+import type { CommandCenterAlertBuckets, CommandCenterAlertRow } from '../../types/alertNotification.types';
 
 const PAGE_ID = 'command-center';
 
@@ -58,6 +62,9 @@ export const CommandCenter = () => {
   const [hourlySales, setHourlySales] = useState<HourlySalesRow[] | null>(null);
   const [hourlySalesLoading, setHourlySalesLoading] = useState(!!currentLocation?._id && shouldFetchHourly);
   const [hourlySalesError, setHourlySalesError] = useState<string | null>(null);
+  const [alertBuckets, setAlertBuckets] = useState<CommandCenterAlertBuckets | null>(null);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentLocation?._id || !shouldFetchKpis || kpiMetrics.length === 0) {
@@ -109,6 +116,48 @@ export const CommandCenter = () => {
       });
     return () => controller.abort();
   }, [currentLocation?._id, shouldFetchHourly]);
+
+  useEffect(() => {
+    if (!currentLocation?._id || !showAlerts) {
+      setAlertBuckets(null);
+      setAlertsError(null);
+      setAlertsLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setAlertsLoading(true);
+    setAlertsError(null);
+    commandCenterService
+      .getAlerts(currentLocation._id, { signal: controller.signal })
+      .then(setAlertBuckets)
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setAlertsError(err instanceof Error ? err.message : 'Failed to load alerts');
+        setAlertBuckets(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAlertsLoading(false);
+      });
+    return () => controller.abort();
+  }, [currentLocation?._id, showAlerts]);
+
+  const handleDismissAlert = useCallback(async (notificationId: string) => {
+    try {
+      await commandCenterService.dismissAlerts([notificationId]);
+      setAlertBuckets((prev) => {
+        if (prev == null) return prev;
+        const without = (rows: CommandCenterAlertRow[]) =>
+          rows.filter((r) => r.id !== notificationId);
+        return {
+          financial_labor: without(prev.financial_labor),
+          inventory_supply_chain: without(prev.inventory_supply_chain),
+          reputation_hr: without(prev.reputation_hr),
+        };
+      });
+    } catch {
+      setAlertsError('Could not dismiss alert. Try again.');
+    }
+  }, []);
 
   const commandCenterKPIs = useMemo((): CommandCenterKPIItem[] => {
     return buildCommandCenterKPIItems({
@@ -179,6 +228,60 @@ export const CommandCenter = () => {
     };
   }, [hourlySales]);
 
+  const alertCategories = useMemo((): AlertCategory[] => {
+    const rowToItem = (row: CommandCenterAlertRow): AlertItem => ({
+      id: row.id,
+      text:
+        row.message.trim().length > 0 ? `${row.title}: ${row.message}` : row.title,
+      subtitle: new Date(row.createdAt).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
+      severity: row.severity,
+      dismissable: row.dismissable,
+    });
+
+    const cats: AlertCategory[] = [];
+    if (canAlertsFinancial) {
+      cats.push({
+        id: 'financial_labor',
+        title: 'Financial & Labor',
+        icon: financialAlertsIcon,
+        alerts: alertBuckets?.financial_labor.map(rowToItem) ?? [],
+      });
+    }
+    if (canAlertsInventory) {
+      cats.push({
+        id: 'inventory_supply_chain',
+        title: 'Inventory & Supply Chain',
+        icon: inventoryAlertsIcon,
+        alerts: alertBuckets?.inventory_supply_chain.map(rowToItem) ?? [],
+      });
+    }
+    if (canAlertsReputation) {
+      const dynamic = alertBuckets?.reputation_hr.map(rowToItem) ?? [];
+      const staticPlaceholders: AlertItem[] = [
+        {
+          id: 'placeholder-review-thresholds',
+          text: 'Review and rating thresholds are not yet available.',
+          severity: 'warning',
+        },
+      ];
+      cats.push({
+        id: 'reputation_hr',
+        title: 'Reputation & HR',
+        icon: reputationAlertsIcon,
+        alerts: [...dynamic, ...staticPlaceholders],
+      });
+    }
+    return cats;
+  }, [
+    alertBuckets,
+    canAlertsFinancial,
+    canAlertsInventory,
+    canAlertsReputation,
+  ]);
+
   return (
     <Layout>
       <div className="p-6 min-h-[200px]">
@@ -247,7 +350,14 @@ export const CommandCenter = () => {
           </div>
         )}
 
-        {showAlerts && <AlertsCard />}
+        {showAlerts && alertCategories.length > 0 && (
+          <AlertsCard
+            categories={alertCategories}
+            loading={alertsLoading}
+            error={alertsError}
+            onDismiss={handleDismissAlert}
+          />
+        )}
       </div>
     </Layout>
   );

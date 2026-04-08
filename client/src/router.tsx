@@ -21,6 +21,7 @@ import { ReviewSettings } from './pages/dashboard/ReviewSettings';
 import { DisciplinarySettings } from './pages/dashboard/DisciplinarySettings';
 import { TrainingSettings } from './pages/dashboard/TrainingSettings';
 import { EventsNotificationsSettings } from './pages/dashboard/EventsNotificationsSettings';
+import { AlertsNotificationsSettings } from './pages/dashboard/AlertsNotificationsSettings';
 import { DataSyncSettings } from './pages/dashboard/DataSyncSettings';
 import { KitchenPerformance } from './pages/dashboard/KitchenPerformance';
 import { KitchenPerformanceDetails } from './pages/dashboard/KitchenPerformanceDetails';
@@ -283,6 +284,17 @@ export const router = createBrowserRouter([
       <ErrorBoundary>
         <ProtectedRoute>
           <EventsNotificationsSettings />
+        </ProtectedRoute>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/dashboard/alerts-notifications-settings',
+    element: (
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <AlertsNotificationsSettings />
         </ProtectedRoute>
       </ErrorBoundary>
     ),

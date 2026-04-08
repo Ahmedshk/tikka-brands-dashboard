@@ -92,6 +92,7 @@ export async function fetchTodayOnlyKpis(
           timezone: location.timezone,
           businessStartTime: location.businessStartTime ?? "00:00",
         },
+        "GET /command-center/kpis netSales (today range)",
       );
     } catch (err) {
       console.error(`${LOG_PREFIX} Square net sales error:`, err);
@@ -168,11 +169,13 @@ export async function fetchWeekToDateKpis(
           locationMongoId,
           rangeToday,
           rollupCtx,
+          "GET /command-center/kpis netSales (today range, dual-period)",
         ).catch(wrapNetSalesErr("today")),
         getNetSalesDollarsInRangeFromCache(
           locationMongoId,
           rangeWeekToDate,
           rollupCtx,
+          "GET /command-center/kpis netSales (week-to-date range)",
         ).catch(wrapNetSalesErr("WTD")),
       );
     } else {

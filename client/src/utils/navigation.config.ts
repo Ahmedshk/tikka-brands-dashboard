@@ -132,6 +132,11 @@ export const navigationConfig: NavigationConfig = [
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
       },
       {
+        label: "Alerts & Notifications",
+        path: "/dashboard/alerts-notifications-settings",
+        allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
+      },
+      {
         label: "Data sync",
         path: "/dashboard/data-sync-settings",
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles

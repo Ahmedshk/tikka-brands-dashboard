@@ -48,6 +48,9 @@ export async function initializeAgenda(): Promise<Agenda> {
   } = await import("../jobs/integration.jobs.js");
   registerIntegrationJobs(agenda);
 
+  const { registerAlertJobs, bootstrapAlertAgendaSchedule } = await import("../jobs/alerts.jobs.js");
+  registerAlertJobs(agenda);
+
   await agenda.start();
   logger.info("Agenda: scheduler started");
 
@@ -81,6 +84,8 @@ export async function initializeAgenda(): Promise<Agenda> {
   if (process.env.SKIP_CALENDAR_STARTUP_BACKFILL !== "1") {
     queueCalendarNotificationBackfill(agenda);
   }
+
+  await bootstrapAlertAgendaSchedule(agenda);
 
   return agenda;
 }
