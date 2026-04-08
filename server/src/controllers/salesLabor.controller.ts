@@ -4,6 +4,7 @@ import {
   loadSquareOrdersForMongoRange,
   createMongoCatalogBatchRetrieve,
 } from "../services/integrationCacheRead.service.js";
+import { tryGetNetSalesByCategoryFromDailyRollups } from "../services/integrationRollupRead.service.js";
 import { LocationService } from "../services/location.service.js";
 import {
   getNetSalesByCategoryInRange,
@@ -350,35 +351,79 @@ export const getSalesByCategory = async (
     let comparisonResult = { categories: [] as Array<{ name: string; netSalesCents: number }>, totalNetSalesCents: 0 };
 
     if (squareLocationId) {
+      const batchRetrieve =
+        useCategoryCache && mongoId
+          ? createMongoCatalogBatchRetrieve(mongoId)
+          : null;
+      const categoryCatalogToken = squareAccessToken ?? "";
+
+      const [rollupCurrent, rollupComparison] =
+        batchRetrieve != null
+          ? await Promise.all([
+              tryGetNetSalesByCategoryFromDailyRollups(
+                mongoId!,
+                dataRange,
+                timezone,
+                businessStartTime,
+                batchRetrieve,
+                categoryCatalogToken,
+              ),
+              comparisonRange
+                ? tryGetNetSalesByCategoryFromDailyRollups(
+                    mongoId!,
+                    comparisonRange,
+                    timezone,
+                    businessStartTime,
+                    batchRetrieve,
+                    categoryCatalogToken,
+                  )
+                : Promise.resolve(null),
+            ])
+          : [null, null];
+
       let currentCatOpts: SquareServiceOptions = squareOptions;
       let comparisonCatOpts: SquareServiceOptions = squareOptions;
-      if (useCategoryCache && mongoId) {
+
+      if (useCategoryCache && mongoId && batchRetrieve != null) {
+        const needCurrentOrders = rollupCurrent == null;
+        const needComparisonOrders =
+          comparisonRange != null && rollupComparison == null;
         const [currentOrders, comparisonOrders] = await Promise.all([
-          loadSquareOrdersForMongoRange(mongoId, dataRange),
-          comparisonRange
+          needCurrentOrders
+            ? loadSquareOrdersForMongoRange(mongoId, dataRange)
+            : Promise.resolve([]),
+          needComparisonOrders && comparisonRange
             ? loadSquareOrdersForMongoRange(mongoId, comparisonRange)
             : Promise.resolve([]),
         ]);
-        const batchRetrieve = createMongoCatalogBatchRetrieve(mongoId);
-        currentCatOpts = {
-          ...squareOptions,
-          ordersOverride: currentOrders,
-          batchRetrieveCatalogOverride: batchRetrieve,
-        };
-        comparisonCatOpts = {
-          ...squareOptions,
-          ordersOverride: comparisonOrders,
-          batchRetrieveCatalogOverride: batchRetrieve,
-        };
+        if (needCurrentOrders) {
+          currentCatOpts = {
+            ...squareOptions,
+            ordersOverride: currentOrders,
+            batchRetrieveCatalogOverride: batchRetrieve,
+          };
+        }
+        if (needComparisonOrders) {
+          comparisonCatOpts = {
+            ...squareOptions,
+            ordersOverride: comparisonOrders,
+            batchRetrieveCatalogOverride: batchRetrieve,
+          };
+        }
       }
+
       const [current, comp] = await Promise.all([
-        getNetSalesByCategoryInRange(squareLocationId, dataRange, currentCatOpts),
+        rollupCurrent != null
+          ? Promise.resolve(rollupCurrent)
+          : getNetSalesByCategoryInRange(squareLocationId, dataRange, currentCatOpts),
         comparisonRange
-          ? getNetSalesByCategoryInRange(
-              squareLocationId,
-              comparisonRange,
-              comparisonCatOpts,
-            )
+          ? rollupComparison != null
+            ? Promise.resolve(rollupComparison)
+            : getNetSalesByCategoryInRange(
+                squareLocationId,
+                comparisonRange,
+                comparisonCatOpts,
+              )
           : Promise.resolve({ categories: [], totalNetSalesCents: 0 }),
       ]);
       currentResult = current;

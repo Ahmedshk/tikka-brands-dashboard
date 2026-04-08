@@ -115,10 +115,10 @@ export const EmployeeTrainingCard = ({
   const emptyNoSearch = !loading && searchMatchCount === 0 && !debouncedSearch;
 
   return (
-    <div className={`${cardClass} flex flex-col h-full min-h-0`}>
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+    <div className={`${cardClass} flex flex-col min-h-0 overflow-hidden`}>
+      <div className="flex flex-col min-h-0 overflow-hidden">
         {/* Desktop: column headers in primary bar + body */}
-        <div className="hidden md:block overflow-x-auto overflow-y-auto flex-1 min-h-0">
+        <div className="hidden md:block overflow-x-auto overflow-y-auto min-h-0">
           <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
             <thead>
               <tr className="bg-primary text-white">
@@ -219,29 +219,29 @@ export const EmployeeTrainingCard = ({
         </div>
 
         {/* Mobile: stacked cards (no table header row) */}
-        <div className="md:hidden flex flex-col flex-1 min-h-0 rounded-t-xl overflow-hidden">
-          <div className="p-5 flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="md:hidden rounded-t-xl overflow-hidden">
+          <div className="p-5">
             {loading ? (
-              <div className="flex flex-1 min-h-[200px] items-center justify-center" aria-busy="true">
+              <div className="flex min-h-[200px] items-center justify-center" aria-busy="true">
                 <Spinner size="lg" className="text-button-primary" />
               </div>
             ) : emptySearch ? (
-              <p className="text-sm text-gray-500 text-center py-8 px-2 flex-1 flex items-center justify-center min-h-[200px]">
+              <p className="text-sm text-gray-500 text-center py-8 px-2 flex items-center justify-center min-h-[200px]">
                 No assignments match this search.
               </p>
             ) : emptyNoSearch ? (
-              <div className="flex flex-1 min-h-[200px] items-center justify-center px-2">
+              <div className="flex min-h-[200px] items-center justify-center px-2">
                 <div className="text-center text-gray-400">
                   <p className="text-lg font-medium">No assignments yet</p>
                   <p className="text-sm mt-1">Assign training to employees to see progress here.</p>
                 </div>
               </div>
             ) : showHierarchyEmpty ? (
-              <p className="text-sm text-secondary text-center py-8 px-2 flex-1 flex items-center justify-center min-h-[200px]">
+              <p className="text-sm text-secondary text-center py-8 px-2 flex items-center justify-center min-h-[200px]">
                 No assignments are visible for your role hierarchy.
               </p>
             ) : (
-              <div className="divide-y divide-gray-200 overflow-y-auto flex-1 min-h-0 -mx-5 px-5">
+              <div className="divide-y divide-gray-200 overflow-y-auto min-h-0 -mx-5 px-5">
                 {rows.map((row, index) => {
                   const rowKey = row.assignmentId ?? `${row.trainingName}-${row.assignTo}-${index}`;
                   return (

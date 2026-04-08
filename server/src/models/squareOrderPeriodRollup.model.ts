@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Types } from "mongoose";
+import type { CategoryRollupBreakdownRow } from "../utils/squareCategoryRollupBreakdown.util.js";
 
 export type SquareOrderPeriodGranularity = "week" | "month" | "year";
 
@@ -15,9 +16,20 @@ export interface SquareOrderPeriodRollupDocument extends Document {
   totalRefundCents: number;
   refundCount: number;
   sourcesOfSales: unknown[];
+  categoriesBreakdown?: CategoryRollupBreakdownRow[];
   createdAt: Date;
   updatedAt: Date;
 }
+
+const categoryBreakdownRowSchema = new Schema(
+  {
+    categoryId: { type: String, required: true, trim: true },
+    netSalesCents: { type: Number, required: true, default: 0 },
+    transactionCount: { type: Number, required: true, default: 0 },
+    nameSnapshot: { type: String, trim: true },
+  },
+  { _id: false },
+);
 
 const schema = new Schema<SquareOrderPeriodRollupDocument>(
   {
@@ -35,6 +47,10 @@ const schema = new Schema<SquareOrderPeriodRollupDocument>(
     totalRefundCents: { type: Number, required: true, default: 0 },
     refundCount: { type: Number, required: true, default: 0 },
     sourcesOfSales: { type: [Schema.Types.Mixed], default: [] },
+    categoriesBreakdown: {
+      type: [categoryBreakdownRowSchema],
+      default: [],
+    },
   },
   { timestamps: true },
 );

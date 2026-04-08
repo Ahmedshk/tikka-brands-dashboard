@@ -1,6 +1,27 @@
 import { generateDistinctColors } from "./colorPalette.util.js";
 
 /**
+ * Sum `amount` strings per segment `id` for a single rollup `sourcesOfSales` array (cents).
+ */
+export function sumSourcesOfSalesSegmentsToCentsById(
+  segments: unknown[] | undefined,
+): Map<string, number> {
+  const byId = new Map<string, number>();
+  if (!Array.isArray(segments)) return byId;
+  for (const raw of segments) {
+    const r = raw as { id?: string; amount?: string };
+    const id = typeof r.id === "string" ? r.id : "";
+    if (!id) continue;
+    const amount = typeof r.amount === "string" ? r.amount : "$0.00";
+    const n = Number.parseFloat(amount.replace(/[$,]/g, ""));
+    const cents = Math.round(n * 100);
+    if (!Number.isFinite(cents)) continue;
+    byId.set(id, (byId.get(id) ?? 0) + cents);
+  }
+  return byId;
+}
+
+/**
  * Merge `sourcesOfSales` arrays from multiple daily rollup docs (sum `amount` strings per `id`).
  */
 export function mergeSourcesOfSalesFromDailyRollupDocs(
@@ -8,16 +29,9 @@ export function mergeSourcesOfSalesFromDailyRollupDocs(
 ): unknown[] {
   const byId = new Map<string, number>();
   for (const doc of docs) {
-    const segs = doc.sourcesOfSales;
-    if (!Array.isArray(segs)) continue;
-    for (const raw of segs) {
-      const r = raw as { id?: string; amount?: string };
-      const id = typeof r.id === "string" ? r.id : "";
-      if (!id) continue;
-      const amount = typeof r.amount === "string" ? r.amount : "$0.00";
-      const n = Number.parseFloat(amount.replace(/[$,]/g, ""));
-      const cents = Math.round(n * 100);
-      if (!Number.isFinite(cents)) continue;
+    for (const [id, cents] of sumSourcesOfSalesSegmentsToCentsById(
+      doc.sourcesOfSales,
+    )) {
       byId.set(id, (byId.get(id) ?? 0) + cents);
     }
   }

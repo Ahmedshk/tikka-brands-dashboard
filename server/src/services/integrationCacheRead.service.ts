@@ -39,6 +39,7 @@ import {
   tryGetNetSalesDollarsFromDailyRollups,
   tryGetOrderStatsAndSourcesFromDailyRollups,
 } from "./integrationRollupRead.service.js";
+import { logger } from "../utils/logger.util.js";
 
 export async function loadSquareOrdersForMongoRange(
   locationMongoId: string,
@@ -251,10 +252,20 @@ export async function getLaborAndHoursTimeSeriesInRangeFromCache(
     laborCostByKey[k] = 0;
     hoursByKey[k] = 0;
   }
+  const t0 = performance.now();
   const timecards = await loadHomebaseTimecardsForMongoRange(
     locationMongoId,
     range,
   );
+  logger.info("[sales-trend] labor time series: Homebase timecards from Mongo", {
+    granularity,
+    bucketCount: keys.length,
+    timecardCount: timecards.length,
+    loadTimecardsMs: Math.round(performance.now() - t0),
+    rangeStart: range.startAt,
+    rangeEnd: range.endAt,
+    locationMongoId,
+  });
   aggregateTimecardsIntoBuckets(
     timecards,
     keys,

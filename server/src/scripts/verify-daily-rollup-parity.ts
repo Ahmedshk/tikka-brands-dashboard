@@ -4,6 +4,10 @@
  *
  * Local: npm run verify-daily-rollup-parity -- --locationId <mongoId> --businessDateKey 2026-03-15
  * Optional: `--buyerGuid` for MarketMan (defaults to location.marketManBuyerGuid or first cache buyer).
+ *
+ * Backfill `categoriesBreakdown`: re-run `rollup-square-orders-daily` for affected business days, then
+ * period rebuild (`rebuildSquareOrderDerivedRollupsForBusinessDay` / same pipeline as the daily script)
+ * so week/month/year rollups merge daily category rows.
  */
 import dotenv from "dotenv";
 import path from "node:path";
@@ -21,10 +25,21 @@ import {
   timeRangeForBusinessDateKey,
 } from "../services/dailyRollupBuilder.service.js";
 import {
+  createMongoCatalogBatchRetrieve,
   getLaborCostInRangeFromCache,
   getOrderStatsAndSourcesFromCache,
   getTotalHoursInRangeFromCache,
+  loadSquareOrdersForMongoRange,
 } from "../services/integrationCacheRead.service.js";
+import {
+  isOrderCountedForNetSales,
+  orderNetSalesCents,
+} from "../services/square.service.js";
+import { lineItemTotalMoneyToCents } from "../utils/squareNetSalesByCategoryHelpers.js";
+import {
+  computeCategoryBreakdownFromOrdersForRollup,
+  type CategoryRollupBreakdownRow,
+} from "../utils/squareCategoryRollupBreakdown.util.js";
 import {
   distinctBuyerGuidsForMarketManRollup,
   loadLocationsForRollupScript,
@@ -62,6 +77,29 @@ function parseVerifyArgs(argv: string[]): {
 }
 
 const API_KINDS: MarketManOrderApiKind[] = ["sent", "delivery"];
+
+function categoryBreakdownParity(
+  stored: CategoryRollupBreakdownRow[] | undefined,
+  expected: CategoryRollupBreakdownRow[],
+): boolean {
+  const norm = (rows: CategoryRollupBreakdownRow[]) =>
+    [...rows].sort((a, b) => a.categoryId.localeCompare(b.categoryId));
+  const a = norm(stored ?? []);
+  const b = norm(expected);
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (
+      x.categoryId !== y.categoryId ||
+      x.netSalesCents !== y.netSalesCents ||
+      x.transactionCount !== y.transactionCount
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 async function main(): Promise<void> {
   try {
@@ -101,6 +139,28 @@ async function main(): Promise<void> {
       Math.abs(cacheOrders.totalRefunds - rollupOrder.totalRefundCents / 100) <
         0.02 &&
       cacheOrders.totalRefundCount === rollupOrder.refundCount;
+
+    const ordersForCategory = await loadSquareOrdersForMongoRange(
+      locIdStr,
+      range,
+    );
+    const expectedCategoryBreakdown =
+      await computeCategoryBreakdownFromOrdersForRollup(
+        ordersForCategory,
+        createMongoCatalogBatchRetrieve(locIdStr),
+        "",
+        {
+          isCounted: isOrderCountedForNetSales as (o: unknown) => boolean,
+          getOrderCents: orderNetSalesCents as (o: unknown) => number,
+          getLineCents: lineItemTotalMoneyToCents,
+        },
+      );
+    const categoryOk =
+      rollupOrder != null &&
+      categoryBreakdownParity(
+        rollupOrder.categoriesBreakdown as CategoryRollupBreakdownRow[] | undefined,
+        expectedCategoryBreakdown,
+      );
 
     const laborCache = await getLaborCostInRangeFromCache(locIdStr, range);
     const hoursCache = await getTotalHoursInRangeFromCache(locIdStr, range);
@@ -182,9 +242,12 @@ async function main(): Promise<void> {
               totalDiscountCents: rollupOrder.totalDiscountCents,
               totalRefundCents: rollupOrder.totalRefundCents,
               refundCount: rollupOrder.refundCount,
+              categoriesBreakdown: rollupOrder.categoriesBreakdown,
             }
           : null,
+        expectedCategoryBreakdown,
         match: orderOk === true,
+        categoryBreakdownMatch: categoryOk === true,
       },
       homebase: {
         cache: { laborCost: laborCache, hours: hoursCache },
@@ -212,7 +275,11 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(report, null, 2));
     const mmAllOk = mmResults.length === 0 || mmResults.every((r) => r.ok);
     const allOk =
-      orderOk === true && hbOk === true && payOk === true && mmAllOk;
+      orderOk === true &&
+      categoryOk === true &&
+      hbOk === true &&
+      payOk === true &&
+      mmAllOk;
     if (!allOk) {
       logger.warn("verify-daily-rollup-parity: mismatch", { report });
       console.error("\n❌ Parity check reported mismatches or missing rollups.\n");

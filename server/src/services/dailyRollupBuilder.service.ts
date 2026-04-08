@@ -18,11 +18,16 @@ import { businessDayUtcRangeIsoStrings } from "../utils/businessDayUtcRange.util
 import {
   getOrderStatsFromOrders,
   getSourcesOfSalesFromOrders,
+  isOrderCountedForNetSales,
+  orderNetSalesCents,
 } from "./square.service.js";
 import {
+  createMongoCatalogBatchRetrieve,
   loadHomebaseTimecardsForMongoRange,
   loadSquareOrdersForMongoRange,
 } from "./integrationCacheRead.service.js";
+import { lineItemTotalMoneyToCents } from "../utils/squareNetSalesByCategoryHelpers.js";
+import { computeCategoryBreakdownFromOrdersForRollup } from "../utils/squareCategoryRollupBreakdown.util.js";
 import {
   getSquarePaymentAmountCentsFromRaw,
   getSquarePaymentStatusFromRaw,
@@ -83,6 +88,17 @@ export async function buildSquareOrderRollupForDay(
   const orders = await loadSquareOrdersForMongoRange(locationMongoId, range);
   const stats = getOrderStatsFromOrders(orders);
   const sourcesOfSales = getSourcesOfSalesFromOrders(orders);
+  const batchRetrieve = createMongoCatalogBatchRetrieve(locationMongoId);
+  const categoriesBreakdown = await computeCategoryBreakdownFromOrdersForRollup(
+    orders,
+    batchRetrieve,
+    "",
+    {
+      isCounted: isOrderCountedForNetSales as (o: unknown) => boolean,
+      getOrderCents: orderNetSalesCents as (o: unknown) => number,
+      getLineCents: lineItemTotalMoneyToCents,
+    },
+  );
   const computedAt = new Date();
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   await SquareOrderDailyRollupModel.replaceOne(
@@ -97,6 +113,7 @@ export async function buildSquareOrderRollupForDay(
       totalRefundCents: stats.totalRefundCents,
       refundCount: stats.refundCount,
       sourcesOfSales,
+      categoriesBreakdown,
     },
     { upsert: true },
   ).exec();

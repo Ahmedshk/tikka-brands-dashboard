@@ -12,7 +12,6 @@ import {
   type OrderTimeSeriesBySourceSeries,
 } from "../services/square.service.js";
 import {
-  loadSquareOrdersForMongoRange,
   createMongoCatalogBatchRetrieve,
   getLaborAndHoursTimeSeriesInRangeFromCache,
 } from "../services/integrationCacheRead.service.js";
@@ -120,7 +119,7 @@ export function buildSalesTrendContext(
 
 async function buildSquareOrderCacheOptions(
   locationMongoId: string | undefined,
-  range: TimeRange,
+  _range: TimeRange,
   base?: SquareServiceOptions,
   rollupCtx?: { timezone: string; businessStartTime: string },
 ): Promise<SquareServiceOptions | undefined> {
@@ -128,11 +127,9 @@ async function buildSquareOrderCacheOptions(
     return base;
   }
   const id = locationMongoId.trim();
-  const orders = await loadSquareOrdersForMongoRange(id, range);
   const bst = rollupCtx?.businessStartTime?.trim() ?? base?.businessStartTime;
   return {
     ...base,
-    ordersOverride: orders,
     batchRetrieveCatalogOverride: createMongoCatalogBatchRetrieve(id),
     ...(bst != null && bst !== "" ? { businessStartTime: bst } : {}),
     ...(rollupCtx != null

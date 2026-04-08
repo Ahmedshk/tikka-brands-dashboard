@@ -177,22 +177,22 @@ export const TrainingManagement = () => {
 
   return (
     <Layout>
-      <div className="p-6 flex flex-col min-h-full">
-        <div className="mb-6 flex-shrink-0">
+      <div className="p-6">
+        <div className="mb-6">
           <h2 className="flex items-center gap-2 text-base md:text-lg 2xl:text-xl font-semibold text-primary">
             <TeamHrIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
             Training Management
           </h2>
         </div>
 
-        {trainingKPIs.length > 0 && (
-          <div className="flex-shrink-0 mb-6">
+        {trainingKPIs.length > 0 ? (
+          <div className="mb-6">
             <CommandCenterKPICards items={trainingKPIs} />
           </div>
-        )}
+        ) : null}
 
-        {canEmployeeTraining && (
-          <div className="flex flex-col flex-1 min-h-0 w-full max-w-full">
+        {canEmployeeTraining ? (
+          <>
             {!currentLocation && (
               <p className="text-secondary text-sm mb-2">Select a location in the navbar to see assignments.</p>
             )}
@@ -235,8 +235,8 @@ export const TrainingManagement = () => {
                   : undefined
               }
             />
-          </div>
-        )}
+          </>
+        ) : null}
       </div>
 
       <AssignTrainingModal

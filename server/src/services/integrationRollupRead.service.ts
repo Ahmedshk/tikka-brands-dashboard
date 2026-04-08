@@ -12,11 +12,62 @@ import {
 import type { SalesTrendGranularity } from "../utils/homebaseOrderedBuckets.util.js";
 import type { TimeRange } from "../utils/businessHours.util.js";
 import type { SourcesOfSalesSegment } from "./square.service.js";
+import { mapHourlyChartKeyToRollupSlot } from "../utils/hourlyRollupRead.util.js";
 import { logger } from "../utils/logger.util.js";
-import { mergeSourcesOfSalesFromDailyRollupDocs } from "../utils/squareSourcesOfSalesMerge.util.js";
+import {
+  mergeCategoryBreakdownFromDailyRollupDocs,
+  UNCATEGORIZED_CATEGORY_DISPLAY_LABEL,
+  UNCATEGORIZED_CATEGORY_ROLLUP_ID,
+} from "../utils/squareCategoryRollupBreakdown.util.js";
+import {
+  resolveCategoryIdToName,
+  type BatchRetrieveCatalogFn,
+  type NetSalesByCategoryResult,
+} from "../utils/squareNetSalesByCategoryHelpers.js";
+import {
+  mergeSourcesOfSalesFromDailyRollupDocs,
+  sumSourcesOfSalesSegmentsToCentsById,
+} from "../utils/squareSourcesOfSalesMerge.util.js";
 
 const ROLLUP_READ_ENABLED =
   (process.env.ROLLUP_READ_ENABLED ?? "true").trim().toLowerCase() !== "false";
+
+const BATCH_RETRIEVE_CATALOG_CHUNK = 100;
+
+/** Outcome of reading order time-series from Mongo rollups (sales-trend / charts). */
+export type RollupTimeSeriesHit = {
+  hit: true;
+  netSales: number[];
+  transactionCount: number[];
+};
+
+export type RollupTimeSeriesMiss = {
+  hit: false;
+  /** Human-readable explanation for logs */
+  reason: string;
+  /** Stable identifier, e.g. `DAILY_MISSING_ROLLUP_ROWS` */
+  code: string;
+  detail?: Record<string, unknown>;
+};
+
+export type RollupTimeSeriesResult = RollupTimeSeriesHit | RollupTimeSeriesMiss;
+
+function miss(
+  code: string,
+  reason: string,
+  detail?: Record<string, unknown>,
+): RollupTimeSeriesMiss {
+  return detail !== undefined
+    ? { hit: false, code, reason, detail }
+    : { hit: false, code, reason };
+}
+
+function hitSeries(
+  netSales: number[],
+  transactionCount: number[],
+): RollupTimeSeriesHit {
+  return { hit: true, netSales, transactionCount };
+}
 
 function fullBusinessDaysCoveredByRange(
   range: TimeRange,
@@ -118,6 +169,90 @@ export async function tryGetNetSalesDollarsFromDailyRollups(
   return full ? full.actualTotalSales : null;
 }
 
+/**
+ * Sales-by-category from daily rollups when every fully-covered business day has `categoriesBreakdown`.
+ * Merges by category id, resolves labels via catalog batch (same as order path). Caller supplies
+ * `batchRetrieve` (e.g. `createMongoCatalogBatchRetrieve`) to avoid importing integrationCacheRead here.
+ */
+export async function tryGetNetSalesByCategoryFromDailyRollups(
+  locationMongoId: string,
+  range: TimeRange,
+  timezone: string,
+  businessStartTime: string,
+  batchRetrieve: BatchRetrieveCatalogFn,
+  accessToken: string,
+): Promise<NetSalesByCategoryResult | null> {
+  if (!ROLLUP_READ_ENABLED) return null;
+  const keys = fullBusinessDaysCoveredByRange(
+    range,
+    timezone,
+    businessStartTime,
+  );
+  if (keys.length === 0) return null;
+  const oid = new mongoose.Types.ObjectId(locationMongoId);
+  const dailies = await SquareOrderDailyRollupModel.find({
+    locationId: oid,
+    businessDateKey: { $in: keys },
+  })
+    .lean()
+    .exec();
+  if (dailies.length !== keys.length) {
+    logger.debug("rollup read: missing daily rows for sales-by-category", {
+      locationMongoId,
+      expected: keys.length,
+      found: dailies.length,
+    });
+    return null;
+  }
+  const byKey = new Map(dailies.map((d) => [d.businessDateKey, d]));
+  for (const k of keys) {
+    const d = byKey.get(k);
+    if (d == null || !Array.isArray(d.categoriesBreakdown)) {
+      logger.debug("rollup read: daily missing categoriesBreakdown", {
+        locationMongoId,
+        businessDateKey: k,
+      });
+      return null;
+    }
+  }
+  const merged = mergeCategoryBreakdownFromDailyRollupDocs(dailies);
+  const categoryIds = [
+    ...new Set(
+      merged
+        .map((r) => r.categoryId)
+        .filter((id) => id !== UNCATEGORIZED_CATEGORY_ROLLUP_ID),
+    ),
+  ];
+  const idToName =
+    categoryIds.length === 0
+      ? ({} as Record<string, string>)
+      : await resolveCategoryIdToName(
+          categoryIds,
+          batchRetrieve,
+          accessToken,
+          BATCH_RETRIEVE_CATALOG_CHUNK,
+        );
+
+  const byDisplayName: Record<string, number> = {};
+  for (const row of merged) {
+    const name =
+      row.categoryId === UNCATEGORIZED_CATEGORY_ROLLUP_ID
+        ? UNCATEGORIZED_CATEGORY_DISPLAY_LABEL
+        : (idToName[row.categoryId] ??
+          row.nameSnapshot ??
+          UNCATEGORIZED_CATEGORY_DISPLAY_LABEL);
+    byDisplayName[name] = (byDisplayName[name] ?? 0) + row.netSalesCents;
+  }
+  const categories = Object.entries(byDisplayName)
+    .map(([name, netSalesCents]) => ({ name, netSalesCents }))
+    .sort((a, b) => b.netSalesCents - a.netSalesCents);
+  const totalNetSalesCents = merged.reduce(
+    (s, r) => s + r.netSalesCents,
+    0,
+  );
+  return { categories, totalNetSalesCents };
+}
+
 export async function tryGetHourlyNetSalesCentsBySlotFromRollups(
   locationMongoId: string,
   range: TimeRange,
@@ -174,44 +309,290 @@ export async function tryGetOrderTimeSeriesFromDailyRollups(
   timezone: string,
   businessStartTime: string,
   keys: string[],
-): Promise<{ netSales: number[]; transactionCount: number[] } | null> {
-  if (!ROLLUP_READ_ENABLED) return null;
+): Promise<RollupTimeSeriesResult> {
+  if (!ROLLUP_READ_ENABLED) {
+    return miss(
+      "ROLLUP_READ_DISABLED",
+      "Rollup reads disabled (set ROLLUP_READ_ENABLED=false or env unset)",
+    );
+  }
+  if (keys.length === 0) {
+    return miss("EMPTY_BUCKET_KEYS", "No chart bucket keys for daily rollup read");
+  }
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   for (const k of keys) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) {
+      return miss("INVALID_DAILY_KEY_FORMAT", `Chart key is not yyyy-MM-dd: ${k}`, {
+        businessDateKey: k,
+      });
+    }
     if (!dailyBusinessKeyFullyInRange(k, range, timezone, businessStartTime)) {
       logger.debug("rollup read: daily bucket not fully in range", {
         locationMongoId,
         businessDateKey: k,
       });
-      return null;
+      return miss(
+        "DAILY_BUCKET_NOT_FULLY_IN_RANGE",
+        `Business day ${k} is not fully contained in the requested UTC range (strict rollup rule)`,
+        {
+          businessDateKey: k,
+          rangeStart: range.startAt,
+          rangeEnd: range.endAt,
+          timezone,
+          businessStartTime,
+        },
+      );
     }
   }
-  if (keys.length === 0) return null;
   const dailies = await SquareOrderDailyRollupModel.find({
     locationId: oid,
     businessDateKey: { $in: keys },
   })
     .lean()
     .exec();
-  if (dailies.length !== keys.length) return null;
   const byKey = new Map(dailies.map((d) => [d.businessDateKey, d]));
+  const missingBusinessDateKeys = keys.filter((k) => !byKey.has(k));
+  if (missingBusinessDateKeys.length > 0) {
+    logger.debug(
+      "rollup read: daily partial — missing SquareOrderDailyRollup rows treated as zero",
+      {
+        locationMongoId,
+        missingCount: missingBusinessDateKeys.length,
+        missingBusinessDateKeys,
+        foundRowCount: dailies.length,
+        expectedBucketCount: keys.length,
+      },
+    );
+  }
   const netSales: number[] = [];
   const transactionCount: number[] = [];
   for (const k of keys) {
     const d = byKey.get(k);
-    if (!d) return null;
-    netSales.push((d.netSalesCents ?? 0) / 100);
-    transactionCount.push(d.transactionCount ?? 0);
+    netSales.push(d ? (d.netSalesCents ?? 0) / 100 : 0);
+    transactionCount.push(d ? (d.transactionCount ?? 0) : 0);
   }
-  return { netSales, transactionCount };
+  return hitSeries(netSales, transactionCount);
 }
 
 export async function tryGetOrderTimeSeriesFromPeriodRollups(
   locationMongoId: string,
   granularity: "week" | "month",
   keys: string[],
-): Promise<{ netSales: number[]; transactionCount: number[] } | null> {
+): Promise<RollupTimeSeriesResult> {
+  if (!ROLLUP_READ_ENABLED) {
+    return miss(
+      "ROLLUP_READ_DISABLED",
+      "Rollup reads disabled (set ROLLUP_READ_ENABLED=false or env unset)",
+    );
+  }
+  if (keys.length === 0) {
+    return miss("EMPTY_BUCKET_KEYS", "No chart bucket keys for period rollup read");
+  }
+  const oid = new mongoose.Types.ObjectId(locationMongoId);
+  const docs = await SquareOrderPeriodRollupModel.find({
+    locationId: oid,
+    granularity,
+    periodKey: { $in: keys },
+  })
+    .lean()
+    .exec();
+  const byPk = new Map(docs.map((d) => [d.periodKey, d]));
+  const missingPeriodKeys = keys.filter((k) => !byPk.has(k));
+  if (missingPeriodKeys.length > 0) {
+    logger.debug(
+      "rollup read: period partial — missing SquareOrderPeriodRollup rows treated as zero",
+      {
+        locationMongoId,
+        periodGranularity: granularity,
+        missingCount: missingPeriodKeys.length,
+        missingPeriodKeys,
+        foundRowCount: docs.length,
+        expectedBucketCount: keys.length,
+      },
+    );
+  }
+  return hitSeries(
+    keys.map((k) => {
+      const d = byPk.get(k);
+      return d ? (d.netSalesCents ?? 0) / 100 : 0;
+    }),
+    keys.map((k) => {
+      const d = byPk.get(k);
+      return d ? (d.transactionCount ?? 0) : 0;
+    }),
+  );
+}
+
+/**
+ * Read hourly rollups aligned to sales-trend chart keys (`yyyy-MM-ddTHH` wall-clock).
+ */
+export async function tryGetOrderTimeSeriesFromHourlyRollupsForKeys(
+  locationMongoId: string,
+  timezone: string,
+  businessStartTime: string,
+  chartKeys: string[],
+): Promise<RollupTimeSeriesResult> {
+  if (!ROLLUP_READ_ENABLED) {
+    return miss(
+      "ROLLUP_READ_DISABLED",
+      "Rollup reads disabled (set ROLLUP_READ_ENABLED=false or env unset)",
+    );
+  }
+  if (chartKeys.length === 0) {
+    return miss("EMPTY_BUCKET_KEYS", "No chart bucket keys for hourly rollup read");
+  }
+  const tz = timezone.trim() || "UTC";
+  const bst = (businessStartTime ?? "00:00").trim() || "00:00";
+  const coords: Array<{ chartKey: string; businessDateKey: string; slotIndex: number }> =
+    [];
+  for (const chartKey of chartKeys) {
+    const mapped = mapHourlyChartKeyToRollupSlot(chartKey, tz, bst);
+    if (!mapped) {
+      logger.debug("rollup read: hourly chart key did not map to business slot", {
+        locationMongoId,
+        chartKey,
+      });
+      return miss(
+        "HOURLY_CHART_KEY_UNMAPPABLE",
+        `Could not map wall-clock chart key ${chartKey} to a business date + slot (outside business day or invalid key)`,
+        { chartKey, timezone: tz, businessStartTime: bst },
+      );
+    }
+    coords.push({ chartKey, ...mapped });
+  }
+  const uniquePairs = new Map<
+    string,
+    { businessDateKey: string; slotIndex: number }
+  >();
+  for (const c of coords) {
+    uniquePairs.set(`${c.businessDateKey}\t${c.slotIndex}`, {
+      businessDateKey: c.businessDateKey,
+      slotIndex: c.slotIndex,
+    });
+  }
+  const oid = new mongoose.Types.ObjectId(locationMongoId);
+  const orClause = [...uniquePairs.values()].map((p) => ({
+    locationId: oid,
+    businessDateKey: p.businessDateKey,
+    slotIndex: p.slotIndex,
+  }));
+  const docs = await SquareOrderHourlyRollupModel.find({ $or: orClause })
+    .lean()
+    .exec();
+  const byPair = new Map<string, { netSalesCents: number; transactionCount: number }>();
+  for (const d of docs) {
+    const k = `${d.businessDateKey}\t${d.slotIndex}`;
+    byPair.set(k, {
+      netSalesCents: d.netSalesCents ?? 0,
+      transactionCount: d.transactionCount ?? 0,
+    });
+  }
+  if (byPair.size !== uniquePairs.size) {
+    const expectedPairs = [...uniquePairs.keys()];
+    const missingPairs = expectedPairs.filter((p) => !byPair.has(p));
+    return miss(
+      "HOURLY_MISSING_ROLLUP_ROWS",
+      `Expected ${uniquePairs.size} distinct hourly rollup rows, matched ${byPair.size} (run hourly rollup job for gaps)`,
+      {
+        expectedUniquePairCount: uniquePairs.size,
+        matchedPairCount: byPair.size,
+        missingPairs,
+        sampleMissingPairs: missingPairs.slice(0, 15),
+        chartKeyCount: chartKeys.length,
+      },
+    );
+  }
+  const netSales: number[] = [];
+  const transactionCount: number[] = [];
+  for (const c of coords) {
+    const row = byPair.get(`${c.businessDateKey}\t${c.slotIndex}`);
+    if (!row) {
+      return miss(
+        "HOURLY_SLOT_ROW_MISSING",
+        `Hourly rollup row missing for ${c.businessDateKey} slot ${c.slotIndex} (unexpected)`,
+        {
+          chartKey: c.chartKey,
+          businessDateKey: c.businessDateKey,
+          slotIndex: c.slotIndex,
+        },
+      );
+    }
+    netSales.push(row.netSalesCents / 100);
+    transactionCount.push(row.transactionCount);
+  }
+  return hitSeries(netSales, transactionCount);
+}
+
+/** Net sales dollars per source id per bucket key (for stacked by-source chart). */
+export async function tryGetOrderTimeSeriesBySourceFromRollups(
+  locationMongoId: string,
+  range: TimeRange,
+  timezone: string,
+  businessStartTime: string,
+  granularity: SalesTrendGranularity,
+  keys: string[],
+): Promise<Record<string, Record<string, number>> | null> {
+  if (!ROLLUP_READ_ENABLED) return null;
+  if (granularity === "hourly") return null;
+
+  if (granularity === "daily") {
+    const oid = new mongoose.Types.ObjectId(locationMongoId);
+    for (const k of keys) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return null;
+      if (!dailyBusinessKeyFullyInRange(k, range, timezone, businessStartTime)) {
+        return null;
+      }
+    }
+    const dailies = await SquareOrderDailyRollupModel.find({
+      locationId: oid,
+      businessDateKey: { $in: keys },
+    })
+      .lean()
+      .exec();
+    const byKey = new Map(dailies.map((d) => [d.businessDateKey, d]));
+    const bySourceAndKey: Record<string, Record<string, number>> = {};
+    for (const k of keys) {
+      const d = byKey.get(k);
+      if (!d) continue;
+      const centsMap = sumSourcesOfSalesSegmentsToCentsById(d.sourcesOfSales);
+      for (const [src, cents] of centsMap) {
+        bySourceAndKey[src] ??= {};
+        bySourceAndKey[src][k] = cents / 100;
+      }
+    }
+    for (const src of Object.keys(bySourceAndKey)) {
+      for (const k of keys) {
+        if (bySourceAndKey[src]![k] === undefined) {
+          bySourceAndKey[src]![k] = 0;
+        }
+      }
+    }
+    if (Object.keys(bySourceAndKey).length === 0) return null;
+    return bySourceAndKey;
+  }
+
+  if (granularity === "weekly") {
+    return tryGetOrderTimeSeriesBySourceFromPeriodRollups(
+      locationMongoId,
+      "week",
+      keys,
+    );
+  }
+  if (granularity === "monthly") {
+    return tryGetOrderTimeSeriesBySourceFromPeriodRollups(
+      locationMongoId,
+      "month",
+      keys,
+    );
+  }
+  return null;
+}
+
+async function tryGetOrderTimeSeriesBySourceFromPeriodRollups(
+  locationMongoId: string,
+  granularity: "week" | "month",
+  keys: string[],
+): Promise<Record<string, Record<string, number>> | null> {
   if (!ROLLUP_READ_ENABLED || keys.length === 0) return null;
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   const docs = await SquareOrderPeriodRollupModel.find({
@@ -221,15 +602,26 @@ export async function tryGetOrderTimeSeriesFromPeriodRollups(
   })
     .lean()
     .exec();
-  if (docs.length !== keys.length) return null;
   const byPk = new Map(docs.map((d) => [d.periodKey, d]));
+  const bySourceAndKey: Record<string, Record<string, number>> = {};
   for (const k of keys) {
-    if (!byPk.has(k)) return null;
+    const d = byPk.get(k);
+    if (!d) continue;
+    const centsMap = sumSourcesOfSalesSegmentsToCentsById(d.sourcesOfSales);
+    for (const [src, cents] of centsMap) {
+      bySourceAndKey[src] ??= {};
+      bySourceAndKey[src][k] = cents / 100;
+    }
   }
-  return {
-    netSales: keys.map((k) => (byPk.get(k)!.netSalesCents ?? 0) / 100),
-    transactionCount: keys.map((k) => byPk.get(k)!.transactionCount ?? 0),
-  };
+  for (const src of Object.keys(bySourceAndKey)) {
+    for (const k of keys) {
+      if (bySourceAndKey[src]![k] === undefined) {
+        bySourceAndKey[src]![k] = 0;
+      }
+    }
+  }
+  if (Object.keys(bySourceAndKey).length === 0) return null;
+  return bySourceAndKey;
 }
 
 export async function tryGetOrderTimeSeriesFromRollups(
@@ -239,7 +631,15 @@ export async function tryGetOrderTimeSeriesFromRollups(
   businessStartTime: string,
   granularity: SalesTrendGranularity,
   keys: string[],
-): Promise<{ netSales: number[]; transactionCount: number[] } | null> {
+): Promise<RollupTimeSeriesResult> {
+  if (granularity === "hourly") {
+    return tryGetOrderTimeSeriesFromHourlyRollupsForKeys(
+      locationMongoId,
+      timezone,
+      businessStartTime,
+      keys,
+    );
+  }
   if (granularity === "daily") {
     return tryGetOrderTimeSeriesFromDailyRollups(
       locationMongoId,
@@ -263,7 +663,11 @@ export async function tryGetOrderTimeSeriesFromRollups(
       keys,
     );
   }
-  return null;
+  return miss(
+    "UNSUPPORTED_GRANULARITY",
+    `No rollup reader for granularity: ${String(granularity)}`,
+    { granularity },
+  );
 }
 
 export async function tryGetSquareOrderPeriodRollup(

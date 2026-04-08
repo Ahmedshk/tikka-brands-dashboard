@@ -30,7 +30,11 @@ import {
   logExternalApiResult,
   truncateForExternalApiLog,
 } from "../utils/externalApiCallLog.util.js";
-import { tryGetOrderTimeSeriesFromRollups } from "./integrationRollupRead.service.js";
+import { logger } from "../utils/logger.util.js";
+import {
+  tryGetOrderTimeSeriesBySourceFromRollups,
+  tryGetOrderTimeSeriesFromRollups,
+} from "./integrationRollupRead.service.js";
 
 const SQUARE_BASE = "https://connect.squareup.com";
 
@@ -271,7 +275,10 @@ export interface SquareServiceOptions {
   batchRetrieveCatalogOverride?: BatchRetrieveCatalogFn;
   /** Location business open time (HH:mm); aligns daily/weekly/monthly buckets with rollups. */
   businessStartTime?: string | undefined;
-  /** When set with `ordersOverride`, prefer persisted rollups for full-bucket series (see ROLLUP_READ_ENABLED). */
+  /**
+   * When set, attempt persisted rollups first for order time series (see ROLLUP_READ_ENABLED).
+   * Mongo order load runs only on rollup miss when `ordersOverride` is not pre-provided.
+   */
   rollupRead?: {
     locationMongoId: string;
     timezone: string;
@@ -1047,7 +1054,7 @@ function deriveSegmentKey(order: SquareOrder): string {
   return "order";
 }
 
-function segmentKeyToLabel(key: string): string {
+export function segmentKeyToLabel(key: string): string {
   const normalized = key.toLowerCase().replaceAll(/\s+/g, "-");
   return (
     SOURCE_LABEL_MAP[normalized] ??
@@ -1573,6 +1580,49 @@ export interface OrderTimeSeriesResult {
   transactionCount: number[];
 }
 
+/** Orders for dashboard time-series: explicit override, Mongo when `rollupRead`, else Square SearchOrders. */
+async function resolveDashboardOrdersForRange(
+  squareLocationId: string,
+  range: TimeRange,
+  options?: SquareServiceOptions,
+  context: string,
+): Promise<SquareOrder[]> {
+  const t0 = performance.now();
+  let raw: SquareOrder[];
+  let source: "ordersOverride" | "mongo" | "square_api";
+  if (options?.ordersOverride != null) {
+    source = "ordersOverride";
+    raw = options.ordersOverride;
+  } else if (options?.rollupRead) {
+    source = "mongo";
+    const { loadSquareOrdersForMongoRange } = await import(
+      "./integrationCacheRead.service.js"
+    );
+    raw = await loadSquareOrdersForMongoRange(
+      options.rollupRead.locationMongoId,
+      range,
+    );
+  } else {
+    source = "square_api";
+    raw = await fetchOrdersInRange(
+      squareLocationId,
+      range,
+      options?.accessToken,
+    );
+  }
+  const filtered = filterSquareOrdersForDashboardDisplay(raw);
+  logger.info("[sales-trend] orders loaded for aggregation", {
+    context,
+    source,
+    rawOrderCount: raw.length,
+    filteredOrderCount: filtered.length,
+    durationMs: Math.round(performance.now() - t0),
+    rangeStart: range.startAt,
+    rangeEnd: range.endAt,
+  });
+  return filtered;
+}
+
 /**
  * Fetch orders in range and aggregate by bucket (hour/day/week) in location TZ.
  * Returns labels and arrays aligned for chart x-axis.
@@ -1605,13 +1655,8 @@ export async function getOrderTimeSeriesInRange(
   }
 
   const rr = options?.rollupRead;
-  if (
-    rr &&
-    options?.ordersOverride != null &&
-    (granularity === "daily" ||
-      granularity === "weekly" ||
-      granularity === "monthly")
-  ) {
+  if (rr) {
+    const tRollup = performance.now();
     const rolled = await tryGetOrderTimeSeriesFromRollups(
       rr.locationMongoId,
       range,
@@ -1620,26 +1665,48 @@ export async function getOrderTimeSeriesInRange(
       granularity,
       keys,
     );
-    if (rolled) {
+    const rollupAttemptMs = Math.round(performance.now() - tRollup);
+    if (rolled.hit) {
+      logger.info("[sales-trend] getOrderTimeSeriesInRange: ROLLUPS", {
+        granularity,
+        bucketCount: keys.length,
+        rollupAttemptMs,
+        locationMongoId: rr.locationMongoId,
+      });
       return {
         labels,
         netSales: rolled.netSales,
         transactionCount: rolled.transactionCount,
       };
     }
+    logger.info("[sales-trend] getOrderTimeSeriesInRange: rollup miss → orders", {
+      granularity,
+      bucketCount: keys.length,
+      rollupAttemptMs,
+      locationMongoId: rr.locationMongoId,
+      rollupMissCode: rolled.code,
+      rollupMissReason: rolled.reason,
+      rollupMissDetail: rolled.detail,
+    });
+  } else {
+    logger.info("[sales-trend] getOrderTimeSeriesInRange: no rollupRead", {
+      granularity,
+      bucketCount: keys.length,
+      willUseOrders:
+        options?.ordersOverride != null ? "ordersOverride" : "square_api",
+    });
   }
 
   const bucketOpts =
     options?.businessStartTime != null
       ? { businessStartTime: options.businessStartTime }
       : undefined;
-  const orders = filterSquareOrdersForDashboardDisplay(
-    options?.ordersOverride ??
-      (await fetchOrdersInRange(
-        squareLocationId,
-        range,
-        options?.accessToken,
-      )),
+  const tAggStart = performance.now();
+  const orders = await resolveDashboardOrdersForRange(
+    squareLocationId,
+    range,
+    options,
+    "getOrderTimeSeriesInRange",
   );
   for (const order of orders) {
     if (!isOrderCountedForNetSales(order)) continue;
@@ -1658,6 +1725,12 @@ export async function getOrderTimeSeriesInRange(
 
   const netSales = keys.map((k) => netSalesByKey[k] ?? 0);
   const transactionCount = keys.map((k) => countByKey[k] ?? 0);
+  logger.info("[sales-trend] getOrderTimeSeriesInRange: aggregation done", {
+    granularity,
+    bucketCount: keys.length,
+    ordersUsed: orders.length,
+    aggregateTotalMs: Math.round(performance.now() - tAggStart),
+  });
   return { labels, netSales, transactionCount };
 }
 
@@ -1699,17 +1772,75 @@ export async function getOrderTimeSeriesBySourceInRange(
   );
   const bySourceAndKey: Record<string, Record<string, number>> = {};
 
+  const rr = options?.rollupRead;
+  if (rr && granularity !== "hourly") {
+    const tSrc = performance.now();
+    const fromRollup = await tryGetOrderTimeSeriesBySourceFromRollups(
+      rr.locationMongoId,
+      range,
+      rr.timezone,
+      rr.businessStartTime,
+      granularity,
+      keys,
+    );
+    const rollupMs = Math.round(performance.now() - tSrc);
+    if (fromRollup) {
+      const sourceKeys = Object.keys(fromRollup).sort((a, b) =>
+        a.localeCompare(b),
+      );
+      logger.info("[sales-trend] getOrderTimeSeriesBySourceInRange: ROLLUPS", {
+        granularity,
+        bucketCount: keys.length,
+        sourceSeriesCount: sourceKeys.length,
+        rollupAttemptMs: rollupMs,
+        locationMongoId: rr.locationMongoId,
+      });
+      const colors = generateDistinctColors(sourceKeys.length, {
+        nonAdjacent: true,
+      });
+      const series: OrderTimeSeriesBySourceSeries[] = sourceKeys.map(
+        (sourceKey, index) => ({
+          id: sourceKey,
+          label: segmentKeyToLabel(sourceKey),
+          data: keys.map((k) => fromRollup[sourceKey]?.[k] ?? 0),
+          color: colors[index] ?? "#6D6D6D",
+        }),
+      );
+      return { labels, series };
+    }
+    logger.info(
+      "[sales-trend] getOrderTimeSeriesBySourceInRange: rollup miss → orders",
+      {
+        granularity,
+        bucketCount: keys.length,
+        rollupAttemptMs: rollupMs,
+        locationMongoId: rr.locationMongoId,
+      },
+    );
+  } else if (granularity === "hourly" && rr) {
+    logger.info(
+      "[sales-trend] getOrderTimeSeriesBySourceInRange: hourly (no by-source rollups)",
+      { bucketCount: keys.length, locationMongoId: rr.locationMongoId },
+    );
+  } else if (!rr) {
+    logger.info("[sales-trend] getOrderTimeSeriesBySourceInRange: no rollupRead", {
+      granularity,
+      bucketCount: keys.length,
+      willUseOrders:
+        options?.ordersOverride != null ? "ordersOverride" : "square_api",
+    });
+  }
+
   const bucketOpts =
     options?.businessStartTime != null
       ? { businessStartTime: options.businessStartTime }
       : undefined;
-  const orders = filterSquareOrdersForDashboardDisplay(
-    options?.ordersOverride ??
-      (await fetchOrdersInRange(
-        squareLocationId,
-        range,
-        options?.accessToken,
-      )),
+  const tBySourceAgg = performance.now();
+  const orders = await resolveDashboardOrdersForRange(
+    squareLocationId,
+    range,
+    options,
+    "getOrderTimeSeriesBySourceInRange",
   );
   for (const order of orders) {
     if (!isOrderCountedForNetSales(order)) continue;
@@ -1741,6 +1872,17 @@ export async function getOrderTimeSeriesBySourceInRange(
       data: keys.map((k) => bySourceAndKey[sourceKey]?.[k] ?? 0),
       color: colors[index] ?? "#6D6D6D",
     }),
+  );
+
+  logger.info(
+    "[sales-trend] getOrderTimeSeriesBySourceInRange: aggregation done",
+    {
+      granularity,
+      bucketCount: keys.length,
+      ordersUsed: orders.length,
+      sourceSeriesCount: sourceKeys.length,
+      aggregateTotalMs: Math.round(performance.now() - tBySourceAgg),
+    },
   );
 
   return { labels, series };

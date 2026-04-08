@@ -11,6 +11,7 @@ import {
 import {
   getBusinessHourIndexForBusinessDateKey,
 } from "../utils/businessDayUtcRange.util.js";
+import { mergeCategoryBreakdownFromDailyRollupDocs } from "../utils/squareCategoryRollupBreakdown.util.js";
 import { mergeSourcesOfSalesFromDailyRollupDocs } from "../utils/squareSourcesOfSalesMerge.util.js";
 import {
   businessDateKeysForMonthPeriod,
@@ -109,6 +110,8 @@ async function sumSquareOrderDailiesIntoPeriodRollup(
     refundCount += d.refundCount ?? 0;
   }
   const sourcesOfSales = mergeSourcesOfSalesFromDailyRollupDocs(dailies);
+  const categoriesBreakdown =
+    mergeCategoryBreakdownFromDailyRollupDocs(dailies);
   const computedAt = new Date();
   await SquareOrderPeriodRollupModel.replaceOne(
     { locationId: oid, granularity, periodKey },
@@ -123,6 +126,7 @@ async function sumSquareOrderDailiesIntoPeriodRollup(
       totalRefundCents,
       refundCount,
       sourcesOfSales,
+      categoriesBreakdown,
     },
     { upsert: true },
   ).exec();

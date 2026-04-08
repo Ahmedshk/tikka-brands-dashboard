@@ -86,7 +86,7 @@ export const CostOfGoodsSoldCard = ({
       <div className="p-5 flex flex-col h-full min-h-[280px]">
         <div className="flex flex-wrap items-center gap-2 mb-0.5">
           <p className="text-sm md:text-base 2xl:text-lg font-semibold text-secondary flex items-center gap-2 flex-wrap">
-            <span>Cost of Goods Sold (Gauge)</span>
+            <span>Cost of Goods Sold Gauge</span>
             {timePeriod != null && timePeriod !== '' && (
               <span className="text-[10px] md:text-xs 2xl:text-sm font-normal text-primary">
                 ({timePeriod})

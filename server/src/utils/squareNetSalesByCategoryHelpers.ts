@@ -15,6 +15,15 @@ export interface OrderForCategoryAggregation {
   }>;
 }
 
+/** Square Money.amount is bigint-compatible; matches `moneyToCents` in square.service. */
+export function lineItemTotalMoneyToCents(line: unknown): number {
+  const l = line as { total_money?: { amount?: bigint | number | string } };
+  const m = l.total_money;
+  if (m?.amount == null) return 0;
+  const n = Number(m.amount);
+  return Number.isNaN(n) ? 0 : n;
+}
+
 export interface VariationCentsAggregation {
   variationToCents: Record<string, number>;
   totalNetSalesCents: number;
