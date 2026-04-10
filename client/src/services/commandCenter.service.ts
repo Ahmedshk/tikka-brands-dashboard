@@ -1,7 +1,10 @@
 import api from "./api.service";
 import { API_ENDPOINTS } from "../utils/constants";
 import { ApiResponse } from "../types";
-import type { CommandCenterAlertBuckets } from "../types/alertNotification.types";
+import type {
+  CommandCenterAlertBuckets,
+  CommandCenterAlertRow,
+} from "../types/alertNotification.types";
 
 export type LaborCostStatus = "green" | "red" | null;
 
@@ -419,6 +422,21 @@ export const commandCenterService = {
     );
     if (!res.data.success || res.data.data?.alerts == null) {
       throw new Error(res.data.message ?? "Failed to fetch Command Center alerts");
+    }
+    return res.data.data.alerts;
+  },
+
+  async getAlertHistory(
+    locationId: string,
+    category: "financial_labor" | "inventory_supply_chain" | "reputation_hr",
+    options?: { signal?: AbortSignal },
+  ): Promise<CommandCenterAlertRow[]> {
+    const res = await api.get<ApiResponse<{ alerts: CommandCenterAlertRow[] }>>(
+      API_ENDPOINTS.COMMAND_CENTER.ALERTS_HISTORY,
+      { params: { locationId, category }, signal: options?.signal },
+    );
+    if (!res.data.success || res.data.data?.alerts == null) {
+      throw new Error(res.data.message ?? "Failed to fetch alert history");
     }
     return res.data.data.alerts;
   },

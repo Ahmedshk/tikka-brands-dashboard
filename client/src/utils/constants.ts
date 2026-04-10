@@ -25,6 +25,7 @@ export const API_ENDPOINTS = {
     KPIS: "/command-center/kpis",
     HOURLY_SALES: "/command-center/hourly-sales",
     ALERTS: "/command-center/alerts",
+    ALERTS_HISTORY: "/command-center/alerts/history",
     ALERTS_DISMISS: "/command-center/alerts/dismiss",
   },
   ALERT_NOTIFICATION_SETTINGS: "/alert-notification-settings",

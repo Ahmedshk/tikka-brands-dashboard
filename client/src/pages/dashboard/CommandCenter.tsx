@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Layout } from '../../components/common/Layout';
 import {
   CommandCenterKPICards,
@@ -9,10 +9,10 @@ import {
   inventoryAlertsIcon,
   reputationAlertsIcon,
   type AlertCategory,
-  type AlertItem,
   type CommandCenterKPIItem,
   type CommandCenterKPIPeriod,
 } from '../../components/CommandCenter';
+import { CommandCenterAlertsHistoryModal } from '../../components/CommandCenter/CommandCenterAlertsHistoryModal';
 import CommandCenterIcon from '@assets/icons/command_center.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
 import LaborCostIcon from '@assets/icons/actual_labor_cost.svg?react';
@@ -27,9 +27,26 @@ import {
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 import { formatCurrency, formatHourToAmPm } from '../../utils/commandCenterHelpers';
 import { buildCommandCenterKPIItems } from '../../utils/commandCenterKpiBuilder';
-import type { CommandCenterAlertBuckets, CommandCenterAlertRow } from '../../types/alertNotification.types';
+import { commandCenterAlertRowToAlertItem } from '../../utils/commandCenterAlertRowToAlertItem.util';
+import {
+  tryCommandCenterRowFromNotificationNew,
+  type NotificationNewPayload,
+} from '../../utils/commandCenterAlertFromNotification.util';
+import { getTodayInTimezone } from '../../services/goal.service';
+import { getSocket } from '../../services/socket.service';
+import type {
+  AlertRoleBindingCategory,
+  CommandCenterAlertBuckets,
+  CommandCenterAlertRow,
+} from '../../types/alertNotification.types';
 
 const PAGE_ID = 'command-center';
+
+const ALERT_HISTORY_CATEGORY_TITLE: Record<AlertRoleBindingCategory, string> = {
+  financial_labor: 'Financial & Labor',
+  inventory_supply_chain: 'Inventory & Supply Chain',
+  reputation_hr: 'Reputation & HR',
+};
 
 export const CommandCenter = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
@@ -65,6 +82,11 @@ export const CommandCenter = () => {
   const [alertBuckets, setAlertBuckets] = useState<CommandCenterAlertBuckets | null>(null);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsError, setAlertsError] = useState<string | null>(null);
+  const dismissedAlertIdsRef = useRef<Set<string>>(new Set());
+  const [historyModal, setHistoryModal] = useState<{
+    categoryId: AlertRoleBindingCategory;
+    title: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!currentLocation?._id || !shouldFetchKpis || kpiMetrics.length === 0) {
@@ -141,23 +163,88 @@ export const CommandCenter = () => {
     return () => controller.abort();
   }, [currentLocation?._id, showAlerts]);
 
-  const handleDismissAlert = useCallback(async (notificationId: string) => {
-    try {
-      await commandCenterService.dismissAlerts([notificationId]);
+  const dismissAlertById = useCallback(async (notificationId: string) => {
+    await commandCenterService.dismissAlerts([notificationId]);
+    dismissedAlertIdsRef.current.add(notificationId);
+    setAlertBuckets((prev) => {
+      if (prev == null) return prev;
+      const without = (rows: CommandCenterAlertRow[]) =>
+        rows.filter((r) => r.id !== notificationId);
+      return {
+        financial_labor: without(prev.financial_labor),
+        inventory_supply_chain: without(prev.inventory_supply_chain),
+        reputation_hr: without(prev.reputation_hr),
+      };
+    });
+  }, []);
+
+  const handleDismissAlert = useCallback(
+    async (notificationId: string) => {
+      try {
+        await dismissAlertById(notificationId);
+      } catch {
+        setAlertsError('Could not dismiss alert. Try again.');
+      }
+    },
+    [dismissAlertById],
+  );
+
+  useEffect(() => {
+    if (!showAlerts || currentLocation?._id == null) return;
+    const sock = getSocket();
+    if (sock == null) return;
+
+    const timezone = currentLocation.timezone?.trim() || 'America/Denver';
+    const todayKey = getTodayInTimezone(timezone);
+    const locationId = currentLocation._id;
+
+    const onNotificationNew = (payload: unknown) => {
+      if (payload == null || typeof payload !== 'object') return;
+      const parsed = tryCommandCenterRowFromNotificationNew(
+        payload as NotificationNewPayload,
+        {
+          locationId,
+          timezone,
+          todayKey,
+          dismissedIds: dismissedAlertIdsRef.current,
+          canFinancial: canAlertsFinancial,
+          canInventory: canAlertsInventory,
+          canReputation: canAlertsReputation,
+        },
+      );
+      if (parsed == null) return;
+      const { row, category } = parsed;
+
       setAlertBuckets((prev) => {
-        if (prev == null) return prev;
-        const without = (rows: CommandCenterAlertRow[]) =>
-          rows.filter((r) => r.id !== notificationId);
+        const base: CommandCenterAlertBuckets =
+          prev ?? {
+            financial_labor: [],
+            inventory_supply_chain: [],
+            reputation_hr: [],
+          };
+        const list = base[category];
+        if (list.some((r) => r.id === row.id)) {
+          return prev ?? base;
+        }
         return {
-          financial_labor: without(prev.financial_labor),
-          inventory_supply_chain: without(prev.inventory_supply_chain),
-          reputation_hr: without(prev.reputation_hr),
+          ...base,
+          [category]: [row, ...list],
         };
       });
-    } catch {
-      setAlertsError('Could not dismiss alert. Try again.');
-    }
-  }, []);
+    };
+
+    sock.on('notification:new', onNotificationNew);
+    return () => {
+      sock.off('notification:new', onNotificationNew);
+    };
+  }, [
+    showAlerts,
+    currentLocation?._id,
+    currentLocation?.timezone,
+    canAlertsFinancial,
+    canAlertsInventory,
+    canAlertsReputation,
+  ]);
 
   const commandCenterKPIs = useMemo((): CommandCenterKPIItem[] => {
     return buildCommandCenterKPIItems({
@@ -229,28 +316,13 @@ export const CommandCenter = () => {
   }, [hourlySales]);
 
   const alertCategories = useMemo((): AlertCategory[] => {
-    const rowToItem = (row: CommandCenterAlertRow): AlertItem => {
-      const bodyLine = row.message.trim();
-      return {
-        id: row.id,
-        titleLine: row.title,
-        bodyLine: bodyLine.length > 0 ? bodyLine : undefined,
-        subtitle: new Date(row.createdAt).toLocaleString(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        }),
-        severity: row.severity,
-        dismissable: row.dismissable,
-      };
-    };
-
     const cats: AlertCategory[] = [];
     if (canAlertsFinancial) {
       cats.push({
         id: 'financial_labor',
         title: 'Financial & Labor',
         icon: financialAlertsIcon,
-        alerts: alertBuckets?.financial_labor.map(rowToItem) ?? [],
+        alerts: alertBuckets?.financial_labor.map(commandCenterAlertRowToAlertItem) ?? [],
       });
     }
     if (canAlertsInventory) {
@@ -258,16 +330,16 @@ export const CommandCenter = () => {
         id: 'inventory_supply_chain',
         title: 'Inventory & Supply Chain',
         icon: inventoryAlertsIcon,
-        alerts: alertBuckets?.inventory_supply_chain.map(rowToItem) ?? [],
+        alerts: alertBuckets?.inventory_supply_chain.map(commandCenterAlertRowToAlertItem) ?? [],
       });
     }
     if (canAlertsReputation) {
-      const dynamic = alertBuckets?.reputation_hr.map(rowToItem) ?? [];
-      const staticPlaceholders: AlertItem[] = [
+      const dynamic = alertBuckets?.reputation_hr.map(commandCenterAlertRowToAlertItem) ?? [];
+      const staticPlaceholders = [
         {
           id: 'placeholder-review-thresholds',
           titleLine: 'Review and rating thresholds are not yet available.',
-          severity: 'warning',
+          severity: 'warning' as const,
         },
       ];
       cats.push({
@@ -359,6 +431,23 @@ export const CommandCenter = () => {
             loading={alertsLoading}
             error={alertsError}
             onDismiss={handleDismissAlert}
+            onViewAll={(categoryId) => {
+              const cid = categoryId as AlertRoleBindingCategory;
+              setHistoryModal({
+                categoryId: cid,
+                title: ALERT_HISTORY_CATEGORY_TITLE[cid],
+              });
+            }}
+          />
+        )}
+
+        {showAlerts && historyModal != null && currentLocation?._id != null && (
+          <CommandCenterAlertsHistoryModal
+            open
+            onClose={() => setHistoryModal(null)}
+            categoryId={historyModal.categoryId}
+            categoryTitle={historyModal.title}
+            locationId={currentLocation._id}
           />
         )}
       </div>

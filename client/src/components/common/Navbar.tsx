@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/store';
 import { setCurrentLocation, setLocationListHydrated, getStoredLocationId } from '../../store/slices/location.slice';
@@ -15,6 +15,12 @@ import { notificationService } from '../../services/notification.service';
 import type { NotificationItem } from '../../services/notification.service';
 import { useAuth } from '../../hooks/useAuth';
 import type { LocationListItem } from '../../types';
+import { canAccessPage } from '../../config/permissions.config';
+import {
+  getNotificationNavigationTarget,
+  resolveNotificationLocationLabel,
+} from '../../utils/notificationNavigation';
+import toast from 'react-hot-toast';
 import { Spinner } from './Spinner';
 import { Dropdown } from './Dropdown';
 import LocationIcon from '@assets/icons/location.svg?react';
@@ -56,6 +62,7 @@ const LG_BREAKPOINT_PX = 1024;
 
 type NavbarNotificationListProps = {
   notifications: NotificationItem[];
+  locations: LocationListItem[];
   loadingInitial: boolean;
   loadingMore: boolean;
   hasMore: boolean;
@@ -63,18 +70,19 @@ type NavbarNotificationListProps = {
   infiniteScrollActive: boolean;
   onLoadMore: () => void;
   dense?: boolean;
-  onMarkRead: (id: string) => void;
+  onNotificationClick: (n: NotificationItem) => void;
 };
 
 function NavbarNotificationList({
   notifications,
+  locations,
   loadingInitial,
   loadingMore,
   hasMore,
   infiniteScrollActive,
   onLoadMore,
   dense,
-  onMarkRead,
+  onNotificationClick,
 }: Readonly<NavbarNotificationListProps>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -133,26 +141,38 @@ function NavbarNotificationList({
   return (
     <>
       <div ref={scrollRef} className="overflow-y-auto flex-1 min-h-0">
-        {notifications.map((n) => (
-          <button
-            key={n._id}
-            type="button"
-            onClick={() => {
-              if (n.isRead) return;
-              onMarkRead(n._id);
-            }}
-            className={`w-full text-left px-4 ${itemPy} border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${n.isRead ? '' : 'bg-blue-50/40'}`}
-          >
-            <div className="flex items-start gap-2">
-              {!n.isRead && <span className="w-2 h-2 rounded-full bg-button-primary mt-1.5 flex-shrink-0" />}
-              <div className="min-w-0 flex-1">
-                <p className={titleClass}>{n.title}</p>
-                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
-                <p className={timeClass}>{formatTimeAgo(n.createdAt)}</p>
+        {notifications.map((n) => {
+          const navTarget = getNotificationNavigationTarget(n);
+          const locationLine = resolveNotificationLocationLabel(n, locations);
+          const hasNavTarget = navTarget != null;
+          let ariaLabel = `${n.title}.`;
+          if (!n.isRead) ariaLabel += ' Unread.';
+          if (hasNavTarget) ariaLabel += ' Open related page.';
+          return (
+            <button
+              key={n._id}
+              type="button"
+              aria-label={ariaLabel}
+              onClick={() => onNotificationClick(n)}
+              className={`w-full text-left px-4 ${itemPy} border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${n.isRead ? '' : 'bg-blue-50/40'}`}
+            >
+              <div className="flex items-start gap-2">
+                {!n.isRead && <span className="w-2 h-2 rounded-full bg-button-primary mt-1.5 flex-shrink-0" />}
+                <div className="min-w-0 flex-1">
+                  <p className={titleClass}>{n.title}</p>
+                  {locationLine && (
+                    <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 truncate">
+                      <LocationIcon className="w-3 h-3 flex-shrink-0" aria-hidden />
+                      <span className="truncate">{locationLine}</span>
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
+                  <p className={timeClass}>{formatTimeAgo(n.createdAt)}</p>
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
         {hasMore && !loadingMore && (
           <div ref={sentinelRef} className="h-2 w-full shrink-0" aria-hidden />
         )}
@@ -180,6 +200,7 @@ const DATA_SYNC_SETTINGS_PATH = '/dashboard/data-sync-settings';
 
 export const Navbar = () => {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const dispatch = useDispatch();
   const { logout } = useAuth();
   const user = useSelector((state: RootState) => state.auth.user);
@@ -311,6 +332,28 @@ export const Navbar = () => {
     dispatch(markNotificationRead(id));
     notificationService.markAsRead(id).catch(() => {});
   }, [dispatch]);
+
+  const handleNotificationClick = useCallback(
+    (n: NotificationItem) => {
+      if (!n.isRead) handleMarkRead(n._id);
+      const target = getNotificationNavigationTarget(n);
+      if (!target) return;
+      if (!canAccessPage(user?.permissions, target.pageId)) {
+        toast.error("You don't have access to that page.");
+        return;
+      }
+      const lid =
+        n.data && typeof n.data.locationId === 'string' ? n.data.locationId.trim() : '';
+      if (lid) {
+        const loc = locations.find((l) => l._id === lid);
+        if (loc) dispatch(setCurrentLocation(loc));
+      }
+      navigate(target.path);
+      setNotificationDropdownOpen(false);
+      setMobileMenuOpen(false);
+    },
+    [dispatch, handleMarkRead, locations, navigate, user?.permissions],
+  );
 
   const handleMarkAllRead = useCallback(() => {
     dispatch(markAllNotificationsRead());
@@ -497,8 +540,12 @@ export const Navbar = () => {
             >
               <NotificationIcon className="w-6 h-6" />
               {notificationCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-quaternary text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {notificationCount > 99 ? '99' : notificationCount.toString().padStart(2, '0')}
+                <span
+                  className={`absolute -top-1 -right-1 bg-quaternary text-white text-xs font-bold rounded-full h-5 flex items-center justify-center ${
+                    notificationCount > 99 ? 'min-w-5 px-1' : 'w-5'
+                  }`}
+                >
+                  {notificationCount > 99 ? '99+' : notificationCount.toString().padStart(2, '0')}
                 </span>
               )}
             </button>
@@ -518,12 +565,13 @@ export const Navbar = () => {
                 </div>
                 <NavbarNotificationList
                   notifications={notifications}
+                  locations={locations}
                   loadingInitial={notifLoadingInitial}
                   loadingMore={notifLoadingMore}
                   hasMore={notificationListHasMore}
                   infiniteScrollActive={isLgUp}
                   onLoadMore={loadMoreNotifications}
-                  onMarkRead={handleMarkRead}
+                  onNotificationClick={handleNotificationClick}
                 />
               </div>
             )}
@@ -605,8 +653,8 @@ export const Navbar = () => {
               >
                 <NotificationIcon className="w-5 h-5 text-quaternary" />
                 {notificationCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 bg-quaternary text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                    {notificationCount > 99 ? '99' : notificationCount}
+                  <span className="absolute -top-0.5 -right-0.5 bg-quaternary text-white text-xs font-bold leading-none rounded-full min-h-[18px] min-w-[18px] w-max px-1 flex items-center justify-center">
+                    {notificationCount > 99 ? '99+' : notificationCount}
                   </span>
                 )}
               </button>
@@ -622,13 +670,14 @@ export const Navbar = () => {
                   </div>
                   <NavbarNotificationList
                     notifications={notifications}
+                    locations={locations}
                     loadingInitial={notifLoadingInitial}
                     loadingMore={notifLoadingMore}
                     hasMore={notificationListHasMore}
                     infiniteScrollActive={!isLgUp && mobileMenuOpen}
                     onLoadMore={loadMoreNotifications}
                     dense
-                    onMarkRead={handleMarkRead}
+                    onNotificationClick={handleNotificationClick}
                   />
                 </div>
               )}

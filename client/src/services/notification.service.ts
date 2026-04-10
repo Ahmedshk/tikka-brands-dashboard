@@ -6,6 +6,8 @@ export interface NotificationItem {
   title: string;
   message: string;
   data?: Record<string, unknown>;
+  /** Set by GET /notifications when `data.locationId` resolves to a location (not stored in DB). */
+  locationLabel?: string;
   isRead: boolean;
   readAt?: string;
   createdAt: string;

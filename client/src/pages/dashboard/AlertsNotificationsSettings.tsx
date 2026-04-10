@@ -815,8 +815,8 @@ export const AlertsNotificationsSettings = () => {
                       Notify roles by category
                     </h3>
                     <p className="text-xs text-tertiary mt-1 max-w-2xl">
-                      For each category, pick an alert type, choose roles, and set channels. Use{" "}
-                      <span className="font-medium text-primary">Save settings</span> below to persist changes.
+                      For each category, pick an alert type, choose roles, and set channels.                       Use{" "}
+                      <span className="font-medium text-primary">Save Settings</span> below to persist changes.
                     </p>
                   </div>
                   {roles.length === 0 ? (
@@ -920,14 +920,14 @@ export const AlertsNotificationsSettings = () => {
                   })}
                 </div>
 
-                <div className="flex flex-wrap gap-3 pt-2">
+                <div className="flex justify-end pt-2">
                   <button
                     type="button"
                     disabled={saving}
                     onClick={() => void save()}
-                    className="px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-medium disabled:opacity-50"
+                    className="px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
                   >
-                    {saving ? "Saving…" : "Save settings"}
+                    {saving ? "Saving..." : "Save Settings"}
                   </button>
                 </div>
               </div>

@@ -90,3 +90,10 @@ export const getCommandCenterAlertsQuerySchema = z.object({
     locationId: z.string().min(1, "locationId is required"),
   }),
 });
+
+export const getCommandCenterAlertHistoryQuerySchema = z.object({
+  query: z.object({
+    locationId: z.string().min(1, "locationId is required"),
+    category: z.enum(["financial_labor", "inventory_supply_chain", "reputation_hr"]),
+  }),
+});

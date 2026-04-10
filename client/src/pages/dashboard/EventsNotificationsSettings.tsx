@@ -93,8 +93,8 @@ function bindingsFromSettings(rows: CalendarRoleEventBindingDto[]): UiBinding[] 
       ...r,
       key: randomKey(),
       channels: { ...DEFAULT_CHANNELS, ...r.channels },
-      notifyOnStart: r.notifyOnStart ?? true,
-      notifyReminders: r.notifyReminders ?? true,
+      notifyOnStart: true,
+      notifyReminders: true,
     });
   }
   return out;
@@ -143,8 +143,6 @@ export const EventsNotificationsSettings = () => {
     email: false,
     sms: false,
   });
-  const [roleRuleModalNotifyReminders, setRoleRuleModalNotifyReminders] = useState(true);
-  const [roleRuleModalNotifyOnStart, setRoleRuleModalNotifyOnStart] = useState(true);
 
   const roleRuleEventTypeDropdownOptions = useMemo(
     () =>
@@ -242,12 +240,8 @@ export const EventsNotificationsSettings = () => {
       const first = typeBindings[0];
       if (first) {
         setRoleRuleModalChannels({ ...DEFAULT_CHANNELS, ...first.channels });
-        setRoleRuleModalNotifyReminders(first.notifyReminders ?? true);
-        setRoleRuleModalNotifyOnStart(first.notifyOnStart ?? true);
       } else {
         setRoleRuleModalChannels({ inApp: true, email: false, sms: false });
-        setRoleRuleModalNotifyReminders(true);
-        setRoleRuleModalNotifyOnStart(true);
       }
     },
     [],
@@ -320,8 +314,8 @@ export const EventsNotificationsSettings = () => {
             eventTypeId: roleRuleModalEventTypeId,
             roleId: r._id,
             channels: { ...DEFAULT_CHANNELS, ...roleRuleModalChannels },
-            notifyReminders: roleRuleModalNotifyReminders,
-            notifyOnStart: roleRuleModalNotifyOnStart,
+            notifyReminders: true,
+            notifyOnStart: true,
           });
         }
       }
@@ -645,12 +639,10 @@ export const EventsNotificationsSettings = () => {
                       </h3>
                       <p className="text-xs text-tertiary mt-1 max-w-2xl">
                         Use the button to choose an event type, select which roles get notified, and set channels.
-                        With <span className="font-medium text-primary">Reminders</span> on, we send the event
-                        type&apos;s advance schedule (in the location timezone) and a notification{" "}
-                        <span className="font-medium text-primary">1 hour before</span> start. With{" "}
-                        <span className="font-medium text-primary">At start time</span> on, we notify when the event
-                        begins. Use <span className="font-medium text-primary">Save Settings</span> below to persist
-                        changes.
+                        Notified users receive the event type&apos;s advance reminder schedule (in the location
+                        timezone), a heads-up <span className="font-medium text-primary">1 hour before</span> start,
+                        and a notification when the event begins. Use{" "}
+                        <span className="font-medium text-primary">Save Settings</span> below to persist changes.
                       </p>
                     </div>
                     <button
@@ -1141,7 +1133,7 @@ export const EventsNotificationsSettings = () => {
                   </ul>
                 </div>
                 <div className="border-t border-gray-100 pt-4 space-y-3">
-                  <p className="text-xs font-semibold text-primary">Channels & timing</p>
+                  <p className="text-xs font-semibold text-primary">Channels</p>
                   <p className="text-xs text-tertiary">Applied to every selected role for this event type.</p>
                   <div className="flex flex-wrap gap-x-5 gap-y-2">
                     <label className="flex items-center gap-2 text-xs md:text-sm text-primary cursor-pointer">
@@ -1176,24 +1168,6 @@ export const EventsNotificationsSettings = () => {
                         className="rounded border-gray-300 text-button-primary focus:ring-button-primary/30"
                       />
                       SMS
-                    </label>
-                    <label className="flex items-center gap-2 text-xs md:text-sm text-primary cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={roleRuleModalNotifyReminders}
-                        onChange={(e) => setRoleRuleModalNotifyReminders(e.target.checked)}
-                        className="rounded border-gray-300 text-button-primary focus:ring-button-primary/30"
-                      />
-                      Reminders (schedule + 1h before)
-                    </label>
-                    <label className="flex items-center gap-2 text-xs md:text-sm text-primary cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={roleRuleModalNotifyOnStart}
-                        onChange={(e) => setRoleRuleModalNotifyOnStart(e.target.checked)}
-                        className="rounded border-gray-300 text-button-primary focus:ring-button-primary/30"
-                      />
-                      At start time
                     </label>
                   </div>
                 </div>

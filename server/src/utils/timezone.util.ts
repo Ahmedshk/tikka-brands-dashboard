@@ -445,21 +445,24 @@ export function getHourInTimezone(isoDateString: string, timezone: string): numb
 /**
  * Get the current calendar date in the given IANA timezone as YYYY-MM-DD.
  */
-export function getTodayInTimezone(timezone: string): string {
-  const now = new Date();
+export function getTodayInTimezoneAt(timezone: string, atMs: number): string {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone.trim(),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
-  const parts = formatter.formatToParts(now);
+  const parts = formatter.formatToParts(new Date(atMs));
   const get = (type: string) =>
     parts.find((p) => p.type === type)?.value ?? "0";
   const y = get("year");
   const m = get("month").padStart(2, "0");
   const d = get("day").padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+export function getTodayInTimezone(timezone: string): string {
+  return getTodayInTimezoneAt(timezone, Date.now());
 }
 
 /**
