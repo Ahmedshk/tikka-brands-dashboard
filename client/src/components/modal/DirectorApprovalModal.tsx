@@ -10,6 +10,7 @@ import {
   reviewEmployeeHeaderSubtitle,
 } from "../../utils/employeeBioHelpers";
 import { ReviewQuestionResponseList } from "../../utils/reviewQuestionResponseList";
+import { ManagerReviewResponsesWithHistory } from "../review/ManagerReviewResponsesWithHistory";
 import type {
   ManagerReview,
   ReviewCycle,
@@ -80,7 +81,7 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
         toast.success("Review approved!");
       } else {
         await reviewService.rejectReview(cycleId, { comments });
-        toast.success("Review rejected");
+        toast.success("Returned to manager for revision");
       }
       onDecision?.();
       onClose();
@@ -174,33 +175,11 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
                         ) : null}
                       </p>
                       {managerReview ? (
-                        <>
-                          {managerReview.revisionHistory && managerReview.revisionHistory.length >= 2 ? (
-                            <>
-                              <div>
-                                <h4 className="text-xs font-semibold text-green-800 mb-2">Original (before viewing employee self-review)</h4>
-                                <ReviewQuestionResponseList
-                                  responses={managerReview.revisionHistory[0]?.responses ?? []}
-                                  questionnaire={reviewSettings?.managerReviewQuestionnaire}
-                                />
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-semibold text-green-800 mb-2">Updated (after viewing employee self-review)</h4>
-                                <ReviewQuestionResponseList
-                                  responses={managerReview.revisionHistory.at(-1)?.responses ?? []}
-                                  questionnaire={reviewSettings?.managerReviewQuestionnaire}
-                                />
-                              </div>
-                            </>
-                          ) : (
-                            <div>
-                              <ReviewQuestionResponseList
-                                responses={managerReview.responses ?? []}
-                                questionnaire={reviewSettings?.managerReviewQuestionnaire}
-                              />
-                            </div>
-                          )}
-                        </>
+                        <ManagerReviewResponsesWithHistory
+                          managerReview={managerReview}
+                          questionnaire={reviewSettings?.managerReviewQuestionnaire}
+                          accent="green"
+                        />
                       ) : (
                         <p className="text-sm text-gray-400 italic">No manager review submitted</p>
                       )}

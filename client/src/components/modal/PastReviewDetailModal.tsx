@@ -22,6 +22,7 @@ import {
   reviewEmployeeHeaderSubtitle,
 } from "../../utils/employeeBioHelpers";
 import { ReviewQuestionResponseList } from "../../utils/reviewQuestionResponseList";
+import { ManagerReviewResponsesWithHistory } from "../review/ManagerReviewResponsesWithHistory";
 import { getReviewCycleEmployeeId } from "../../utils/reviewCycleHelpers";
 import { EmployeePastReviewsListModal } from "./EmployeePastReviewsListModal";
 import type { ReviewCycleSnapshot, ReviewCycleStatus, ReviewSettings } from "../../types/review.types";
@@ -288,36 +289,11 @@ export const PastReviewDetailModal = ({
                       </p>
                       {snapshot.managerReview ? (
                         <>
-                          {snapshot.managerReview.revisionHistory &&
-                            snapshot.managerReview.revisionHistory.length >= 2 ? (
-                            <>
-                              <div>
-                                <h4 className="text-xs font-semibold text-violet-700 mb-2">
-                                  Original (before viewing employee self-review)
-                                </h4>
-                                <ReviewQuestionResponseList
-                                  responses={snapshot.managerReview.revisionHistory[0]?.responses ?? []}
-                                  questionnaire={reviewSettings?.managerReviewQuestionnaire}
-                                />
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-semibold text-violet-700 mb-2">
-                                  Updated (after viewing employee self-review)
-                                </h4>
-                                <ReviewQuestionResponseList
-                                  responses={snapshot.managerReview.revisionHistory.at(-1)?.responses ?? []}
-                                  questionnaire={reviewSettings?.managerReviewQuestionnaire}
-                                />
-                              </div>
-                            </>
-                          ) : (
-                            <div>
-                              <ReviewQuestionResponseList
-                                responses={snapshot.managerReview.responses ?? []}
-                                questionnaire={reviewSettings?.managerReviewQuestionnaire}
-                              />
-                            </div>
-                          )}
+                          <ManagerReviewResponsesWithHistory
+                            managerReview={snapshot.managerReview}
+                            questionnaire={reviewSettings?.managerReviewQuestionnaire}
+                            accent="violet"
+                          />
                           {snapshot.managerReview.submittedAt && (
                             <p className="text-xs text-gray-500 mt-3">
                               Submitted {new Date(snapshot.managerReview.submittedAt).toLocaleString()}

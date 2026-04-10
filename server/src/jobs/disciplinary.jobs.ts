@@ -82,13 +82,23 @@ export function registerDisciplinaryJobs(agenda: Agenda): void {
           .select("_id")
           .lean();
 
+        const incidentForLoc = expiringIncidents.find(
+          (i) => i.employeeId.toString() === employeeId,
+        );
+        const locationIdFromIncident = incidentForLoc?.locationId?.toString();
+
         for (const user of ancestorUsers) {
           await notificationService.send({
             recipientId: user._id.toString(),
             type: "disciplinary_points_expired",
             title: "Disciplinary Points Expired",
             message: `Some disciplinary points for ${empName} have expired. Current active points: ${activePoints}.`,
-            data: { employeeId, employeeName: empName, activePoints },
+            data: {
+              employeeId,
+              employeeName: empName,
+              activePoints,
+              ...(locationIdFromIncident ? { locationId: locationIdFromIncident } : {}),
+            },
             channels: ["all"],
           });
         }

@@ -17,6 +17,7 @@ import { useAuth } from '../../hooks/useAuth';
 import type { LocationListItem } from '../../types';
 import { canAccessPage } from '../../config/permissions.config';
 import {
+  alertNotificationBodyTextForDropdown,
   getNotificationNavigationTarget,
   resolveNotificationLocationLabel,
 } from '../../utils/notificationNavigation';
@@ -166,7 +167,9 @@ function NavbarNotificationList({
                       <span className="truncate">{locationLine}</span>
                     </p>
                   )}
-                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
+                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                    {alertNotificationBodyTextForDropdown(n.message, n, locations)}
+                  </p>
                   <p className={timeClass}>{formatTimeAgo(n.createdAt)}</p>
                 </div>
               </div>

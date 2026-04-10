@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { NotificationModel } from "../models/notification.model.js";
+import { NotificationModel, type NotificationDocument } from "../models/notification.model.js";
 import { LocationModel } from "../models/location.model.js";
 import { getIO } from "../config/socket.js";
 import { logger } from "../utils/logger.util.js";
@@ -13,6 +13,30 @@ function locationIdFromNotificationData(data: unknown): string | null {
   const raw = (data as Record<string, unknown>).locationId;
   if (typeof raw === "string" && raw.trim()) return raw.trim();
   return null;
+}
+
+async function locationLabelFromNotificationData(data: unknown): Promise<string | undefined> {
+  const lid = locationIdFromNotificationData(data);
+  if (!lid || !mongoose.isValidObjectId(lid)) return undefined;
+  const loc = await LocationModel.findById(lid).select("storeName").lean();
+  const name = typeof loc?.storeName === "string" ? loc.storeName.trim() : "";
+  return name || undefined;
+}
+
+function escapeHtmlForEmail(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+/** Appends a Location line for SMS/plain text when the body does not already mention the store. */
+function appendLocationToPlainText(body: string, locationLabel: string): string {
+  const loc = locationLabel.trim();
+  if (!loc) return body;
+  if (body.toLowerCase().includes(loc.toLowerCase())) return body;
+  return `${body.trimEnd()}\n\nLocation: ${loc}`;
 }
 
 async function enrichNotificationsWithLocationLabels(
@@ -62,9 +86,12 @@ export class NotificationService {
       type,
       title,
       message,
+      inAppMessage,
       data,
       channels,
     } = options;
+
+    const messageForInApp = inAppMessage ?? message;
 
     let delivered = false;
 
@@ -75,28 +102,41 @@ export class NotificationService {
     const shouldSms =
       channels.includes("sms") || channels.includes("all");
 
+    const resolvedLocationLabel =
+      shouldEmail || shouldSms ? await locationLabelFromNotificationData(data) : undefined;
+
     if (shouldInApp) {
       try {
-        const notification = await NotificationModel.create({
+        const createPayload: {
+          recipientId: string;
+          type: typeof type;
+          title: string;
+          message: string;
+          data?: Record<string, unknown>;
+        } = {
           recipientId,
           type,
           title,
-          message,
-          data,
-        });
+          message: messageForInApp,
+        };
+        if (data !== undefined) createPayload.data = data;
+        const notification = (await NotificationModel.create(createPayload)) as NotificationDocument;
         delivered = true;
 
         try {
           const io = getIO();
-          io.to(`user:${recipientId}`).emit("notification:new", {
+          const locationLabel = await locationLabelFromNotificationData(data);
+          const socketPayload: Record<string, unknown> = {
             _id: notification._id,
             type: notification.type,
             title: notification.title,
-            message: notification.message,
+            message: messageForInApp,
             data: notification.data,
             isRead: false,
             createdAt: notification.createdAt,
-          });
+          };
+          if (locationLabel) socketPayload.locationLabel = locationLabel;
+          io.to(`user:${recipientId}`).emit("notification:new", socketPayload);
         } catch {
           // Socket.io may not be initialized in scripts/tests
         }
@@ -111,13 +151,23 @@ export class NotificationService {
         const subject = options.emailSubject ?? title;
         let sent: boolean;
         if (options.emailTemplateFile) {
-          const templateData = {
+          const templateData: Record<string, unknown> = {
             ...options.emailTemplateData,
             message,
             title,
             actionUrl: options.actionUrl,
             buttonText: options.emailButtonText ?? "View",
           };
+          if (resolvedLocationLabel) {
+            const locLine = templateData.locationLine;
+            const locName = templateData.locationName;
+            const hasExisting =
+              (typeof locLine === "string" && locLine.trim() !== "") ||
+              (typeof locName === "string" && locName.trim() !== "");
+            if (!hasExisting) {
+              templateData.locationName = resolvedLocationLabel;
+            }
+          }
           sent = await sendTransactionalEmail({
             recipientUserId: recipientId,
             subject,
@@ -125,7 +175,16 @@ export class NotificationService {
             templateData,
           });
         } else {
-          const html = options.emailHtml ?? `<p>${message}</p>${options.actionUrl ? `<p><a href="${options.actionUrl}">Click here</a></p>` : ""}`;
+          let html: string;
+          if (options.emailHtml) {
+            html = options.emailHtml;
+          } else {
+            let body = `<p>${escapeHtmlForEmail(message)}</p>`;
+            if (resolvedLocationLabel) {
+              body += `<p style="margin-top:12px"><strong>Location:</strong> ${escapeHtmlForEmail(resolvedLocationLabel)}</p>`;
+            }
+            html = `${body}${options.actionUrl ? `<p><a href="${options.actionUrl}">Click here</a></p>` : ""}`;
+          }
           sent = await sendTransactionalEmail({ recipientUserId: recipientId, subject, html });
         }
         if (sent) delivered = true;
@@ -144,7 +203,10 @@ export class NotificationService {
     if (shouldSms) {
       try {
         const { sendSMSToUser } = await import("./sms.service.js");
-        const body = options.smsBody ?? message;
+        const rawSms = options.smsBody ?? message;
+        const body = resolvedLocationLabel
+          ? appendLocationToPlainText(rawSms, resolvedLocationLabel)
+          : rawSms;
         const sent = await sendSMSToUser(recipientId, body);
         if (sent) delivered = true;
       } catch (err) {

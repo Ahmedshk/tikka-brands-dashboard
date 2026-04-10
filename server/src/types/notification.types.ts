@@ -66,6 +66,8 @@ export interface SendNotificationOptions {
   type: NotificationType;
   title: string;
   message: string;
+  /** When set, stored and shown for in-app only; email/SMS still use `message`. */
+  inAppMessage?: string;
   data?: Record<string, unknown>;
   channels: NotificationChannel[];
   emailSubject?: string;

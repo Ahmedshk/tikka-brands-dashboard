@@ -715,7 +715,7 @@ export class DisciplinaryIncidentService {
         title: "Disciplinary document — check your email",
         message:
           "A disciplinary document requires your signature. Please check your email for the Adobe Sign link.",
-        data: { incidentId },
+        data: { incidentId, locationId },
         channels: ["sms", "in_app"],
         smsBody,
       });
@@ -792,6 +792,7 @@ export class DisciplinaryIncidentService {
             status: currentStatus,
             thresholdCrossed: highestCrossed.pointThreshold,
             action: highestCrossed.action,
+            locationId,
           },
           channels: ["all"],
           emailTemplateFile: "disciplinary-notification-email.ejs",

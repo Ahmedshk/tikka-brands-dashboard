@@ -116,6 +116,8 @@ export interface ReviewCycle {
   directorApprovalStartedAt?: string;
   directorDecision?: "approved" | "rejected" | null;
   directorComments?: string;
+  /** ISO date: when director returned review to manager (manager deadline anchor). */
+  directorRejectedAt?: string;
   salaryIncrement?: number;
   /** When omitted but `salaryIncrement` is set, UI/API treat as percent (legacy). */
   salaryIncrementType?: SalaryIncrementType;
@@ -281,8 +283,17 @@ export function getStageStatusesFromSnapshot(snapshot: ReviewCycleSnapshot): Sta
 
   let directorReview: string = na;
   if (cycle.directorDecision === "approved") directorReview = "Approved";
-  else if (cycle.directorDecision === "rejected") directorReview = "Rejected";
-  else if (mgrDone) directorReview = "Due";
+  else if (cycle.directorDecision === "rejected") {
+    if (
+      cycle.status === "manager_review_due" ||
+      cycle.status === "manager_review_pending" ||
+      cycle.status === "manager_review_past_due"
+    ) {
+      directorReview = "Revisions requested";
+    } else {
+      directorReview = "Rejected";
+    }
+  } else if (mgrDone) directorReview = "Due";
 
   let finalReview: string = na;
   if (cycle.directorDecision === "approved") {
@@ -567,12 +578,32 @@ export function getStageStatuses(status: ReviewCycleStatus): StageStatuses {
   };
 }
 
+/**
+ * DO Review column / tracker label. When the director has sent the review back to the manager,
+ * show an actionable label instead of status-only "—".
+ */
+export function getDirectorReviewStageLabel(cycle: {
+  status: ReviewCycleStatus;
+  directorDecision?: "approved" | "rejected" | null;
+}): string {
+  if (
+    cycle.directorDecision === "rejected" &&
+    (cycle.status === "manager_review_due" ||
+      cycle.status === "manager_review_pending" ||
+      cycle.status === "manager_review_past_due")
+  ) {
+    return "Revisions requested";
+  }
+  return getStageStatuses(cycle.status).directorReview;
+}
+
 /** Tailwind class for a stage status badge (e.g. Due, Past due, Complete). */
 export function getStageStatusColor(stageLabel: string): string {
   if (stageLabel === "—") return "text-gray-500 bg-gray-100";
   if (stageLabel === "Not started") return "text-gray-600 bg-gray-100";
   if (stageLabel === "Not complete") return "text-amber-800 bg-amber-50";
   if (stageLabel === "Past due" || stageLabel === "Late" || stageLabel === "Rejected") return "text-red-600 bg-red-50";
+  if (stageLabel === "Revisions requested") return "text-amber-800 bg-amber-50";
   if (stageLabel === "Due" || stageLabel === "Pending" || stageLabel === "Form Available" || stageLabel === "Upcoming" || stageLabel === "75-Day Notice Sent") return "text-yellow-700 bg-yellow-50";
   if (stageLabel === "Complete" || stageLabel === "Done" || stageLabel === "Approved") return "text-green-700 bg-green-50";
   return "text-gray-600 bg-gray-50";

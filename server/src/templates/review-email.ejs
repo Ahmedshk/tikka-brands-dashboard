@@ -19,6 +19,9 @@
         <p style="margin:0 0 16px;font-size:15px;line-height:1.5;">Hi <%= firstName %>.</p>
         <% } %>
         <p style="margin:0 0 16px;font-size:15px;line-height:1.5;"><%= typeof message !== 'undefined' ? message : '' %></p>
+        <% if (typeof locationName !== 'undefined' && locationName) { %>
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.5;"><strong>Location:</strong> <%= locationName %></p>
+        <% } %>
         <% if (typeof actionUrl !== 'undefined' && actionUrl) { %>
         <p style="margin:8px 0 24px;font-size:15px;">
           <a href="<%= actionUrl %>" style="display:inline-block;background:#5B6B79;color:#FFFFFF;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;"><%= typeof buttonText !== 'undefined' && buttonText ? buttonText : 'View' %></a>

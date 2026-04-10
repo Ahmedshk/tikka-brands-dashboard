@@ -313,7 +313,7 @@ export class ReviewCycleService {
           type: "review_self_upcoming",
           title: "Self-Review Period Approaching",
           message: "Your self-review window is approaching. You will receive another email when the form is available.",
-          data: { reviewCycleId: cycleId },
+          data: await this.mergeReviewNotificationData(employeeId, { reviewCycleId: cycleId }),
           channels: ["all"],
           emailTemplateFile: "review-email.ejs",
           emailTemplateData: { firstName },
@@ -324,7 +324,7 @@ export class ReviewCycleService {
           type: "review_self_available",
           title: "Self-Review Form Available",
           message: "Your self-review form is now available. Please complete it before the due date.",
-          data: { reviewCycleId: cycleId },
+          data: await this.mergeReviewNotificationData(employeeId, { reviewCycleId: cycleId }),
           channels: ["all"],
           actionUrl,
           emailTemplateFile: "review-email.ejs",
@@ -337,7 +337,7 @@ export class ReviewCycleService {
           type: "review_self_due",
           title: "Self-Review Due Today",
           message: "Your self-review is due today. Please submit it as soon as possible.",
-          data: { reviewCycleId: cycleId },
+          data: await this.mergeReviewNotificationData(employeeId, { reviewCycleId: cycleId }),
           channels: ["all"],
           actionUrl,
           emailTemplateFile: "review-email.ejs",
@@ -456,6 +456,33 @@ export class ReviewCycleService {
     for (const ov of (emp.locationOverrides ?? []).map(String)) baseIds.add(ov);
     for (const rm of (emp.locationRemovals ?? []).map(String)) baseIds.delete(rm);
     return [...baseIds];
+  }
+
+  /**
+   * Employee's store id for in-app notification location labels (first sorted id when role is location-scoped).
+   */
+  async getNotificationLocationIdForEmployee(employeeId: string): Promise<string | undefined> {
+    const user = await UserModel.findById(employeeId).select("roleId locationOverrides locationRemovals").lean();
+    if (!user?.roleId) return undefined;
+    const role = await RoleModel.findById(user.roleId).select("locationAccess locationIds").lean();
+    if (!role) return undefined;
+    const empLocs = this.resolveEmployeeLocations(
+      {
+        locationOverrides: [...(user.locationOverrides ?? [])],
+        locationRemovals: [...(user.locationRemovals ?? [])],
+      },
+      role,
+    );
+    if (empLocs === "all" || empLocs.length === 0) return undefined;
+    return [...empLocs].sort()[0];
+  }
+
+  private async mergeReviewNotificationData(
+    employeeId: string,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const locationId = await this.getNotificationLocationIdForEmployee(employeeId);
+    return locationId ? { ...data, locationId } : { ...data };
   }
 
   /**
@@ -657,7 +684,7 @@ export class ReviewCycleService {
         type: "review_manager_pending",
         title: "Employee Self-Review Submitted",
         message: "An employee has submitted their self-review. Your review is now due.",
-        data: { reviewCycleId: cycleId, employeeId },
+        data: await this.mergeReviewNotificationData(employeeId, { reviewCycleId: cycleId, employeeId }),
         channels: ["all"],
         actionUrl: `${CLIENT_URL}/dashboard/reviews-management`,
         emailTemplateFile: "review-email.ejs",
@@ -731,7 +758,10 @@ export class ReviewCycleService {
       type: "review_director_pending",
       title: "Review Awaiting Your Approval",
       message: "A manager review has been submitted and awaits your approval.",
-      data: { reviewCycleId: cycleId, employeeId: cycle.employeeId.toString() },
+      data: await this.mergeReviewNotificationData(cycle.employeeId.toString(), {
+        reviewCycleId: cycleId,
+        employeeId: cycle.employeeId.toString(),
+      }),
       channels: ["all"],
       actionUrl: `${CLIENT_URL}/dashboard/reviews-management`,
       emailTemplateFile: "review-email.ejs",
@@ -786,6 +816,9 @@ export class ReviewCycleService {
     review.lastUpdatedAt = new Date();
     await review.save();
 
+    cycle.directorDecision = null;
+    cycle.directorComments = undefined;
+    cycle.directorRejectedAt = undefined;
     cycle.status = "manager_review_submitted";
     await cycle.save();
 
@@ -873,6 +906,7 @@ export class ReviewCycleService {
 
     cycle.directorDecision = "approved";
     cycle.directorComments = comments;
+    cycle.directorRejectedAt = undefined;
     cycle.approvedByDirectorId = directorId as unknown as typeof cycle.approvedByDirectorId;
     cycle.status = "approved";
     await cycle.save();
@@ -890,7 +924,7 @@ export class ReviewCycleService {
         type: "review_approved",
         title: "Review Approved by Director",
         message: "The director has approved the review. Please share with the employee and create an action plan.",
-        data: { reviewCycleId: cycleId },
+        data: await this.mergeReviewNotificationData(cycle.employeeId.toString(), { reviewCycleId: cycleId }),
         channels: ["all"],
         actionUrl: dashboardUrl,
         emailTemplateFile: "review-email.ejs",
@@ -914,7 +948,11 @@ export class ReviewCycleService {
     cycle.directorDecision = "rejected";
     cycle.directorComments = comments;
     cycle.approvedByDirectorId = directorId as unknown as typeof cycle.approvedByDirectorId;
-    cycle.status = "rejected";
+    cycle.directorApprovalStartedAt = undefined;
+    cycle.salaryIncrement = undefined;
+    cycle.salaryIncrementType = undefined;
+    cycle.directorRejectedAt = new Date();
+    cycle.status = "manager_review_pending";
     await cycle.save();
 
     if (cycle.reviewedByManagerId) {
@@ -922,12 +960,15 @@ export class ReviewCycleService {
       const mgrUser = await UserModel.findById(mgrId).select("firstName").lean();
       const mgrFirstName = (mgrUser as { firstName?: string } | null)?.firstName ?? "";
       const dashboardUrl = `${CLIENT_URL}/dashboard/reviews-management`;
+      const baseMessage = "Please revise your manager review and resubmit for director approval.";
+      const feedbackSuffix = comments.trim() ? ` Director comments: ${comments}` : "";
       await notificationService.send({
         recipientId: mgrId,
         type: "review_rejected",
-        title: "Review Rejected by Director",
-        message: `The director has rejected the review. Comments: ${comments}`,
-        data: { reviewCycleId: cycleId },
+        title: "Director requested changes",
+        message: `${baseMessage}${feedbackSuffix}`,
+        inAppMessage: baseMessage,
+        data: await this.mergeReviewNotificationData(cycle.employeeId.toString(), { reviewCycleId: cycleId }),
         channels: ["all"],
         actionUrl: dashboardUrl,
         emailTemplateFile: "review-email.ejs",
@@ -977,7 +1018,7 @@ export class ReviewCycleService {
       type: "review_completed",
       title: "Review Cycle Completed",
       message: "Your review cycle has been completed.",
-      data: { reviewCycleId: cycleId },
+      data: await this.mergeReviewNotificationData(cycle.employeeId.toString(), { reviewCycleId: cycleId }),
       channels: ["in_app"],
     });
 

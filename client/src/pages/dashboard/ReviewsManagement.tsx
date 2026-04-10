@@ -17,6 +17,7 @@ import { CheckInModal } from "../../components/modal/CheckInModal";
 import { PastReviewDetailModal } from "../../components/modal/PastReviewDetailModal";
 import { reviewService } from "../../services/review.service";
 import {
+  getDirectorReviewStageLabel,
   getStageStatuses,
   getStageStatusColor,
   getStatusColor,
@@ -62,7 +63,7 @@ const CHECKIN_60_STATUSES = new Set<ReviewCycleStatus>(["checkin_60_due", "check
 const STAGE_LABELS = {
   selfReview: ["Upcoming", "75-Day Notice Sent", "Form Available", "Due", "Late", "Past due", "Complete"],
   managerReview: ["—", "Due", "Past due", "Complete"],
-  directorReview: ["—", "Due", "Past due", "Complete"],
+  directorReview: ["—", "Due", "Past due", "Complete", "Revisions requested"],
   finalReview: ["—", "Due", "Past due", "Complete"],
   checkin30: ["—", "Due", "Past due", "Complete"],
   checkin60: ["—", "Due", "Past due", "Complete"],
@@ -82,6 +83,7 @@ const REVIEW_TRACKER_NEUTRAL_GRAY = "#9CA3AF";
 const getTrackerColorDefault = (label: string): string => {
   if (label === "—") return REVIEW_TRACKER_NEUTRAL_GRAY;
   if (label === "Past due" || label === "Late" || label === "Rejected") return "#EF4444";
+  if (label === "Revisions requested") return "#F59E0B";
   if (label === "Due" || label === "Pending" || label === "Form Available" || label === "Upcoming" || label === "75-Day Notice Sent") return "#FBC52A";
   if (label === "Complete" || label === "Done" || label === "Approved") return REVIEW_TRACKER_COMPLETE_COLOR;
   return REVIEW_TRACKER_NEUTRAL_GRAY;
@@ -103,7 +105,6 @@ const CLOSED_CYCLE_STATUSES = new Set<ReviewCycleStatus>([
   "checkin_60_done",
   "cycle_complete",
   "cycle_superseded",
-  "rejected",
 ]);
 
 export const ReviewsManagement = () => {
@@ -336,7 +337,7 @@ export const ReviewsManagement = () => {
   const isDirector = settings?.directorRoleIds.some(matchesRole) ?? false;
 
   const activeCycles = useMemo(
-    () => cycles.filter((c) => !CLOSED_CYCLE_STATUSES.has(c.status)),
+    () => cycles.filter((c) => c.status !== "rejected" && !CLOSED_CYCLE_STATUSES.has(c.status)),
     [cycles],
   );
   const reviewCyclesTotalPages = Math.max(1, Math.ceil(activeListTotal / MODAL_PAGE_SIZE));
@@ -372,7 +373,8 @@ export const ReviewsManagement = () => {
     activeCycles.forEach((cycle) => {
       const stages = getStageStatuses(cycle.status);
       stageKeys.forEach((stageKey) => {
-        const rawLabel = stages[stageKey];
+        const rawLabel =
+          stageKey === "directorReview" ? getDirectorReviewStageLabel(cycle) : stages[stageKey];
         const label =
           stageKey === "directorReview" && (rawLabel === "Approved" || rawLabel === "Rejected")
             ? "Complete"
@@ -569,7 +571,7 @@ export const ReviewsManagement = () => {
                                     <span className="font-medium shrink-0">Manager:</span> {badge(stages.managerReview)}
                                   </p>
                                   <p className="flex flex-wrap items-center gap-1 min-w-0">
-                                    <span className="font-medium shrink-0">DO:</span> {badge(stages.directorReview)}
+                                    <span className="font-medium shrink-0">DO:</span> {badge(getDirectorReviewStageLabel(c))}
                                   </p>
                                   <p className="flex flex-wrap items-center gap-1 min-w-0">
                                     <span className="font-medium shrink-0">Final:</span> {badge(stages.finalReview)}
@@ -660,7 +662,7 @@ export const ReviewsManagement = () => {
                                   </td>
                                   <td className="py-3 pr-2 text-center">{badge(stages.selfReview)}</td>
                                   <td className="py-3 pr-2 text-center">{badge(stages.managerReview)}</td>
-                                  <td className="py-3 pr-2 text-center">{badge(stages.directorReview)}</td>
+                                  <td className="py-3 pr-2 text-center">{badge(getDirectorReviewStageLabel(c))}</td>
                                   <td className="py-3 pr-2 text-center">{badge(stages.finalReview)}</td>
                                   <td className="py-3 pr-2 text-center">{badge(stages.checkin30)}</td>
                                   <td className="py-3 pr-2 text-center">{badge(stages.checkin60)}</td>
@@ -957,7 +959,7 @@ export const ReviewsManagement = () => {
                               <span className="font-medium shrink-0">Manager:</span> {badge(stages.managerReview)}
                             </p>
                             <p className="flex flex-wrap items-center gap-1 min-w-0">
-                              <span className="font-medium shrink-0">DO:</span> {badge(stages.directorReview)}
+                              <span className="font-medium shrink-0">DO:</span> {badge(getDirectorReviewStageLabel(c))}
                             </p>
                             <p className="flex flex-wrap items-center gap-1 min-w-0">
                               <span className="font-medium shrink-0">Final:</span> {badge(stages.finalReview)}
@@ -1050,7 +1052,7 @@ export const ReviewsManagement = () => {
                             </td>
                             <td className="py-3 pr-2 text-center">{badge(stages.selfReview)}</td>
                             <td className="py-3 pr-2 text-center">{badge(stages.managerReview)}</td>
-                            <td className="py-3 pr-2 text-center">{badge(stages.directorReview)}</td>
+                            <td className="py-3 pr-2 text-center">{badge(getDirectorReviewStageLabel(c))}</td>
                             <td className="py-3 pr-2 text-center">{badge(stages.finalReview)}</td>
                             <td className="py-3 pr-2 text-center">{badge(stages.checkin30)}</td>
                             <td className="py-3 pr-2 text-center">{badge(stages.checkin60)}</td>

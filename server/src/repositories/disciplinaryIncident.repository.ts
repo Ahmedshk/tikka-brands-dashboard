@@ -116,7 +116,7 @@ export class DisciplinaryIncidentRepository {
       signingStatus: { $in: ["pending_employee", "completed"] },
       incidentDate: { $gte: cutoffStart, $lt: cutoffEnd },
     })
-      .select("employeeId totalPoints incidentDate")
+      .select("employeeId totalPoints incidentDate locationId")
       .lean() as Promise<DisciplinaryIncidentDocument[]>;
   }
 

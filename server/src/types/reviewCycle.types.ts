@@ -76,6 +76,8 @@ export interface IReviewCycle {
   directorApprovalStartedAt?: Date;
   directorDecision?: "approved" | "rejected" | null;
   directorComments?: string;
+  /** Set when director returns review to manager; used to anchor manager deadline after rejection. */
+  directorRejectedAt?: Date;
   salaryIncrement?: number;
   /** When omitted and `salaryIncrement` is set (legacy), treat as percent. */
   salaryIncrementType?: SalaryIncrementType;

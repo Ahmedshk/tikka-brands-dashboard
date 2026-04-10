@@ -6,6 +6,7 @@ import { getErrorMessage } from "../../services/api.service";
 import { reviewService } from "../../services/review.service";
 import { Spinner } from "../common/Spinner";
 import { ReviewEmployeeBioSection } from "../review/ReviewEmployeeBioSection";
+import { ManagerReviewResponsesWithHistory } from "../review/ManagerReviewResponsesWithHistory";
 import { ReviewQuestionAttachmentLinks } from "../ReviewSettings/ReviewQuestionAttachmentLinks";
 import { reviewEmployeeHeaderSubtitle } from "../../utils/employeeBioHelpers";
 import type {
@@ -44,10 +45,14 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
   const canSeeEmployeeReview = hasCompleted;
   const submittedToDirector = [
     "manager_review_submitted", "director_approval_due", "director_approval_pending", "director_approval_past_due",
-    "approved", "rejected", "sharing_due", "sharing_pending", "sharing_past_due", "completed",
+    "approved", "sharing_due", "sharing_pending", "sharing_past_due", "completed",
     "checkin_30_due", "checkin_30_past_due", "checkin_30_complete", "checkin_30_done", "checkin_60_due", "checkin_60_past_due", "checkin_60_complete", "checkin_60_done", "cycle_complete",
   ].includes(status);
   const canDoReview = ["self_review_submitted", "manager_review_due", "manager_review_pending", "manager_review_past_due"].includes(status);
+
+  const showDirectorReturnCallout =
+    reviewCycle?.directorDecision === "rejected" &&
+    ["manager_review_due", "manager_review_pending", "manager_review_past_due"].includes(status);
 
   const handleViewEmployeeSelfReview = async () => {
     if (!hasCompleted || selfReview) {
@@ -249,6 +254,21 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
           <div className="space-y-6 pb-2">
             <ReviewEmployeeBioSection cycle={reviewCycle} sectionHeadingId="manager-review-employee-bio-heading" />
 
+            {showDirectorReturnCallout && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <p className="font-semibold text-amber-900">Director requested changes</p>
+                <p className="mt-1 text-amber-900/90">
+                  Please update your manager review and submit again for director approval.
+                </p>
+                {reviewCycle?.directorComments?.trim() ? (
+                  <div className="mt-2 border-t border-amber-200/80 pt-2">
+                    <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Director comments</p>
+                    <p className="mt-1 whitespace-pre-wrap text-amber-950">{reviewCycle.directorComments}</p>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
             {/* Manager's own review */}
             <section>
               <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Your Review</h3>
@@ -265,27 +285,16 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
               </div>
             </section>
 
-            {/* Revision history */}
+            {/* Prior saved snapshots (current answers are in the form above) */}
             {existingReview && existingReview.revisionHistory.length > 0 && (
               <section>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Revision History</h3>
-                <div className="space-y-3">
-                  {existingReview.revisionHistory.map((rev, idx) => (
-                    <details key={rev.updatedAt} className="border border-gray-100 rounded-lg p-3">
-                      <summary className="text-xs font-medium text-gray-500 cursor-pointer">
-                        Revision {idx + 1} — {new Date(rev.updatedAt).toLocaleString()}
-                      </summary>
-                      <div className="mt-2 space-y-2">
-                        {rev.responses.map((r) => (
-                          <div key={r.questionId} className="text-sm">
-                            <span className="font-medium text-black">{r.questionText}:</span>{" "}
-                            <span className="text-gray-800">{r.answer}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  ))}
-                </div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Revision history</h3>
+                <ManagerReviewResponsesWithHistory
+                  managerReview={existingReview}
+                  questionnaire={questions}
+                  accent="gray"
+                  showCurrentResponses={false}
+                />
               </section>
             )}
 

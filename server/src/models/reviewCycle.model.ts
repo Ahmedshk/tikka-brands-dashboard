@@ -23,6 +23,7 @@ export interface ReviewCycleDocument extends Document {
   directorApprovalStartedAt?: Date;
   directorDecision?: "approved" | "rejected" | null;
   directorComments?: string;
+  directorRejectedAt?: Date;
   salaryIncrement?: number;
   salaryIncrementType?: SalaryIncrementType;
   actionPlanId?: Types.ObjectId;
@@ -52,6 +53,7 @@ const reviewCycleSchema = new Schema<ReviewCycleDocument>(
     directorApprovalStartedAt: { type: Date, default: undefined },
     directorDecision: { type: String, enum: ["approved", "rejected", null], default: null },
     directorComments: { type: String, default: undefined },
+    directorRejectedAt: { type: Date, default: undefined },
     salaryIncrement: { type: Number, default: undefined },
     salaryIncrementType: {
       type: String,

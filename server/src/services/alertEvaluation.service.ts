@@ -41,7 +41,6 @@ import type { MarketManOrder, OrderTrackerRange } from "./marketman.service.js";
 import { loadMarketManOrdersFromOrderCacheByKindInRange } from "../utils/inventoryOrderCacheRead.util.js";
 import { isExternalDataCacheReadEnabled } from "../config/externalDataCache.config.js";
 import { logger } from "../utils/logger.util.js";
-import { alertEvalLog } from "../utils/alertEvalTrace.util.js";
 import { loadFirstNamesByUserId } from "../utils/notificationRecipientFirstNames.util.js";
 import { formatOrderDateInTz, parseMarketManUtc } from "../utils/marketManOrderDisplay.util.js";
 import { buildFinancialKpiEmailRows } from "../utils/alertFinancialKpiEmail.util.js";
@@ -328,16 +327,6 @@ async function sendAlert(params: {
   fireKey: string;
   data: Record<string, unknown>;
 }): Promise<void> {
-  alertEvalLog("sendAlert:attempt", {
-    locationId: params.locationId,
-    storeName: params.storeName,
-    alertKind: params.alertKind,
-    severity: params.severity,
-    fireKey: params.fireKey,
-    category: params.category,
-    roleBindingSubcategory: params.roleBindingSubcategory,
-  });
-
   const logged = await tryLogAlert({
     locationId: params.locationId,
     alertKind: params.alertKind,
@@ -345,12 +334,6 @@ async function sendAlert(params: {
     fireKey: params.fireKey,
   });
   if (!logged) {
-    alertEvalLog("sendAlert:skip_duplicate_log", {
-      locationId: params.locationId,
-      alertKind: params.alertKind,
-      severity: params.severity,
-      fireKey: params.fireKey,
-    });
     return;
   }
 
@@ -361,12 +344,6 @@ async function sendAlert(params: {
     params.settings,
   );
   if (recipients.size === 0) {
-    alertEvalLog("sendAlert:skip_no_recipients", {
-      locationId: params.locationId,
-      storeName: params.storeName,
-      category: params.category,
-      roleBindingSubcategory: params.roleBindingSubcategory,
-    });
     logger.debug("[Alerts] No recipients for category / subcategory", {
       category: params.category,
       roleBindingSubcategory: params.roleBindingSubcategory,
@@ -374,14 +351,6 @@ async function sendAlert(params: {
     });
     return;
   }
-
-  alertEvalLog("sendAlert:delivering", {
-    locationId: params.locationId,
-    storeName: params.storeName,
-    alertKind: params.alertKind,
-    recipientCount: recipients.size,
-    recipientIds: [...recipients.keys()],
-  });
 
   const recipientEntries = [...recipients.entries()];
   const emailRecipientIds = recipientEntries
@@ -484,15 +453,12 @@ async function evaluateFinancialLabor(
   tickAnchorMs: number,
 ): Promise<void> {
   const locationId = String(loc._id ?? "");
-  const storeLabel = loc.storeName ?? locationId ?? "?";
 
   if (!anyFinancialTogglesOn(settings.financialLabor)) {
-    alertEvalLog("financial:skip_no_metric_toggles", { locationId, storeName: storeLabel });
     return;
   }
 
   if (!locationId) {
-    alertEvalLog("financial:skip_missing_location_id", { storeName: storeLabel });
     return;
   }
 
@@ -506,28 +472,11 @@ async function evaluateFinancialLabor(
     );
   });
   if (keysThisTick.length === 0) {
-    alertEvalLog("financial:skip_no_metric_runs_this_tick", {
-      locationId,
-      storeName: storeLabel,
-      timezone,
-      enabledMetrics: FINANCIAL_METRIC_KEYS.filter((k) => {
-        const m = settings.financialLabor[k];
-        return m.warnInToleranceZone || m.alertBeyondTolerance;
-      }),
-    });
     return;
   }
 
-  alertEvalLog("financial:evaluating", {
-    locationId,
-    storeName: storeLabel,
-    timezone,
-    keysThisTick,
-  });
-
   const creds = await locationService.getByIdWithCredentials(locationId);
   if (!creds) {
-    alertEvalLog("financial:skip_no_credentials_doc", { locationId, storeName: storeLabel });
     return;
   }
 
@@ -728,13 +677,6 @@ async function evaluateFinancialLabor(
     });
   }
 
-  alertEvalLog("financial:checks_built", {
-    locationId,
-    storeName: location.storeName,
-    checkCount: checks.length,
-    metrics: checks.map((c) => ({ key: c.key, severity: c.severity })),
-  });
-
   for (const c of checks) {
     const sev = c.severity;
     if (!sev) continue;
@@ -773,38 +715,23 @@ async function evaluateInventory(
   tickAnchorMs: number,
 ): Promise<void> {
   const locationId = String(loc._id ?? "");
-  const storeLabel = loc.storeName ?? locationId ?? "?";
 
   if (!settings.inventorySupplyChain.deliveryOverdueNotReceived) {
-    alertEvalLog("inventory:skip_feature_off", { locationId, storeName: storeLabel });
     return;
   }
   const buyerGuid = loc.marketManBuyerGuid?.trim();
   if (!locationId || !buyerGuid) {
-    alertEvalLog("inventory:skip_no_location_or_buyer_guid", {
-      locationId: locationId || "(empty)",
-      storeName: storeLabel,
-      hasBuyerGuid: Boolean(buyerGuid),
-    });
     return;
   }
 
   const timezone = loc.timezone?.trim() || "America/Denver";
   const run = settings.inventorySupplyChain.run;
   if (!shouldRunAlertScheduleTick(run, timezone, tickAnchorMs)) {
-    alertEvalLog("inventory:skip_schedule_not_this_tick", {
-      locationId,
-      storeName: storeLabel,
-      timezone,
-    });
     return;
   }
 
-  alertEvalLog("inventory:evaluating", { locationId, storeName: storeLabel, timezone });
-
   const overdueOrders = await listOverdueDeliveryOrdersNotReceived(locationId, buyerGuid, timezone);
   if (overdueOrders.length === 0) {
-    alertEvalLog("inventory:skip_zero_overdue_orders", { locationId, storeName: storeLabel });
     return;
   }
 
@@ -838,15 +765,11 @@ async function evaluateReputationHr(
   tickAnchorMs: number,
 ): Promise<void> {
   const locationId = String(loc._id ?? "");
-  const storeLabel = loc.storeName ?? locationId ?? "?";
   if (!locationId) {
-    alertEvalLog("reputation:skip_missing_location_id", { storeName: storeLabel });
     return;
   }
 
   const timezone = loc.timezone?.trim() || "America/Denver";
-
-  alertEvalLog("reputation:evaluating", { locationId, storeName: storeLabel, timezone });
 
   if (settings.reputationHr.trainingOverdue) {
     const tr = settings.reputationHr.trainingRun;
@@ -869,15 +792,7 @@ async function evaluateReputationHr(
           fireKey,
           data: { sourceKey: "training_overdue", count: n },
         });
-      } else {
-        alertEvalLog("reputation:training_skip_zero_overdue", { locationId, storeName: storeLabel });
       }
-    } else {
-      alertEvalLog("reputation:training_skip_schedule_not_this_tick", {
-        locationId,
-        storeName: storeLabel,
-        timezone,
-      });
     }
   }
 
@@ -902,15 +817,7 @@ async function evaluateReputationHr(
           fireKey,
           data: { sourceKey: "pip_pending", count: n },
         });
-      } else {
-        alertEvalLog("reputation:pips_skip_zero_pending", { locationId, storeName: storeLabel });
       }
-    } else {
-      alertEvalLog("reputation:pips_skip_schedule_not_this_tick", {
-        locationId,
-        storeName: storeLabel,
-        timezone,
-      });
     }
   }
 }
@@ -930,36 +837,21 @@ export async function runAlertEvaluation(): Promise<void> {
   try {
     const settings = await alertSettingsService.get();
     if (!hasAnyAlertRule(settings)) {
-      alertEvalLog("run:skip_no_rules_enabled");
       logger.debug("[Alerts] No rules enabled, skip");
       return;
     }
 
     const locations = await locationService.getAll();
-    alertEvalLog("run:start", {
-      locationCount: locations.length,
-      locations: locations.map((l) => ({
-        id: String(l._id ?? ""),
-        name: l.storeName ?? "(no name)",
-      })),
-    });
 
     /** One instant for the whole run so slow early locations do not shift Date.now() and skip schedules for later ones. */
     const tickAnchorMs = Date.now();
 
     for (const loc of locations) {
-      const lid = String(loc._id ?? "");
-      const lname = loc.storeName ?? lid;
-      alertEvalLog("run:location_begin", { locationId: lid, storeName: lname });
       await evaluateFinancialLabor(loc, settings, tickAnchorMs);
       await evaluateInventory(loc, settings, tickAnchorMs);
       await evaluateReputationHr(loc, settings, tickAnchorMs);
-      alertEvalLog("run:location_end", { locationId: lid, storeName: lname });
     }
-
-    alertEvalLog("run:complete", { locationCount: locations.length });
   } catch (err) {
-    alertEvalLog("run:error", err);
     logger.error("[Alerts] runAlertEvaluation failed", { err });
   }
 }

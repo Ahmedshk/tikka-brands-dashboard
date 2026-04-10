@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { reviewService } from "../../services/review.service";
 import { Spinner } from "../common/Spinner";
 import { ReviewEmployeeBioSection } from "../review/ReviewEmployeeBioSection";
+import { ManagerReviewResponsesWithHistory } from "../review/ManagerReviewResponsesWithHistory";
 import {
   personLabelFromReviewRef,
   personRoleFromReviewRef,
@@ -130,34 +131,12 @@ export const ReviewSharingModal = ({ isOpen, onClose, cycle, onCompleted }: Revi
     let managerReviewBody: ReactNode;
     if (!managerReview) {
       managerReviewBody = <p className="text-sm text-gray-400 italic">Not available</p>;
-    } else if (managerReview.revisionHistory && managerReview.revisionHistory.length >= 2) {
-      managerReviewBody = (
-        <>
-          <div>
-            <h4 className="text-xs font-semibold text-green-800 mb-2">
-              Original (before viewing employee self-review)
-            </h4>
-            <ReviewQuestionResponseList
-              responses={managerReview.revisionHistory[0]?.responses ?? []}
-              questionnaire={mgrQuestionnaire}
-            />
-          </div>
-          <div>
-            <h4 className="text-xs font-semibold text-green-800 mb-2">
-              Updated (after viewing employee self-review)
-            </h4>
-            <ReviewQuestionResponseList
-              responses={managerReview.revisionHistory.at(-1)?.responses ?? []}
-              questionnaire={mgrQuestionnaire}
-            />
-          </div>
-        </>
-      );
     } else {
       managerReviewBody = (
-        <ReviewQuestionResponseList
-          responses={managerReview.responses ?? []}
+        <ManagerReviewResponsesWithHistory
+          managerReview={managerReview}
           questionnaire={mgrQuestionnaire}
+          accent="green"
         />
       );
     }

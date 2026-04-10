@@ -139,7 +139,7 @@ async function finalizeFullySignedAgreement(agreementId: string): Promise<void> 
       type: "disciplinary_document_signed",
       title: "Document Fully Signed",
       message: `The disciplinary document for incident #${incidentId.slice(-6)} has been fully signed by all parties.`,
-      data: { incidentId, employeeId },
+      data: { incidentId, employeeId, locationId: incident.locationId.toString() },
       channels: ["all"],
     });
   }
@@ -191,7 +191,13 @@ async function markSigningAborted(
       type: "disciplinary_signing_aborted",
       title: "Disciplinary signing not completed",
       message: `The disciplinary document for incident #${incidentId.slice(-6)} was ${labels[nextStatus]} in Adobe Sign.`,
-      data: { incidentId, employeeId, reason: nextStatus, adobeEvent },
+      data: {
+        incidentId,
+        employeeId,
+        reason: nextStatus,
+        adobeEvent,
+        locationId: incident.locationId.toString(),
+      },
       channels: ["all"],
     });
   }

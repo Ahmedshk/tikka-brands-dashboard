@@ -13,19 +13,78 @@ function stringDataField(
 }
 
 /**
- * Human-readable location for the notification row: API `locationLabel` or navbar locations list.
+ * Human-readable location for the notification row: store name only (no address), from navbar list or API `locationLabel`.
  */
 export function resolveNotificationLocationLabel(
   n: NotificationItem,
   locations: LocationListItem[],
 ): string | null {
+  const lid = stringDataField(n.data, 'locationId');
+  if (lid) {
+    const loc = locations.find((l) => l._id === lid);
+    const name = loc?.storeName?.trim();
+    if (name) return name;
+  }
   const fromApi = n.locationLabel?.trim();
   if (fromApi) return fromApi;
+  return null;
+}
+
+function alertLocationPrefixCandidates(
+  n: NotificationItem,
+  locations: LocationListItem[],
+): string[] {
   const lid = stringDataField(n.data, 'locationId');
-  if (!lid) return null;
-  const loc = locations.find((l) => l._id === lid);
-  const name = loc?.storeName?.trim();
-  return name ?? null;
+  const loc = lid ? locations.find((l) => l._id === lid) : undefined;
+
+  const candidates: string[] = [];
+  if (loc) {
+    const name = loc.storeName?.trim() ?? '';
+    if (name) candidates.push(name);
+  }
+  const apiLabel = n.locationLabel?.trim();
+  if (apiLabel) candidates.push(apiLabel);
+
+  const dataLocName =
+    n.data && typeof n.data.locationName === 'string' ? n.data.locationName.trim() : '';
+  if (dataLocName) candidates.push(dataLocName);
+
+  candidates.push('Location');
+
+  const seen = new Set<string>();
+  return candidates.filter((c) => {
+    if (!c || seen.has(c)) return false;
+    seen.add(c);
+    return true;
+  });
+}
+
+function stripLeadingLocationColonPrefix(message: string, prefixesLongestFirst: string[]): string {
+  for (const prefix of prefixesLongestFirst) {
+    const withColonSpace = `${prefix}: `;
+    if (message.startsWith(withColonSpace)) {
+      return message.slice(withColonSpace.length).trimStart();
+    }
+    const withColon = `${prefix}:`;
+    if (message.startsWith(withColon)) {
+      return message.slice(withColon.length).trimStart();
+    }
+  }
+  return message;
+}
+
+/**
+ * Alert notifications are stored with a `{location}:` prefix in `message`; strip it in the dropdown when the location is shown on its own line.
+ */
+export function alertNotificationBodyTextForDropdown(
+  message: string,
+  n: NotificationItem,
+  locations: LocationListItem[],
+): string {
+  if (!n.type.startsWith('alert_')) return message;
+  const unique = alertLocationPrefixCandidates(n, locations);
+  unique.sort((a, b) => b.length - a.length);
+  return stripLeadingLocationColonPrefix(message, unique);
 }
 
 /**

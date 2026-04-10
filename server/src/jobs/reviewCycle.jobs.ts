@@ -42,6 +42,14 @@ async function getEmployeeFirstName(employeeId: string): Promise<string> {
   return (user as { firstName?: string } | null)?.firstName ?? "";
 }
 
+async function reviewNotificationData(
+  employeeId: string,
+  data: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const locationId = await reviewCycleService.getNotificationLocationIdForEmployee(employeeId);
+  return locationId ? { ...data, locationId } : { ...data };
+}
+
 async function processMilestone(
   cycle: { _id: unknown; employeeId: { toString(): string }; status: string; formAvailableDate85: Date; notifyDate75: Date; dueDate90: Date },
   now: Date,
@@ -62,7 +70,7 @@ async function processMilestone(
       type,
       title,
       message,
-      data: { reviewCycleId: cycleId },
+      data: await reviewNotificationData(employeeId, { reviewCycleId: cycleId }),
       channels: ["all"],
       actionUrl,
       emailTemplateFile: "review-email.ejs",
@@ -78,7 +86,7 @@ async function processMilestone(
       type: "review_self_upcoming",
       title: "Self-Review Period Approaching",
       message: "Your self-review window is approaching. You will receive another email when the form is available.",
-      data: { reviewCycleId: cycleId },
+      data: await reviewNotificationData(employeeId, { reviewCycleId: cycleId }),
       channels: ["all"],
       emailTemplateFile: "review-email.ejs",
       emailTemplateData: { firstName },
@@ -147,8 +155,10 @@ async function processCheckInCycle(
   const cycleId = (cycle._id as { toString(): string }).toString();
   const managerId = cycle.reviewedByManagerId?.toString();
 
+  const subjectEmployeeId = cycle.employeeId.toString();
+
   if (cycle.status === "completed" && unitsSinceComplete >= getCheckin30()) {
-    await transitionCheckIn(cycleId, "checkin_30_due", managerId);
+    await transitionCheckIn(cycleId, "checkin_30_due", managerId, subjectEmployeeId);
     return;
   }
 
@@ -162,7 +172,7 @@ async function processCheckInCycle(
         type: "review_checkin_past_due",
         title: "30-Day Check-in Past Due",
         message: "The 30-day check-in is past the 5-day completion window.",
-        data: { reviewCycleId: cycleId, period: "30" },
+        data: await reviewNotificationData(subjectEmployeeId, { reviewCycleId: cycleId, period: "30" }),
         channels: ["all"],
         actionUrl: dashboardUrl,
         emailTemplateFile: "review-email.ejs",
@@ -174,7 +184,7 @@ async function processCheckInCycle(
   }
 
   if ((cycle.status === "checkin_30_complete" || cycle.status === "checkin_30_done") && unitsSinceComplete >= getCheckin60()) {
-    await transitionCheckIn(cycleId, "checkin_60_due", managerId);
+    await transitionCheckIn(cycleId, "checkin_60_due", managerId, subjectEmployeeId);
     return;
   }
 
@@ -186,7 +196,7 @@ async function processCheckInCycle(
         type: "review_checkin_past_due",
         title: "60-Day Check-in Past Due",
         message: "The 60-day check-in is past the 5-day completion window.",
-        data: { reviewCycleId: cycleId, period: "60" },
+        data: await reviewNotificationData(subjectEmployeeId, { reviewCycleId: cycleId, period: "60" }),
         channels: ["all"],
         actionUrl: dashboardUrl,
         emailTemplateFile: "review-email.ejs",
@@ -232,7 +242,13 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
       const selfReview = cycle.selfReviewId as unknown as { submittedAt: Date } | undefined;
       if (!selfReview?.submittedAt) continue;
 
-      const unitsSinceSubmission = diffPeriod(now, new Date(selfReview.submittedAt));
+      const selfSubmitted = new Date(selfReview.submittedAt);
+      const rejectedAt = (cycle as { directorRejectedAt?: Date }).directorRejectedAt;
+      const anchorStart =
+        rejectedAt != null
+          ? new Date(Math.max(selfSubmitted.getTime(), new Date(rejectedAt).getTime()))
+          : selfSubmitted;
+      const unitsSinceSubmission = diffPeriod(now, anchorStart);
       if (unitsSinceSubmission >= MANAGER_DEADLINE && (cycle.status === "manager_review_due" || cycle.status === "manager_review_pending")) {
         const employeeId = cycle.employeeId.toString();
         let managerId = cycle.reviewedByManagerId
@@ -257,7 +273,7 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
             type: "review_manager_past_due",
             title: "Manager Review Past Due",
             message: "Your employee review is past the 5-day deadline. Please complete it immediately.",
-            data: { reviewCycleId: cycle._id.toString() },
+            data: await reviewNotificationData(employeeId, { reviewCycleId: cycle._id.toString() }),
             channels: ["all"],
             actionUrl,
             emailTemplateFile: "review-email.ejs",
@@ -307,7 +323,7 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
             type: "review_director_past_due",
             title: "Director Approval Past Due",
             message: "A review is awaiting your approval and has exceeded the 3-day deadline.",
-            data: { reviewCycleId: cycle._id.toString() },
+            data: await reviewNotificationData(cycle.employeeId.toString(), { reviewCycleId: cycle._id.toString() }),
             channels: ["all"],
             actionUrl,
             emailTemplateFile: "review-email.ejs",
@@ -348,7 +364,7 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
             type: "review_sharing_past_due",
             title: "Review Sharing Past Due",
             message: "Sharing the review with the employee is past the 3-day deadline.",
-            data: { reviewCycleId: cycle._id.toString() },
+            data: await reviewNotificationData(cycle.employeeId.toString(), { reviewCycleId: cycle._id.toString() }),
             channels: ["all"],
             actionUrl,
             emailTemplateFile: "review-email.ejs",
@@ -390,7 +406,12 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
   });
 }
 
-async function transitionCheckIn(cycleId: string, status: ReviewCycleStatus, managerId?: string): Promise<void> {
+async function transitionCheckIn(
+  cycleId: string,
+  status: ReviewCycleStatus,
+  managerId: string | undefined,
+  employeeId: string,
+): Promise<void> {
   await ReviewCycleModel.updateOne({ _id: cycleId }, { $set: { status } });
   if (managerId) {
     const period = status.includes("30") ? "30" : "60";
@@ -400,7 +421,7 @@ async function transitionCheckIn(cycleId: string, status: ReviewCycleStatus, man
       type: "review_checkin_due",
       title: `${period}-Day Check-in Due`,
       message: `It's time for the ${period}-day employee check-in.`,
-      data: { reviewCycleId: cycleId, period },
+      data: await reviewNotificationData(employeeId, { reviewCycleId: cycleId, period }),
       channels: ["all"],
       actionUrl,
       emailTemplateFile: "review-email.ejs",
