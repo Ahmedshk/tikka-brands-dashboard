@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { getBucketKeyForDate } from "./homebaseOrderedBuckets.util.js";
 import {
   mapHourlyChartKeyToRollupSlot,
   parseHourlySalesTrendChartKey,
@@ -38,4 +39,33 @@ test("mapHourlyChartKeyToRollupSlot maps midnight business start to slot 14 for 
   assert.ok(m);
   assert.equal(m!.businessDateKey, "2026-03-15");
   assert.equal(m!.slotIndex, 14);
+});
+
+test("wallClockHourStartUtc T23 matches Intl wall hour in America/New_York (summer)", () => {
+  const d = wallClockHourStartUtc("2026-07-15T23", "America/New_York");
+  assert.ok(d);
+  const key = getBucketKeyForDate(d!, "America/New_York", "hourly");
+  assert.equal(key, "2026-07-15T23");
+});
+
+test("mapHourlyChartKeyToRollupSlot maps T23 to slot 23 when business starts at midnight", () => {
+  const m = mapHourlyChartKeyToRollupSlot(
+    "2026-07-15T23",
+    "America/New_York",
+    "00:00",
+  );
+  assert.ok(m);
+  assert.equal(m!.businessDateKey, "2026-07-15");
+  assert.equal(m!.slotIndex, 23);
+});
+
+test("mapHourlyChartKeyToRollupSlot spring-forward Sunday T23 maps to slot 23", () => {
+  const m = mapHourlyChartKeyToRollupSlot(
+    "2025-03-09T23",
+    "America/New_York",
+    "00:00",
+  );
+  assert.ok(m);
+  assert.equal(m!.businessDateKey, "2025-03-09");
+  assert.equal(m!.slotIndex, 23);
 });

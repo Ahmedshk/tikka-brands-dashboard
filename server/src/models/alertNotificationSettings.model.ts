@@ -90,6 +90,8 @@ const roleBindingSchema = new Schema(
       enum: ["financial_labor", "inventory_supply_chain", "reputation_hr"],
       required: true,
     },
+    /** When absent, binding applies to all sub-types in the category (legacy). */
+    subcategory: { type: String, required: false },
     roleId: { type: Schema.Types.ObjectId, ref: "Role", required: true },
     channels: { type: channelPrefsSchema, required: true },
   },

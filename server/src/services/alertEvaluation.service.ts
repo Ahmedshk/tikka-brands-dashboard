@@ -41,6 +41,10 @@ import type { MarketManOrder, OrderTrackerRange } from "./marketman.service.js";
 import { loadMarketManOrdersFromOrderCacheByKindInRange } from "../utils/inventoryOrderCacheRead.util.js";
 import { isExternalDataCacheReadEnabled } from "../config/externalDataCache.config.js";
 import { logger } from "../utils/logger.util.js";
+import { loadFirstNamesByUserId } from "../utils/notificationRecipientFirstNames.util.js";
+import { formatOrderDateInTz, parseMarketManUtc } from "../utils/marketManOrderDisplay.util.js";
+import { buildFinancialKpiEmailRows } from "../utils/alertFinancialKpiEmail.util.js";
+import { roleBindingMatchesSubcategory } from "../utils/alertRoleBindingSubcategory.util.js";
 
 const alertSettingsService = new AlertNotificationSettingsService();
 const locationService = new LocationService();
@@ -62,13 +66,90 @@ function channelsToList(channels: {
   return out.length ? out : ["in_app"];
 }
 
+const ALERT_EMAIL_CATEGORY_LABELS: Record<IAlertRoleBinding["category"], string> = {
+  financial_labor: "Financial & labor",
+  inventory_supply_chain: "Inventory & supply chain",
+  reputation_hr: "Reputation & HR",
+};
+
+function getDashboardCommandCenterUrl(): string {
+  const base = (
+    process.env.CLIENT_URL ??
+    process.env.APP_URL ??
+    process.env.FRONTEND_URL ??
+    "http://localhost:5173"
+  ).replace(/\/$/, "");
+  return `${base}/dashboard/command-center`;
+}
+
+function getDashboardInventoryFoodCostUrl(): string {
+  const base = (
+    process.env.CLIENT_URL ??
+    process.env.APP_URL ??
+    process.env.FRONTEND_URL ??
+    "http://localhost:5173"
+  ).replace(/\/$/, "");
+  return `${base}/dashboard/inventory-food-cost`;
+}
+
+/** Rows for delivery-overdue alert emails (aligned with Order Tracker card columns). */
+interface DeliveryOverdueOrderEmailRow {
+  poNumber: string;
+  supplier: string;
+  deliveryDate: string;
+  status: string;
+}
+
+const MAX_DELIVERY_OVERDUE_ORDERS_IN_EMAIL = 60;
+
+function buildAlertEmailDetailRows(data: Record<string, unknown>): Array<{ label: string; value: string }> {
+  const rows: Array<{ label: string; value: string }> = [];
+  const count = data.count;
+  if (typeof count === "number" && Number.isFinite(count)) {
+    rows.push({ label: "Affected count", value: String(count) });
+  }
+  const sk = data.sourceKey;
+  if (typeof sk === "string" && sk.trim()) {
+    rows.push({ label: "Alert code", value: sk });
+  }
+  return rows;
+}
+
+function alertEmailSeverityStyles(severity: "warning" | "critical"): {
+  accentColorHex: string;
+  calloutBg: string;
+  calloutBorder: string;
+  calloutText: string;
+  severityLabel: string;
+} {
+  if (severity === "critical") {
+    return {
+      accentColorHex: "#DC2626",
+      calloutBg: "#FEF2F2",
+      calloutBorder: "#FECACA",
+      calloutText: "#991B1B",
+      severityLabel: "Critical",
+    };
+  }
+  return {
+    accentColorHex: "#D97706",
+    calloutBg: "#FFFBEB",
+    calloutBorder: "#FCD34D",
+    calloutText: "#92400E",
+    severityLabel: "Warning",
+  };
+}
+
 async function mergeRecipientsForCategory(
   category: IAlertRoleBinding["category"],
+  roleBindingSubcategory: string,
   locationId: string,
   settings: IAlertNotificationSettings,
 ): Promise<Map<string, Set<NotificationChannel>>> {
   const map = new Map<string, Set<NotificationChannel>>();
-  const bindings = settings.roleBindings.filter((b) => b.category === category);
+  const bindings = settings.roleBindings.filter(
+    (b) => b.category === category && roleBindingMatchesSubcategory(b, roleBindingSubcategory),
+  );
   for (const b of bindings) {
     const userIds = await listUserIdsForRoleAtLocation(String(b.roleId), locationId);
     const ch = channelsToList(b.channels);
@@ -152,11 +233,11 @@ function buildAlertOrderRange(): OrderTrackerRange {
   };
 }
 
-async function countOverdueDeliveriesNotReceived(
+async function listOverdueDeliveryOrdersNotReceived(
   locationId: string,
   buyerGuid: string,
   timezone: string,
-): Promise<number> {
+): Promise<DeliveryOverdueOrderEmailRow[]> {
   const range = buildAlertOrderRange();
   const useCache = isExternalDataCacheReadEnabled() && Boolean(locationId.trim());
   let orders: MarketManOrder[];
@@ -177,19 +258,34 @@ async function countOverdueDeliveriesNotReceived(
     }
   } catch (err) {
     logger.warn("[Alerts] MarketMan orders fetch failed", { locationId, err });
-    return 0;
+    return [];
   }
 
   const todayKey = getTodayInTimezone(timezone);
-  let n = 0;
+  const overdueRaw: MarketManOrder[] = [];
   for (const o of orders) {
     const status = String(o.OrderStatusUIName ?? "").trim();
     if (!status || isOrderCancelledStatus(status)) continue;
     if (isOrderReceivedStatus(status)) continue;
     const dk = deliveryUtcToLocalDateKey(o.DeliveryDateUTC, timezone);
-    if (dk != null && dk < todayKey) n += 1;
+    if (dk != null && dk < todayKey) overdueRaw.push(o);
   }
-  return n;
+
+  overdueRaw.sort((a, b) => {
+    const da = parseMarketManUtc(a.DeliveryDateUTC);
+    const db = parseMarketManUtc(b.DeliveryDateUTC);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return db.getTime() - da.getTime();
+  });
+
+  return overdueRaw.map((o) => ({
+    poNumber: String(o.OrderNumber ?? "").trim() || "—",
+    supplier: String(o.VendorName ?? "").trim() || "—",
+    deliveryDate: formatOrderDateInTz(o.DeliveryDateUTC, timezone),
+    status: String(o.OrderStatusUIName ?? "").trim() || "—",
+  }));
 }
 
 async function countTrainingOverdueForLocation(locationId: string): Promise<number> {
@@ -220,6 +316,8 @@ async function sendAlert(params: {
   locationId: string;
   storeName: string;
   category: IAlertRoleBinding["category"];
+  /** Matches `IAlertRoleBinding.subcategory` for this alert source (see ALERT_ROLE_SUBCATEGORIES). */
+  roleBindingSubcategory: string;
   type: NotificationType;
   title: string;
   message: string;
@@ -238,20 +336,55 @@ async function sendAlert(params: {
 
   const recipients = await mergeRecipientsForCategory(
     params.category,
+    params.roleBindingSubcategory,
     params.locationId,
     params.settings,
   );
   if (recipients.size === 0) {
-    logger.debug("[Alerts] No recipients for category", {
+    logger.debug("[Alerts] No recipients for category / subcategory", {
       category: params.category,
+      roleBindingSubcategory: params.roleBindingSubcategory,
       locationId: params.locationId,
     });
     return;
   }
 
-  for (const [recipientId, chSet] of recipients) {
+  const recipientEntries = [...recipients.entries()];
+  const emailRecipientIds = recipientEntries
+    .filter(([, chSet]) => chSet.has("email"))
+    .map(([id]) => id);
+  const firstNameById = await loadFirstNamesByUserId(emailRecipientIds);
+  const commandCenterUrl = getDashboardCommandCenterUrl();
+  const inventoryFoodCostUrl = getDashboardInventoryFoodCostUrl();
+  const isDeliveryOverdueEmail = params.alertKind === "delivery_overdue";
+  const overdueRowsRaw = isDeliveryOverdueEmail
+    ? (params.data.overdueOrderRows as DeliveryOverdueOrderEmailRow[] | undefined)
+    : undefined;
+  const overdueRowsForEmail =
+    Array.isArray(overdueRowsRaw) && overdueRowsRaw.length > 0
+      ? overdueRowsRaw.slice(0, MAX_DELIVERY_OVERDUE_ORDERS_IN_EMAIL)
+      : [];
+  const overdueMoreCount =
+    Array.isArray(overdueRowsRaw) && overdueRowsRaw.length > overdueRowsForEmail.length
+      ? overdueRowsRaw.length - overdueRowsForEmail.length
+      : 0;
+  const financialKpiRowsRaw = params.data.financialKpiRows;
+  const financialKpiRowsForEmail =
+    params.category === "financial_labor" &&
+    Array.isArray(financialKpiRowsRaw) &&
+    financialKpiRowsRaw.length > 0
+      ? (financialKpiRowsRaw as Array<{ label: string; value: string }>)
+      : undefined;
+  const emailActionUrl = isDeliveryOverdueEmail ? inventoryFoodCostUrl : commandCenterUrl;
+  const emailPrimaryButtonText = isDeliveryOverdueEmail
+    ? "Open Inventory & Food Cost"
+    : "Open Command Center";
+  const sevStyles = alertEmailSeverityStyles(params.severity);
+
+  for (const [recipientId, chSet] of recipientEntries) {
     const channels = [...chSet];
     if (channels.length === 0) continue;
+    const wantsEmail = chSet.has("email");
     await notificationService.sendReturningDelivered({
       recipientId,
       type: params.type,
@@ -265,6 +398,37 @@ async function sendAlert(params: {
         alertKind: params.alertKind,
       },
       channels,
+      ...(wantsEmail
+        ? {
+            emailSubject: params.title,
+            emailTemplateFile: "alert-notification-email.ejs",
+            emailTemplateData: {
+              title: params.title,
+              calloutLine: params.title,
+              summaryMessage: params.message,
+              categoryLabel: ALERT_EMAIL_CATEGORY_LABELS[params.category],
+              locationLine: params.storeName,
+              severityLabel: sevStyles.severityLabel,
+              detailRows: buildAlertEmailDetailRows(params.data),
+              firstName: firstNameById.get(recipientId) ?? "",
+              accentColorHex: sevStyles.accentColorHex,
+              calloutBg: sevStyles.calloutBg,
+              calloutBorder: sevStyles.calloutBorder,
+              calloutText: sevStyles.calloutText,
+              ...(overdueRowsForEmail.length > 0
+                ? {
+                    deliveryOverdueOrders: overdueRowsForEmail,
+                    deliveryOverdueMoreCount: overdueMoreCount,
+                  }
+                : {}),
+              ...(financialKpiRowsForEmail
+                ? { financialKpiRows: financialKpiRowsForEmail }
+                : {}),
+            },
+            actionUrl: emailActionUrl,
+            emailButtonText: emailPrimaryButtonText,
+          }
+        : {}),
     });
   }
 }
@@ -356,6 +520,8 @@ async function evaluateFinancialLabor(
     critType: NotificationType;
     title: string;
     buildMessage: (sev: "warning" | "critical") => string;
+    goalValue: number;
+    actualValue: number;
   }> = [];
 
   const sSales = classifyHigherIsBetter(
@@ -376,6 +542,8 @@ async function evaluateFinancialLabor(
         sev === "warning"
           ? `${location.storeName}: Net sales are below goal but within the tolerance band.`
           : `${location.storeName}: Net sales are below goal beyond tolerance.`,
+      goalValue: g.salesGoal ?? 0,
+      actualValue: full.actualTotalSales!,
     });
   }
 
@@ -397,6 +565,8 @@ async function evaluateFinancialLabor(
         sev === "warning"
           ? `${location.storeName}: Labor cost % is above goal but within tolerance.`
           : `${location.storeName}: Labor cost % is above goal beyond tolerance.`,
+      goalValue: g.laborCostGoal ?? 0,
+      actualValue: full.actualLaborCostPercent!,
     });
   }
 
@@ -418,6 +588,8 @@ async function evaluateFinancialLabor(
         sev === "warning"
           ? `${location.storeName}: Hours are above goal but within tolerance.`
           : `${location.storeName}: Hours are above goal beyond tolerance.`,
+      goalValue: g.hoursGoal ?? 0,
+      actualValue: full.totalHours!,
     });
   }
 
@@ -439,6 +611,8 @@ async function evaluateFinancialLabor(
         sev === "warning"
           ? `${location.storeName}: SPMH is below goal but within tolerance.`
           : `${location.storeName}: SPMH is below goal beyond tolerance.`,
+      goalValue: g.spmhGoal ?? 0,
+      actualValue: full.salesPerManHour!,
     });
   }
 
@@ -485,6 +659,8 @@ async function evaluateFinancialLabor(
         sev === "warning"
           ? `${location.storeName}: Food cost % is above goal but within tolerance.`
           : `${location.storeName}: Food cost % is above goal beyond tolerance.`,
+      goalValue: g.foodCostGoal ?? 0,
+      actualValue: foodPct!,
     });
   }
 
@@ -500,13 +676,22 @@ async function evaluateFinancialLabor(
       locationId,
       storeName: location.storeName,
       category: "financial_labor",
+      roleBindingSubcategory: c.metricKey,
       type,
       title: c.title,
       message: c.buildMessage(sev),
       alertKind: c.key,
       severity: sev,
       fireKey,
-      data: { ...baseData, sourceKey: c.key },
+      data: {
+        ...baseData,
+        sourceKey: c.key,
+        financialKpiRows: buildFinancialKpiEmailRows(
+          c.metricKey,
+          c.goalValue,
+          c.actualValue,
+        ),
+      },
     });
   }
 }
@@ -524,24 +709,30 @@ async function evaluateInventory(
   const run = settings.inventorySupplyChain.run;
   if (!shouldRunAlertScheduleTick(run, timezone)) return;
 
-  const n = await countOverdueDeliveriesNotReceived(locationId, buyerGuid, timezone);
-  if (n <= 0) return;
+  const overdueOrders = await listOverdueDeliveryOrdersNotReceived(locationId, buyerGuid, timezone);
+  if (overdueOrders.length === 0) return;
 
   const im = intervalMinutesForSchedule(run);
   const fireKey = buildFireTimeKey(run, timezone, im);
+  const n = overdueOrders.length;
 
   await sendAlert({
     settings,
     locationId,
     storeName: loc.storeName ?? "Location",
     category: "inventory_supply_chain",
+    roleBindingSubcategory: "delivery_overdue",
     type: "alert_inventory_delivery_overdue",
     title: "Delivery overdue",
     message: `${loc.storeName ?? "Location"}: ${n} order(s) have a past delivery date and are not marked received.`,
     alertKind: "delivery_overdue",
     severity: "critical",
     fireKey,
-    data: { sourceKey: "delivery_overdue", count: n },
+    data: {
+      sourceKey: "delivery_overdue",
+      count: n,
+      overdueOrderRows: overdueOrders,
+    },
   });
 }
 
@@ -566,6 +757,7 @@ async function evaluateReputationHr(
           locationId,
           storeName: loc.storeName ?? "Location",
           category: "reputation_hr",
+          roleBindingSubcategory: "training_overdue",
           type: "alert_training_overdue",
           title: "Training overdue",
           message: `${loc.storeName ?? "Location"}: ${n} training assignment(s) are overdue.`,
@@ -590,6 +782,7 @@ async function evaluateReputationHr(
           locationId,
           storeName: loc.storeName ?? "Location",
           category: "reputation_hr",
+          roleBindingSubcategory: "pending_pips",
           type: "alert_pip_pending",
           title: "Pending PIPs",
           message: `${loc.storeName ?? "Location"}: ${n} pending signature(s) on disciplinary documents.`,

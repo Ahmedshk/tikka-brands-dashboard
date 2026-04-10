@@ -5,6 +5,7 @@ import {
   getDatePartsInTz,
   getStartOfDayUtc,
   getEndOfDayUtc,
+  getLast52WeeksCivilBounds,
 } from "./salesTrendDateRange.util.js";
 
 const TZ = "America/New_York";
@@ -189,7 +190,7 @@ test("last7days + samePeriodPreviousMonth: Thu week1 / Wed week2 of April → Ma
   assert.ok(new Date(r.startAt).getTime() <= new Date(r.endAt).getTime());
 });
 
-test("last7days + priorYear uses week logic in prior year (not simple −1y calendar dates)", () => {
+test("last7days + priorYear uses week logic in prior year (not plain −1y same month/day)", () => {
   const periodStart = getStartOfDayUtc(2026, 3, 2, TZ).toISOString();
   const periodEnd = getEndOfDayUtc(2026, 3, 8, TZ).toISOString();
   const r = getSalesTrendComparisonRange("priorYear", periodStart, periodEnd, TZ, {
@@ -209,7 +210,7 @@ test("last7days + priorYear uses week logic in prior year (not simple −1y cale
   );
 });
 
-test("last30days spanning March–April + priorYear uses April 2025 for end anchor month", () => {
+test("last30days spanning March–April + priorYear uses 7-day blocks: Tue week2 Mar / Wed week2 Apr in prior year", () => {
   const periodStart = getStartOfDayUtc(2026, 2, 10, TZ).toISOString();
   const periodEnd = getEndOfDayUtc(2026, 3, 8, TZ).toISOString();
   const r = getSalesTrendComparisonRange("priorYear", periodStart, periodEnd, TZ, {
@@ -220,6 +221,54 @@ test("last30days spanning March–April + priorYear uses April 2025 for end anch
   const e = partsAt(r.endAt);
   assert.equal(s.y, 2025);
   assert.equal(s.m, 2);
+  assert.equal(s.d, 11);
   assert.equal(e.y, 2025);
   assert.equal(e.m, 3);
+  assert.equal(e.d, 9);
+});
+
+test("getLast52WeeksCivilBounds: Apr 8 2026 → Apr 8 2025 through Apr 8 2026", () => {
+  const r = getLast52WeeksCivilBounds({ y: 2026, m: 3, d: 8 });
+  assert.deepEqual(r.start, { y: 2025, m: 3, d: 8 });
+  assert.deepEqual(r.end, { y: 2026, m: 3, d: 8 });
+});
+
+test("getLast52WeeksCivilBounds: Feb 29 2024 → Feb 28 2023 through Feb 29 2024", () => {
+  const r = getLast52WeeksCivilBounds({ y: 2024, m: 1, d: 29 });
+  assert.deepEqual(r.start, { y: 2023, m: 1, d: 28 });
+  assert.deepEqual(r.end, { y: 2024, m: 1, d: 29 });
+});
+
+test("last52weeks-style range + 52WeeksPrior shifts both civil endpoints back one calendar year", () => {
+  const periodStart = getStartOfDayUtc(2025, 3, 8, TZ).toISOString();
+  const periodEnd = getEndOfDayUtc(2026, 3, 8, TZ).toISOString();
+  const r = getSalesTrendComparisonRange("52WeeksPrior", periodStart, periodEnd, TZ, {
+    periodType: "last52weeks",
+  });
+  assert.ok(r);
+  const s = partsAt(r.startAt);
+  const e = partsAt(r.endAt);
+  assert.equal(s.y, 2024);
+  assert.equal(s.m, 3);
+  assert.equal(s.d, 8);
+  assert.equal(e.y, 2025);
+  assert.equal(e.m, 3);
+  assert.equal(e.d, 8);
+});
+
+test("today + 52WeeksPrior (switch path) shifts each civil endpoint back 364 days", () => {
+  const periodStart = getStartOfDayUtc(2026, 3, 8, TZ).toISOString();
+  const periodEnd = getEndOfDayUtc(2026, 3, 8, TZ).toISOString();
+  const r = getSalesTrendComparisonRange("52WeeksPrior", periodStart, periodEnd, TZ, {
+    periodType: "today",
+  });
+  assert.ok(r);
+  const s = partsAt(r.startAt);
+  const e = partsAt(r.endAt);
+  assert.equal(s.y, 2025);
+  assert.equal(s.m, 3);
+  assert.equal(s.d, 9);
+  assert.equal(e.y, 2025);
+  assert.equal(e.m, 3);
+  assert.equal(e.d, 9);
 });

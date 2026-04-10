@@ -40,6 +40,7 @@ export async function updateAlertNotificationSettings(
       reputationHr?: Partial<IAlertReputationHrToggles>;
       roleBindings?: Array<{
         category: IAlertRoleBinding["category"];
+        subcategory?: IAlertRoleBinding["subcategory"];
         roleId: string;
         channels: { inApp: boolean; email: boolean; sms: boolean };
       }>;
@@ -54,6 +55,9 @@ export async function updateAlertNotificationSettings(
     if (body.roleBindings !== undefined) {
       upsertPayload.roleBindings = body.roleBindings.map((b) => ({
         category: b.category,
+        ...(b.subcategory != null && String(b.subcategory).trim() !== ""
+          ? { subcategory: b.subcategory }
+          : {}),
         roleId: b.roleId,
         channels: normalizeRoleBindingChannels(b.channels),
       }));

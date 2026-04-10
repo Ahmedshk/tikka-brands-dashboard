@@ -1,7 +1,7 @@
 /**
  * Helpers for Homebase labor cost per hour. Extracted to keep cognitive complexity low.
  */
-import { getBusinessHourSlotBounds } from "./timezone.util.js";
+import { getBusinessHourSlotBounds } from "./businessDayUtcRange.util.js";
 
 export interface TimecardForLaborCost {
   labor?: { costs?: number };

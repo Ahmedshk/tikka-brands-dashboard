@@ -101,7 +101,7 @@ function parseBusinessStartTime(hhmm: string): number {
  * Get the current business-day range from a fixed "business start time" (e.g. 4:00 AM).
  * Window is [businessStartTime today, 3:59:59 AM next day] in location TZ,
  * or yesterday's window if current time is before business start time today.
- * endAt is always 1 second before the next day's business start (e.g. 3:59:59 AM next day). Returns RFC 3339 strings.
+ * endAt is always the last millisecond before the next day's business start. Returns RFC 3339 strings.
  */
 export function getBusinessStartTimeRange(
   timezone: string,
@@ -140,12 +140,12 @@ export function getBusinessStartTimeRange(
     // Current business day: starts at business start time today, ends at 3:59:59 AM next day
     startDate = new Date(startOfToday.getTime() + startMsFromMidnight);
     const startOfTomorrow = getStartOfDayUtc(y, m, d + 1, tz);
-    endDate = new Date(startOfTomorrow.getTime() + startMsFromMidnight - 1000);
+    endDate = new Date(startOfTomorrow.getTime() + startMsFromMidnight - 1);
   } else {
     // Before business start today: use yesterday's business day (ends at 3:59:59 AM today)
     const startOfYesterday = getStartOfDayUtc(y, m, d - 1, tz);
     startDate = new Date(startOfYesterday.getTime() + startMsFromMidnight);
-    endDate = new Date(startOfToday.getTime() + startMsFromMidnight - 1000);
+    endDate = new Date(startOfToday.getTime() + startMsFromMidnight - 1);
   }
 
   return {
@@ -216,7 +216,7 @@ export function getWeekToDateRange(
 
 /**
  * Get business-day window for a specific calendar date (y, m, d) in timezone.
- * startAt = business start time on that day; endAt = 1 second before next day's business start.
+ * startAt = business start time on that day; endAt = last millisecond before next day's business start.
  * Use for custom date ranges so each day is from business start to end of business day.
  */
 export function getBusinessDayRangeForDate(
@@ -233,64 +233,11 @@ export function getBusinessDayRangeForDate(
   // Next calendar day in the same (y,m,d) space as getStartOfDayUtc — do not use
   // `new Date(y, m, d + 1)` (that is interpreted in the *server* local timezone).
   const startOfNextDay = getStartOfDayUtc(y, m, d + 1, tz);
-  const endAt = new Date(startOfNextDay.getTime() + startMs - 1000);
+  const endAt = new Date(startOfNextDay.getTime() + startMs - 1);
   return {
     startAt: startAt.toISOString(),
     endAt: endAt.toISOString(),
   };
-}
-
-const MS_PER_HOUR = 60 * 60 * 1000;
-
-/**
- * Get UTC start and end for a given business-hour slot (0-23) of the current business day.
- * Slot 0 = [business start, business start + 1h), ..., Slot 23 = [business start + 23h, endAt].
- * endAt for slot 23 is 1 second before next day's business start (same as getBusinessStartTimeRange).
- */
-export function getBusinessHourSlotBounds(
-  timezone: string,
-  businessStartTime: string,
-  slotIndex: number,
-): { startAt: string; endAt: string } {
-  const { startAt, endAt } = getBusinessStartTimeRange(
-    timezone.trim(),
-    businessStartTime?.trim() ?? "00:00",
-  );
-  const startMs = new Date(startAt).getTime();
-  const endMs = new Date(endAt).getTime();
-  const slot = Math.max(0, Math.min(23, Math.floor(slotIndex)));
-  const slotStartMs = startMs + slot * MS_PER_HOUR;
-  const isLastSlot = slot === 23;
-  const slotEndMs = isLastSlot
-    ? endMs + 1
-    : slotStartMs + MS_PER_HOUR;
-  return {
-    startAt: new Date(slotStartMs).toISOString(),
-    endAt: new Date(slotEndMs - 1).toISOString(),
-  };
-}
-
-/**
- * Given an ISO timestamp (e.g. order created_at), return the business-hour slot index (0-23)
- * if the time falls inside the current business-day range; otherwise -1.
- */
-export function getBusinessHourIndex(
-  isoDateString: string,
-  timezone: string,
-  businessStartTime: string,
-): number {
-  const orderDate = new Date(isoDateString);
-  if (Number.isNaN(orderDate.getTime())) return -1;
-  const { startAt, endAt } = getBusinessStartTimeRange(
-    timezone.trim(),
-    businessStartTime?.trim() ?? "00:00",
-  );
-  const startMs = new Date(startAt).getTime();
-  const endMs = new Date(endAt).getTime();
-  const orderMs = orderDate.getTime();
-  if (orderMs < startMs || orderMs > endMs) return -1;
-  const index = Math.floor((orderMs - startMs) / MS_PER_HOUR);
-  return Math.max(0, Math.min(23, index));
 }
 
 /**

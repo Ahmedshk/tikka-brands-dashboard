@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { isValidRoleBindingSubcategory } from "../utils/alertRoleBindingSubcategory.util.js";
+import type { AlertRoleBindingCategory } from "../types/alertNotification.types.js";
 
 const timeLocalSchema = z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/);
 
@@ -29,11 +31,24 @@ const metricToggleSchema = z.object({
   run: runScheduleSchema.optional(),
 });
 
-const roleBindingSchema = z.object({
-  category: z.enum(["financial_labor", "inventory_supply_chain", "reputation_hr"]),
-  roleId: z.string().min(1),
-  channels: channelPrefsSchema,
-});
+const roleBindingSchema = z
+  .object({
+    category: z.enum(["financial_labor", "inventory_supply_chain", "reputation_hr"]),
+    subcategory: z.string().optional(),
+    roleId: z.string().min(1),
+    channels: channelPrefsSchema,
+  })
+  .superRefine((b, ctx) => {
+    const sub = b.subcategory?.trim();
+    if (!sub) return;
+    if (!isValidRoleBindingSubcategory(b.category as AlertRoleBindingCategory, sub)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Invalid subcategory for ${b.category}`,
+        path: ["subcategory"],
+      });
+    }
+  });
 
 export const updateAlertNotificationSettingsBodySchema = z.object({
   body: z.object({

@@ -2,17 +2,18 @@ import mongoose from "mongoose";
 import { CalendarEventModel } from "../models/calendarEvent.model.js";
 import { CalendarEventTypeModel } from "../models/calendarEventType.model.js";
 import { LocationModel } from "../models/location.model.js";
-import { UserModel } from "../models/user.model.js";
 import { CalendarNotificationLogModel } from "../models/calendarNotificationLog.model.js";
 import { CalendarNotificationSettingsService } from "./calendarNotificationSettings.service.js";
 import { NotificationService } from "./notification.service.js";
 import { listUserIdsForRoleAtLocation } from "./calendarNotificationRecipients.service.js";
 import { logger } from "../utils/logger.util.js";
+import { loadFirstNamesByUserId } from "../utils/notificationRecipientFirstNames.util.js";
 import type {
   NotificationChannel,
   SendNotificationOptions,
 } from "../types/notification.types.js";
 import { normalizeRoleBindingChannels } from "../utils/calendarRoleBindingChannels.util.js";
+import { calendarWallYmd } from "../utils/calendarReminder.util.js";
 import {
   buildCalendarEventDetailFields,
   formatShortEventStart,
@@ -30,18 +31,6 @@ function getDashboardCalendarUrl(): string {
     "http://localhost:5173"
   ).replace(/\/$/, "");
   return `${base}/dashboard/calendar-events`;
-}
-
-async function loadFirstNamesByUserId(userIds: string[]): Promise<Map<string, string>> {
-  if (userIds.length === 0) return new Map();
-  const ids = userIds.map((id) => new mongoose.Types.ObjectId(id));
-  const users = await UserModel.find({ _id: { $in: ids } }).select("firstName").lean();
-  return new Map(
-    users.map((u) => {
-      const doc = u as { _id: mongoose.Types.ObjectId; firstName?: string };
-      return [doc._id.toString(), doc.firstName?.trim() ?? ""];
-    }),
-  );
 }
 
 function channelsToList(channels: {
@@ -139,6 +128,22 @@ export async function dispatchCalendarNotificationForEvent(params: {
   const ev = await CalendarEventModel.findById(calendarEventId).lean();
   if (!ev) {
     logger.debug("calendar:notify-one skip (event deleted)", { calendarEventId, kind, fireKey });
+    return;
+  }
+
+  const eventStart = ev.start instanceof Date ? ev.start : new Date(ev.start);
+  const tzForDay = typeof ev.timeZone === "string" ? ev.timeZone : undefined;
+  const todayYmd = calendarWallYmd(now, tzForDay);
+  const eventStartYmd = calendarWallYmd(eventStart, tzForDay);
+  if (eventStartYmd < todayYmd) {
+    logger.info("calendar:notify-one skip (event start calendar date before today in event TZ)", {
+      calendarEventId,
+      kind,
+      fireKey,
+      eventStartYmd,
+      todayYmd,
+      timeZone: tzForDay ?? null,
+    });
     return;
   }
 

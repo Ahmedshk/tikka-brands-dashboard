@@ -46,6 +46,8 @@ export interface AlertNotificationSettingsDto {
   };
   roleBindings: Array<{
     category: AlertRoleBindingCategory;
+    /** When omitted, applies to all alert types in the category (legacy / catch-all). */
+    subcategory?: string;
     roleId: string;
     channels: AlertChannelPrefsDto;
   }>;

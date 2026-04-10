@@ -2,6 +2,9 @@
  * Rebuilds only `SquareOrderHourlyRollup` (24 slots) per business day from cached orders.
  * Requires orders in Mongo for that day; run `rollup-square-orders-daily` first if dailies are missing.
  *
+ * After changing wall-clock / DST slot logic, re-run for affected `businessDateKey` ranges so stored
+ * hourly rows match the new civil-hour buckets.
+ *
  * Local: npm run rollup-square-orders-hourly -- --from 2026-03-01 --to 2026-03-07
  */
 import dotenv from "dotenv";

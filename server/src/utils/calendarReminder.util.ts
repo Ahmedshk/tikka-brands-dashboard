@@ -33,6 +33,22 @@ export function localDateInZone(now: Date, timeZone: string): string {
   return formatInTimeZone(now, timeZone, "yyyy-MM-dd");
 }
 
+/**
+ * Calendar date (yyyy-MM-dd) for an instant in `timeZone`, comparable lexicographically.
+ * Falls back to UTC when timezone is missing or invalid (matches event wall-time semantics when TZ is set).
+ */
+export function calendarWallYmd(instant: Date, timeZone: string | undefined): string {
+  const tz = timeZone?.trim();
+  if (!tz) {
+    return formatInTimeZone(instant, "UTC", "yyyy-MM-dd");
+  }
+  try {
+    return formatInTimeZone(instant, tz, "yyyy-MM-dd");
+  } catch {
+    return formatInTimeZone(instant, "UTC", "yyyy-MM-dd");
+  }
+}
+
 export function localHmInZone(now: Date, timeZone: string): string {
   return formatInTimeZone(now, timeZone, "HH:mm");
 }

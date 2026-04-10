@@ -53,8 +53,19 @@ export interface IAlertReputationHrToggles {
   pendingPipsRun: IAlertRunSchedule;
 }
 
+/**
+ * Optional scope within a category. Omitted or empty = all alert types in that category (legacy).
+ * @see ALERT_ROLE_SUBCATEGORIES in alertRoleBindingSubcategory.util.ts
+ */
+export type IAlertRoleBindingSubcategory =
+  | keyof IAlertFinancialLaborToggles
+  | "delivery_overdue"
+  | "training_overdue"
+  | "pending_pips";
+
 export interface IAlertRoleBinding {
   category: AlertRoleBindingCategory;
+  subcategory?: IAlertRoleBindingSubcategory;
   roleId: Types.ObjectId | string;
   channels: IAlertChannelPrefs;
 }

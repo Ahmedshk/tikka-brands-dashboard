@@ -6,12 +6,50 @@ import { formatInTimeZone } from "date-fns-tz";
 import { addDays } from "date-fns";
 import {
   getBusinessDayRangeForDate,
+  getBusinessStartTimeRange,
   getStartOfDayUtc,
 } from "./timezone.util.js";
 import type { TimeRange } from "./businessHours.util.js";
 import { iterBusinessDateKeysInclusive } from "./rollupScriptArgs.util.js";
+import {
+  addCivilMinutesToLocalYmdHm,
+  wallClockZonedInstantFromYmdHm,
+} from "./wallClockHourStart.util.js";
 
-const MS_PER_HOUR = 60 * 60 * 1000;
+function parseBusinessStartHm(businessStartTime: string): { h: number; m: number } {
+  const parts = (businessStartTime ?? "00:00").trim().split(":");
+  const h = Number.parseInt(parts[0] ?? "0", 10);
+  const m = Number.parseInt(parts[1] ?? "0", 10);
+  return {
+    h: Number.isFinite(h) ? h : 0,
+    m: Number.isFinite(m) ? m : 0,
+  };
+}
+
+function localYmdHmInTz(
+  d: Date,
+  timezone: string,
+): { y: number; m0: number; d: number; h: number; mi: number } {
+  const tz = timezone.trim() || "UTC";
+  const f = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+  });
+  const parts = f.formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
+  return {
+    y: Number.parseInt(get("year"), 10),
+    m0: Number.parseInt(get("month"), 10) - 1,
+    d: Number.parseInt(get("day"), 10),
+    h: Number.parseInt(get("hour"), 10),
+    mi: Number.parseInt(get("minute"), 10),
+  };
+}
 
 /** Parse yyyy-MM-dd to y, m0 (0-based month), d. */
 export function parseYmdBusinessDateKey(businessDateKey: string): {
@@ -129,7 +167,11 @@ export function businessDateKeysIntersectingUtcRange(
   return out;
 }
 
-/** Business-hour slot index (0–23) for `isoDateString` within that business day, or -1. */
+/**
+ * Business-hour slot index (0–23) for `isoDateString` within that business day, or -1.
+ * Uses civil (wall-clock) hours from business opening, not fixed SI-hour ticks, so local 23:xx
+ * maps to slot 23 even on 23h/25h DST days.
+ */
 export function getBusinessHourIndexForBusinessDateKey(
   isoDateString: string,
   timezone: string,
@@ -138,39 +180,104 @@ export function getBusinessHourIndexForBusinessDateKey(
 ): number {
   const orderDate = new Date(isoDateString);
   if (Number.isNaN(orderDate.getTime())) return -1;
-  const { startAt, endAt } = businessDayUtcRangeIsoStrings(
-    timezone,
-    businessStartTime,
-    businessDateKey,
-  );
+  const tz = timezone.trim() || "UTC";
+  const bst = (businessStartTime ?? "00:00").trim() || "00:00";
+  const { startAt, endAt } = businessDayUtcRangeIsoStrings(tz, bst, businessDateKey);
   const startMs = new Date(startAt).getTime();
   const endMs = new Date(endAt).getTime();
   const orderMs = orderDate.getTime();
   if (orderMs < startMs || orderMs > endMs) return -1;
-  const index = Math.floor((orderMs - startMs) / MS_PER_HOUR);
+  const { y: sy, m0: sm, d: sd } = parseYmdBusinessDateKey(businessDateKey);
+  const { h: sh, m: smi } = parseBusinessStartHm(bst);
+  const { y: oy, m0: om, d: od, h: oh, mi: omi } = localYmdHmInTz(orderDate, tz);
+  const openDayMs = Date.UTC(sy, sm, sd);
+  const orderDayMs = Date.UTC(oy, om, od);
+  const dayDiff = Math.round((orderDayMs - openDayMs) / 86400000);
+  const totalMinutes = dayDiff * 24 * 60 + (oh * 60 + omi) - (sh * 60 + smi);
+  const index = Math.floor(totalMinutes / 60);
   return Math.max(0, Math.min(23, index));
 }
 
-/** Slot bounds for a specific business date (not "today" only). */
+/** Slot bounds for a specific business date (not "today" only). Civil-hour buckets from opening. */
 export function getBusinessHourSlotBoundsForBusinessDateKey(
   timezone: string,
   businessStartTime: string,
   businessDateKey: string,
   slotIndex: number,
 ): { startAt: string; endAt: string } {
-  const { startAt, endAt } = businessDayUtcRangeIsoStrings(
-    timezone,
-    businessStartTime,
-    businessDateKey,
-  );
-  const startMs = new Date(startAt).getTime();
+  const tz = timezone.trim() || "UTC";
+  const bst = (businessStartTime ?? "00:00").trim() || "00:00";
+  const { endAt } = businessDayUtcRangeIsoStrings(tz, bst, businessDateKey);
   const endMs = new Date(endAt).getTime();
   const slot = Math.max(0, Math.min(23, Math.floor(slotIndex)));
-  const slotStartMs = startMs + slot * MS_PER_HOUR;
-  const isLastSlot = slot === 23;
-  const slotEndMs = isLastSlot ? endMs + 1 : slotStartMs + MS_PER_HOUR;
+  const { y: sy, m0: sm, d: sd } = parseYmdBusinessDateKey(businessDateKey);
+  const { h: sh, m: smi } = parseBusinessStartHm(bst);
+  const startParts = addCivilMinutesToLocalYmdHm(sy, sm, sd, sh, smi, 60 * slot);
+  const slotStartUtc = wallClockZonedInstantFromYmdHm(
+    startParts.y,
+    startParts.m0,
+    startParts.d,
+    startParts.h,
+    startParts.mi,
+    tz,
+  );
+  if (slot === 23) {
+    return {
+      startAt: slotStartUtc.toISOString(),
+      endAt: new Date(endMs).toISOString(),
+    };
+  }
+  const nextParts = addCivilMinutesToLocalYmdHm(sy, sm, sd, sh, smi, 60 * (slot + 1));
+  const nextStartUtc = wallClockZonedInstantFromYmdHm(
+    nextParts.y,
+    nextParts.m0,
+    nextParts.d,
+    nextParts.h,
+    nextParts.mi,
+    tz,
+  );
+  const inclusiveEnd = Math.min(endMs, nextStartUtc.getTime() - 1);
   return {
-    startAt: new Date(slotStartMs).toISOString(),
-    endAt: new Date(slotEndMs - 1).toISOString(),
+    startAt: slotStartUtc.toISOString(),
+    endAt: new Date(inclusiveEnd).toISOString(),
   };
+}
+
+/**
+ * Business-hour slot for the current business-day window from {@link getBusinessStartTimeRange}.
+ */
+export function getBusinessHourIndex(
+  isoDateString: string,
+  timezone: string,
+  businessStartTime: string,
+): number {
+  const orderDate = new Date(isoDateString);
+  if (Number.isNaN(orderDate.getTime())) return -1;
+  const tz = timezone.trim();
+  const bst = (businessStartTime ?? "00:00").trim() || "00:00";
+  const { startAt, endAt } = getBusinessStartTimeRange(tz, bst);
+  const startMs = new Date(startAt).getTime();
+  const endMs = new Date(endAt).getTime();
+  const orderMs = orderDate.getTime();
+  if (orderMs < startMs || orderMs > endMs) return -1;
+  const key = businessDateKeyForInstant(orderDate, tz, bst);
+  return getBusinessHourIndexForBusinessDateKey(isoDateString, tz, bst, key);
+}
+
+/** Slot bounds for the current business day (same window as {@link getBusinessStartTimeRange}). */
+export function getBusinessHourSlotBounds(
+  timezone: string,
+  businessStartTime: string,
+  slotIndex: number,
+): { startAt: string; endAt: string } {
+  const tz = timezone.trim();
+  const bst = (businessStartTime ?? "00:00").trim() || "00:00";
+  const { startAt } = getBusinessStartTimeRange(tz, bst);
+  const businessDateKey = businessDateKeyForInstant(new Date(startAt), tz, bst);
+  return getBusinessHourSlotBoundsForBusinessDateKey(
+    tz,
+    bst,
+    businessDateKey,
+    slotIndex,
+  );
 }

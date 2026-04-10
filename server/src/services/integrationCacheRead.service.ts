@@ -25,7 +25,7 @@ import {
 } from "../utils/homebaseOrderedBuckets.util.js";
 import { aggregateTimecardsIntoBuckets } from "../utils/homebaseTimeSeriesHelpers.js";
 import { computeLaborCostPerHourFromTimecards } from "../utils/homebaseLaborHelpers.js";
-import { getBusinessHourIndex } from "../utils/timezone.util.js";
+import { getBusinessHourIndex } from "../utils/businessDayUtcRange.util.js";
 import type {
   BatchRetrieveCatalogFn,
   CatalogObjectForCategory,

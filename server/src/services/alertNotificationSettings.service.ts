@@ -160,6 +160,7 @@ function toPlain(doc: {
   };
   roleBindings: Array<{
     category: string;
+    subcategory?: string;
     roleId: unknown;
     channels: { inApp: boolean; email: boolean; sms: boolean };
   }>;
@@ -192,14 +193,21 @@ function toPlain(doc: {
       pendingPips: rep.pendingPips ?? false,
       pendingPipsRun,
     },
-    roleBindings: (doc.roleBindings ?? []).map((b) => ({
-      category: b.category as IAlertRoleBinding["category"],
-      roleId:
-        typeof b.roleId === "object" && b.roleId && "toString" in b.roleId
-          ? (b.roleId as { toString: () => string }).toString()
-          : String(b.roleId),
-      channels: normalizeRoleBindingChannels(b.channels),
-    })),
+    roleBindings: (doc.roleBindings ?? []).map((b) => {
+      const sub =
+        typeof b.subcategory === "string" && b.subcategory.trim() !== ""
+          ? (b.subcategory.trim() as IAlertRoleBinding["subcategory"])
+          : undefined;
+      return {
+        category: b.category as IAlertRoleBinding["category"],
+        ...(sub ? { subcategory: sub } : {}),
+        roleId:
+          typeof b.roleId === "object" && b.roleId && "toString" in b.roleId
+            ? (b.roleId as { toString: () => string }).toString()
+            : String(b.roleId),
+        channels: normalizeRoleBindingChannels(b.channels),
+      };
+    }),
   };
   if (doc.createdAt) out.createdAt = doc.createdAt;
   if (doc.updatedAt) out.updatedAt = doc.updatedAt;
@@ -232,6 +240,7 @@ export class AlertNotificationSettingsService {
     }>;
     roleBindings?: Array<{
       category: IAlertRoleBinding["category"];
+      subcategory?: IAlertRoleBinding["subcategory"];
       roleId: string;
       channels: { inApp: boolean; email: boolean; sms: boolean };
     }>;
@@ -277,11 +286,18 @@ export class AlertNotificationSettingsService {
       };
     }
     if (data.roleBindings !== undefined) {
-      doc.roleBindings = data.roleBindings.map((b) => ({
-        category: b.category,
-        roleId: new mongoose.Types.ObjectId(b.roleId),
-        channels: normalizeRoleBindingChannels(b.channels),
-      })) as typeof doc.roleBindings;
+      doc.roleBindings = data.roleBindings.map((b) => {
+        const sub =
+          typeof b.subcategory === "string" && b.subcategory.trim() !== ""
+            ? b.subcategory.trim()
+            : undefined;
+        return {
+          category: b.category,
+          ...(sub ? { subcategory: sub } : {}),
+          roleId: new mongoose.Types.ObjectId(b.roleId),
+          channels: normalizeRoleBindingChannels(b.channels),
+        };
+      }) as typeof doc.roleBindings;
     }
 
     doc.set("scheduleMode", undefined);

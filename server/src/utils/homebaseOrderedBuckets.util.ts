@@ -13,6 +13,11 @@ import {
   parseYmdBusinessDateKey,
 } from "./businessDayUtcRange.util.js";
 import {
+  incrementLocalWallHour,
+  parseYmdHourFromChartKey,
+  wallClockZonedHourStartFromYmdHour,
+} from "./wallClockHourStart.util.js";
+import {
   sundayWeekStartYmdForBusinessDateKey,
 } from "./rollupPeriodKeys.util.js";
 
@@ -160,11 +165,8 @@ function buildHourlyBuckets(
       h: Number.parseInt(get("hour"), 10),
     };
   };
-  let cursor = (() => {
-    const { y, m, d, h } = getHourParts(start);
-    const dayStart = getStartOfDayUtc(y, m, d, tz);
-    return new Date(dayStart.getTime() + h * 60 * 60 * 1000);
-  })();
+  const { y: sy, m: sm, d: sd, h: sh } = getHourParts(start);
+  let cursor = wallClockZonedHourStartFromYmdHour(sy, sm, sd, sh, tz);
   while (cursor <= end) {
     const key = getBucketKeyForDate(cursor, tz, "hourly");
     if (key && !seen.has(key)) {
@@ -172,10 +174,13 @@ function buildHourlyBuckets(
       keys.push(key);
       labels.push(labelF.format(cursor));
     }
-    const next = new Date(cursor.getTime() + 60 * 60 * 1000);
-    const { y, m, d, h } = getHourParts(next);
-    const dayStart = getStartOfDayUtc(y, m, d, tz);
-    cursor = new Date(dayStart.getTime() + h * 60 * 60 * 1000);
+    let parsed = parseYmdHourFromChartKey(key);
+    if (!parsed) {
+      const { y, m, d, h } = getHourParts(cursor);
+      parsed = { y, m0: m, d, hour: h };
+    }
+    const n = incrementLocalWallHour(parsed.y, parsed.m0, parsed.d, parsed.hour);
+    cursor = wallClockZonedHourStartFromYmdHour(n.y, n.m0, n.d, n.h, tz);
   }
   return { keys, labels };
 }

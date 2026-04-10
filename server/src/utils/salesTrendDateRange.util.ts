@@ -115,6 +115,20 @@ function addDays(y: number, m: number, d: number, delta: number): { y: number; m
 }
 
 /**
+ * "Last 52 weeks" uses the trailing calendar year in location TZ: same month/day one year ago through today
+ * (Feb 29 → Feb 28 in non-leap years), not first/last day of month.
+ */
+export function getLast52WeeksCivilBounds(today: { y: number; m: number; d: number }): {
+  start: { y: number; m: number; d: number };
+  end: { y: number; m: number; d: number };
+} {
+  const { y, m, d } = today;
+  const py = y - 1;
+  const dim = new Date(py, m + 1, 0).getDate();
+  return { start: { y: py, m, d: Math.min(d, dim) }, end: { y, m, d } };
+}
+
+/**
  * Get the period range and granularity for Sales Trend.
  * For "custom", periodStart and periodEnd must be provided (ISO date or YYYY-MM-DD).
  * For "today", pass businessStartTime so the period uses store business day (business start till 1s before next business start).
@@ -239,21 +253,18 @@ function getLast52WeeksPeriodRange(
   tz: string,
   y: number,
   m: number,
-  _d: number,
+  d: number,
   businessStartTime?: string,
 ): PeriodRangeResult {
-  const startMonth = new Date(y, m - 12, 1);
-  const startY = startMonth.getFullYear();
-  const startM = startMonth.getMonth();
-  const lastDayOfCurrentMonth = new Date(y, m + 1, 0).getDate();
-  const bizStart = (businessStartTime ?? "00:00").trim();
+  const { start, end } = getLast52WeeksCivilBounds({ y, m, d });
   if (useBusinessDayBoundaries(businessStartTime)) {
-    const startRange = getBusinessDayRangeForDate(tz, bizStart, startY, startM, 1);
-    const endRange = getBusinessDayRangeForDate(tz, bizStart, y, m, lastDayOfCurrentMonth);
+    const bizStart = (businessStartTime ?? "00:00").trim();
+    const startRange = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
+    const endRange = getBusinessDayRangeForDate(tz, bizStart, end.y, end.m, end.d);
     return { startAt: startRange.startAt, endAt: endRange.endAt, granularity: "monthly" };
   }
-  const startDate = getStartOfDayUtc(startY, startM, 1, tz);
-  const endDate = getEndOfDayUtc(y, m, lastDayOfCurrentMonth, tz);
+  const startDate = getStartOfDayUtc(start.y, start.m, start.d, tz);
+  const endDate = getEndOfDayUtc(end.y, end.m, end.d, tz);
   return { startAt: startDate.toISOString(), endAt: endDate.toISOString(), granularity: "monthly" };
 }
 
@@ -440,6 +451,37 @@ function calendarDayDiff(
 }
 
 /**
+ * 1-based index of the 7-day block from the 1st: days 1–7 → 1, 8–14 → 2, 15–21 → 3, …
+ * Used for rolling priorYear (last7/last30/custom) so “Tuesday of week 2” is Tuesday in days 8–14, not the
+ * Sun–Sat week that contains the 1st (which can label Mar 10 as week 1 while users expect week 2).
+ */
+function getSevenDayBlockWeekIndex(dayOfMonth: number): number {
+  const d = Math.max(1, Math.floor(dayOfMonth));
+  return 1 + Math.floor((d - 1) / 7);
+}
+
+/** First civil date in (y,m) within block `blockWeekNum` whose DOW matches `targetDow` (0=Sun), or null. */
+function findDayInSevenDayBlockWithDow(
+  y: number,
+  m: number,
+  blockWeekNum: number,
+  targetDow: number,
+  tz: string,
+): { y: number; m: number; d: number } | null {
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  const n = Math.max(1, blockWeekNum);
+  const lo = (n - 1) * 7 + 1;
+  const hi = Math.min(n * 7, lastDay);
+  if (lo > hi) return null;
+  for (let d = lo; d <= hi; d++) {
+    if (getDayOfWeekInTz(y, m, d, tz) === targetDow) {
+      return { y, m, d };
+    }
+  }
+  return null;
+}
+
+/**
  * 1-based week index within the calendar month (y, m): week 1 is the Sun–Sat week that contains the 1st.
  * Used for rolling last7/last30/custom so e.g. Thu Apr 2 is week 1 of April (not week 5 of March via the Mar 29 Sunday).
  */
@@ -607,11 +649,26 @@ function getComparisonRangeWithWeekLogic(
   const endDayOfWeek = getDayOfWeekInTz(endParts.y, endParts.m, endParts.d, tz);
   const useMonthAnchorWeekAndSpanEnd =
     periodType != null && PERIOD_TYPES_MONTH_ANCHOR_WEEK_AND_SPAN_END.has(periodType);
+  const useSevenDayBlockYoY =
+    useMonthAnchorWeekAndSpanEnd &&
+    periodType !== "thisWeek" &&
+    comparisonType !== "samePeriodPreviousMonth" &&
+    (comparisonType === "priorYear" ||
+      comparisonType === "52WeeksPrior" ||
+      comparisonType === "year2Before" ||
+      comparisonType === "year3Before" ||
+      comparisonType === "year4Before");
+
   let W_start: number;
   let W_end: number;
   if (useMonthAnchorWeekAndSpanEnd) {
-    W_start = getWeekOfMonthFromFirstOfMonth(startParts.y, startParts.m, startParts.d, tz);
-    W_end = getWeekOfMonthFromFirstOfMonth(endParts.y, endParts.m, endParts.d, tz);
+    if (useSevenDayBlockYoY) {
+      W_start = getSevenDayBlockWeekIndex(startParts.d);
+      W_end = getSevenDayBlockWeekIndex(endParts.d);
+    } else {
+      W_start = getWeekOfMonthFromFirstOfMonth(startParts.y, startParts.m, startParts.d, tz);
+      W_end = getWeekOfMonthFromFirstOfMonth(endParts.y, endParts.m, endParts.d, tz);
+    }
   } else {
     const startSunday = addDays(startParts.y, startParts.m, startParts.d, -startDayOfWeek);
     const endSunday = addDays(endParts.y, endParts.m, endParts.d, -endDayOfWeek);
@@ -623,23 +680,81 @@ function getComparisonRangeWithWeekLogic(
     computeWeekLogicTargets(comparisonType, startParts, endParts, W_start, W_end);
 
   const useAnchorWeek = useMonthAnchorWeekAndSpanEnd;
-  const sunStart = getSunStartForWeekLogic(
-    comparisonType,
-    prevStartY,
-    prevStartM,
-    targetW_start,
-    tz,
-    useAnchorWeek,
-  );
+
   /** thisWeek: always compare against the full Sun–Sat week in the aligned prior week / month / year (chart may still clip the current period to “today”). */
   let compStart: { y: number; m: number; d: number };
   let compEnd: { y: number; m: number; d: number };
   if (periodType === "thisWeek") {
+    const sunStart = getSunStartForWeekLogic(
+      comparisonType,
+      prevStartY,
+      prevStartM,
+      targetW_start,
+      tz,
+      useAnchorWeek,
+    );
     compStart = { y: sunStart.y, m: sunStart.m, d: sunStart.d };
     compEnd = addDays(sunStart.y, sunStart.m, sunStart.d, 6);
+  } else if (useSevenDayBlockYoY) {
+    const blockStart = findDayInSevenDayBlockWithDow(
+      prevStartY,
+      prevStartM,
+      targetW_start,
+      startDayOfWeek,
+      tz,
+    );
+    const blockEnd = findDayInSevenDayBlockWithDow(
+      prevEndY,
+      prevEndM,
+      targetW_end,
+      endDayOfWeek,
+      tz,
+    );
+    if (blockStart && blockEnd) {
+      compStart = blockStart;
+      compEnd = blockEnd;
+    } else {
+      const wSunS = getWeekOfMonthFromFirstOfMonth(
+        startParts.y,
+        startParts.m,
+        startParts.d,
+        tz,
+      );
+      const wSunE = getWeekOfMonthFromFirstOfMonth(
+        endParts.y,
+        endParts.m,
+        endParts.d,
+        tz,
+      );
+      const t2 = computeWeekLogicTargets(
+        comparisonType,
+        startParts,
+        endParts,
+        wSunS,
+        wSunE,
+      );
+      const sunStart = getSunStartForWeekLogic(
+        comparisonType,
+        t2.prevStartY,
+        t2.prevStartM,
+        t2.targetW_start,
+        tz,
+        useAnchorWeek,
+      );
+      compStart = addDays(sunStart.y, sunStart.m, sunStart.d, startDayOfWeek);
+      const spanDays = calendarDayDiff(startParts, endParts, tz);
+      compEnd = addDays(compStart.y, compStart.m, compStart.d, spanDays);
+    }
   } else {
+    const sunStart = getSunStartForWeekLogic(
+      comparisonType,
+      prevStartY,
+      prevStartM,
+      targetW_start,
+      tz,
+      useAnchorWeek,
+    );
     compStart = addDays(sunStart.y, sunStart.m, sunStart.d, startDayOfWeek);
-    /** Month-anchor rolling/custom: span matches primary; mapping end by week alone can clamp (e.g. Feb has no “week 5”). */
     if (useMonthAnchorWeekAndSpanEnd) {
       const spanDays = calendarDayDiff(startParts, endParts, tz);
       compEnd = addDays(compStart.y, compStart.m, compStart.d, spanDays);
@@ -941,20 +1056,21 @@ function getComparisonRangeFromSwitch(
       );
     }
     case "52WeeksPrior": {
-      const durationDays = (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000);
-      const fiftyTwoWeeksMs = 52 * 7 * 24 * 60 * 60 * 1000;
-      let startRef: Date;
-      let endRef: Date;
-      if (durationDays > 360) {
-        startRef = new Date(start);
-        startRef.setUTCMonth(startRef.getUTCMonth() - 12);
-        endRef = new Date(end);
-        endRef.setUTCMonth(endRef.getUTCMonth() - 12);
-      } else {
-        startRef = new Date(start.getTime() - fiftyTwoWeeksMs);
-        endRef = new Date(end.getTime() - fiftyTwoWeeksMs);
+      const startParts = getDatePartsInTz(start, tz);
+      const endParts = getDatePartsInTz(end, tz);
+      if (periodType === "last52weeks") {
+        const targetStartY = startParts.y - 1;
+        const targetEndY = endParts.y - 1;
+        const endLastDay = new Date(targetEndY, endParts.m + 1, 0).getDate();
+        const targetEndD = Math.min(endParts.d, endLastDay);
+        return fromCalendar(
+          { y: targetStartY, m: startParts.m, d: startParts.d },
+          { y: targetEndY, m: endParts.m, d: targetEndD },
+        );
       }
-      return fromCalendar(getDatePartsInTz(startRef, tz), getDatePartsInTz(endRef, tz));
+      const priorStart = addDays(startParts.y, startParts.m, startParts.d, -52 * 7);
+      const priorEnd = addDays(endParts.y, endParts.m, endParts.d, -52 * 7);
+      return fromCalendar(priorStart, priorEnd);
     }
     case "year2Before":
     case "year3Before":
@@ -995,10 +1111,13 @@ function prevMonthDate(
  * Returns same-length range aligned with comparison option; same granularity as primary.
  * For custom, pass customComparisonStart and customComparisonEnd in options (both ISO or YYYY-MM-DD).
  * Optional businessStartTime in options ensures custom comparison uses store business day boundaries.
- * Week-of-month + DOW alignment (Sunday-based weeks) applies to thisWeek/thisMonth/thisYear and
- * last7days/last30days/custom for supported comparisons. Rolling/custom use the week containing the month’s 1st
- * and a comparison end aligned to the primary span. **thisWeek** uses the aligned Sun–Sat week in the comparison
- * month/year (full 7 days), independent of how many days have elapsed in the current week.
+ * Week-of-month + DOW alignment applies to thisWeek/thisMonth/thisYear and last7days/last30days/custom.
+ * **samePeriodPreviousMonth** on rolling windows uses Sun–Sat weeks that contain the 1st. **priorYear** (and
+ * yearNBefore) on rolling windows use **7-day blocks from the 1st** (days 1–7 = week 1, 8–14 = week 2)
+ * so “Tuesday of the 2nd week of March” compares to Tuesday in days 8–14 of March in the prior year.
+ * **last52weeks** + **52WeeksPrior** shifts both civil endpoints back one calendar year (same as priorYear on each bound).
+ * Other periods + **52WeeksPrior** shift each civil endpoint back 364 days (52×7).
+ * **thisWeek** uses the aligned Sun–Sat week in the comparison month/year (full 7 days).
  * Special cases: thisMonth + samePeriodPreviousMonth → full previous calendar month; thisMonth + priorYear →
  * full same month prior year; thisYear + priorYear → full prior calendar year.
  */

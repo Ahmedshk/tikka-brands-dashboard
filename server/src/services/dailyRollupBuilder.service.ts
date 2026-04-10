@@ -1,7 +1,7 @@
 /**
  * Idempotent daily rollups per location (MarketMan: per buyerGuid + apiKind).
  * Business day key: `yyyy-MM-dd` = calendar date in location TZ when the **business day opens**
- * (at businessStartTime). UTC window: `getBusinessDayRangeForDate` (business start → next business start − 1s).
+ * (at businessStartTime). UTC window: `getBusinessDayRangeForDate` (business start → last ms before next business start).
  *
  * MarketMan: counts orders whose `businessDateAt` falls in that same UTC window.
  */

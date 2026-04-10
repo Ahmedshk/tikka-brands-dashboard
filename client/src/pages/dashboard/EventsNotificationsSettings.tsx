@@ -660,7 +660,7 @@ export const EventsNotificationsSettings = () => {
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-button-primary text-white text-xs md:text-sm rounded-lg hover:opacity-90 transition-opacity cursor-pointer shrink-0 self-start disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <FiPlus className="w-3.5 h-3.5" aria-hidden />
-                      Add role notifications
+                      Assign roles
                     </button>
                   </div>
                   {eventTypes.length === 0 ? (
@@ -673,7 +673,7 @@ export const EventsNotificationsSettings = () => {
                     </p>
                   ) : eventTypesWithRoleRules.length === 0 ? (
                     <p className="text-sm text-tertiary italic py-4 border border-dashed border-gray-200 rounded-lg px-4 py-6 text-center">
-                      No role rules yet. Click <span className="font-medium text-primary">Add role notifications</span>{" "}
+                      No role rules yet. Click <span className="font-medium text-primary">Assign roles</span>{" "}
                       to create one.
                     </p>
                   ) : (
@@ -1076,7 +1076,7 @@ export const EventsNotificationsSettings = () => {
             <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
               <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
                 <h2 id="role-rule-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
-                  Role notifications
+                  Notify roles
                 </h2>
               </div>
               <div className="flex-1 min-h-0 px-5 py-4 overflow-y-auto space-y-5 border-x border-gray-200">

@@ -1,0 +1,30 @@
+<div style="margin:24px 0 0;padding:0;">
+  <p style="margin:0 0 12px;font-size:12px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.04em;">Overdue orders (same fields as Order Tracker)</p>
+  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+    <table role="presentation" style="width:100%;border-collapse:collapse;margin:0;font-size:13px;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
+      <thead>
+        <tr style="background:#F3F4F6;">
+          <th style="text-align:left;padding:10px 12px;font-weight:600;color:#374151;border-bottom:1px solid #E5E7EB;">PO#</th>
+          <th style="text-align:left;padding:10px 12px;font-weight:600;color:#374151;border-bottom:1px solid #E5E7EB;">Supplier</th>
+          <th style="text-align:center;padding:10px 12px;font-weight:600;color:#374151;border-bottom:1px solid #E5E7EB;">Delivery date</th>
+          <th style="text-align:center;padding:10px 12px;font-weight:600;color:#374151;border-bottom:1px solid #E5E7EB;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% deliveryOverdueOrders.forEach(function(row, idx) { %>
+        <% var rowBg = (idx % 2 === 1) ? '#F9FAFB' : '#FFFFFF'; %>
+        <tr style="background-color:<%= rowBg %>;">
+          <td style="padding:10px 12px;color:#111827;border-bottom:1px solid #F3F4F6;vertical-align:top;"><%= row.poNumber %></td>
+          <td style="padding:10px 12px;color:#374151;border-bottom:1px solid #F3F4F6;vertical-align:top;word-break:break-word;"><%= row.supplier %></td>
+          <td style="padding:10px 12px;color:#374151;border-bottom:1px solid #F3F4F6;text-align:center;vertical-align:top;white-space:nowrap;"><%= row.deliveryDate %></td>
+          <td style="padding:10px 12px;color:#374151;border-bottom:1px solid #F3F4F6;text-align:center;vertical-align:top;"><%= row.status %></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+  <% if (typeof deliveryOverdueMoreCount === 'number' && deliveryOverdueMoreCount > 0) { %>
+  <p style="margin:12px 0 0;font-size:12px;color:#6B7280;">Listed <%= deliveryOverdueOrders.length %> order(s) (most recent delivery dates first). <%= deliveryOverdueMoreCount %> more overdue order(s) are not shown in this email.</p>
+  <% } %>
+  <p style="margin:12px 0 0;font-size:12px;color:#6B7280;">Open <span style="font-weight:600;color:#374151;">Inventory &amp; Food Cost</span> in the dashboard to use the full Order Tracker.</p>
+</div>
