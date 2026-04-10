@@ -229,17 +229,20 @@ export const CommandCenter = () => {
   }, [hourlySales]);
 
   const alertCategories = useMemo((): AlertCategory[] => {
-    const rowToItem = (row: CommandCenterAlertRow): AlertItem => ({
-      id: row.id,
-      text:
-        row.message.trim().length > 0 ? `${row.title}: ${row.message}` : row.title,
-      subtitle: new Date(row.createdAt).toLocaleString(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }),
-      severity: row.severity,
-      dismissable: row.dismissable,
-    });
+    const rowToItem = (row: CommandCenterAlertRow): AlertItem => {
+      const bodyLine = row.message.trim();
+      return {
+        id: row.id,
+        titleLine: row.title,
+        bodyLine: bodyLine.length > 0 ? bodyLine : undefined,
+        subtitle: new Date(row.createdAt).toLocaleString(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        }),
+        severity: row.severity,
+        dismissable: row.dismissable,
+      };
+    };
 
     const cats: AlertCategory[] = [];
     if (canAlertsFinancial) {
@@ -263,7 +266,7 @@ export const CommandCenter = () => {
       const staticPlaceholders: AlertItem[] = [
         {
           id: 'placeholder-review-thresholds',
-          text: 'Review and rating thresholds are not yet available.',
+          titleLine: 'Review and rating thresholds are not yet available.',
           severity: 'warning',
         },
       ];
