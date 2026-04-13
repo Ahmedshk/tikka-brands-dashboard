@@ -9,18 +9,28 @@ export interface SyncSquareModalProps {
   onClose: () => void;
   onSynced: (result: SyncFromSquareResult) => void;
   onError?: (message: string) => void;
+  /** When omitted, locations are loaded when the modal opens. */
+  locations?: LocationListItem[];
 }
 
-export function SyncSquareModal({ open, onClose, onSynced, onError }: Readonly<SyncSquareModalProps>) {
-  const [locations, setLocations] = useState<LocationListItem[]>([]);
+export function SyncSquareModal({
+  open,
+  onClose,
+  onSynced,
+  onError,
+  locations: locationsProp,
+}: Readonly<SyncSquareModalProps>) {
+  const [fetchedLocations, setFetchedLocations] = useState<LocationListItem[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const locations = locationsProp ?? fetchedLocations;
 
   useEffect(() => {
     if (!open) return;
     setSelectedLocationId('');
-    locationService.getAll().then(setLocations).catch(() => setLocations([]));
-  }, [open]);
+    if (locationsProp != null) return;
+    locationService.getAll().then(setFetchedLocations).catch(() => setFetchedLocations([]));
+  }, [open, locationsProp]);
 
   const handleSync = async () => {
     if (!selectedLocationId.trim()) {

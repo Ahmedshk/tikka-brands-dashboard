@@ -3,8 +3,8 @@ import {
   LocationRepository,
   type LocationListFilter,
 } from '../repositories/location.repository.js';
-import type { LocationDocument } from '../models/location.model.js';
 import { LogoService } from './logo.service.js';
+import type { LocationDocument } from '../models/location.model.js';
 import {
   ILocation,
   ILocationResponse,
@@ -87,13 +87,13 @@ export class LocationService {
       ...(data.logoId && { logoId: data.logoId }),
       ...(data.marketManBuyerGuid != null && data.marketManBuyerGuid !== '' && { marketManBuyerGuid: data.marketManBuyerGuid.trim() }),
     } as Omit<ILocation, '_id' | 'createdAt' | 'updatedAt'>);
-    return this.enrichWithLogo(this.toLocationResponse(doc), doc.logoId);
+    return this.enrichWithLogoUrl(this.toLocationResponse(doc));
   }
 
   async getById(id: string): Promise<ILocationResponse | null> {
     const doc = await this.locationRepository.findById(id);
     if (!doc) return null;
-    return this.enrichWithLogo(this.toLocationResponse(doc), doc.logoId);
+    return this.enrichWithLogoUrl(this.toLocationResponse(doc));
   }
 
   async getByIdWithCredentials(id: string): Promise<LocationWithCredentials | null> {
@@ -105,7 +105,7 @@ export class LocationService {
     const homebaseApiKey = doc.homebaseApiKeyEnc
       ? decryptCredentials(doc.homebaseApiKeyEnc)
       : null;
-    const location = await this.enrichWithLogo(this.toLocationResponse(doc), doc.logoId);
+    const location = await this.enrichWithLogoUrl(this.toLocationResponse(doc));
     return {
       location,
       squareAccessToken,
@@ -115,8 +115,7 @@ export class LocationService {
 
   async getAll(): Promise<ILocationResponse[]> {
     const docs = await this.locationRepository.findAll();
-    const responses = docs.map((d) => this.toLocationResponse(d));
-    return this.enrichBatchWithLogos(responses, docs.map((d) => d.logoId));
+    return this.enrichBatchWithLogoUrls(docs.map((d) => this.toLocationResponse(d)));
   }
 
   async getPaginated(
@@ -137,11 +136,7 @@ export class LocationService {
             this.locationRepository.count(),
           ]);
     const totalPages = Math.ceil(total / limit) || 1;
-    const responses = docs.map((d) => this.toLocationResponse(d));
-    const locations = await this.enrichBatchWithLogos(
-      responses,
-      docs.map((d) => d.logoId),
-    );
+    const locations = await this.enrichBatchWithLogoUrls(docs.map((d) => this.toLocationResponse(d)));
     return {
       locations,
       total,
@@ -177,6 +172,10 @@ export class LocationService {
         $set.squareWebhookSignatureKeyEnc = encryptCredentials(w);
       }
     }
+    if (data.logoId === null) {
+      $unset.logoId = 1;
+      delete $set.logoId;
+    }
     const updateQuery: UpdateQuery<LocationDocument> = {};
     if (Object.keys($set).length > 0) updateQuery.$set = $set;
     if (Object.keys($unset).length > 0) updateQuery.$unset = $unset;
@@ -185,13 +184,13 @@ export class LocationService {
       if (!existing) {
         throw new NotFoundError('Location not found');
       }
-      return this.enrichWithLogo(this.toLocationResponse(existing), existing.logoId);
+      return this.enrichWithLogoUrl(this.toLocationResponse(existing));
     }
     const doc = await this.locationRepository.updateById(id, updateQuery);
     if (!doc) {
       throw new NotFoundError('Location not found');
     }
-    return this.enrichWithLogo(this.toLocationResponse(doc), doc.logoId);
+    return this.enrichWithLogoUrl(this.toLocationResponse(doc));
   }
 
   /**
@@ -216,6 +215,29 @@ export class LocationService {
     if (!deleted) {
       throw new NotFoundError('Location not found');
     }
+  }
+
+  /** Populate logoUrl from the Logo collection for a single location. */
+  private async enrichWithLogoUrl(loc: ILocationResponse): Promise<ILocationResponse> {
+    if (!loc.logoId) return loc;
+    const map = await this.logoService.getUrlByIdMap([loc.logoId]);
+    const url = map.get(loc.logoId);
+    if (url) loc.logoUrl = url;
+    return loc;
+  }
+
+  /** Populate logoUrl from the Logo collection for a batch of locations (one DB query). */
+  private async enrichBatchWithLogoUrls(locations: ILocationResponse[]): Promise<ILocationResponse[]> {
+    const ids = locations.map((l) => l.logoId).filter((id): id is string => id != null && id !== '');
+    if (ids.length === 0) return locations;
+    const map = await this.logoService.getUrlByIdMap(ids);
+    for (const loc of locations) {
+      if (loc.logoId) {
+        const url = map.get(loc.logoId);
+        if (url) loc.logoUrl = url;
+      }
+    }
+    return locations;
   }
 
   private toLocationResponse(doc: {
@@ -257,37 +279,5 @@ export class LocationService {
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     };
-  }
-
-  private async enrichWithLogo(
-    response: ILocationResponse,
-    logoId: unknown
-  ): Promise<ILocationResponse> {
-    const logoIdStr = toLogoIdString(logoId);
-    if (logoIdStr) {
-      const logo = await this.logoService.getById(logoIdStr);
-      return logo ? { ...response, logoDataUrl: logo.dataUrl } : response;
-    }
-    return response;
-  }
-
-  /** One logo query for the whole page (or list). */
-  private async enrichBatchWithLogos(
-    responses: ILocationResponse[],
-    logoIdPerRow: unknown[],
-  ): Promise<ILocationResponse[]> {
-    const unique = new Set<string>();
-    for (let i = 0; i < responses.length; i++) {
-      const id = toLogoIdString(logoIdPerRow[i]);
-      if (id) unique.add(id);
-    }
-    if (unique.size === 0) return responses;
-    const dataUrlMap = await this.logoService.getDataUrlByIdMap([...unique]);
-    return responses.map((r, i) => {
-      const id = toLogoIdString(logoIdPerRow[i]);
-      if (!id) return r;
-      const url = dataUrlMap.get(id);
-      return url != null ? { ...r, logoDataUrl: url } : r;
-    });
   }
 }

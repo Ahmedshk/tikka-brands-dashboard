@@ -208,6 +208,8 @@ export const Navbar = () => {
   const { logout } = useAuth();
   const user = useSelector((state: RootState) => state.auth.user);
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const currentLocationRef = useRef(currentLocation);
+  currentLocationRef.current = currentLocation;
   const [locations, setLocations] = useState<LocationListItem[]>([]);
   const hideLocationSelector =
     pathname === LOCATION_MANAGEMENT_PATH ||
@@ -370,6 +372,11 @@ export const Navbar = () => {
     : user?.allowedLocationIds ?? '';
   const locationRemovalsKey = (user?.locationRemovals ?? []).join(',');
   useEffect(() => {
+    if (hideLocationSelector) {
+      setLocationsLoading(false);
+      dispatch(setLocationListHydrated(true));
+      return;
+    }
     const controller = new AbortController();
     (async () => {
       setLocationsLoading(true);
@@ -381,7 +388,7 @@ export const Navbar = () => {
         const match = data.find((loc) => loc._id === storedId);
         if (match) {
           dispatch(setCurrentLocation(match));
-        } else if (data.length > 0 && !currentLocation) {
+        } else if (data.length > 0 && !currentLocationRef.current) {
           dispatch(setCurrentLocation(data[0] ?? null));
         }
       } catch {
@@ -394,7 +401,7 @@ export const Navbar = () => {
       }
     })();
     return () => controller.abort();
-  }, [dispatch, allowedLocationIdsKey, locationRemovalsKey]);
+  }, [dispatch, allowedLocationIdsKey, locationRemovalsKey, hideLocationSelector]);
 
   // Keep current location in sync if it was removed from list (e.g. deleted elsewhere)
   useEffect(() => {
@@ -521,7 +528,9 @@ export const Navbar = () => {
                   locationsRefreshController.current?.abort();
                   const controller = new AbortController();
                   locationsRefreshController.current = controller;
-                  locationService.getAll({ signal: controller.signal }).then((data) => {
+                  locationService
+                    .getAll({ signal: controller.signal, bustCache: true })
+                    .then((data) => {
                     if (controller.signal.aborted) return;
                     setLocations(data);
                     const stillExists = currentLocation && data.some((loc) => loc._id === currentLocation._id);

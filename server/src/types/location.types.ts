@@ -28,7 +28,7 @@ export interface ILocationListItem {
   address: string;
   timezone: string;
   businessStartTime: string;
-  logoDataUrl?: string;
+  logoUrl?: string;
 }
 
 /** Location as returned to API responses (no encrypted credentials). */
@@ -39,8 +39,8 @@ export interface ILocationResponse extends Omit<ILocation, 'squareAccessTokenEnc
   hasHomebaseApiKey?: boolean;
   /** True when this location has a stored Square webhook signature key (value never sent to client). */
   hasSquareWebhookSignatureKey?: boolean;
-  /** Populated when location has a logo; data URL for display (e.g. sidebar). */
-  logoDataUrl?: string;
+  /** Cloudinary URL for the location logo (populated from Logo collection via logoId). */
+  logoUrl?: string;
 }
 
 export type CreateLocationData = Omit<

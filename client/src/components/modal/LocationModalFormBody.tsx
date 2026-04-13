@@ -3,14 +3,12 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { renderTimeViewClock } from '@mui/x-date-pickers/timeViewRenderers';
-import { Spinner } from '../common/Spinner';
-import { logoService } from '../../services/logo.service';
-import { TIMEZONE_OPTIONS } from '../../utils/timezones';
 import type { Logo } from '../../types';
+import { Spinner } from '../common/Spinner';
+import { TIMEZONE_OPTIONS } from '../../utils/timezones';
 import {
   MASKED_CREDENTIAL_PLACEHOLDER,
   formatBusinessStartFromDate,
-  getLogoListButtonLabel,
 } from '../../utils/locationModalHelpers';
 
 /** MUI anchors the picker to the inner input; shift horizontally so the popover centers on the modal card. */
@@ -197,17 +195,13 @@ export interface LocationModalFormBodyProps {
   pickerPopperContainer?: HTMLElement | null;
   /** Modal card element — used to center the time picker popover horizontally */
   pickerModalPanel?: HTMLElement | null;
-  logoDataUrl: string | null;
-  setLogoId: (v: string | null) => void;
-  setLogoDataUrl: (v: string | null) => void;
+  selectedLogoId: string | null;
+  logoPreviewUrl: string | null;
   logoList: Logo[];
-  setLogoList: React.Dispatch<React.SetStateAction<Logo[]>>;
-  logoListOpen: boolean;
-  setLogoListOpen: (v: boolean) => void;
   logoListLoading: boolean;
-  setLogoListLoading: (v: boolean) => void;
-  logoUploading: boolean;
-  setLogoUploading: (v: boolean) => void;
+  onSelectLogo: (logo: Logo) => void;
+  onNewLogoFile: (file: File) => void;
+  onClearLogo: () => void;
   setError: (v: string) => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   marketManBuyerGuid: string;
@@ -237,7 +231,6 @@ export interface LocationModalFormBodyProps {
   setSquareWebhookSignatureKey: (v: string) => void;
   showSquareWebhookKey: boolean;
   setShowSquareWebhookKey: (v: boolean | ((s: boolean) => boolean)) => void;
-  logoId: string | null;
   onClose: () => void;
   /** When false, Cancel/Submit are omitted so the parent can render a modal footer (e.g. dialog shell). */
   showFormActions?: boolean;
@@ -261,18 +254,13 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
     pickerPaperWidth,
     pickerPopperContainer,
     pickerModalPanel,
-    logoDataUrl,
-    setLogoId,
-    setLogoDataUrl,
+    selectedLogoId,
+    logoPreviewUrl,
     logoList,
-    setLogoList,
-    logoListOpen,
-    setLogoListOpen,
     logoListLoading,
-    setLogoListLoading,
-    logoUploading,
-    setLogoUploading,
-    setError,
+    onSelectLogo,
+    onNewLogoFile,
+    onClearLogo,
     fileInputRef,
     marketManBuyerGuid,
     setMarketManBuyerGuid,
@@ -301,7 +289,6 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
     setSquareWebhookSignatureKey,
     showSquareWebhookKey,
     setShowSquareWebhookKey,
-    logoId,
     onClose,
     showFormActions = true,
   } = props;
@@ -311,44 +298,11 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
     [pickerModalPanel],
   );
 
-  const handleLogoListToggle = async () => {
-    if (!logoListOpen) {
-      setLogoListLoading(true);
-      try {
-        const list = await logoService.getList();
-        setLogoList(list);
-      } catch {
-        setError('Failed to load logos');
-      } finally {
-        setLogoListLoading(false);
-      }
-    }
-    setLogoListOpen(!logoListOpen);
-  };
-
-  const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file?.type.startsWith('image/')) return;
     e.target.value = '';
-    setLogoUploading(true);
-    setError('');
-    try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result as string);
-        r.onerror = reject;
-        r.readAsDataURL(file);
-      });
-      const logo = await logoService.create(dataUrl);
-      setLogoId(logo._id);
-      setLogoDataUrl(logo.dataUrl);
-      setLogoList((prev) => [logo, ...prev]);
-      setLogoListOpen(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload logo');
-    } finally {
-      setLogoUploading(false);
-    }
+    onNewLogoFile(file);
   };
 
   return (
@@ -478,65 +432,67 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
           Store logo
         </h4>
         <p className="text-xs text-gray-500">Optional. Used in the sidebar when this location is selected. Default logo is used if none is set.</p>
-        {logoDataUrl && (
+
+        {logoPreviewUrl && (
           <div className="flex items-center gap-3">
-            <img src={logoDataUrl} alt="Store logo" className="h-14 w-auto max-w-[140px] object-contain border border-gray-200 rounded-lg bg-white" />
+            <img src={logoPreviewUrl} alt="Selected logo" className="h-14 w-auto max-w-[140px] object-contain border border-gray-200 rounded-lg bg-white" />
             <button
               type="button"
-              onClick={() => { setLogoId(null); setLogoDataUrl(null); }}
+              onClick={onClearLogo}
               className="text-sm text-red-600 hover:underline"
             >
               Clear logo
             </button>
           </div>
         )}
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handleLogoListToggle}
-            disabled={logoListLoading}
-            className="px-3 py-2 text-sm font-medium border border-gray-200 rounded-xl text-primary hover:bg-gray-50 transition-colors disabled:opacity-70"
-          >
-            {getLogoListButtonLabel(logoListLoading, logoListOpen)}
-          </button>
+
+        {logoListLoading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <Spinner size="sm" className="h-4 w-4" /> Loading logos...
+          </div>
+        ) : logoList.length > 0 ? (
+          <div>
+            <p className="text-xs font-medium text-gray-600 mb-2">Pick from existing logos</p>
+            <div className="flex flex-wrap gap-2">
+              {logoList.map((logo) => (
+                <button
+                  key={logo._id}
+                  type="button"
+                  onClick={() => onSelectLogo(logo)}
+                  className={`relative h-14 w-14 rounded-lg border-2 bg-white p-1 transition-colors ${
+                    selectedLogoId === logo._id
+                      ? 'border-button-primary ring-1 ring-button-primary'
+                      : 'border-gray-200 hover:border-gray-400'
+                  }`}
+                  title={logo.name ?? 'Logo'}
+                >
+                  <img
+                    src={logo.url}
+                    alt={logo.name ?? 'Logo'}
+                    className="h-full w-full object-contain"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2 items-center">
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={logoUploading}
-            className="px-3 py-2 text-sm font-medium border border-button-primary text-button-primary rounded-xl hover:bg-button-primary/5 transition-colors disabled:opacity-70"
+            className="px-3 py-2 text-sm font-medium border border-button-primary text-button-primary rounded-xl hover:bg-button-primary/5 transition-colors inline-flex items-center gap-2"
           >
-            {logoUploading ? 'Uploading...' : 'Upload new'}
+            Upload new logo
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/jpg,image/png,image/webp,image/svg+xml,.svg"
             className="hidden"
             onChange={handleLogoFileChange}
           />
         </div>
-        {logoListOpen && (
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-2 border border-gray-200 rounded-xl bg-gray-50">
-            {logoList.length === 0 && !logoListLoading ? (
-              <p className="col-span-full text-sm text-gray-500 py-2">No logos yet. Upload one above.</p>
-            ) : (
-              logoList.map((logo) => (
-                <button
-                  key={logo._id}
-                  type="button"
-                  onClick={() => {
-                    setLogoId(logo._id);
-                    setLogoDataUrl(logo.dataUrl);
-                    setLogoListOpen(false);
-                  }}
-                  className={`p-1 rounded-lg border-2 transition-colors ${logoId === logo._id ? 'border-button-primary bg-white' : 'border-transparent hover:border-gray-300 bg-white'}`}
-                >
-                  <img src={logo.dataUrl} alt="" className="w-full h-12 object-contain" />
-                </button>
-              ))
-            )}
-          </div>
-        )}
       </section>
 
       <section className="space-y-4 pt-6 border-t border-gray-200">

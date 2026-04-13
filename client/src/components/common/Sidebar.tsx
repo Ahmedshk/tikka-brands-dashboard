@@ -209,7 +209,7 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
   };
 
   let desktopLogoContent: React.ReactNode;
-  if (useDefaultLogo || !currentLocation?.logoDataUrl) {
+  if (useDefaultLogo || !currentLocation?.logoUrl) {
     desktopLogoContent = isDesktopExpanded ? (
       <MainLogo className="max-w-[180px] w-full" />
     ) : (
@@ -217,9 +217,9 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
     );
   } else {
     desktopLogoContent = isDesktopExpanded ? (
-      <img src={currentLocation.logoDataUrl} alt="" className="max-w-[180px] w-full h-10 object-contain object-center" />
+      <img src={currentLocation.logoUrl} alt="" className="max-w-[180px] w-full h-10 object-contain object-center" />
     ) : (
-      <img src={currentLocation.logoDataUrl} alt="" className="h-8 w-8 object-contain" />
+      <img src={currentLocation.logoUrl} alt="" className="h-8 w-8 object-contain" />
     );
   }
 

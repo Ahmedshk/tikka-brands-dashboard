@@ -30,6 +30,7 @@ const IMAGE_MIMES = new Set([
   'image/png',
   'image/webp',
   'image/gif',
+  'image/svg+xml',
 ]);
 
 /**

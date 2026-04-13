@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import {
   createLocation,
   getLocations,
@@ -17,6 +18,20 @@ import {
 import { authenticate } from '../middleware/auth.middleware.js';
 import { attachUserContext } from '../middleware/user-context.middleware.js';
 import { requirePermission, requireLocationAccess } from '../middleware/rbac.middleware.js';
+import { UPLOAD_CONFIG } from '../config/upload.config.js';
+
+const logoConfig = UPLOAD_CONFIG.location_logo;
+const uploadLogo = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: logoConfig.maxBytes },
+  fileFilter(_req, file, cb) {
+    if (!logoConfig.allowedMimeTypes.includes(file.mimetype)) {
+      cb(new Error(`Invalid file type. Allowed: ${logoConfig.allowedMimeTypes.join(', ')}`));
+      return;
+    }
+    cb(null, true);
+  },
+}).single('logo');
 
 const router = Router();
 
@@ -30,8 +45,8 @@ router.get('/', validate(getLocationsQuerySchema), getLocations);
 router.use(requirePermission('location-management'));
 router.use(requireLocationAccess);
 router.get('/:id', validate(getLocationSchema), getLocationById);
-router.post('/', validate(createLocationSchema), createLocation);
-router.put('/:id', validate(updateLocationSchema), updateLocation);
+router.post('/', uploadLogo, validate(createLocationSchema), createLocation);
+router.put('/:id', uploadLogo, validate(updateLocationSchema), updateLocation);
 router.delete('/:id', validate(deleteLocationSchema), deleteLocation);
 
 export default router;

@@ -1,60 +1,46 @@
 import React from 'react';
 import { DAY_ORDER, DAY_NAMES, formatDateMmDdYyyy, addDaysToDate } from '../../utils/goalSettingHelpers';
-import type { Goal, GoalSource } from '../../types';
+import type { Goal, GoalDailyActuals, ResolvedGoalWithSource } from '../../types';
+import { formatResolvedGoalSourceCaption } from '../../utils/goalPreviousGoalsHelpers';
 
 export interface PreviousGoalsResultProps {
-  goalsByDay: Array<{ goal: Goal; source: GoalSource } | null>;
+  goalsByDay: Array<ResolvedGoalWithSource | null>;
   weekStart: string;
-  renderGoalReadOnly: (goal: Goal | null) => React.ReactNode;
+  renderGoalReadOnly: (goal: Goal | null, actuals?: GoalDailyActuals | null) => React.ReactNode;
+  actualsByDate: Record<string, GoalDailyActuals> | null;
 }
 
 export function PreviousGoalsResult({
   goalsByDay,
   weekStart,
   renderGoalReadOnly,
+  actualsByDate,
 }: Readonly<PreviousGoalsResultProps>) {
-  const daysWithGoal = DAY_ORDER.filter(
-    (day) =>
-      goalsByDay[day]?.source != null && goalsByDay[day]?.source !== 'default'
-  );
-  const daysWithoutGoal = DAY_ORDER.filter(
-    (day) =>
-      !goalsByDay[day] || goalsByDay[day]?.source === 'default'
-  );
-  const allDefault = daysWithGoal.length === 0;
-
-  if (allDefault) {
-    return (
-      <p className="text-sm text-primary">
-        No goal data was set for this week.
-      </p>
-    );
-  }
-
   return (
-    <>
-      {daysWithoutGoal.length > 0 && (
-        <p className="text-sm text-primary">
-          Goals were not set for the following days; default goals would apply:{' '}
-          {daysWithoutGoal.map((d) => DAY_NAMES[d]).join(', ')}.
-        </p>
-      )}
-      {daysWithGoal.map((day) => {
+    <div className="space-y-4">
+      {DAY_ORDER.map((day) => {
         const item = goalsByDay[day];
-        if (!item?.goal) return null;
-        const dayDate = formatDateMmDdYyyy(addDaysToDate(weekStart, day));
+        if (item?.goal == null) return null;
+        const iso = addDaysToDate(weekStart, day);
+        const dayDate = formatDateMmDdYyyy(iso);
+        const dayActuals = actualsByDate?.[iso] ?? null;
+        const sourceCaption = formatResolvedGoalSourceCaption(
+          item.source,
+          item.defaultSnapshotEffectiveFrom,
+        );
         return (
           <div
             key={day}
             className="p-4 bg-gray-50 rounded-xl border border-gray-200"
           >
-            <h4 className="text-sm font-bold text-primary mb-3">
+            <h4 className="text-sm font-bold text-primary mb-1">
               {DAY_NAMES[day]} ({dayDate})
             </h4>
-            {renderGoalReadOnly(item.goal)}
+            <p className="text-xs text-primary/75 mb-3">{sourceCaption}</p>
+            {renderGoalReadOnly(item.goal, dayActuals)}
           </div>
         );
       })}
-    </>
+    </div>
   );
 }

@@ -33,10 +33,50 @@ const futureWeekSchema = z.object({
   days: weeklySchema.default({}),
 });
 
+const ymdRegex = /^\d{4}-\d{2}-\d{2}$/;
+
 export const getGoalsQuerySchema = z.object({
   query: z.object({
     locationId: z.string().min(1, "Location ID is required"),
     date: z.string().optional(),
+  }),
+});
+
+export const getGoalDailyActualsQuerySchema = z.object({
+  query: z.object({
+    locationId: z.string().min(1, "Location ID is required"),
+    dates: z
+      .string()
+      .min(1, "dates is required (comma-separated YYYY-MM-DD)")
+      .superRefine((val, ctx) => {
+        const parts = val
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (parts.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "At least one date is required",
+          });
+          return;
+        }
+        if (parts.length > 14) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "At most 14 dates allowed",
+          });
+          return;
+        }
+        for (const p of parts) {
+          if (!ymdRegex.test(p)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `Invalid date: ${p} (expected YYYY-MM-DD)`,
+            });
+            return;
+          }
+        }
+      }),
   }),
 });
 

@@ -8,6 +8,7 @@ import type {
   GoalDayOfWeek,
   FutureWeekGoals,
   ResolvedGoalWithSource,
+  GoalDailyActuals,
 } from "../types";
 
 const BASE = API_ENDPOINTS.GOALS;
@@ -64,7 +65,11 @@ export const goalService = {
     options?: { signal?: AbortSignal }
   ): Promise<ResolvedGoalWithSource> {
     const res = await api.get<
-      ApiResponse<{ goals: Goal; source: ResolvedGoalWithSource["source"] }>
+      ApiResponse<{
+        goals: Goal;
+        source: ResolvedGoalWithSource["source"];
+        defaultSnapshotEffectiveFrom?: string;
+      }>
     >(BASE, {
       params: { locationId, date },
       signal: options?.signal,
@@ -76,7 +81,30 @@ export const goalService = {
     return {
       goal: data.goals,
       source: data.source ?? "default",
+      ...(data.defaultSnapshotEffectiveFrom != null
+        ? { defaultSnapshotEffectiveFrom: data.defaultSnapshotEffectiveFrom }
+        : {}),
     };
+  },
+
+  /**
+   * Batch actuals for goal metrics by business date (YYYY-MM-DD in location timezone).
+   */
+  async getDailyActuals(
+    locationId: string,
+    dates: string[],
+    options?: { signal?: AbortSignal }
+  ): Promise<Record<string, GoalDailyActuals>> {
+    const res = await api.get<
+      ApiResponse<{ actualsByDate: Record<string, GoalDailyActuals> }>
+    >(`${BASE}/daily-actuals`, {
+      params: { locationId, dates: dates.join(",") },
+      signal: options?.signal,
+    });
+    if (!res.data.success || res.data.data?.actualsByDate == null) {
+      throw new Error(res.data.message ?? "Failed to fetch goal actuals");
+    }
+    return res.data.data.actualsByDate;
   },
 
   async upsert(payload: {

@@ -27,6 +27,8 @@ export type GoalSource = "default" | "weekly" | "futureWeek";
 export interface IResolvedGoalResult {
   goals: IGoal;
   source: GoalSource;
+  /** When source is `default`, the history row’s `effectiveFrom` used for resolution. */
+  defaultSnapshotEffectiveFrom?: string;
 }
 
 /** Day-of-week index: 0 = Sunday, 6 = Saturday. */
@@ -38,10 +40,18 @@ export interface IFutureWeekGoals {
   days: Partial<Record<DayOfWeek, IGoalValues>>;
 }
 
+/** One row in default goal history (effectiveFrom is YYYY-MM-DD in location TZ). */
+export interface IDefaultGoalHistoryEntry {
+  effectiveFrom: string;
+  values: IGoalValues;
+}
+
 /** Full goal setting document (for editing: default + weekly + future weeks). */
 export interface IGoalSetting {
   locationId: string;
   default: IGoalValues;
   weekly: Partial<Record<DayOfWeek, IGoalValues>>;
   futureWeeks: IFutureWeekGoals[];
+  /** Dated snapshots when default goals changed; used for historical resolution. */
+  defaultHistory?: IDefaultGoalHistoryEntry[];
 }

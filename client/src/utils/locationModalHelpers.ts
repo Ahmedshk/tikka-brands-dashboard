@@ -1,5 +1,6 @@
 import { format } from 'date-fns';
 import { locationService } from '../services/location.service';
+import { logoService } from '../services/logo.service';
 import type { Location } from '../types';
 
 export const DEFAULT_BUSINESS_START_TIME = '04:00';
@@ -15,11 +16,6 @@ export function parseBusinessStartToDate(hhmm: string): Date {
 export function formatBusinessStartFromDate(date: Date | null): string {
   if (!date) return DEFAULT_BUSINESS_START_TIME;
   return format(date, 'HH:mm');
-}
-
-export function getLogoListButtonLabel(loading: boolean, open: boolean): string {
-  if (loading) return 'Loading...';
-  return open ? 'Hide logos' : 'Pick from existing';
 }
 
 export function getLocationFormValidation(params: {
@@ -77,6 +73,21 @@ export function getLocationFormValidation(params: {
   return { squareCredsOk, homebaseCredsOk, canSubmit };
 }
 
+/**
+ * If a pending file is present, uploads it via the Logo API and returns the new logo ID.
+ * Otherwise returns the already-selected logo ID (or null).
+ */
+export async function uploadPendingLogoAndGetId(
+  pendingFile: File | null,
+  selectedLogoId: string | null,
+): Promise<string | null> {
+  if (pendingFile) {
+    const logo = await logoService.create(pendingFile);
+    return logo._id;
+  }
+  return selectedLogoId;
+}
+
 export async function submitLocationForm(params: {
   isEdit: boolean;
   editLocation: Location | null;
@@ -97,6 +108,7 @@ export async function submitLocationForm(params: {
   updateSquareWebhookSignature: boolean;
   squareWebhookSignatureKey: string;
   logoId: string | null;
+  clearLogo: boolean;
 }): Promise<Location | undefined> {
   const {
     isEdit,
@@ -118,6 +130,7 @@ export async function submitLocationForm(params: {
     updateSquareWebhookSignature,
     squareWebhookSignatureKey,
     logoId,
+    clearLogo,
   } = params;
   const trimmedWebhookKey = squareWebhookSignatureKey.trim();
   const squareWebhookPayload =
@@ -134,11 +147,12 @@ export async function submitLocationForm(params: {
       homebaseLocationId: homebaseLocationId.trim(),
       timezone: timezone.trim(),
       businessStartTime: businessStartTime.trim(),
-      ...(logoId !== null && logoId !== '' ? { logoId } : { logoId: null }),
       marketManBuyerGuid: marketManBuyerGuid.trim(),
       ...((updateSquareCredentials || !hasStoredSquare) && squareAccessToken.trim() && { squareAccessToken: squareAccessToken.trim() }),
       ...((updateHomebaseCredentials || !hasStoredHomebase) && homebaseApiKey.trim() && { homebaseApiKey: homebaseApiKey.trim() }),
       ...squareWebhookPayload,
+      ...(logoId != null ? { logoId } : {}),
+      ...(clearLogo ? { clearLogo: true as const } : {}),
     };
     return locationService.update(editLocation._id, updatePayload);
   }
@@ -152,7 +166,7 @@ export async function submitLocationForm(params: {
     squareAccessToken: squareAccessToken.trim(),
     homebaseApiKey: homebaseApiKey.trim(),
     marketManBuyerGuid: marketManBuyerGuid.trim(),
-    ...(logoId ? { logoId } : {}),
+    ...(logoId != null ? { logoId } : {}),
     ...(trimmedWebhookKey !== '' ? { squareWebhookSignatureKey: trimmedWebhookKey } : {}),
   });
   return undefined;

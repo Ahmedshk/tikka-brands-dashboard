@@ -25,14 +25,13 @@ export class LogoRepository {
     return await LogoModel.findById(id).lean().exec() as LogoDocument | null;
   }
 
-  /** Single query for many logos (e.g. location list). Only `_id` and `dataUrl` are selected. */
-  async findByIds(ids: string[]): Promise<Array<{ _id: unknown; dataUrl: string }>> {
+  async findByIds(ids: string[]): Promise<Array<{ _id: unknown; url: string }>> {
     const oids = toValidObjectIds(ids);
     if (oids.length === 0) return [];
     return (await LogoModel.find({ _id: { $in: oids } })
-      .select({ dataUrl: 1 })
+      .select({ url: 1 })
       .lean()
-      .exec()) as Array<{ _id: unknown; dataUrl: string }>;
+      .exec()) as Array<{ _id: unknown; url: string }>;
   }
 
   async findAll(limit = LIST_LIMIT): Promise<LogoDocument[]> {

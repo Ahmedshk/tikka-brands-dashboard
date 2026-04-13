@@ -6,8 +6,13 @@ import type { Logo } from '../types';
 const BASE = API_ENDPOINTS.LOGOS;
 
 export const logoService = {
-  async create(dataUrl: string): Promise<Logo> {
-    const res = await api.post<ApiResponse<{ logo: Logo }>>(BASE, { dataUrl });
+  async create(file: File, name?: string): Promise<Logo> {
+    const fd = new FormData();
+    fd.append('logo', file);
+    if (name) fd.append('name', name);
+    const res = await api.post<ApiResponse<{ logo: Logo }>>(BASE, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     if (!res.data.success || !res.data.data?.logo) {
       throw new Error(res.data.message ?? 'Failed to create logo');
     }

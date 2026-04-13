@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { userService } from '../../services/user.service';
 import { roleService } from '../../services/role.service';
-import { locationService } from '../../services/location.service';
 import type { RoleRow, RolePermissions, RoleLocationsResponse } from '../../types/rbac.types';
 import type { UserRow } from '../../types/userManagement.types';
 import type { LocationListItem } from '../../types';
@@ -29,9 +28,17 @@ export interface AddUserModalProps {
   onError?: (message: string) => void;
   /** When set, modal is in edit mode: prefill form and call updateUser on save. */
   initialUser?: UserRow | null;
+  locations: LocationListItem[];
 }
 
-export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: Readonly<AddUserModalProps>) {
+export function AddUserModal({
+  open,
+  onClose,
+  onSaved,
+  onError,
+  initialUser,
+  locations,
+}: Readonly<AddUserModalProps>) {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
@@ -50,7 +57,6 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
   const [permissionRemovals, setPermissionRemovals] = useState<RolePermissions | null>(null);
   const [locationOverrides, setLocationOverrides] = useState<string[]>([]);
   const [locationRemovals, setLocationRemovals] = useState<string[]>([]);
-  const [locations, setLocations] = useState<LocationListItem[]>([]);
   const [additionalLocationsOpen, setAdditionalLocationsOpen] = useState(false);
   const [additionalPermissionsOpen, setAdditionalPermissionsOpen] = useState(false);
   const [startDate, setStartDate] = useState('');
@@ -125,7 +131,6 @@ export function AddUserModal({ open, onClose, onSaved, onError, initialUser }: R
     setAdditionalLocationsOpen(false);
     setAdditionalPermissionsOpen(false);
     roleService.list().then(setRoles).catch(() => setRoles([]));
-    locationService.getAll().then(setLocations).catch(() => setLocations([]));
   }, [open, initialUser]);
 
   useEffect(() => {

@@ -51,8 +51,9 @@ export interface ApiResponse<T = unknown> {
 
 export interface Logo {
   _id: string;
-  dataUrl: string;
-  contentType?: string;
+  url: string;
+  publicId: string;
+  name?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -64,7 +65,7 @@ export interface LocationListItem {
   address: string;
   timezone: string;
   businessStartTime: string;
-  logoDataUrl?: string;
+  logoUrl?: string;
 }
 
 /** Full location (from get-by-id, create, update). */
@@ -84,10 +85,10 @@ export interface Location {
   hasHomebaseApiKey?: boolean;
   /** True when location has a stored Square webhook signature key (value never sent to client). */
   hasSquareWebhookSignatureKey?: boolean;
-  /** Reference to logo document; when set, logoDataUrl is populated for display. */
+  /** Reference to Logo document in the Logo collection. */
   logoId?: string;
-  /** Data URL for the location logo (populated by API when logoId is set). */
-  logoDataUrl?: string;
+  /** Cloudinary URL for the location logo (populated from Logo collection). */
+  logoUrl?: string;
   /** MarketMan Buyer GUID for this location. */
   marketManBuyerGuid?: string;
   createdAt?: string;
@@ -141,6 +142,8 @@ export interface GoalSetting {
   default: GoalValues;
   weekly: Partial<Record<GoalDayOfWeek, GoalValues>>;
   futureWeeks: FutureWeekGoals[];
+  /** Dated default snapshots (from server); optional on older responses. */
+  defaultHistory?: Array<{ effectiveFrom: string; values: GoalValues }>;
 }
 
 /** Source of the resolved goal for a date. */
@@ -150,4 +153,18 @@ export type GoalSource = 'default' | 'weekly' | 'futureWeek';
 export interface ResolvedGoalWithSource {
   goal: Goal;
   source: GoalSource;
+  /** When source is `default`, history row effective date (YYYY-MM-DD), if any. */
+  defaultSnapshotEffectiveFrom?: string;
+}
+
+/**
+ * Per-business-day actuals for Goal Setting (from Square / Homebase rollups and cache).
+ * Fields are optional: the API omits metrics the user is not allowed to view (Goal Setting RBAC).
+ */
+export interface GoalDailyActuals {
+  actualSales?: number | null;
+  actualLaborCostPercent?: number | null;
+  actualHours?: number | null;
+  actualSalesPerManHour?: number | null;
+  actualFoodCostPercent?: number | null;
 }

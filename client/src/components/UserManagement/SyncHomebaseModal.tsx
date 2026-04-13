@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { userService, type SyncFromHomebaseResult } from '../../services/user.service';
-import { locationService } from '../../services/location.service';
 import type { LocationListItem } from '../../types';
 
 export interface SyncHomebaseModalProps {
@@ -9,17 +8,22 @@ export interface SyncHomebaseModalProps {
   onClose: () => void;
   onSynced: (result: SyncFromHomebaseResult) => void;
   onError?: (message: string) => void;
+  locations: LocationListItem[];
 }
 
-export function SyncHomebaseModal({ open, onClose, onSynced, onError }: Readonly<SyncHomebaseModalProps>) {
-  const [locations, setLocations] = useState<LocationListItem[]>([]);
+export function SyncHomebaseModal({
+  open,
+  onClose,
+  onSynced,
+  onError,
+  locations,
+}: Readonly<SyncHomebaseModalProps>) {
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setSelectedLocationId('');
-    locationService.getAll().then(setLocations).catch(() => setLocations([]));
   }, [open]);
 
   const handleSync = async () => {

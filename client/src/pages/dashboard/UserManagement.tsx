@@ -74,8 +74,19 @@ export const UserManagement = () => {
   }, [fetchUsers]);
 
   useEffect(() => {
+    let cancelled = false;
     roleService.list().then(setRoles).catch(() => setRoles([]));
-    locationService.getAll().then(setLocations).catch(() => setLocations([]));
+    locationService
+      .getAll()
+      .then((data) => {
+        if (!cancelled) setLocations(data);
+      })
+      .catch(() => {
+        if (!cancelled) setLocations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSyncSynced = (result: { created: number; updated: number }) => {
@@ -243,6 +254,7 @@ export const UserManagement = () => {
           onSaved={handleSaved}
           onError={(msg) => toast.error(msg)}
           initialUser={editUser}
+          locations={locations}
         />
         {userToTerminate != null && (
           <ConfirmDialog
@@ -274,6 +286,7 @@ export const UserManagement = () => {
           onClose={() => setSyncHomebaseOpen(false)}
           onSynced={handleSyncSynced}
           onError={(msg) => toast.error(msg)}
+          locations={locations}
         />
       </div>
     </Layout>

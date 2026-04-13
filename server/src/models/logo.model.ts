@@ -9,13 +9,19 @@ export interface LogoDocument extends Omit<ILogo, '_id' | 'createdAt' | 'updated
 
 const logoSchema = new Schema<LogoDocument>(
   {
-    dataUrl: {
+    url: {
       type: String,
       required: true,
     },
-    contentType: {
+    publicId: {
+      type: String,
+      required: true,
+    },
+    name: {
       type: String,
       required: false,
+      trim: true,
+      default: undefined,
     },
   },
   {

@@ -48,6 +48,15 @@ function buildListMatchQuery(filter?: LocationListFilter): Record<string, unknow
   return { $and: parts };
 }
 
+const LIST_PROJECTION = {
+  storeName: 1,
+  address: 1,
+  timezone: 1,
+  businessStartTime: 1,
+  logoId: 1,
+  createdAt: 1,
+} as const;
+
 export class LocationRepository {
   async create(data: Omit<ILocation, '_id' | 'createdAt' | 'updatedAt'>): Promise<LocationDocument> {
     const location = new LocationModel(data);
@@ -63,7 +72,7 @@ export class LocationRepository {
   }
 
   async findPaginated(skip: number, limit: number): Promise<LocationDocument[]> {
-    return await LocationModel.find().sort({ createdAt: -1 }).skip(skip).limit(limit).lean().exec() as LocationDocument[];
+    return await LocationModel.find().select(LIST_PROJECTION).sort({ createdAt: -1 }).skip(skip).limit(limit).lean().exec() as LocationDocument[];
   }
 
   async findPaginatedWithFilter(
@@ -73,6 +82,7 @@ export class LocationRepository {
   ): Promise<LocationDocument[]> {
     const q = buildListMatchQuery(filter);
     return await LocationModel.find(q)
+      .select(LIST_PROJECTION)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)

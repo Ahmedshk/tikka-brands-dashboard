@@ -1,7 +1,8 @@
 export interface ILogo {
   _id?: string;
-  dataUrl: string;
-  contentType?: string | undefined;
+  url: string;
+  publicId: string;
+  name?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -11,15 +11,21 @@ import {
   type GoalDayOfWeek,
   type GoalValues,
   type FutureWeekGoals,
+  type GoalValueKey,
 } from '../../utils/goalSettingHelpers';
-import type { Goal, GoalSource } from '../../types';
+import type { Goal, GoalDailyActuals, ResolvedGoalWithSource } from '../../types';
 
 export interface DefaultGoalsTabProps {
   defaultGoals: GoalValues;
   updateDefault: (key: keyof GoalValues, value: string) => void;
+  allowedGoalKeys: ReadonlySet<GoalValueKey>;
 }
 
-export function DefaultGoalsTab({ defaultGoals, updateDefault }: Readonly<DefaultGoalsTabProps>) {
+export function DefaultGoalsTab({
+  defaultGoals,
+  updateDefault,
+  allowedGoalKeys,
+}: Readonly<DefaultGoalsTabProps>) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-primary">
@@ -31,6 +37,7 @@ export function DefaultGoalsTab({ defaultGoals, updateDefault }: Readonly<Defaul
           values={defaultGoals}
           onChange={updateDefault}
           idPrefix="default"
+          allowedGoalKeys={allowedGoalKeys}
         />
       </div>
     </div>
@@ -41,12 +48,18 @@ export interface WeeklyGoalsTabProps {
   currentWeekStart: string | null;
   getWeeklyDay: (day: GoalDayOfWeek) => GoalValues;
   updateWeeklyDay: (day: GoalDayOfWeek, key: keyof GoalValues, value: string) => void;
+  actualsByDate: Record<string, GoalDailyActuals> | null;
+  loadingActuals: boolean;
+  allowedGoalKeys: ReadonlySet<GoalValueKey>;
 }
 
 export function WeeklyGoalsTab({
   currentWeekStart,
   getWeeklyDay,
   updateWeeklyDay,
+  actualsByDate,
+  loadingActuals,
+  allowedGoalKeys,
 }: Readonly<WeeklyGoalsTabProps>) {
   return (
     <div className="space-y-4">
@@ -61,6 +74,9 @@ export function WeeklyGoalsTab({
           const dayDate = currentWeekStart
             ? formatDateMmDdYyyy(addDaysToDate(currentWeekStart, day))
             : null;
+          const iso =
+            currentWeekStart != null ? addDaysToDate(currentWeekStart, day) : null;
+          const dayActuals = iso != null ? actualsByDate?.[iso] ?? null : null;
           return (
             <div
               key={day}
@@ -79,6 +95,10 @@ export function WeeklyGoalsTab({
                 values={getWeeklyDay(day)}
                 onChange={(key, value) => updateWeeklyDay(day, key, value)}
                 idPrefix={`weekly-${day}`}
+                showActuals
+                actuals={dayActuals}
+                loadingActuals={loadingActuals}
+                allowedGoalKeys={allowedGoalKeys}
               />
             </div>
           );
@@ -107,6 +127,7 @@ export interface FutureWeeksTabProps {
   updateFutureWeekStartDate: (weekIndex: number, dateStr: string) => void;
   handleAddWeekClick: (e: React.MouseEvent<HTMLElement>) => void;
   handleAddWeekCalendarChange: (sunday: string) => void;
+  allowedGoalKeys: ReadonlySet<GoalValueKey>;
 }
 
 export function FutureWeeksTab({
@@ -123,6 +144,7 @@ export function FutureWeeksTab({
   updateFutureWeekStartDate,
   handleAddWeekClick,
   handleAddWeekCalendarChange,
+  allowedGoalKeys,
 }: Readonly<FutureWeeksTabProps>) {
   return (
     <div className="space-y-6">
@@ -194,6 +216,7 @@ export function FutureWeeksTab({
                             updateFutureWeekDay(index, day, key, value)
                           }
                           idPrefix={`future-${index}-${day}`}
+                          allowedGoalKeys={allowedGoalKeys}
                         />
                       </div>
                     );
@@ -247,9 +270,10 @@ export interface PreviousGoalsTabProps {
   selectedPreviousWeek: string | null;
   lastWeekStart: string | null;
   loadingPrevious: boolean;
-  previousGoalsByDay: Array<{ goal: Goal; source: GoalSource } | null> | null;
+  previousGoalsByDay: Array<ResolvedGoalWithSource | null> | null;
   setSelectedPreviousWeek: (sunday: string | null) => void;
-  renderGoalReadOnly: (goal: Goal | null) => React.ReactNode;
+  renderGoalReadOnly: (goal: Goal | null, actuals?: GoalDailyActuals | null) => React.ReactNode;
+  actualsByDate: Record<string, GoalDailyActuals> | null;
 }
 
 export function PreviousGoalsTab({
@@ -259,11 +283,13 @@ export function PreviousGoalsTab({
   previousGoalsByDay,
   setSelectedPreviousWeek,
   renderGoalReadOnly,
+  actualsByDate,
 }: Readonly<PreviousGoalsTabProps>) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-primary">
-        View resolved goals for a past week (read-only). Select a week to see the goals that were set for each day.
+        View resolved goals for a past week (read-only). Each day shows weekly or future overrides when set;
+        otherwise default goals active on that date (including historical defaults when they changed).
       </p>
       <div>
         <label
@@ -278,14 +304,14 @@ export function PreviousGoalsTab({
           onChange={(sunday) => setSelectedPreviousWeek(sunday)}
           maxDate={
             lastWeekStart
-              ? new Date(lastWeekStart + 'T12:00:00')
+              ? new Date(`${addDaysToDate(lastWeekStart, 6)}T12:00:00`)
               : undefined
           }
           placeholder="Select week"
         />
       </div>
       {loadingPrevious && (
-        <p className="text-sm text-primary">Loading goals...</p>
+        <p className="text-sm text-primary">Loading goals…</p>
       )}
       {!loadingPrevious &&
         selectedPreviousWeek != null &&
@@ -295,6 +321,7 @@ export function PreviousGoalsTab({
               goalsByDay={previousGoalsByDay}
               weekStart={selectedPreviousWeek}
               renderGoalReadOnly={renderGoalReadOnly}
+              actualsByDate={actualsByDate}
             />
           </div>
         )}

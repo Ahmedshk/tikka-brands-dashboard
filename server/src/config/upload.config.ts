@@ -21,6 +21,10 @@ export const UPLOAD_CONFIG: Record<UploadType, UploadTypeConfig> = {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ],
   },
+  location_logo: {
+    maxBytes: 2 * 1024 * 1024, // 2 MB
+    allowedMimeTypes: ["image/jpeg", "image/jpg", "image/webp", "image/png", "image/svg+xml"],
+  },
 };
 
 export const CLOUDINARY_FOLDERS = {
@@ -35,6 +39,7 @@ export const CLOUDINARY_FOLDERS = {
   employee_reviews: "tikka_brands/employee_reviews",
   /** Signed disciplinary documents by employee: tikka_brands/disciplinary_management/<userId> */
   disciplinary_management: "tikka_brands/disciplinary_management",
+  location_logos: "tikka_brands/location_logos",
 } as const;
 
 export function getDisciplinaryFolder(employeeId: string): string {

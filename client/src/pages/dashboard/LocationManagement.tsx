@@ -4,7 +4,7 @@ import { Pagination } from '../../components/common/Pagination';
 import { Spinner } from '../../components/common/Spinner';
 import { LocationModal } from '../../components/modal/LocationModal';
 import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
-import { locationService } from '../../services/location.service';
+import { locationService, invalidateLocationListCache } from '../../services/location.service';
 import type { Location, LocationListItem } from '../../types';
 import { CiImageOn } from 'react-icons/ci';
 import AdminAndSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
@@ -75,6 +75,7 @@ export const LocationManagement = () => {
     setDeleting(true);
     try {
       await locationService.delete(locationToDelete._id);
+      invalidateLocationListCache();
       setLocationToDelete(null);
       await fetchLocations();
     } catch (err) {
@@ -131,8 +132,8 @@ export const LocationManagement = () => {
                       <div className="min-w-0">
                         <p className="flex items-center gap-2 text-sm font-medium text-primary truncate" title={loc.storeName}>
                           <span className="w-8 h-8 flex items-center justify-center shrink-0 text-gray-400">
-                            {loc.logoDataUrl ? (
-                              <img src={loc.logoDataUrl} alt="" className="w-8 h-8 rounded-lg object-contain" />
+                            {loc.logoUrl ? (
+                              <img src={loc.logoUrl} alt="" className="w-8 h-8 rounded-lg object-contain" />
                             ) : (
                               <CiImageOn className="w-5 h-5" aria-hidden />
                             )}
@@ -196,8 +197,8 @@ export const LocationManagement = () => {
                           <td className="px-4 lg:px-6 py-3 lg:py-4">
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="w-8 h-8 flex items-center justify-center shrink-0 text-gray-400">
-                                {loc.logoDataUrl ? (
-                                  <img src={loc.logoDataUrl} alt="" className="w-8 h-8 rounded-lg object-contain" />
+                                {loc.logoUrl ? (
+                                  <img src={loc.logoUrl} alt="" className="w-8 h-8 rounded-lg object-contain" />
                                 ) : (
                                   <CiImageOn className="w-5 h-5" aria-hidden />
                                 )}
@@ -269,6 +270,7 @@ export const LocationManagement = () => {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onSaved={() => {
+          invalidateLocationListCache();
           fetchLocations();
         }}
         editLocation={editLocation}

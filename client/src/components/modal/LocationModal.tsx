@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { Location, Logo } from '../../types';
+import { logoService } from '../../services/logo.service';
 import {
   DEFAULT_BUSINESS_START_TIME,
   getLocationFormValidation,
   parseBusinessStartToDate,
   submitLocationForm,
+  uploadPendingLogoAndGetId,
 } from '../../utils/locationModalHelpers';
 import { Spinner } from '../common/Spinner';
 import { LocationModalFormBody } from './LocationModalFormBody';
@@ -34,19 +36,18 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
   const [updateSquareCredentials, setUpdateSquareCredentials] = useState(false);
   const [updateHomebaseCredentials, setUpdateHomebaseCredentials] = useState(false);
   const [updateSquareWebhookSignature, setUpdateSquareWebhookSignature] = useState(false);
-  const [logoId, setLogoId] = useState<string | null>(null);
-  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
-  const [marketManBuyerGuid, setMarketManBuyerGuid] = useState('');
+  const [selectedLogoId, setSelectedLogoId] = useState<string | null>(null);
+  const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+  const [clearLogo, setClearLogo] = useState(false);
   const [logoList, setLogoList] = useState<Logo[]>([]);
-  const [logoListOpen, setLogoListOpen] = useState(false);
   const [logoListLoading, setLogoListLoading] = useState(false);
-  const [logoUploading, setLogoUploading] = useState(false);
+  const [marketManBuyerGuid, setMarketManBuyerGuid] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const modalContentRef = useRef<HTMLDivElement>(null);
   const modalPanelRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  /** MUI pickers portal to body by default; native dialog top layer sits above that, so anchor poppers inside the dialog element. */
   const [pickerPopperContainer, setPickerPopperContainer] = useState<HTMLElement | null>(null);
   const [pickerModalPanel, setPickerModalPanel] = useState<HTMLElement | null>(null);
   const [pickerPaperWidth, setPickerPaperWidth] = useState(400);
@@ -66,6 +67,18 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
     const ro = new ResizeObserver(updateWidth);
     ro.observe(el);
     return () => ro.disconnect();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    setLogoListLoading(true);
+    logoService.getList().then((logos) => {
+      if (!cancelled) setLogoList(logos);
+    }).catch(() => {}).finally(() => {
+      if (!cancelled) setLogoListLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [isOpen]);
 
   const isEdit = Boolean(editLocation);
@@ -109,8 +122,10 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
       setUpdateSquareCredentials(false);
       setUpdateHomebaseCredentials(false);
       setUpdateSquareWebhookSignature(false);
-      setLogoId(editLocation.logoId ?? null);
-      setLogoDataUrl(editLocation.logoDataUrl ?? null);
+      setSelectedLogoId(editLocation.logoId ?? null);
+      setPendingLogoFile(null);
+      setLogoPreviewUrl(editLocation.logoUrl ?? null);
+      setClearLogo(false);
       setMarketManBuyerGuid(editLocation.marketManBuyerGuid ?? '');
     } else {
       setStoreName('');
@@ -126,13 +141,35 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
       setUpdateSquareCredentials(false);
       setUpdateHomebaseCredentials(false);
       setUpdateSquareWebhookSignature(false);
-      setLogoId(null);
-      setLogoDataUrl(null);
+      setSelectedLogoId(null);
+      setPendingLogoFile(null);
+      setLogoPreviewUrl(null);
+      setClearLogo(false);
       setMarketManBuyerGuid('');
     }
-    setLogoListOpen(false);
     setError('');
   }, [editLocation, isOpen]);
+
+  const handleNewLogoFile = useCallback((file: File) => {
+    setSelectedLogoId(null);
+    setPendingLogoFile(file);
+    setLogoPreviewUrl(URL.createObjectURL(file));
+    setClearLogo(false);
+  }, []);
+
+  const handleSelectLogo = useCallback((logo: Logo) => {
+    setSelectedLogoId(logo._id);
+    setPendingLogoFile(null);
+    setLogoPreviewUrl(logo.url);
+    setClearLogo(false);
+  }, []);
+
+  const handleClearLogo = useCallback(() => {
+    setSelectedLogoId(null);
+    setPendingLogoFile(null);
+    setLogoPreviewUrl(null);
+    setClearLogo(true);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,6 +177,16 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
     setError('');
     setSubmitting(true);
     try {
+      const resolvedLogoId = await uploadPendingLogoAndGetId(pendingLogoFile, selectedLogoId);
+
+      if (pendingLogoFile && resolvedLogoId) {
+        const uploaded = { _id: resolvedLogoId } as Logo;
+        setLogoList((prev) => {
+          if (prev.some((l) => l._id === resolvedLogoId)) return prev;
+          return [uploaded, ...prev];
+        });
+      }
+
       const updated = await submitLocationForm({
         isEdit,
         editLocation,
@@ -159,7 +206,8 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
         hasStoredSquareWebhookSignature,
         updateSquareWebhookSignature,
         squareWebhookSignatureKey,
-        logoId,
+        logoId: resolvedLogoId,
+        clearLogo,
       });
       onSaved(updated);
       onClose();
@@ -234,17 +282,13 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
                 pickerPaperWidth={pickerPaperWidth}
                 pickerPopperContainer={pickerPopperContainer}
                 pickerModalPanel={pickerModalPanel}
-                logoDataUrl={logoDataUrl}
-                setLogoId={setLogoId}
-                setLogoDataUrl={setLogoDataUrl}
+                selectedLogoId={selectedLogoId}
+                logoPreviewUrl={logoPreviewUrl}
                 logoList={logoList}
-                setLogoList={setLogoList}
-                logoListOpen={logoListOpen}
-                setLogoListOpen={setLogoListOpen}
                 logoListLoading={logoListLoading}
-                setLogoListLoading={setLogoListLoading}
-                logoUploading={logoUploading}
-                setLogoUploading={setLogoUploading}
+                onSelectLogo={handleSelectLogo}
+                onNewLogoFile={handleNewLogoFile}
+                onClearLogo={handleClearLogo}
                 setError={setError}
                 fileInputRef={fileInputRef}
                 marketManBuyerGuid={marketManBuyerGuid}
@@ -274,7 +318,6 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
                 setSquareWebhookSignatureKey={setSquareWebhookSignatureKey}
                 showSquareWebhookKey={showSquareWebhookKey}
                 setShowSquareWebhookKey={setShowSquareWebhookKey}
-                logoId={logoId}
                 onClose={onClose}
                 showFormActions={false}
               />

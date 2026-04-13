@@ -7,9 +7,13 @@ import {
   validateLocationId,
   buildUpdateLocationData,
 } from '../utils/locationControllerHelpers.js';
+import { LogoService } from '../services/logo.service.js';
+import { uploadToCloudinary } from '../config/cloudinary.js';
+import { CLOUDINARY_FOLDERS } from '../config/upload.config.js';
 import type { ILocationListItem, ILocationResponse } from '../types/location.types.js';
 
 const locationService = new LocationService();
+const logoService = new LogoService();
 
 function toLocationListItem(loc: ILocationResponse): ILocationListItem {
   return {
@@ -18,7 +22,7 @@ function toLocationListItem(loc: ILocationResponse): ILocationListItem {
     address: loc.address ?? '',
     timezone: loc.timezone ?? '',
     businessStartTime: loc.businessStartTime ?? '00:00',
-    ...(loc.logoDataUrl != null && { logoDataUrl: loc.logoDataUrl }),
+    ...(loc.logoUrl != null && { logoUrl: loc.logoUrl }),
   };
 }
 
@@ -42,6 +46,20 @@ export const createLocation = async (
       marketManBuyerGuid,
       squareWebhookSignatureKey,
     } = req.body;
+
+    let resolvedLogoId: string | undefined;
+
+    if (req.file) {
+      const result = await uploadToCloudinary(
+        { buffer: req.file.buffer, mimetype: req.file.mimetype },
+        CLOUDINARY_FOLDERS.location_logos,
+      );
+      const logo = await logoService.create(result.secure_url, result.public_id);
+      resolvedLogoId = logo._id;
+    } else if (logoId != null && logoId !== '') {
+      resolvedLogoId = String(logoId).trim();
+    }
+
     const location = await locationService.create({
       storeName,
       address,
@@ -56,7 +74,7 @@ export const createLocation = async (
       businessStartTime,
       squareAccessToken,
       homebaseApiKey,
-      ...(logoId != null && logoId !== '' && { logoId: String(logoId).trim() }),
+      ...(resolvedLogoId != null && { logoId: resolvedLogoId }),
       marketManBuyerGuid: typeof marketManBuyerGuid === 'string' ? marketManBuyerGuid.trim() : '',
       ...(typeof squareWebhookSignatureKey === "string" &&
       squareWebhookSignatureKey.trim() !== ""
@@ -147,6 +165,18 @@ export const updateLocation = async (
     const id = validateLocationId(req.params.id, res);
     if (id === null) return;
     const updateData = buildUpdateLocationData(req.body as Record<string, unknown>);
+
+    if (req.file) {
+      const result = await uploadToCloudinary(
+        { buffer: req.file.buffer, mimetype: req.file.mimetype },
+        CLOUDINARY_FOLDERS.location_logos,
+      );
+      const logo = await logoService.create(result.secure_url, result.public_id);
+      updateData.logoId = logo._id ?? null;
+    } else if (req.body.clearLogo === 'true') {
+      updateData.logoId = null;
+    }
+
     const location = await locationService.update(id, updateData);
     res.status(200).json({
       success: true,

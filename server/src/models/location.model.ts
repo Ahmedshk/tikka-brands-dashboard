@@ -79,4 +79,6 @@ const locationSchema = new Schema<LocationDocument>(
   }
 );
 
+locationSchema.index({ createdAt: -1 });
+
 export const LocationModel = mongoose.model<LocationDocument>('Location', locationSchema);

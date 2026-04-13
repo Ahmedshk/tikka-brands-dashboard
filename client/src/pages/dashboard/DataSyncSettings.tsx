@@ -131,7 +131,8 @@ export const DataSyncSettings = () => {
     (async () => {
       try {
         const list = await locationService.getAll();
-        if (!cancelled) setLocations(list);
+        if (cancelled) return;
+        setLocations(list);
       } catch {
         if (!cancelled) toast.error("Failed to load locations");
       }

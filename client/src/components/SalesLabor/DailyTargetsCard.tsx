@@ -48,13 +48,17 @@ export const DailyTargetsCard = ({ items }: DailyTargetsCardProps) => {
         const isUnfavorable = item.higherIsBetter
           ? item.actual < item.target
           : item.actual > item.target;
-        const tol = item.targetTolerance ?? 0;
-        const withinTolerance =
-          isUnfavorable &&
-          tol > 0 &&
-          (item.higherIsBetter
-            ? item.actual >= item.target - tol
-            : item.actual <= item.target + tol);
+        const tolPct = Math.max(0, item.targetTolerance ?? 0);
+        const tolFrac = tolPct / 100;
+        const target = item.target;
+        let withinTolerance = false;
+        if (isUnfavorable && tolPct > 0 && target > 0) {
+          if (item.higherIsBetter) {
+            withinTolerance = item.actual >= target * (1 - tolFrac);
+          } else {
+            withinTolerance = item.actual <= target * (1 + tolFrac);
+          }
+        }
         const displayPercent = item.target === 0
           ? 0
           : Math.min(100, Math.round((item.actual / item.target) * 100));

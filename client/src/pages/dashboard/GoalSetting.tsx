@@ -7,8 +7,18 @@ import { Spinner } from '../../components/common/Spinner';
 import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
 import { goalService } from '../../services/goal.service';
 import { locationService } from '../../services/location.service';
-import type { GoalSetting as GoalSettingType, GoalValues, GoalDayOfWeek, FutureWeekGoals, Goal, GoalSource, LocationListItem } from '../../types';
+import type {
+  GoalSetting as GoalSettingType,
+  GoalValues,
+  GoalDayOfWeek,
+  FutureWeekGoals,
+  Goal,
+  GoalDailyActuals,
+  LocationListItem,
+  ResolvedGoalWithSource,
+} from '../../types';
 import { RootState } from '../../store/store';
+import { getStoredLocationId } from '../../store/slices/location.slice';
 import AdminAndSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
 import {
   DEFAULT_GOAL_VALUES,
@@ -21,6 +31,12 @@ import {
   getSundayOfWeek,
   type TabId,
 } from '../../utils/goalSettingHelpers';
+import {
+  mergeGoalValuesForSave,
+  mergeWeeklyForSave,
+  mergeFutureWeeksForSave,
+} from '../../utils/goalSettingPermissionHelpers';
+import { useGoalSettingAllowedGoalKeys } from '../../hooks/useGoalSettingAllowedGoalKeys';
 import { GoalSettingFormFields } from '../../components/GoalSetting/GoalSettingFormFields';
 import {
   DefaultGoalsTab,
@@ -32,6 +48,8 @@ import { GoalSettingLocationDropdown } from '../../components/GoalSetting/GoalSe
 import { GoalSettingMainContent } from '../../components/GoalSetting/GoalSettingMainContent';
 
 export const GoalSetting = () => {
+  const allowedGoalKeys = useGoalSettingAllowedGoalKeys();
+  const canEditAnyGoalMetric = allowedGoalKeys.size > 0;
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
   /** Location selected on this page for viewing/editing goals; independent of navbar location. */
   const [selectedLocation, setSelectedLocation] = useState<LocationListItem | null>(null);
@@ -46,10 +64,14 @@ export const GoalSetting = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [selectedPreviousWeek, setSelectedPreviousWeek] = useState<string | null>(null);
-  const [previousGoalsByDay, setPreviousGoalsByDay] = useState<Array<{ goal: Goal; source: GoalSource } | null> | null>(
+  const [previousGoalsByDay, setPreviousGoalsByDay] = useState<Array<ResolvedGoalWithSource | null> | null>(
     null
   );
   const [loadingPrevious, setLoadingPrevious] = useState(false);
+  const [goalActualsByDate, setGoalActualsByDate] = useState<Record<string, GoalDailyActuals> | null>(
+    null
+  );
+  const [loadingGoalActuals, setLoadingGoalActuals] = useState(false);
   const [futureWeeksExpanded, setFutureWeeksExpanded] = useState<Record<number, boolean>>({});
   const [addWeekAnchorEl, setAddWeekAnchorEl] = useState<HTMLElement | null>(null);
   /** When user tries to switch tab or location with unsaved changes, store the pending action here. */
@@ -130,11 +152,26 @@ export const GoalSetting = () => {
   }, [loadGoals]);
 
   useEffect(() => {
+    let cancelled = false;
+    setLocationsLoading(true);
     locationService
       .getAll()
-      .then(setLocations)
-      .catch(() => setLocations([]))
-      .finally(() => setLocationsLoading(false));
+      .then((data) => {
+        if (cancelled) return;
+        setLocations(data);
+        const storedId = getStoredLocationId();
+        const match = storedId ? data.find((loc) => loc._id === storedId) : undefined;
+        setSelectedLocation((prev) => prev ?? match ?? data[0] ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setLocations([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLocationsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /** Initialize page selection from navbar location when user hasn't selected one yet. */
@@ -175,6 +212,36 @@ export const GoalSetting = () => {
       });
     return () => controller.abort();
   }, [selectedLocation?._id, selectedPreviousWeek]);
+
+  useEffect(() => {
+    if (!selectedLocation?._id || (activeTab !== 'weekly' && activeTab !== 'previous')) {
+      setGoalActualsByDate(null);
+      setLoadingGoalActuals(false);
+      return;
+    }
+    const weekStart = activeTab === 'weekly' ? currentWeekStart : selectedPreviousWeek;
+    if (!weekStart) {
+      setGoalActualsByDate(null);
+      setLoadingGoalActuals(false);
+      return;
+    }
+    const controller = new AbortController();
+    setLoadingGoalActuals(true);
+    setGoalActualsByDate(null);
+    const dates = DAY_ORDER.map((d) => addDaysToDate(weekStart, d));
+    goalService
+      .getDailyActuals(selectedLocation._id, dates, { signal: controller.signal })
+      .then((data) => {
+        if (!controller.signal.aborted) setGoalActualsByDate(data);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setGoalActualsByDate(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingGoalActuals(false);
+      });
+    return () => controller.abort();
+  }, [selectedLocation?._id, activeTab, currentWeekStart, selectedPreviousWeek]);
 
   const updateDefault = (key: keyof GoalValues, value: string) => {
     const num = value === '' ? 0 : Number(value);
@@ -292,14 +359,36 @@ export const GoalSetting = () => {
       setError('Please select a location first.');
       return;
     }
+    if (!canEditAnyGoalMetric) {
+      return;
+    }
     setSaving(true);
     setError('');
     try {
+      const baselineDefault = saved
+        ? { ...DEFAULT_GOAL_VALUES, ...saved.default }
+        : DEFAULT_GOAL_VALUES;
+      const defaultToSave = mergeGoalValuesForSave(
+        defaultGoals,
+        baselineDefault,
+        allowedGoalKeys
+      );
+      const weeklyToSave =
+        Object.keys(weekly).length > 0
+          ? mergeWeeklyForSave(weekly, saved?.weekly, allowedGoalKeys)
+          : undefined;
+      const futureToSave = mergeFutureWeeksForSave(
+        futureWeeks,
+        saved?.futureWeeks,
+        allowedGoalKeys
+      );
+
       const updated = await goalService.upsert({
         locationId: selectedLocation._id,
-        default: defaultGoals,
-        weekly: Object.keys(weekly).length > 0 ? weekly : undefined,
-        futureWeeks,
+        default: defaultToSave,
+        weekly:
+          weeklyToSave && Object.keys(weeklyToSave).length > 0 ? weeklyToSave : undefined,
+        futureWeeks: futureToSave,
       });
       setSaved(updated);
       setDefaultGoals({ ...DEFAULT_GOAL_VALUES, ...updated.default });
@@ -315,8 +404,17 @@ export const GoalSetting = () => {
     }
   };
 
-  const renderGoalReadOnly = (goal: Goal | null) => (
-    <GoalSettingFormFields mode="readonly" goal={goal} />
+  const renderGoalReadOnly = useCallback(
+    (goal: Goal | null, actuals?: GoalDailyActuals | null) => (
+      <GoalSettingFormFields
+        mode="readonly"
+        goal={goal}
+        actuals={actuals}
+        loadingActuals={loadingGoalActuals}
+        allowedGoalKeys={allowedGoalKeys}
+      />
+    ),
+    [loadingGoalActuals, allowedGoalKeys]
   );
 
   return (
@@ -398,6 +496,7 @@ export const GoalSetting = () => {
                     <DefaultGoalsTab
                       defaultGoals={defaultGoals}
                       updateDefault={updateDefault}
+                      allowedGoalKeys={allowedGoalKeys}
                     />
                   )}
 
@@ -406,6 +505,9 @@ export const GoalSetting = () => {
                       currentWeekStart={currentWeekStart}
                       getWeeklyDay={getWeeklyDay}
                       updateWeeklyDay={updateWeeklyDay}
+                      actualsByDate={goalActualsByDate}
+                      loadingActuals={loadingGoalActuals}
+                      allowedGoalKeys={allowedGoalKeys}
                     />
                   )}
 
@@ -424,6 +526,7 @@ export const GoalSetting = () => {
                       updateFutureWeekStartDate={updateFutureWeekStartDate}
                       handleAddWeekClick={handleAddWeekClick}
                       handleAddWeekCalendarChange={handleAddWeekCalendarChange}
+                      allowedGoalKeys={allowedGoalKeys}
                     />
                   )}
 
@@ -435,10 +538,11 @@ export const GoalSetting = () => {
                       previousGoalsByDay={previousGoalsByDay}
                       setSelectedPreviousWeek={setSelectedPreviousWeek}
                       renderGoalReadOnly={renderGoalReadOnly}
+                      actualsByDate={goalActualsByDate}
                     />
                   )}
 
-                  {activeTab !== 'previous' && (
+                  {activeTab !== 'previous' && canEditAnyGoalMetric && (
                     <div className="mt-8 flex gap-3 max-w-xs">
                       <button
                         type="button"

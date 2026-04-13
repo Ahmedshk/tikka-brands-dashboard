@@ -20,7 +20,7 @@ export interface MobileSidebarProps {
   buttonClickRef: { shouldPrevent: boolean };
   hasDragged: boolean;
   useDefaultLogo: boolean;
-  currentLocation: { logoDataUrl?: string } | null;
+  currentLocation: { logoUrl?: string } | null;
   filteredNav: NavigationItem[];
   activePath: string;
   expandedItems: Set<string>;
@@ -92,10 +92,10 @@ export function MobileSidebar(props: Readonly<MobileSidebarProps>) {
         )}
       </button>
       <div className="px-6 py-4 border-b border-gray-200 flex justify-center items-center">
-        {useDefaultLogo || !currentLocation?.logoDataUrl ? (
+        {useDefaultLogo || !currentLocation?.logoUrl ? (
           <MainLogo className="max-w-[180px] w-full" />
         ) : (
-          <img src={currentLocation.logoDataUrl} alt="" className="max-w-[180px] w-full h-10 object-contain object-center" />
+          <img src={currentLocation.logoUrl} alt="" className="max-w-[180px] w-full h-10 object-contain object-center" />
         )}
       </div>
       <nav className="flex-1 overflow-y-auto py-4 px-2">

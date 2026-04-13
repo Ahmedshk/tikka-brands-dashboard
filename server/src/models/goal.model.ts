@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Types } from "mongoose";
-import type { IGoalValues, DayOfWeek } from "../types/goal.types.js";
+import type { IGoalValues, DayOfWeek, IDefaultGoalHistoryEntry } from "../types/goal.types.js";
 
 const goalValuesSchema = new Schema<IGoalValues>(
   {
@@ -42,6 +42,14 @@ const futureWeekSchema = new Schema(
   { _id: false }
 );
 
+const defaultHistoryEntrySchema = new Schema<IDefaultGoalHistoryEntry>(
+  {
+    effectiveFrom: { type: String, required: true, trim: true },
+    values: { type: goalValuesSchema, required: true },
+  },
+  { _id: false },
+);
+
 export interface GoalDocument extends Document {
   _id: Types.ObjectId;
   locationId: string;
@@ -51,6 +59,8 @@ export interface GoalDocument extends Document {
   weekly?: Partial<Record<DayOfWeek, IGoalValues>>;
   /** New shape: future week overrides. */
   futureWeeks?: Array<{ weekStartDate: string; days: Partial<Record<DayOfWeek, IGoalValues>> }>;
+  /** Dated default goal snapshots (ascending by effectiveFrom). */
+  defaultHistory?: IDefaultGoalHistoryEntry[];
   /** Legacy: top-level goals (when default is missing, migrate on read). */
   salesGoal?: number;
   laborCostGoal?: number;
@@ -79,6 +89,11 @@ const goalSchema = new Schema<GoalDocument>(
     },
     futureWeeks: {
       type: [futureWeekSchema],
+      default: undefined,
+      required: false,
+    },
+    defaultHistory: {
+      type: [defaultHistoryEntrySchema],
       default: undefined,
       required: false,
     },
