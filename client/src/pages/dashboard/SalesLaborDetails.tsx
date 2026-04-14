@@ -37,6 +37,8 @@ const PAGE_ID = 'sales-labor-detail';
 
 export const SalesLaborDetails = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
+  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
   const canKpi1 = useCanAccessComponent(PAGE_ID, 'kpi-actual-total-net-sales');
   const canKpi2 = useCanAccessComponent(PAGE_ID, 'kpi-actual-labor-cost');
   const canKpi3 = useCanAccessComponent(PAGE_ID, 'kpi-total-hours');
@@ -74,13 +76,13 @@ export const SalesLaborDetails = () => {
   const [kpis, setKpis] = useState<SalesLaborKPIsData | null>(null);
   const [hourlyBreakdown, setHourlyBreakdown] = useState<HourlyBreakdownData | null>(null);
   const [goals, setGoals] = useState<Goal | null>(null);
-  const [loading, setLoading] = useState(!!currentLocation?._id && shouldFetch);
+  const [loading, setLoading] = useState(!!locationId && shouldFetch);
   const [error, setError] = useState<string | null>(null);
   const [timesheetRows, setTimesheetRows] = useState<TimesheetRow[]>([]);
-  const [timesheetLoading, setTimesheetLoading] = useState(!!currentLocation?._id && canStaff);
+  const [timesheetLoading, setTimesheetLoading] = useState(!!locationId && canStaff);
 
   useEffect(() => {
-    if (!currentLocation?._id || !shouldFetch) {
+    if (!locationId || !shouldFetch) {
       setKpis(null);
       setHourlyBreakdown(null);
       setGoals(null);
@@ -91,7 +93,6 @@ export const SalesLaborDetails = () => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    const locationId = currentLocation._id;
     const promises: Promise<unknown>[] = [];
     if (kpiMetrics.length > 0) {
       promises.push(commandCenterService.getSalesLaborKPIs(locationId, { metrics: kpiMetrics, signal: controller.signal }));
@@ -104,7 +105,7 @@ export const SalesLaborDetails = () => {
       promises.push(Promise.resolve(null));
     }
     if (canDaily) {
-      const date = getTodayInTimezone(currentLocation.timezone ?? 'UTC');
+      const date = getTodayInTimezone(currentLocation?.timezone ?? 'UTC');
       promises.push(goalService.getResolved(locationId, date, { signal: controller.signal }).catch((err) => {
         if (controller.signal.aborted) throw err;
         return null;
@@ -129,10 +130,10 @@ export const SalesLaborDetails = () => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [currentLocation?._id, shouldFetch, canHourly, canDaily, kpiMetrics.join(',')]);
+  }, [locationId, shouldFetch, canHourly, canDaily, kpiMetrics.join(',')]);
 
   useEffect(() => {
-    if (!currentLocation?._id || !canStaff) {
+    if (!locationId || !canStaff) {
       setTimesheetRows([]);
       setTimesheetLoading(false);
       return;
@@ -140,7 +141,7 @@ export const SalesLaborDetails = () => {
     const controller = new AbortController();
     setTimesheetLoading(true);
     commandCenterService
-      .getTimesheet(currentLocation._id, { signal: controller.signal })
+      .getTimesheet(locationId, { signal: controller.signal })
       .then(setTimesheetRows)
       .catch(() => {
         if (!controller.signal.aborted) setTimesheetRows([]);
@@ -149,7 +150,7 @@ export const SalesLaborDetails = () => {
         if (!controller.signal.aborted) setTimesheetLoading(false);
       });
     return () => controller.abort();
-  }, [currentLocation?._id, canStaff]);
+  }, [locationId, canStaff]);
 
   const salesLaborKPIs = useMemo(
     () =>
@@ -193,7 +194,7 @@ export const SalesLaborDetails = () => {
           </h2>
         </div>
 
-        {!currentLocation && (
+        {!locationId && (
           <p className="text-sm text-secondary mb-4">Select a location from the navbar to view Sales & Labor data.</p>
         )}
         {error && (
@@ -217,7 +218,7 @@ export const SalesLaborDetails = () => {
                 laborCostData={
                   hourlyBreakdown?.laborCostPercentPerHour?.map((p) => p ?? 0) ?? []
                 }
-                height={280}
+                height={380}
                 className={canSources ? 'lg:col-span-2' : ''}
                 loading={loading}
               />
@@ -252,7 +253,13 @@ export const SalesLaborDetails = () => {
                 className={canDaily ? 'lg:col-span-2' : ''}
               />
             )}
-            {canDaily && <DailyTargetsSectionCard items={dailyTargetsItems} loading={loading} />}
+            {canDaily && (
+              <DailyTargetsSectionCard
+                items={dailyTargetsItems}
+                loading={loading}
+                titleSuffix={allLocationsSelected ? '(Avg goal)' : undefined}
+              />
+            )}
           </div>
         )}
       </div>

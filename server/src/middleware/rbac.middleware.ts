@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserRole } from '../types/user.types.js';
 import { logger } from '../utils/logger.util.js';
+import { isAllLocationsId } from '../utils/locationScope.js';
 
 export const requireRole = (allowedRoles: UserRole[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -172,6 +173,11 @@ export const requireLocationAccess = (
     (typeof req.params.id === "string" ? req.params.id : null);
 
   if (!locationId) {
+    next();
+    return;
+  }
+
+  if (isAllLocationsId(locationId)) {
     next();
     return;
   }

@@ -43,6 +43,9 @@ export interface ActivityLogRowDto {
   appliedByJobTitle?: string;
   appliedAt: string | null;
   details: ActivityLogDetailsDto;
+  /** Present when listing activity for multiple locations (e.g. `locationId=__all__`). */
+  locationId?: string;
+  locationName?: string;
 }
 
 export interface ActivityLogListResult {

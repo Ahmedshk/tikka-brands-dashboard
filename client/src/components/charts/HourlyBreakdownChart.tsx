@@ -18,6 +18,7 @@ import {
   useItemTooltip,
   useAxesTooltip,
 } from '@mui/x-charts/ChartsTooltip';
+import { computePaddedMax } from '../../utils/chartAxis.util';
 
 export interface HourlyBreakdownChartProps {
   xAxisLabels: string[];
@@ -34,7 +35,7 @@ const defaultTheme = createTheme({
 
 const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
 
-const desktopMargin = { top: 20, right: 0, bottom: -20, left: 0 };
+const desktopMargin = { top: 50, right: 0, bottom: -20, left: 0 };
 const mobileMargin = { top: 4, right: 15, bottom: 0, left: 10 };
 
 function formatCurrency(value: number): string {
@@ -134,7 +135,7 @@ export const HourlyBreakdownChart = ({
       : SALES_AXIS_MIN_DEFAULT;
   const laborMax =
     laborCostData.length > 0
-      ? Math.min(100, Math.max(LABOR_AXIS_MIN_DEFAULT, Math.max(...laborCostData) * 1.1))
+      ? computePaddedMax(laborCostData, { min: 100, padMultiplier: 1.1, step: 10 })
       : LABOR_AXIS_MIN_DEFAULT;
 
   const series = [

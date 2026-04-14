@@ -50,6 +50,8 @@ const ALERT_HISTORY_CATEGORY_TITLE: Record<AlertRoleBindingCategory, string> = {
 
 export const CommandCenter = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
+  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
   const canNetSales = useCanAccessComponent(PAGE_ID, 'net-sales-kpi');
   const canLaborCost = useCanAccessComponent(PAGE_ID, 'labor-cost-kpi');
   const canReviewRating = useCanAccessComponent(PAGE_ID, 'review-rating-kpi');
@@ -89,7 +91,7 @@ export const CommandCenter = () => {
   } | null>(null);
 
   useEffect(() => {
-    if (!currentLocation?._id || !shouldFetchKpis || kpiMetrics.length === 0) {
+    if (!locationId || !shouldFetchKpis || kpiMetrics.length === 0) {
       setKpis(null);
       setError(null);
       setLoading(false);
@@ -99,7 +101,7 @@ export const CommandCenter = () => {
     setLoading(true);
     setError(null);
     commandCenterService
-      .getKPIs(currentLocation._id, {
+      .getKPIs(locationId, {
         metrics: kpiMetrics,
         periods: ['today', 'weekToDate'],
         signal: controller.signal,
@@ -113,10 +115,10 @@ export const CommandCenter = () => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [currentLocation?._id, shouldFetchKpis, kpiMetrics.join(",")]);
+  }, [locationId, shouldFetchKpis, kpiMetrics.join(",")]);
 
   useEffect(() => {
-    if (!currentLocation?._id || !shouldFetchHourly) {
+    if (!locationId || !shouldFetchHourly) {
       setHourlySales(null);
       setHourlySalesError(null);
       setHourlySalesLoading(false);
@@ -126,7 +128,7 @@ export const CommandCenter = () => {
     setHourlySalesLoading(true);
     setHourlySalesError(null);
     commandCenterService
-      .getHourlySales(currentLocation._id, { signal: controller.signal })
+      .getHourlySales(locationId, { signal: controller.signal })
       .then(setHourlySales)
       .catch((err) => {
         if (controller.signal.aborted) return;
@@ -137,10 +139,10 @@ export const CommandCenter = () => {
         if (!controller.signal.aborted) setHourlySalesLoading(false);
       });
     return () => controller.abort();
-  }, [currentLocation?._id, shouldFetchHourly]);
+  }, [locationId, shouldFetchHourly]);
 
   useEffect(() => {
-    if (!currentLocation?._id || !showAlerts) {
+    if (!locationId || !showAlerts) {
       setAlertBuckets(null);
       setAlertsError(null);
       setAlertsLoading(false);
@@ -150,7 +152,7 @@ export const CommandCenter = () => {
     setAlertsLoading(true);
     setAlertsError(null);
     commandCenterService
-      .getAlerts(currentLocation._id, { signal: controller.signal })
+      .getAlerts(locationId, { signal: controller.signal })
       .then(setAlertBuckets)
       .catch((err) => {
         if (controller.signal.aborted) return;
@@ -161,7 +163,7 @@ export const CommandCenter = () => {
         if (!controller.signal.aborted) setAlertsLoading(false);
       });
     return () => controller.abort();
-  }, [currentLocation?._id, showAlerts]);
+  }, [locationId, showAlerts]);
 
   const dismissAlertById = useCallback(async (notificationId: string) => {
     await commandCenterService.dismissAlerts([notificationId]);
@@ -191,6 +193,7 @@ export const CommandCenter = () => {
 
   useEffect(() => {
     if (!showAlerts || currentLocation?._id == null) return;
+    if (allLocationsSelected) return;
     const sock = getSocket();
     if (sock == null) return;
 
@@ -241,6 +244,7 @@ export const CommandCenter = () => {
     showAlerts,
     currentLocation?._id,
     currentLocation?.timezone,
+    allLocationsSelected,
     canAlertsFinancial,
     canAlertsInventory,
     canAlertsReputation,
@@ -367,7 +371,7 @@ export const CommandCenter = () => {
           </h2>
         </div>
 
-        {!currentLocation && (
+        {!locationId && (
           <p className="text-sm text-secondary mb-4">Select a location from the navbar to view KPIs.</p>
         )}
         {error && (
@@ -416,7 +420,7 @@ export const CommandCenter = () => {
                   value={pct}
                   goal={goal}
                   goalTolerance={goalTolerance}
-                  subtitle="Labor Cost as % of Net Sales"
+                  subtitle={allLocationsSelected ? "Labor Cost as % of Net Sales (Avg goal)" : "Labor Cost as % of Net Sales"}
                   overTarget={overTarget}
                   size={340}
                 />
@@ -441,13 +445,13 @@ export const CommandCenter = () => {
           />
         )}
 
-        {showAlerts && historyModal != null && currentLocation?._id != null && (
+        {showAlerts && historyModal != null && locationId != null && (
           <CommandCenterAlertsHistoryModal
             open
             onClose={() => setHistoryModal(null)}
             categoryId={historyModal.categoryId}
             categoryTitle={historyModal.title}
-            locationId={currentLocation._id}
+            locationId={locationId}
           />
         )}
       </div>

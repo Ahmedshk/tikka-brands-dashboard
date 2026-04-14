@@ -10,6 +10,7 @@ import {
   type CommandCenterAlertCategory,
   type CommandCenterCardRow,
 } from "../utils/commandCenterAlertsCollect.util.js";
+import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "../utils/locationScope.js";
 
 const locationService = new LocationService();
 
@@ -84,6 +85,47 @@ export async function getCommandCenterAlerts(
       return;
     }
 
+    if (isAllLocationsId(locationId)) {
+      const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+      const { canFinancial, canInventory, canReputation } = componentPermissionsFromRequest(req);
+      const userId = req.user!.userId;
+      const dismissed = await loadDismissedNotificationIds(userId);
+
+      const buckets: {
+        financial_labor: CommandCenterCardRow[];
+        inventory_supply_chain: CommandCenterCardRow[];
+        reputation_hr: CommandCenterCardRow[];
+      } = {
+        financial_labor: [],
+        inventory_supply_chain: [],
+        reputation_hr: [],
+      };
+
+      for (const lid of effectiveIds) {
+        const location = await locationService.getById(lid);
+        if (!location) continue;
+        const timezone = location.timezone?.trim() || "America/Denver";
+        const todayKey = getTodayInTimezone(timezone);
+        const collected = await collectCommandCenterAlertsForUser({
+          userId,
+          locationId: lid,
+          timezone,
+          todayKey,
+          dismissed,
+          canFinancial,
+          canInventory,
+          canReputation,
+        });
+        for (const item of collected) {
+          if (item.createdKey !== todayKey) continue;
+          buckets[item.category].push(item.row);
+        }
+      }
+
+      res.json({ success: true, data: { alerts: buckets } });
+      return;
+    }
+
     const location = await locationService.getById(locationId);
     if (!location) {
       res.status(404).json({ success: false, message: "Location not found" });
@@ -138,6 +180,45 @@ export async function getCommandCenterAlertHistory(
       typeof req.query.locationId === "string" ? req.query.locationId.trim() : "";
     const categoryRaw = typeof req.query.category === "string" ? req.query.category.trim() : "";
     const category = categoryRaw as CommandCenterAlertCategory;
+
+    if (isAllLocationsId(locationId)) {
+      const flags = componentPermissionsFromRequest(req);
+      if (!canAccessCategory(category, flags)) {
+        res.status(403).json({ success: false, message: "Forbidden" });
+        return;
+      }
+
+      const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+      const userId = req.user!.userId;
+      const dismissed = await loadDismissedNotificationIds(userId);
+
+      const alerts: CommandCenterCardRow[] = [];
+      for (const lid of effectiveIds) {
+        const location = await locationService.getById(lid);
+        if (!location) continue;
+        const timezone = location.timezone?.trim() || "America/Denver";
+        const todayKey = getTodayInTimezone(timezone);
+
+        const collected = await collectCommandCenterAlertsForUser({
+          userId,
+          locationId: lid,
+          timezone,
+          todayKey,
+          dismissed,
+          canFinancial: flags.canFinancial,
+          canInventory: flags.canInventory,
+          canReputation: flags.canReputation,
+        });
+        for (const item of collected) {
+          if (item.category !== category) continue;
+          if (item.createdKey === todayKey) continue;
+          alerts.push(item.row);
+        }
+      }
+
+      res.json({ success: true, data: { alerts } });
+      return;
+    }
 
     const location = await locationService.getById(locationId);
     if (!location) {

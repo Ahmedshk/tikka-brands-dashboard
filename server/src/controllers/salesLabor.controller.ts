@@ -38,7 +38,7 @@ import {
 } from "../config/kpi-metrics.config.js";
 import { getEffectivePagePermission } from "../utils/permissions.util.js";
 import {
-  SALES_LABOR_KPI_METRICS,
+  validateSalesLaborMetrics,
   buildEmptySalesLaborKPIs,
   getSalesLaborTimeRange,
   fetchSquareOrderStatsAndSources,
@@ -55,6 +55,17 @@ import {
   SALES_LABOR_DETAIL_API_LOG,
   type LocationForSalesLabor,
 } from "../utils/salesLaborControllerHelpers.js";
+import { isAllLocationsId } from "../utils/locationScope.js";
+import {
+  buildAllLocationsHourlyBreakdown,
+  buildAllLocationsSalesLaborKpis,
+  buildAllLocationsTimesheetRows,
+} from "../utils/salesLaborAllLocations.util.js";
+import {
+  buildAllLocationsSalesTrend,
+  buildAllLocationsSalesTrendKpi,
+} from "../utils/salesTrendAllLocations.util.js";
+import { buildSalesByCategoryAllLocations } from "../utils/salesByCategoryAllLocations.util.js";
 
 const locationService = new LocationService();
 
@@ -77,31 +88,34 @@ export const getSalesLaborKPIs = async (
       req.user!.permissionOverrides ?? null
     );
     const effectivePermissions =
-      effectivePage == null
-        ? undefined
-        : { type: "custom" as const, pages: [effectivePage] };
+      effectivePage ? { type: "custom" as const, pages: [effectivePage] } : undefined;
     const allMetricIds = getAllMetricIdsForPage("sales-labor-detail");
     const allowedMetrics = effectivePermissions
       ? filterAllowedMetrics(effectivePermissions, "sales-labor-detail", allMetricIds)
       : [];
 
-    if (queryMetrics?.length) {
-      const invalid = queryMetrics.filter(
-        (m) =>
-          !SALES_LABOR_KPI_METRICS.includes(
-            m as (typeof SALES_LABOR_KPI_METRICS)[number]
-          )
-      );
-      if (invalid.length > 0) {
-        res.status(400).json({ success: false, message: "Invalid metric" });
-        return;
-      }
-    }
+    const ok = validateSalesLaborMetrics(res, effectivePermissions, queryMetrics);
+    if (ok === false) return;
 
     const metrics =
       queryMetrics?.length
         ? queryMetrics.filter((m) => allowedMetrics.includes(m))
         : allowedMetrics;
+
+    if (isAllLocationsId(locationId)) {
+      if (metrics.length === 0) {
+        res.status(200).json({ success: true, data: buildEmptySalesLaborKPIs() });
+        return;
+      }
+      const data = await buildAllLocationsSalesLaborKpis({
+        req,
+        metrics,
+        locationService,
+      });
+      res.status(200).json({ success: true, data });
+      return;
+    }
+
     const withCreds = await locationService.getByIdWithCredentials(locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");
@@ -176,6 +190,11 @@ export const getHourlyBreakdown = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
+    if (isAllLocationsId(locationId)) {
+      const data = await buildAllLocationsHourlyBreakdown({ req, locationService });
+      res.status(200).json({ success: true, data });
+      return;
+    }
     const withCreds = await locationService.getByIdWithCredentials(locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");
@@ -252,6 +271,15 @@ export const getSalesTrend = async (
 ): Promise<void> => {
   try {
     const params = parseSalesTrendQuery(req.query);
+    if (isAllLocationsId(params.locationId)) {
+      const data = await buildAllLocationsSalesTrend({
+        req,
+        query: params,
+        locationService,
+      });
+      res.status(200).json({ success: true, data });
+      return;
+    }
     const withCreds = await locationService.getByIdWithCredentials(params.locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");
@@ -291,6 +319,15 @@ export const getSalesTrendKpi = async (
 ): Promise<void> => {
   try {
     const params = parseSalesTrendKpiQuery(req.query);
+    if (isAllLocationsId(params.locationId)) {
+      const data = await buildAllLocationsSalesTrendKpi({
+        req,
+        query: params,
+        locationService,
+      });
+      res.status(200).json({ success: true, data });
+      return;
+    }
     const withCreds = await locationService.getByIdWithCredentials(params.locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");
@@ -324,6 +361,11 @@ export const getSalesByCategory = async (
 ): Promise<void> => {
   try {
     const params = parseSalesByCategoryQuery(req.query as Record<string, unknown>);
+    if (isAllLocationsId(params.locationId)) {
+      const data = await buildSalesByCategoryAllLocations({ req, locationService });
+      res.status(200).json({ success: true, data });
+      return;
+    }
     const withCreds = await locationService.getByIdWithCredentials(params.locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");
@@ -480,6 +522,11 @@ export const getTimesheet = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
+    if (isAllLocationsId(locationId)) {
+      const rows = await buildAllLocationsTimesheetRows({ req, locationService });
+      res.status(200).json({ success: true, data: { rows } });
+      return;
+    }
     const withCreds = await locationService.getByIdWithCredentials(locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");

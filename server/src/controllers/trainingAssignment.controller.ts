@@ -4,6 +4,8 @@ import { CLOUDINARY_FOLDERS } from '../config/upload.config.js';
 import { TrainingAssignmentService } from '../services/trainingAssignment.service.js';
 import { ValidationError } from '../utils/errors.util.js';
 import { getFileFormat } from '../utils/training.util.js';
+import { isAllLocationsId } from '../utils/locationScope.js';
+import { listTrainingAssignmentsAllLocations } from '../utils/trainingAssignmentsAllLocations.util.js';
 
 const assignmentService = new TrainingAssignmentService();
 
@@ -50,6 +52,18 @@ export const listAssignments = async (
       limitRaw === undefined || limitRaw === ''
         ? undefined
         : Number(limitRaw);
+
+    if (isAllLocationsId(locationId)) {
+      const result = await listTrainingAssignmentsAllLocations({
+        req,
+        assignmentService,
+        search,
+        limit,
+      });
+      res.status(200).json({ success: true, data: result });
+      return;
+    }
+
     const { list, total } = await assignmentService.listByLocationId(locationId, {
       ...(search != null && search !== '' && { search }),
       ...(limit != null && !Number.isNaN(limit) && limit > 0 && { limit }),

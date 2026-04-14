@@ -48,6 +48,8 @@ function dtoToCalendarItems(
 
 export const CalendarEvents = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
+  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
   const canAddEvents = useCanAccessComponent(PAGE_ID, 'add-events');
   const canCalendar = useCanAccessComponent(PAGE_ID, 'calendar');
   const canUpcomingEvents = useCanAccessComponent(PAGE_ID, 'upcoming-events');
@@ -76,7 +78,7 @@ export const CalendarEvents = () => {
   const upcomingRows = useMemo(() => buildUpcomingEventRows(events), [events]);
 
   const loadData = useCallback(async () => {
-    if (!currentLocation?._id || (!canCalendar && !canUpcomingEvents)) {
+    if (!locationId || (!canCalendar && !canUpcomingEvents)) {
       setEvents([]);
       setEventTypes([]);
       setLoading(false);
@@ -87,7 +89,7 @@ export const CalendarEvents = () => {
     try {
       const [typeList, eventList] = await Promise.all([
         calendarService.listEventTypesActive(),
-        calendarService.listEvents(currentLocation._id, timeMin, timeMax),
+        calendarService.listEvents(locationId, timeMin, timeMax),
       ]);
       setEventTypes(typeList);
       setEvents(eventList);
@@ -97,17 +99,17 @@ export const CalendarEvents = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentLocation?._id, currentDate, canCalendar, canUpcomingEvents]);
+  }, [locationId, currentDate, canCalendar, canUpcomingEvents]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   useEffect(() => {
-    if (!currentLocation?._id || (!canCalendar && !canUpcomingEvents)) return;
+    if (!locationId || (!canCalendar && !canUpcomingEvents)) return;
     const { timeMin, timeMax } = visibleRange(currentDate);
     calendarService.syncEvents(timeMin, timeMax).catch(() => {});
-  }, [currentLocation?._id, currentDate, canCalendar, canUpcomingEvents]);
+  }, [locationId, currentDate, canCalendar, canUpcomingEvents]);
 
   const handleNavigate = (date: Date) => {
     setCurrentDate(date);
@@ -189,7 +191,7 @@ export const CalendarEvents = () => {
       <AddEventModal
         isOpen={canAddEvents && addEventModalOpen}
         onClose={() => setAddEventModalOpen(false)}
-        locationId={currentLocation?._id ?? null}
+        locationId={allLocationsSelected ? null : (currentLocation?._id ?? null)}
         locationTimezone={currentLocation?.timezone}
         onCreated={loadData}
       />

@@ -175,6 +175,8 @@ function buildReviewRatingItem(
   starTitle: ReactNode,
   starSubtitle: ReactNode
 ): CommandCenterKPIItem {
+  // Review Rating is not yet implemented. When location scope is "All",
+  // this should display the average review rating across all allowed locations.
   return {
     title: 'Review Rating',
     timePeriod: ctx.loading ? undefined : timePeriodLabel(period),

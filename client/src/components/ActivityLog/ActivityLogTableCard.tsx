@@ -1,4 +1,5 @@
 import ViewIcon from "@assets/icons/view.svg?react";
+import LocationIcon from "@assets/icons/location.svg?react";
 import type { ActivityLogRow } from "../../types/activityLog.types";
 import { Pagination } from "../common/Pagination";
 import { Spinner } from "../common/Spinner";
@@ -16,6 +17,8 @@ export interface ActivityLogTableCardPagination {
 interface ActivityLogTableCardProps {
   rows: ActivityLogRow[];
   loading?: boolean;
+  /** When true, show store name above each activity name (all-locations view). */
+  showLocationLabel?: boolean;
   onView?: (row: ActivityLogRow, index: number) => void;
   pagination?: ActivityLogTableCardPagination;
 }
@@ -51,6 +54,15 @@ function ActivityLogEventTypeBadge({ eventType }: Readonly<{ eventType: Activity
   );
 }
 
+function ActivityLogLocationLine({ name }: Readonly<{ name: string }>) {
+  return (
+    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1 truncate min-w-0">
+      <LocationIcon className="w-3 h-3 flex-shrink-0" aria-hidden />
+      <span className="truncate">{name}</span>
+    </p>
+  );
+}
+
 function ActivityLogNameCell({
   row,
   className = "",
@@ -80,6 +92,7 @@ function ActivityLogNameCell({
 export const ActivityLogTableCard = ({
   rows,
   loading = false,
+  showLocationLabel = false,
   onView,
   pagination,
 }: ActivityLogTableCardProps) => {
@@ -104,11 +117,13 @@ export const ActivityLogTableCard = ({
         <div className="md:hidden divide-y divide-gray-200 overflow-y-auto min-h-0">
           {rows.map((row, index) => {
             const appliedAt = formatDateTimeParts(row.appliedAt);
+            const locLabel = row.locationName?.trim();
             return (
               <div
-                key={`${row.eventType}-${row.name}-${row.appliedBy}-${index}`}
+                key={`${row.locationId ?? ""}-${row.eventType}-${row.name}-${row.appliedBy}-${row.appliedAt ?? ""}-${index}`}
                 className={`px-3 py-3 ${index % 2 === 1 ? "bg-[#F3F5F7]" : "bg-white"}`}
               >
+                {showLocationLabel && locLabel ? <ActivityLogLocationLine name={locLabel} /> : null}
                 <ActivityLogNameCell row={row} className="text-sm font-semibold text-primary" />
                 <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -154,15 +169,17 @@ export const ActivityLogTableCard = ({
             <tbody className="text-primary">
               {rows.map((row, index) => {
                 const appliedAt = formatDateTimeParts(row.appliedAt);
+                const locLabel = row.locationName?.trim();
                 return (
                   <tr
-                    key={`${row.eventType}-${row.name}-${row.appliedBy}-${index}`}
+                    key={`${row.locationId ?? ""}-${row.eventType}-${row.name}-${row.appliedBy}-${row.appliedAt ?? ""}-${index}`}
                     className={index % 2 === 1 ? "bg-[#F3F5F7]" : ""}
                   >
                     <td className="py-3 pr-4 pl-2 align-middle">
                       <ActivityLogEventTypeBadge eventType={row.eventType} />
                     </td>
                     <td className="py-3 pr-4">
+                      {showLocationLabel && locLabel ? <ActivityLogLocationLine name={locLabel} /> : null}
                       <ActivityLogNameCell row={row} />
                     </td>
                     <td className="py-3 pr-4">{row.appliedBy}</td>

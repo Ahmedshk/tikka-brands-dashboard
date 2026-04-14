@@ -35,6 +35,8 @@ export const KitchenPerformance = () => {
   const currentLocation = useSelector(
     (state: RootState) => state.location.currentLocation,
   );
+  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
+  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
   const canImportCsv = useCanAccessComponent(PAGE_ID, "import-csv");
   const canKitchenTable = useCanAccessComponent(PAGE_ID, "kitchen-performance");
   const [rows, setRows] = useState<KitchenPerformanceRow[]>([]);
@@ -77,7 +79,7 @@ export const KitchenPerformance = () => {
   );
 
   const fetchKitchenRows = useCallback(async () => {
-    if (!currentLocation?._id || !canKitchenTable) {
+    if (!locationId || !canKitchenTable) {
       setRows([]);
       setTotalItems(0);
       setTotalPages(1);
@@ -88,7 +90,7 @@ export const KitchenPerformance = () => {
     setLoading(true);
     try {
       const data = await kitchenPerformanceService.getRows(
-        currentLocation._id,
+        locationId,
         { startDate, endDate },
         { page, limit: PAGE_SIZE },
       );
@@ -106,7 +108,7 @@ export const KitchenPerformance = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentLocation?._id, page, startDate, endDate, canKitchenTable]);
+  }, [locationId, page, startDate, endDate, canKitchenTable]);
 
   useEffect(() => {
     fetchKitchenRows();
@@ -132,7 +134,7 @@ export const KitchenPerformance = () => {
   };
 
   const handleImport = async (range: { startDate: string; endDate: string }, file: File) => {
-    if (!currentLocation?._id) {
+    if (!currentLocation?._id || allLocationsSelected) {
       toast.error("Please select a location first.");
       return;
     }
@@ -167,7 +169,7 @@ export const KitchenPerformance = () => {
                 className="min-w-[10rem]"
               />
             ) : null}
-            {canImportCsv ? (
+            {canImportCsv && !allLocationsSelected ? (
               <button
                 type="button"
                 onClick={() => setImportModalOpen(true)}
@@ -206,7 +208,7 @@ export const KitchenPerformance = () => {
       </div>
 
       <KitchenPerformanceImportModal
-        isOpen={canImportCsv && importModalOpen}
+        isOpen={canImportCsv && importModalOpen && !allLocationsSelected}
         onClose={() => setImportModalOpen(false)}
         onImport={handleImport}
         defaultPeriod={period}

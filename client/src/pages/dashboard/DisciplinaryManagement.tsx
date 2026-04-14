@@ -22,6 +22,8 @@ const PAGE_ID = 'disciplinary-management';
 export const DisciplinaryManagement = () => {
   const navigate = useNavigate();
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
+  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
   const canTotalTeamKpi = useCanAccessComponent(PAGE_ID, 'total-team-members-kpi');
   const canPendingPipsKpi = useCanAccessComponent(PAGE_ID, 'pending-pips-kpi');
   const canCriticalKpi = useCanAccessComponent(PAGE_ID, 'critical-kpi');
@@ -50,7 +52,7 @@ export const DisciplinaryManagement = () => {
   /** One GET /disciplinary/employees per change — KPI cards and table share the same response meta/rows when both are shown. */
   const loadDisciplinaryData = useCallback(
     async (signal?: AbortSignal) => {
-      const locId = currentLocation?._id;
+      const locId = locationId;
       const needTable = canDisciplinaryRecords;
       const needKpi = needsKpiData;
       if (!locId || (!needTable && !needKpi)) {
@@ -115,7 +117,7 @@ export const DisciplinaryManagement = () => {
       }
     },
     [
-      currentLocation?._id,
+      locationId,
       canDisciplinaryRecords,
       needsKpiData,
       debouncedSearch,

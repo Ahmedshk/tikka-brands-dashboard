@@ -41,6 +41,9 @@ export interface ActivityLogRow {
   appliedByJobTitle?: string;
   appliedAt: string | null;
   details: ActivityLogDetails;
+  /** Set when activity log is loaded for all locations. */
+  locationId?: string;
+  locationName?: string;
 }
 
 export interface ActivityLogPaginationMeta {

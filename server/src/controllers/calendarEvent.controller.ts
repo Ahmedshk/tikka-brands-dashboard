@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import { CalendarEventService, type CreateCalendarEventInput } from "../services/calendarEvent.service.js";
 import { AppError } from "../utils/errors.util.js";
+import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "../utils/locationScope.js";
 
 const service = new CalendarEventService();
 
@@ -28,6 +29,26 @@ function assertLocationAccess(req: Request, locationId: string): void {
 export async function listCalendarEvents(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const locationId = req.query.locationId as string;
+    if (isAllLocationsId(locationId)) {
+      const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+      const now = new Date();
+      const timeMin = (req.query.timeMin as string | undefined)
+        ? new Date(req.query.timeMin as string)
+        : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const timeMax = (req.query.timeMax as string | undefined)
+        ? new Date(req.query.timeMax as string)
+        : new Date(now.getFullYear(), now.getMonth() + 3, 0, 23, 59, 59, 999);
+      const rows = await Promise.all(
+        effectiveIds.map((id) => {
+          assertLocationAccess(req, id);
+          return service.listForLocation(id, timeMin, timeMax);
+        }),
+      );
+      const events = rows.flat();
+      events.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+      res.json({ success: true, data: { events } });
+      return;
+    }
     assertLocationAccess(req, locationId);
     const now = new Date();
     const timeMin = (req.query.timeMin as string | undefined)

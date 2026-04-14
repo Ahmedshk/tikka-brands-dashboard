@@ -39,6 +39,8 @@ export const ActivityLog = () => {
   const currentLocation = useSelector(
     (state: RootState) => state.location.currentLocation,
   );
+  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
+  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
   const canFullPage = useCanAccessComponent(PAGE_ID, "full-page");
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [rows, setRows] = useState<ActivityLogRow[]>([]);
@@ -60,14 +62,14 @@ export const ActivityLog = () => {
   }, [eventFilter]);
 
   const fetchRows = useCallback(async () => {
-    if (!currentLocation?._id || !canFullPage) {
+    if (!locationId || !canFullPage) {
       setRows([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const data = await activityLogService.getRows(currentLocation._id, selectedDate);
+      const data = await activityLogService.getRows(locationId, selectedDate);
       setRows(data.rows);
     } catch {
       setRows([]);
@@ -75,7 +77,7 @@ export const ActivityLog = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentLocation?._id, selectedDate, canFullPage]);
+  }, [locationId, selectedDate, canFullPage]);
 
   useEffect(() => {
     fetchRows();
@@ -131,6 +133,7 @@ export const ActivityLog = () => {
             <ActivityLogTableCard
               rows={filteredRows}
               loading={loading}
+              showLocationLabel={allLocationsSelected}
               onView={(row) => {
                 setSelectedRow(row);
               }}

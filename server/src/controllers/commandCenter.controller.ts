@@ -18,20 +18,25 @@ import {
 } from "../utils/commandCenterHelpers.js";
 import type { HourlySalesRow, LocationForKpi } from "../types/commandCenter.types.js";
 import {
-  getLaborCostGoals,
-  getRangeToday,
-  getRangeWeekToDate,
-  fetchTodayOnlyKpis,
-  fetchWeekToDateKpis,
-  buildTodayOnlyData,
-  buildWeekToDateData,
-} from "../utils/commandCenterKpiLogic.js";
-import { getBusinessStartTimeRange } from "../utils/timezone.util.js";
-import {
   addCalendarDaysToBusinessDateKey,
   businessDateKeyForInstant,
   businessDayUtcRangeIsoStrings,
 } from "../utils/businessDayUtcRange.util.js";
+import { isAllLocationsId } from "../utils/locationScope.js";
+import {
+  buildAllLocationsCommandCenterKpis,
+  buildAllLocationsHourlySales,
+} from "../utils/commandCenterAllLocations.util.js";
+import {
+  buildTodayOnlyData,
+  buildWeekToDateData,
+  fetchTodayOnlyKpis,
+  fetchWeekToDateKpis,
+  getLaborCostGoals,
+  getRangeToday,
+  getRangeWeekToDate,
+} from "../utils/commandCenterKpiLogic.js";
+import { getBusinessStartTimeRange } from "../utils/timezone.util.js";
 
 const goalService = new GoalService();
 const locationService = new LocationService();
@@ -69,13 +74,15 @@ export const getCommandCenterKPIs = async (
       "Command Center",
       req.user!.permissionOverrides ?? null
     );
-    const effectivePermissions =
-      effectivePage != null
-        ? { type: "custom" as const, pages: [effectivePage] }
-        : undefined;
-    if (!validateCommandCenterMetrics(res, effectivePermissions, queryMetrics)) {
-      return;
-    }
+    const effectivePermissions = effectivePage
+      ? { type: "custom" as const, pages: [effectivePage] }
+      : undefined;
+    const metricsAllowed = validateCommandCenterMetrics(
+      res,
+      effectivePermissions,
+      queryMetrics,
+    );
+    if (metricsAllowed === false) return;
 
     const allMetricIds = getAllMetricIdsForPage("command-center");
     const allowedMetrics = effectivePermissions
@@ -97,6 +104,23 @@ export const getCommandCenterKPIs = async (
       } else {
         res.status(200).json({ success: true, data: emptyToday });
       }
+      return;
+    }
+
+    if (isAllLocationsId(locationId)) {
+      const { wantNetSales, wantLaborCost, wantReviewRating } = getWantFlags(metrics);
+      const result = await buildAllLocationsCommandCenterKpis({
+        req,
+        metrics,
+        periods,
+        wantNetSales,
+        wantLaborCost,
+        wantReviewRating,
+        goalService,
+        locationService,
+        toLocationForKpi,
+      });
+      res.status(200).json({ success: true, data: result.data });
       return;
     }
 
@@ -197,6 +221,11 @@ export const getHourlySales = async (
 
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
+    if (isAllLocationsId(locationId)) {
+      const rows = await buildAllLocationsHourlySales({ req, locationService });
+      res.status(200).json({ success: true, data: rows });
+      return;
+    }
     const withCreds = await locationService.getByIdWithCredentials(locationId);
     if (!withCreds) {
       throw new NotFoundError("Location not found");

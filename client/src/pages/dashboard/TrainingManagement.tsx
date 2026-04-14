@@ -26,6 +26,8 @@ const PAGE_SIZE = 10;
 
 export const TrainingManagement = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
+  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
   const [page, setPage] = useState(1);
   const [assignTrainingModalOpen, setAssignTrainingModalOpen] = useState(false);
   const [viewAssignmentId, setViewAssignmentId] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export const TrainingManagement = () => {
    */
   const loadAssignments = useCallback(
     async (signal?: AbortSignal) => {
-      const id = currentLocation?._id;
+      const id = locationId;
       if (!id?.trim()) {
         setAssignmentRows([]);
         setSearchAssignmentRows([]);
@@ -74,7 +76,7 @@ export const TrainingManagement = () => {
         if (!signal?.aborted) setSearchAssignmentsLoading(false);
       }
     },
-    [currentLocation?._id, employeeTrainingSearchDebounced],
+    [locationId, employeeTrainingSearchDebounced],
   );
 
   const refreshAssignments = useCallback(() => {
@@ -86,7 +88,7 @@ export const TrainingManagement = () => {
     setEmployeeTrainingSearchInput('');
     setEmployeeTrainingSearchDebounced('');
     setPage(1);
-  }, [currentLocation?._id]);
+  }, [locationId]);
 
   useEffect(() => {
     const t = globalThis.setTimeout(() => {
@@ -173,7 +175,7 @@ export const TrainingManagement = () => {
   }, [canStaffInTraining, canTrainingsOverdue, canTrainingCompletion, kpiValues]);
 
   const tableLoading =
-    Boolean(currentLocation?._id) && (searchAssignmentsLoading || hierarchyLoading);
+    Boolean(locationId) && (searchAssignmentsLoading || hierarchyLoading);
 
   return (
     <Layout>
@@ -193,7 +195,7 @@ export const TrainingManagement = () => {
 
         {canEmployeeTraining ? (
           <>
-            {!currentLocation && (
+            {!allLocationsSelected && !currentLocation && (
               <p className="text-secondary text-sm mb-2">Select a location in the navbar to see assignments.</p>
             )}
             <DisciplinaryToolbar
@@ -202,16 +204,18 @@ export const TrainingManagement = () => {
               placeholder="Search by name…"
               searchAriaLabel="Search employee training by name"
               trailing={
-                <button
-                  type="button"
-                  disabled={!currentLocation?._id}
-                  onClick={() => setAssignTrainingModalOpen(true)}
-                  className="flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Assign training"
-                >
-                  <AddIcon className="w-4 h-4" aria-hidden />
-                  Assign Training
-                </button>
+                allLocationsSelected ? undefined : (
+                  <button
+                    type="button"
+                    disabled={!currentLocation?._id}
+                    onClick={() => setAssignTrainingModalOpen(true)}
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Assign training"
+                  >
+                    <AddIcon className="w-4 h-4" aria-hidden />
+                    Assign Training
+                  </button>
+                )
               }
             />
             <EmployeeTrainingCard
@@ -240,9 +244,9 @@ export const TrainingManagement = () => {
       </div>
 
       <AssignTrainingModal
-        isOpen={assignTrainingModalOpen}
+        isOpen={assignTrainingModalOpen && !allLocationsSelected}
         onClose={() => setAssignTrainingModalOpen(false)}
-        locationId={currentLocation?._id ?? null}
+        locationId={allLocationsSelected ? null : (currentLocation?._id ?? null)}
         allowedRoleIds={allowedRoleIds}
         hierarchyLoading={hierarchyLoading}
         onAssigned={refreshAssignments}

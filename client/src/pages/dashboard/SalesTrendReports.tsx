@@ -267,6 +267,7 @@ const defaultComparison: ComparisonPeriodPickerValue = {
 
 export const SalesTrendReports = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
   const canTrendsChart = useCanAccessComponent(PAGE_ID, 'trends-chart');
   const canKpis = useCanAccessComponent(PAGE_ID, 'kpis');
   const canNetSalesByCategory = useCanAccessComponent(PAGE_ID, 'net-sales-by-category');
@@ -290,7 +291,7 @@ export const SalesTrendReports = () => {
   const [categoryLoading, setCategoryLoading] = useState(!!currentLocation?._id && canNetSalesByCategory);
   const [categoryError, setCategoryError] = useState<string | null>(null);
 
-  const locationId = currentLocation?._id ?? null;
+  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
 
   /** When KPI period changes, sync comparison in the same tick so only one API call is made. */
   const handleKpiPeriodChange = (newPeriod: PeriodPickerValue) => {
@@ -651,7 +652,7 @@ export const SalesTrendReports = () => {
   const selectClass =
     'border border-gray-300 rounded-lg px-3 py-2 text-sm text-primary bg-white focus:outline-none focus:ring-2 focus:ring-quaternary/30';
 
-  if (!currentLocation) {
+  if (!currentLocation && !allLocationsSelected) {
     return (
       <Layout>
         <div className="p-6">
