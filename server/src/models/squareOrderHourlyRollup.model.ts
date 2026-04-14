@@ -10,6 +10,11 @@ export interface SquareOrderHourlyRollupDocument extends Document {
   computedAt: Date;
   netSalesCents: number;
   transactionCount: number;
+  /**
+   * Summable facts per source id (rollup reads depend on `id` + `amount` only).
+   * Preferred shape: Array<{ id: string; amount: string }>, where amount is a currency string.
+   */
+  sourcesOfSales: unknown[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,6 +27,7 @@ const schema = new Schema<SquareOrderHourlyRollupDocument>(
     computedAt: { type: Date, required: true },
     netSalesCents: { type: Number, required: true, default: 0 },
     transactionCount: { type: Number, required: true, default: 0 },
+    sourcesOfSales: { type: [Schema.Types.Mixed], required: true, default: [] },
   },
   { timestamps: true },
 );

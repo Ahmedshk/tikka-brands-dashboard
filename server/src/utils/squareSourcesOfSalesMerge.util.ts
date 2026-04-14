@@ -1,5 +1,18 @@
 import { generateDistinctColors } from "./colorPalette.util.js";
 
+export function normalizeSourcesOfSalesSegmentId(id: string): string {
+  const normalized = id.trim().toLowerCase().replaceAll("_", "-");
+  if (normalized === "in-store" || normalized === "pickup") return "register";
+  return normalized;
+}
+
+function segmentIdToLabel(id: string): string {
+  if (id === "register") return "Register";
+  return id
+    .replaceAll("-", " ")
+    .replaceAll(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /**
  * Sum `amount` strings per segment `id` for a single rollup `sourcesOfSales` array (cents).
  */
@@ -10,10 +23,11 @@ export function sumSourcesOfSalesSegmentsToCentsById(
   if (!Array.isArray(segments)) return byId;
   for (const raw of segments) {
     const r = raw as { id?: string; amount?: string };
-    const id = typeof r.id === "string" ? r.id : "";
+    const idRaw = typeof r.id === "string" ? r.id : "";
+    const id = idRaw ? normalizeSourcesOfSalesSegmentId(idRaw) : "";
     if (!id) continue;
     const amount = typeof r.amount === "string" ? r.amount : "$0.00";
-    const n = Number.parseFloat(amount.replace(/[$,]/g, ""));
+    const n = Number.parseFloat(amount.replaceAll(/[$,]/g, ""));
     const cents = Math.round(n * 100);
     if (!Number.isFinite(cents)) continue;
     byId.set(id, (byId.get(id) ?? 0) + cents);
@@ -51,7 +65,7 @@ export function mergeSourcesOfSalesFromDailyRollupDocs(
     }).format(amountDollars);
     return {
       id: key,
-      label: key,
+      label: segmentIdToLabel(key),
       value,
       amount,
       color: colors[index] ?? "#888888",

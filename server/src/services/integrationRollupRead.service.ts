@@ -28,6 +28,12 @@ import {
   mergeSourcesOfSalesFromDailyRollupDocs,
   sumSourcesOfSalesSegmentsToCentsById,
 } from "../utils/squareSourcesOfSalesMerge.util.js";
+import {
+  businessDateKeysForMonthPeriod,
+  businessDateKeysForWeekPeriod,
+  monthPeriodKeyFromBusinessDateKey,
+  sundayWeekStartYmdForBusinessDateKey,
+} from "../utils/rollupPeriodKeys.util.js";
 
 const ROLLUP_READ_ENABLED =
   (process.env.ROLLUP_READ_ENABLED ?? "true").trim().toLowerCase() !== "false";
@@ -189,6 +195,38 @@ export async function tryGetNetSalesByCategoryFromDailyRollups(
     businessStartTime,
   );
   if (keys.length === 0) return null;
+
+  // Prefer period rollups when the range exactly matches a full week/month period.
+  {
+    const tz = timezone.trim() || "UTC";
+    const first = keys[0];
+    if (first) {
+      const weekStart = sundayWeekStartYmdForBusinessDateKey(first, tz);
+      const weekKeys = businessDateKeysForWeekPeriod(weekStart, tz);
+      if (weekKeys.length > 0 && weekKeys.join("\n") === keys.join("\n")) {
+        const rolled = await tryGetNetSalesByCategoryFromPeriodRollup(
+          locationMongoId,
+          "week",
+          weekStart,
+          batchRetrieve,
+          accessToken,
+        );
+        if (rolled) return rolled;
+      }
+      const monthKey = monthPeriodKeyFromBusinessDateKey(first);
+      const monthKeys = businessDateKeysForMonthPeriod(monthKey, tz);
+      if (monthKeys.length > 0 && monthKeys.join("\n") === keys.join("\n")) {
+        const rolled = await tryGetNetSalesByCategoryFromPeriodRollup(
+          locationMongoId,
+          "month",
+          monthKey,
+          batchRetrieve,
+          accessToken,
+        );
+        if (rolled) return rolled;
+      }
+    }
+  }
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   const dailies = await SquareOrderDailyRollupModel.find({
     locationId: oid,
@@ -250,6 +288,59 @@ export async function tryGetNetSalesByCategoryFromDailyRollups(
     (s, r) => s + r.netSalesCents,
     0,
   );
+  return { categories, totalNetSalesCents };
+}
+
+async function tryGetNetSalesByCategoryFromPeriodRollup(
+  locationMongoId: string,
+  granularity: "week" | "month",
+  periodKey: string,
+  batchRetrieve: BatchRetrieveCatalogFn,
+  accessToken: string,
+): Promise<NetSalesByCategoryResult | null> {
+  if (!ROLLUP_READ_ENABLED) return null;
+  const oid = new mongoose.Types.ObjectId(locationMongoId);
+  const doc = await SquareOrderPeriodRollupModel.findOne({
+    locationId: oid,
+    granularity,
+    periodKey,
+  })
+    .lean()
+    .exec();
+  if (!doc || !Array.isArray(doc.categoriesBreakdown)) return null;
+
+  const merged = doc.categoriesBreakdown;
+  const categoryIds = [
+    ...new Set(
+      merged
+        .map((r) => r.categoryId)
+        .filter((id) => id !== UNCATEGORIZED_CATEGORY_ROLLUP_ID),
+    ),
+  ];
+  const idToName =
+    categoryIds.length === 0
+      ? ({} as Record<string, string>)
+      : await resolveCategoryIdToName(
+          categoryIds,
+          batchRetrieve,
+          accessToken,
+          BATCH_RETRIEVE_CATALOG_CHUNK,
+        );
+
+  const byDisplayName: Record<string, number> = {};
+  for (const row of merged) {
+    const name =
+      row.categoryId === UNCATEGORIZED_CATEGORY_ROLLUP_ID
+        ? UNCATEGORIZED_CATEGORY_DISPLAY_LABEL
+        : (idToName[row.categoryId] ??
+          row.nameSnapshot ??
+          UNCATEGORIZED_CATEGORY_DISPLAY_LABEL);
+    byDisplayName[name] = (byDisplayName[name] ?? 0) + row.netSalesCents;
+  }
+  const categories = Object.entries(byDisplayName)
+    .map(([name, netSalesCents]) => ({ name, netSalesCents }))
+    .sort((a, b) => b.netSalesCents - a.netSalesCents);
+  const totalNetSalesCents = merged.reduce((s, r) => s + r.netSalesCents, 0);
   return { categories, totalNetSalesCents };
 }
 
@@ -533,7 +624,59 @@ export async function tryGetOrderTimeSeriesBySourceFromRollups(
   keys: string[],
 ): Promise<Record<string, Record<string, number>> | null> {
   if (!ROLLUP_READ_ENABLED) return null;
-  if (granularity === "hourly") return null;
+  if (granularity === "hourly") {
+    const tz = timezone.trim() || "UTC";
+    const bst = (businessStartTime ?? "00:00").trim() || "00:00";
+    const coords: Array<{ chartKey: string; businessDateKey: string; slotIndex: number }> = [];
+    for (const chartKey of keys) {
+      const mapped = mapHourlyChartKeyToRollupSlot(chartKey, tz, bst);
+      if (!mapped) return null;
+      coords.push({ chartKey, ...mapped });
+    }
+
+    const uniquePairs = new Map<string, { businessDateKey: string; slotIndex: number }>();
+    for (const c of coords) {
+      uniquePairs.set(`${c.businessDateKey}\t${c.slotIndex}`, {
+        businessDateKey: c.businessDateKey,
+        slotIndex: c.slotIndex,
+      });
+    }
+
+    const oid = new mongoose.Types.ObjectId(locationMongoId);
+    const orClause = [...uniquePairs.values()].map((p) => ({
+      locationId: oid,
+      businessDateKey: p.businessDateKey,
+      slotIndex: p.slotIndex,
+    }));
+    const docs = await SquareOrderHourlyRollupModel.find({ $or: orClause })
+      .lean()
+      .exec();
+    const byPair = new Map<string, { sourcesOfSales: unknown[] }>();
+    for (const d of docs) {
+      byPair.set(`${d.businessDateKey}\t${d.slotIndex}`, {
+        sourcesOfSales: d.sourcesOfSales ?? [],
+      });
+    }
+    if (byPair.size !== uniquePairs.size) return null;
+
+    const bySourceAndKey: Record<string, Record<string, number>> = {};
+    for (const c of coords) {
+      const row = byPair.get(`${c.businessDateKey}\t${c.slotIndex}`);
+      if (!row) return null;
+      const centsMap = sumSourcesOfSalesSegmentsToCentsById(row.sourcesOfSales);
+      for (const [src, cents] of centsMap) {
+        bySourceAndKey[src] ??= {};
+        bySourceAndKey[src][c.chartKey] = (bySourceAndKey[src][c.chartKey] ?? 0) + cents / 100;
+      }
+    }
+    for (const src of Object.keys(bySourceAndKey)) {
+      for (const chartKey of keys) {
+        if (bySourceAndKey[src]![chartKey] === undefined) bySourceAndKey[src]![chartKey] = 0;
+      }
+    }
+    if (Object.keys(bySourceAndKey).length === 0) return null;
+    return bySourceAndKey;
+  }
 
   if (granularity === "daily") {
     const oid = new mongoose.Types.ObjectId(locationMongoId);

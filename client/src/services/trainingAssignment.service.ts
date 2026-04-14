@@ -19,6 +19,9 @@ function toEmployeeTrainingRow(item: {
   trainingName: string;
   moduleCount: number;
   assignTo: string;
+  locationId?: string;
+  locationName?: string | null;
+  profileImagePublicId?: string | null;
   role: string;
   completedModules: number;
   totalModules: number;
@@ -34,6 +37,9 @@ function toEmployeeTrainingRow(item: {
     trainingId: item.trainingId,
     trainingName: item.trainingName,
     assignTo: item.assignTo,
+    ...(item.locationId != null && item.locationId !== "" ? { locationId: item.locationId } : {}),
+    ...(item.locationName !== undefined ? { locationName: item.locationName } : {}),
+    ...(item.profileImagePublicId !== undefined ? { profileImagePublicId: item.profileImagePublicId } : {}),
     role: item.role,
     progress,
     status: item.status,

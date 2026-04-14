@@ -33,6 +33,7 @@ import {
 } from "../services/integrationCacheRead.service.js";
 import {
   isOrderCountedForNetSales,
+  getSourcesOfSalesFromOrders,
   orderNetSalesCents,
 } from "../services/square.service.js";
 import { lineItemTotalMoneyToCents } from "../utils/squareNetSalesByCategoryHelpers.js";
@@ -40,6 +41,7 @@ import {
   computeCategoryBreakdownFromOrdersForRollup,
   type CategoryRollupBreakdownRow,
 } from "../utils/squareCategoryRollupBreakdown.util.js";
+import { sumSourcesOfSalesSegmentsToCentsById } from "../utils/squareSourcesOfSalesMerge.util.js";
 import {
   distinctBuyerGuidsForMarketManRollup,
   loadLocationsForRollupScript,
@@ -162,6 +164,19 @@ async function main(): Promise<void> {
         expectedCategoryBreakdown,
       );
 
+    const expectedSourcesMap = sumSourcesOfSalesSegmentsToCentsById(
+      getSourcesOfSalesFromOrders(ordersForCategory) as unknown as unknown[],
+    );
+    const rolledSourcesMap = sumSourcesOfSalesSegmentsToCentsById(
+      (rollupOrder?.sourcesOfSales as unknown[] | undefined) ?? [],
+    );
+    const sourcesOk =
+      rollupOrder != null &&
+      expectedSourcesMap.size === rolledSourcesMap.size &&
+      [...expectedSourcesMap.entries()].every(
+        ([k, v]) => rolledSourcesMap.get(k) === v,
+      );
+
     const laborCache = await getLaborCostInRangeFromCache(locIdStr, range);
     const hoursCache = await getTotalHoursInRangeFromCache(locIdStr, range);
     const rollupHb = await HomebaseTimecardDailyRollupModel.findOne({
@@ -242,12 +257,14 @@ async function main(): Promise<void> {
               totalDiscountCents: rollupOrder.totalDiscountCents,
               totalRefundCents: rollupOrder.totalRefundCents,
               refundCount: rollupOrder.refundCount,
+              sourcesOfSales: rollupOrder.sourcesOfSales,
               categoriesBreakdown: rollupOrder.categoriesBreakdown,
             }
           : null,
         expectedCategoryBreakdown,
         match: orderOk === true,
         categoryBreakdownMatch: categoryOk === true,
+        sourcesOfSalesMatch: sourcesOk === true,
       },
       homebase: {
         cache: { laborCost: laborCache, hours: hoursCache },

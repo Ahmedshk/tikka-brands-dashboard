@@ -33,6 +33,8 @@ import TeamHrIcon from "@assets/icons/team_and_hr.svg?react";
 import ViewIcon from "@assets/icons/view.svg?react";
 import SearchIcon from "@assets/icons/search.svg?react";
 import { useReviewsManagementSectionAccess } from "../../utils/reviewsManagementPermissionHelpers";
+import { TimesheetLocationLabel } from "../../utils/timesheetLocationLabel";
+import { employeeInitials, getUserProfileProxyImageUrl } from "../../utils/employeeBioHelpers";
 
 const CARD_ROW_LIMIT = 5;
 const MODAL_PAGE_SIZE = 10;
@@ -109,6 +111,7 @@ const CLOSED_CYCLE_STATUSES = new Set<ReviewCycleStatus>([
 
 export const ReviewsManagement = () => {
   const currentLocation = useSelector((s: RootState) => s.location.currentLocation);
+  const allLocationsSelected = useSelector((s: RootState) => s.location.allLocationsSelected);
   const user = useSelector((s: RootState) => s.auth.user);
 
   const [cycles, setCycles] = useState<ReviewCycle[]>([]);
@@ -531,6 +534,8 @@ export const ReviewsManagement = () => {
                         {activePreviewCycles.map((c, i) => {
                           const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                           const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
+                          const avatarUrl = emp ? getUserProfileProxyImageUrl(emp._id, emp.profileImagePublicId) : null;
+                          const initials = emp ? employeeInitials(emp) : "?";
                           const isOwner = user?.role === "Owner";
                           const canViewProgress =
                             currentUserId != null && (isOwner || isDirector || employeeId === currentUserId);
@@ -553,8 +558,19 @@ export const ReviewsManagement = () => {
                           return (
                             <div key={c._id} className={`${cardBg} px-4 py-4 flex flex-col gap-3`}>
                               <div className="min-w-0">
-                                <p className="text-sm font-medium text-primary truncate" title={name}>
-                                  {name}
+                                <p className="flex items-center gap-2 text-sm font-medium text-primary truncate" title={name}>
+                                  {avatarUrl ? (
+                                    <img
+                                      src={avatarUrl}
+                                      alt=""
+                                      className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-100"
+                                    />
+                                  ) : (
+                                    <span className="w-8 h-8 rounded-full bg-button-primary text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                                      {initials}
+                                    </span>
+                                  )}
+                                  <span className="truncate">{name}</span>
                                 </p>
                                 <p className="text-xs text-gray-600 mt-1">
                                   <span className="font-medium">Cycle:</span> #{c.cycleNumber}
@@ -634,6 +650,10 @@ export const ReviewsManagement = () => {
                             {activePreviewCycles.map((c, i) => {
                               const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                               const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
+                              const locLabel = allLocationsSelected ? c.locationName?.trim() : undefined;
+                              const roleLabel = emp?.role?.trim() || "—";
+                              const avatarUrl = emp ? getUserProfileProxyImageUrl(emp._id, emp.profileImagePublicId) : null;
+                              const initials = emp ? employeeInitials(emp) : "?";
                               const isOwner = user?.role === "Owner";
                               const canViewProgress =
                                 currentUserId != null && (isOwner || isDirector || employeeId === currentUserId);
@@ -654,7 +674,31 @@ export const ReviewsManagement = () => {
                               return (
                                 <tr key={c._id} className={i % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
                                   <td className="py-3 pr-2 pl-2">
-                                    {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
+                                    {locLabel ? <TimesheetLocationLabel name={locLabel} /> : null}
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      {avatarUrl ? (
+                                        <img
+                                          src={avatarUrl}
+                                          alt=""
+                                          className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-100"
+                                        />
+                                      ) : (
+                                        <span
+                                          className="w-8 h-8 rounded-full bg-button-primary text-white flex items-center justify-center text-sm font-semibold shrink-0"
+                                          aria-hidden
+                                        >
+                                          {initials}
+                                        </span>
+                                      )}
+                                      <div className="min-w-0">
+                                        <div className="font-semibold text-primary truncate">
+                                          {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
+                                        </div>
+                                        <div className="text-primary text-[10px] md:text-[10px] 2xl:text-xs truncate">
+                                          {roleLabel}
+                                        </div>
+                                      </div>
+                                    </div>
                                   </td>
                                   <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
                                   <td className="py-3 pr-2 text-center whitespace-nowrap">
@@ -824,12 +868,40 @@ export const ReviewsManagement = () => {
                               <tbody className="text-primary">
                                 {pastPreviewCycles.map((c, i) => {
                                   const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                              const locLabel = allLocationsSelected ? c.locationName?.trim() : undefined;
+                              const roleLabel = emp?.role?.trim() || "—";
+                                  const avatarUrl = emp ? getUserProfileProxyImageUrl(emp._id, emp.profileImagePublicId) : null;
+                                  const initials = emp ? employeeInitials(emp) : "?";
                                   const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
                                   const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
                                   return (
                                     <tr key={c._id} className={i % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
                                       <td className="py-3 pr-2 pl-2">
-                                        {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
+                                        {locLabel ? <TimesheetLocationLabel name={locLabel} /> : null}
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          {avatarUrl ? (
+                                            <img
+                                              src={avatarUrl}
+                                              alt=""
+                                              className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-100"
+                                            />
+                                          ) : (
+                                            <span
+                                              className="w-8 h-8 rounded-full bg-button-primary text-white flex items-center justify-center text-sm font-semibold shrink-0"
+                                              aria-hidden
+                                            >
+                                              {initials}
+                                            </span>
+                                          )}
+                                          <div className="min-w-0">
+                                            <div className="font-semibold text-primary truncate">
+                                              {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
+                                            </div>
+                                            <div className="text-primary text-[10px] md:text-[10px] 2xl:text-xs truncate">
+                                              {roleLabel}
+                                            </div>
+                                          </div>
+                                        </div>
                                       </td>
                                       <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
                                       <td className="py-3 pr-2 text-center">
@@ -1026,6 +1098,10 @@ export const ReviewsManagement = () => {
                         const globalIndex = (reviewCyclesPage - 1) * MODAL_PAGE_SIZE + i;
                         const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                         const employeeId = typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
+                        const locLabel = allLocationsSelected ? c.locationName?.trim() : undefined;
+                        const roleLabel = emp?.role?.trim() || "—";
+                        const avatarUrl = emp ? getUserProfileProxyImageUrl(emp._id, emp.profileImagePublicId) : null;
+                        const initials = emp ? employeeInitials(emp) : "?";
                         const isOwner = user?.role === "Owner";
                         const canViewProgress =
                           currentUserId != null && (isOwner || isDirector || employeeId === currentUserId);
@@ -1045,7 +1121,33 @@ export const ReviewsManagement = () => {
                         );
                         return (
                           <tr key={c._id} className={globalIndex % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
-                            <td className="py-3 pr-2 pl-2">{emp ? `${emp.firstName} ${emp.lastName}` : "—"}</td>
+                            <td className="py-3 pr-2 pl-2">
+                              {locLabel ? <TimesheetLocationLabel name={locLabel} /> : null}
+                              <div className="flex items-center gap-2 min-w-0">
+                                {avatarUrl ? (
+                                  <img
+                                    src={avatarUrl}
+                                    alt=""
+                                    className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-100"
+                                  />
+                                ) : (
+                                  <span
+                                    className="w-8 h-8 rounded-full bg-button-primary text-white flex items-center justify-center text-sm font-semibold shrink-0"
+                                    aria-hidden
+                                  >
+                                    {initials}
+                                  </span>
+                                )}
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-primary truncate">
+                                    {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
+                                  </div>
+                                  <div className="text-primary text-[10px] md:text-[10px] 2xl:text-xs truncate">
+                                    {roleLabel}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
                             <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
                             <td className="py-3 pr-2 text-center whitespace-nowrap">
                               {new Date(c.referenceDate).toLocaleDateString()}
@@ -1200,11 +1302,41 @@ export const ReviewsManagement = () => {
                           {pastModalCycles.map((c, i) => {
                             const globalIndex = (pastReviewsPage - 1) * MODAL_PAGE_SIZE + i;
                             const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                            const locLabel = allLocationsSelected ? c.locationName?.trim() : undefined;
+                            const roleLabel = emp?.role?.trim() || "—";
+                            const avatarUrl = emp ? getUserProfileProxyImageUrl(emp._id, emp.profileImagePublicId) : null;
+                            const initials = emp ? employeeInitials(emp) : "?";
                             const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
                             const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
                             return (
                               <tr key={c._id} className={globalIndex % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
-                                <td className="py-3 pr-2 pl-2">{emp ? `${emp.firstName} ${emp.lastName}` : "—"}</td>
+                                <td className="py-3 pr-2 pl-2">
+                                  {locLabel ? <TimesheetLocationLabel name={locLabel} /> : null}
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {avatarUrl ? (
+                                      <img
+                                        src={avatarUrl}
+                                        alt=""
+                                        className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-100"
+                                      />
+                                    ) : (
+                                      <span
+                                        className="w-8 h-8 rounded-full bg-button-primary text-white flex items-center justify-center text-sm font-semibold shrink-0"
+                                        aria-hidden
+                                      >
+                                        {initials}
+                                      </span>
+                                    )}
+                                    <div className="min-w-0">
+                                      <div className="font-semibold text-primary truncate">
+                                        {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
+                                      </div>
+                                      <div className="text-primary text-[10px] md:text-[10px] 2xl:text-xs truncate">
+                                        {roleLabel}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
                                 <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
                                 <td className="py-3 pr-2 text-center">
                                   <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}>

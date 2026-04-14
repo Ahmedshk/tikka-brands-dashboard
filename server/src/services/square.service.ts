@@ -2,7 +2,6 @@ import type {
   SquareLocationForHours,
   TimeRange,
 } from "../utils/businessHours.util.js";
-import { generateDistinctColors } from "../utils/colorPalette.util.js";
 import {
   aggregateVariationCentsFromOrders,
   buildCategoriesList,
@@ -21,6 +20,7 @@ import {
   filterSquareOrdersForDashboardDisplay,
   squareTendersListHasSuccessfulPayment,
 } from "../utils/squareOrderCacheHelpers.js";
+import { normalizeSourcesOfSalesSegmentId } from "../utils/squareSourcesOfSalesMerge.util.js";
 import {
   getOrderedBucketsAndLabels,
   getBucketKeyForDate,
@@ -31,6 +31,12 @@ import {
   truncateForExternalApiLog,
 } from "../utils/externalApiCallLog.util.js";
 import { logger } from "../utils/logger.util.js";
+import {
+  deriveSquareSourcesOfSalesKey,
+  normalizeTrendSourceKey,
+  segmentKeyToLabel,
+} from "../utils/squareSourcesOfSalesKey.util.js";
+import { generateDistinctColors } from "../utils/colorPalette.util.js";
 import {
   tryGetOrderTimeSeriesBySourceFromRollups,
   tryGetOrderTimeSeriesFromRollups,
@@ -1019,59 +1025,6 @@ export interface SourcesOfSalesSegment {
   color: string;
 }
 
-const SOURCE_LABEL_MAP: Record<string, string> = {
-  "square point of sale": "In-Store",
-  "square for restaurants": "In-Store",
-  "square pos": "In-Store",
-  pos: "In-Store",
-  pickup: "Pickup",
-  register: "Register",
-  delivery: "Delivery",
-  shipment: "Shipment",
-  kiosk: "Kiosk",
-  doordash: "DoorDash",
-  grubhub: "GrubHub",
-  "grub hub": "GrubHub",
-  other: "Other",
-  "in-store": "In-Store",
-  simple: "Order",
-  order: "Order",
-};
-
-function normalizeTrendSourceKey(key: string): string {
-  const normalized = key.trim().toLowerCase().replaceAll("_", "-");
-  // For the Sales Trend "group by source" chart, treat Register as:
-  // - in-store (POS)
-  // - pickup
-  if (normalized === "in-store" || normalized === "pickup") return "register";
-  return normalized;
-}
-
-function deriveSegmentKey(order: SquareOrder): string {
-  const sourceName = (order.source?.name ?? "").trim().toLowerCase();
-  const fulfillmentType = order.fulfillments?.[0]?.type?.trim().toLowerCase();
-
-  if (sourceName) {
-    const mapped = SOURCE_LABEL_MAP[sourceName];
-    if (mapped) return mapped.toLowerCase().replaceAll(/\s+/g, "-");
-    return sourceName.replaceAll(/\s+/g, "-").replaceAll(/[^a-z0-9-]/g, "");
-  }
-  if (fulfillmentType) {
-    const mapped = SOURCE_LABEL_MAP[fulfillmentType];
-    if (mapped) return mapped.toLowerCase().replaceAll(/\s+/g, "-");
-    return fulfillmentType;
-  }
-  return "order";
-}
-
-export function segmentKeyToLabel(key: string): string {
-  const normalized = key.toLowerCase().replaceAll(/\s+/g, "-");
-  return (
-    SOURCE_LABEL_MAP[normalized] ??
-    key.replaceAll("-", " ").replaceAll(/\b\w/g, (c) => c.toUpperCase())
-  );
-}
-
 /**
  * Aggregate net sales by source/fulfillment from an array of orders.
  * Returns segments with id, label, value (percentage 0-100), amount (formatted), color.
@@ -1085,7 +1038,7 @@ export function getSourcesOfSalesFromOrders(
     if (!isOrderCountedForNetSales(order)) continue;
     const cents = orderNetSalesCents(order);
     if (cents <= 0) continue;
-    const key = deriveSegmentKey(order);
+    const key = normalizeSourcesOfSalesSegmentId(deriveSquareSourcesOfSalesKey(order));
     byKey[key] = (byKey[key] ?? 0) + cents;
   }
 
@@ -1783,7 +1736,7 @@ export async function getOrderTimeSeriesBySourceInRange(
   const bySourceAndKey: Record<string, Record<string, number>> = {};
 
   const rr = options?.rollupRead;
-  if (rr && granularity !== "hourly") {
+  if (rr) {
     const tSrc = performance.now();
     const fromRollup = await tryGetOrderTimeSeriesBySourceFromRollups(
       rr.locationMongoId,
@@ -1814,6 +1767,7 @@ export async function getOrderTimeSeriesBySourceInRange(
         sourceSeriesCount: sourceKeys.length,
         rollupAttemptMs: rollupMs,
         locationMongoId: rr.locationMongoId,
+        dataSource: "rollups",
       });
       const colors = generateDistinctColors(sourceKeys.length, {
         nonAdjacent: true,
@@ -1835,17 +1789,16 @@ export async function getOrderTimeSeriesBySourceInRange(
         bucketCount: keys.length,
         rollupAttemptMs: rollupMs,
         locationMongoId: rr.locationMongoId,
+        dataSource: "mongo_orders_fallback",
+        detail:
+          "tryGetOrderTimeSeriesBySourceFromRollups returned null (missing/incomplete rollup rows, ROLLUP_READ_ENABLED off, or strict hourly pair mismatch)",
       },
-    );
-  } else if (granularity === "hourly" && rr) {
-    logger.info(
-      "[sales-trend] getOrderTimeSeriesBySourceInRange: hourly (no by-source rollups)",
-      { bucketCount: keys.length, locationMongoId: rr.locationMongoId },
     );
   } else if (!rr) {
     logger.info("[sales-trend] getOrderTimeSeriesBySourceInRange: no rollupRead", {
       granularity,
       bucketCount: keys.length,
+      dataSource: "orders_only",
       willUseOrders:
         options?.ordersOverride != null ? "ordersOverride" : "square_api",
     });
@@ -1866,7 +1819,7 @@ export async function getOrderTimeSeriesBySourceInRange(
     if (!isOrderCountedForNetSales(order)) continue;
     const cents = orderNetSalesCents(order);
     if (cents <= 0) continue;
-    const sourceKey = normalizeTrendSourceKey(deriveSegmentKey(order));
+    const sourceKey = normalizeTrendSourceKey(deriveSquareSourcesOfSalesKey(order));
     const bucketKey = getBucketKeyForDate(
       new Date(order.created_at ?? ""),
       timezone,
@@ -1902,6 +1855,7 @@ export async function getOrderTimeSeriesBySourceInRange(
       ordersUsed: orders.length,
       sourceSeriesCount: sourceKeys.length,
       aggregateTotalMs: Math.round(performance.now() - tBySourceAgg),
+      dataSource: rr ? "mongo_orders_fallback" : "orders_only",
     },
   );
 

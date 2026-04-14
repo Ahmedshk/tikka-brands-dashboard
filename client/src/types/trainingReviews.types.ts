@@ -39,6 +39,11 @@ export interface EmployeeTrainingRow {
   trainingId: string;
   trainingName: string;
   assignTo: string;
+  /** Present when listing for all locations. */
+  locationId?: string;
+  locationName?: string | null;
+  /** Profile image id (used to build proxy URL). */
+  profileImagePublicId?: string | null;
   /** Employee role (e.g. Store Manager, Cashier) */
   role: string;
   /** 0–100 or computed from completedModules/totalModules */

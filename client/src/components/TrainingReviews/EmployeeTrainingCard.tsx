@@ -5,6 +5,8 @@ import { getModuleSegmentStatuses } from '../../utils/trainingProgressUtils';
 import ViewIcon from '@assets/icons/view.svg?react';
 import EditIcon from '@assets/icons/edit.svg?react';
 import DeleteIcon from '@assets/icons/delete.svg?react';
+import { employeeInitials, getUserProfileProxyImageUrl } from '../../utils/employeeBioHelpers';
+import { TimesheetLocationLabel } from '../../utils/timesheetLocationLabel';
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
 
@@ -86,6 +88,8 @@ export interface EmployeeTrainingCardProps {
   rows: EmployeeTrainingRow[];
   /** When true, shows a centered spinner in the table body (column headers stay visible on desktop). */
   loading?: boolean;
+  /** When true, show store name above employee name (all-locations view). */
+  showLocationLabel?: boolean;
   /** Trimmed debounced query for empty-state copy (search UI lives outside the card). */
   debouncedSearch: string;
   /** Row count returned by the API for the current search (before hierarchy filter). */
@@ -101,6 +105,7 @@ export interface EmployeeTrainingCardProps {
 export const EmployeeTrainingCard = ({
   rows,
   loading = false,
+  showLocationLabel = false,
   debouncedSearch,
   searchMatchCount,
   filteredTotal,
@@ -123,7 +128,6 @@ export const EmployeeTrainingCard = ({
             <thead>
               <tr className="bg-primary text-white">
                 <th className={thFirstColClass}>Employee Name</th>
-                <th className={`${thClass} text-left`}>Role</th>
                 <th className={`${thClass} text-left`}>Training</th>
                 <th className={`${thClass} text-left`}>Progress</th>
                 <th className={thActionsClass}>Status</th>
@@ -133,7 +137,7 @@ export const EmployeeTrainingCard = ({
             <tbody className="text-primary">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="p-0">
+                  <td colSpan={5} className="p-0">
                     <div
                       className="flex min-h-[200px] items-center justify-center py-8"
                       aria-busy="true"
@@ -144,13 +148,13 @@ export const EmployeeTrainingCard = ({
                 </tr>
               ) : emptySearch ? (
                 <tr>
-                  <td colSpan={6} className="py-12 px-5 text-center text-secondary text-sm">
+                  <td colSpan={5} className="py-12 px-5 text-center text-secondary text-sm">
                     No assignments match this search.
                   </td>
                 </tr>
               ) : emptyNoSearch ? (
                 <tr>
-                  <td colSpan={6} className="py-12 px-5 text-center text-secondary text-sm">
+                  <td colSpan={5} className="py-12 px-5 text-center text-secondary text-sm">
                     <p className="text-lg font-medium text-gray-400">No assignments yet</p>
                     <p className="text-sm mt-1 text-gray-400">
                       Assign training to employees to see progress here.
@@ -159,18 +163,44 @@ export const EmployeeTrainingCard = ({
                 </tr>
               ) : showHierarchyEmpty ? (
                 <tr>
-                  <td colSpan={6} className="py-12 px-5 text-center text-secondary text-sm">
+                  <td colSpan={5} className="py-12 px-5 text-center text-secondary text-sm">
                     No assignments are visible for your role hierarchy.
                   </td>
                 </tr>
               ) : (
                 rows.map((row, index) => (
                   <tr
-                    key={row.assignmentId ?? `${row.trainingName}-${row.assignTo}-${index}`}
+                    key={`${row.locationId ?? ""}-${row.assignmentId ?? `${row.trainingName}-${row.assignTo}`}-${index}`}
                     className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}
                   >
-                    <td className={tdFirstColClass}>{row.assignTo}</td>
-                    <td className="py-3 pr-4">{row.role}</td>
+                    <td className={`${tdFirstColClass} align-top`}>
+                      {showLocationLabel && row.locationName?.trim()
+                        ? <TimesheetLocationLabel name={row.locationName.trim()} />
+                        : null}
+                      {(() => {
+                        const avatarUrl = getUserProfileProxyImageUrl(row.userId, row.profileImagePublicId);
+                        const initials = employeeInitials({ email: row.assignTo });
+                        return (
+                          <div className="flex items-center gap-2 min-w-0">
+                            {avatarUrl ? (
+                              <img
+                                src={avatarUrl}
+                                alt=""
+                                className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-100"
+                              />
+                            ) : (
+                              <span className="w-8 h-8 rounded-full bg-button-primary text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                                {initials}
+                              </span>
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-semibold text-primary truncate">{row.assignTo}</div>
+                              <div className="text-primary text-[10px] md:text-[10px] 2xl:text-xs truncate">{row.role}</div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="py-3 pr-4">{row.trainingName}</td>
                     <td className="py-3 pr-4">
                       <ProgressSegments row={row} keyPrefix={`${row.trainingName}-${row.assignTo}-${index}`} />
@@ -243,15 +273,32 @@ export const EmployeeTrainingCard = ({
             ) : (
               <div className="divide-y divide-gray-200 overflow-y-auto min-h-0 -mx-5 px-5">
                 {rows.map((row, index) => {
+                  const locLabel = row.locationName?.trim();
+                  const avatarUrl = getUserProfileProxyImageUrl(row.userId, row.profileImagePublicId);
+                  const initials = employeeInitials({ email: row.assignTo });
                   const rowKey = row.assignmentId ?? `${row.trainingName}-${row.assignTo}-${index}`;
                   return (
                     <div
-                      key={`${rowKey}-mobile`}
+                      key={`${row.locationId ?? ""}-${rowKey}-mobile`}
                       className={`px-3 py-3 ${index % 2 === 1 ? 'bg-[#F3F5F7]' : 'bg-white'}`}
                     >
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-primary whitespace-normal break-words">{row.assignTo}</p>
-                        <p className="text-xs text-secondary mt-0.5">{row.role}</p>
+                        {showLocationLabel && locLabel ? <TimesheetLocationLabel name={locLabel} /> : null}
+                        <p className="flex items-center gap-2 text-sm font-medium text-primary truncate" title={row.assignTo}>
+                          {avatarUrl ? (
+                            <img
+                              src={avatarUrl}
+                              alt=""
+                              className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-100"
+                            />
+                          ) : (
+                            <span className="w-8 h-8 rounded-full bg-button-primary text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                              {initials}
+                            </span>
+                          )}
+                          <span className="truncate">{row.assignTo}</span>
+                        </p>
+                        <p className="text-xs text-gray-600 mt-0.5">{row.role}</p>
                       </div>
 
                       <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">

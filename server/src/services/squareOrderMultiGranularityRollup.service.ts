@@ -14,6 +14,11 @@ import {
 import { mergeCategoryBreakdownFromDailyRollupDocs } from "../utils/squareCategoryRollupBreakdown.util.js";
 import { mergeSourcesOfSalesFromDailyRollupDocs } from "../utils/squareSourcesOfSalesMerge.util.js";
 import {
+  addCentsToSourcesOfSalesCentsById,
+  sourcesOfSalesFactsFromCentsById,
+} from "../utils/sourcesOfSalesFacts.util.js";
+import { deriveSquareSourcesOfSalesKey } from "../utils/squareSourcesOfSalesKey.util.js";
+import {
   businessDateKeysForMonthPeriod,
   businessDateKeysForWeekPeriod,
   businessDateKeysForYearPeriod,
@@ -45,10 +50,15 @@ export async function buildSquareOrderHourlyRollupsForDay(
     businessDateKey,
   );
   const orders = await loadSquareOrdersForMongoRange(locationMongoId, range);
-  const bySlot: Array<{ netCents: number; txCount: number }> = Array.from(
-    { length: 24 },
-    () => ({ netCents: 0, txCount: 0 }),
-  );
+  const bySlot: Array<{
+    netCents: number;
+    txCount: number;
+    centsBySourceId: Map<string, number>;
+  }> = Array.from({ length: 24 }, () => ({
+    netCents: 0,
+    txCount: 0,
+    centsBySourceId: new Map<string, number>(),
+  }));
   for (const order of filterSquareOrdersForDashboardDisplay(orders)) {
     const raw = order as unknown as Record<string, unknown>;
     const ms = getSquareOrderCreatedAtMsFromRaw(raw);
@@ -64,7 +74,14 @@ export async function buildSquareOrderHourlyRollupsForDay(
     if (!isOrderCountedForNetSales(order as SquareOrder)) continue;
     const netCents = orderNetSalesCents(order as SquareOrder);
     bySlot[slot].netCents += netCents;
-    if (netCents > 0) bySlot[slot].txCount += 1;
+    if (netCents > 0) {
+      bySlot[slot].txCount += 1;
+      addCentsToSourcesOfSalesCentsById(
+        bySlot[slot].centsBySourceId,
+        deriveSquareSourcesOfSalesKey(order as SquareOrder),
+        netCents,
+      );
+    }
   }
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   const computedAt = new Date();
@@ -78,6 +95,7 @@ export async function buildSquareOrderHourlyRollupsForDay(
         computedAt,
         netSalesCents: bySlot[slotIndex].netCents,
         transactionCount: bySlot[slotIndex].txCount,
+        sourcesOfSales: sourcesOfSalesFactsFromCentsById(bySlot[slotIndex].centsBySourceId),
       },
       { upsert: true },
     ).exec();

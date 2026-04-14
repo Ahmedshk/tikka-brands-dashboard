@@ -105,6 +105,9 @@ export interface ReviewCycle {
         profileImagePublicId?: string;
         homebaseData?: HomebaseData | null;
       };
+  /** Present when listing cycles for all locations. */
+  locationId?: string;
+  locationName?: string | null;
   cycleNumber: number;
   referenceDate: string;
   status: ReviewCycleStatus;

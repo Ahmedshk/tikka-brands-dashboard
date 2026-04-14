@@ -9,6 +9,7 @@ import {
   type SalesTrendResult,
 } from './salesTrendControllerHelpers.js';
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
+import { generateDistinctColors } from './colorPalette.util.js';
 
 function sumNullableSeries(points: Array<(number | null)[]>) {
   const len = Math.max(0, ...points.map((p) => p.length));
@@ -90,7 +91,12 @@ function mergeBySource(results: Array<Extract<SalesTrendResult, { kind: 'bySourc
       byKey.set(key, existing);
     }
   }
-  return { xAxisLabels, granularity, series: Array.from(byKey.values()) };
+  // Recompute a distinct palette for the merged series so colors don't repeat
+  // when different locations produce overlapping/duplicate palettes.
+  const merged = Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const colors = generateDistinctColors(merged.length, { nonAdjacent: true });
+  const series = merged.map((s, i) => ({ ...s, color: colors[i] ?? s.color ?? '#888888' }));
+  return { xAxisLabels, granularity, series };
 }
 
 function mergeSeries(results: Array<Extract<SalesTrendResult, { kind: 'series' }>>): SalesTrendResult['data'] {

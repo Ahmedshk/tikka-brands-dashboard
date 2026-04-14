@@ -197,6 +197,9 @@ export class TrainingAssignmentService {
         ? [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email
         : '—';
       const role = user?.role ?? '—';
+      const profileImagePublicId =
+        (user as unknown as { profileImagePublicId?: string | null })
+          ?.profileImagePublicId ?? null;
       const moduleDurations = (training?.modules ?? []).map((m) => {
         const d = (m as { duration?: number }).duration;
         return typeof d === 'number' && d >= 1 ? d : 1;
@@ -221,6 +224,7 @@ export class TrainingAssignmentService {
         moduleCount: totalModules,
         assignTo,
         role,
+        profileImagePublicId,
         completedModules,
         totalModules,
         status,

@@ -221,6 +221,7 @@ export const TrainingManagement = () => {
             <EmployeeTrainingCard
               rows={paginatedTableRows}
               loading={tableLoading}
+              showLocationLabel={allLocationsSelected}
               debouncedSearch={employeeTrainingSearchDebounced}
               searchMatchCount={searchMatchCount}
               filteredTotal={filteredTotal}
