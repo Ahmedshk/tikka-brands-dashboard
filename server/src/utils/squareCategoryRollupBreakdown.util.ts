@@ -4,7 +4,6 @@
  */
 
 import {
-  aggregateVariationCentsFromOrders,
   resolveCategoryIdToName,
   resolveVariationToItemAndCategoryIds,
   type BatchRetrieveCatalogFn,
@@ -122,57 +121,66 @@ export async function computeCategoryBreakdownFromOrdersForRollup(
           batchLimit,
         );
 
-  const { variationToCents, uncategorizedLineCents } =
-    aggregateVariationCentsFromOrders(
-      orders,
-      options.isCounted,
-      options.getOrderCents,
-      options.getLineCents,
-    );
-
   const netByCategory = new Map<string, number>();
-  const uncategorizedRounded = Math.round(uncategorizedLineCents);
-  if (uncategorizedRounded !== 0) {
-    netByCategory.set(
-      UNCATEGORIZED_CATEGORY_ROLLUP_ID,
-      uncategorizedRounded,
-    );
-  }
-  for (const [variationId, cents] of Object.entries(variationToCents)) {
-    const rounded = Math.round(cents);
-    if (rounded === 0) continue;
-    const catId = catalogLineToCategoryId(
-      variationId,
-      variationToItemId,
-      itemIdToCategoryId,
-    );
-    netByCategory.set(catId, (netByCategory.get(catId) ?? 0) + rounded);
-  }
-
   const txnByCategory = new Map<string, number>();
   for (const order of orders) {
     if (!options.isCounted(order)) continue;
     const orderNetCents = options.getOrderCents(order);
     const lineItems = order.line_items ?? [];
-    const orderTotalCents = lineItems.reduce(
-      (sum, line) => sum + options.getLineCents(line),
-      0,
-    );
-    if (orderTotalCents <= 0) continue;
-    const perOrder = new Map<string, number>();
+
+    // Build weights per category for this order (in integer cents).
+    const weightByCategory = new Map<string, number>();
     for (const line of lineItems) {
-      const alloc =
-        orderNetCents * (options.getLineCents(line) / orderTotalCents);
       const catalogObjectId = (line as { catalog_object_id?: string }).catalog_object_id?.trim();
       const catId = catalogLineToCategoryId(
         catalogObjectId,
         variationToItemId,
         itemIdToCategoryId,
       );
-      perOrder.set(catId, (perOrder.get(catId) ?? 0) + alloc);
+      const w = options.getLineCents(line);
+      if (!Number.isFinite(w) || w <= 0) continue;
+      weightByCategory.set(catId, (weightByCategory.get(catId) ?? 0) + w);
     }
-    for (const [catId, allocated] of perOrder) {
-      if (Math.round(allocated) > 0) {
+
+    // Allocate this order's net cents across categories using largest remainder (integer-safe).
+    const allocated = (() => {
+      const entries = [...weightByCategory.entries()].filter(([, w]) => w > 0);
+      const res = new Map<string, number>();
+      if (orderNetCents <= 0 || entries.length === 0) return res;
+      const denom = entries.reduce((s, [, w]) => s + w, 0);
+      if (denom <= 0) return res;
+      type Row = { key: string; base: number; rem: number };
+      const rows: Row[] = [];
+      let baseSum = 0;
+      for (const [key, w] of entries) {
+        const numer = orderNetCents * w;
+        const base = Math.floor(numer / denom);
+        const rem = numer - base * denom;
+        rows.push({ key, base, rem });
+        baseSum += base;
+      }
+      let leftover = orderNetCents - baseSum;
+      if (leftover > 0) {
+        rows.sort((a, b) => {
+          if (b.rem !== a.rem) return b.rem - a.rem;
+          if (a.key !== b.key) return a.key.localeCompare(b.key);
+          return b.base - a.base;
+        });
+        for (let i = 0; i < rows.length && leftover > 0; i += 1) {
+          rows[i]!.base += 1;
+          leftover -= 1;
+          if (i === rows.length - 1 && leftover > 0) i = -1;
+        }
+      }
+      for (const r of rows) {
+        if (r.base !== 0) res.set(r.key, r.base);
+      }
+      return res;
+    })();
+
+    for (const [catId, cents] of allocated.entries()) {
+      netByCategory.set(catId, (netByCategory.get(catId) ?? 0) + cents);
+      if (cents > 0) {
         txnByCategory.set(catId, (txnByCategory.get(catId) ?? 0) + 1);
       }
     }

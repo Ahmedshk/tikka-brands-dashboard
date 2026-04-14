@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { PercentageGauge } from '../gauges/PercentageGauge';
+import { Spinner } from '../common/Spinner';
 
 const POSITIVE_COLOR = '#5DC54F';
 const NEGATIVE_COLOR = '#F04B5B';
@@ -14,6 +15,8 @@ export interface LaborCostGaugeCardProps {
   subtitle?: string;
   overTarget?: number | null;
   size?: number;
+  /** Show centered spinner while waiting for KPI API */
+  loading?: boolean;
   /** Optional className for the card wrapper (e.g. for grid sizing) */
   className?: string;
 }
@@ -27,6 +30,7 @@ export const LaborCostGaugeCard = ({
   subtitle = 'Labor vs Goals',
   overTarget = null,
   size = 340,
+  loading = false,
   className = '',
 }: LaborCostGaugeCardProps) => {
   const { segmentStops, segmentColors } = useMemo(() => {
@@ -60,21 +64,27 @@ export const LaborCostGaugeCard = ({
 
   return (
     <div className={`${cardClass} ${className}`}>
-      <div className="p-5 flex flex-col items-center">
+      <div className="p-5 flex flex-col h-full min-h-[280px]">
         <h3 className="text-sm font-semibold text-secondary mb-4 text-center">Labor Cost Percentage Gauge</h3>
-        <div className="flex justify-center w-full">
-          <PercentageGauge
-            value={value}
-            subtitle={subtitle}
-            overTarget={overTarget}
-            overTargetWithinTolerance={overTargetWithinTolerance}
-            overTargetToleranceColor={TOLERANCE_COLOR}
-            size={size}
-            segmentStops={segmentStops}
-            segmentColors={segmentColors}
-            goalTick={goal ?? null}
-          />
-        </div>
+        {loading ? (
+          <div className="flex flex-1 min-h-[200px] items-center justify-center">
+            <Spinner size="lg" className="text-button-primary" />
+          </div>
+        ) : (
+          <div className="flex justify-center items-center w-full flex-1 min-h-[200px]">
+            <PercentageGauge
+              value={value}
+              subtitle={subtitle}
+              overTarget={overTarget}
+              overTargetWithinTolerance={overTargetWithinTolerance}
+              overTargetToleranceColor={TOLERANCE_COLOR}
+              size={size}
+              segmentStops={segmentStops}
+              segmentColors={segmentColors}
+              goalTick={goal ?? null}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -65,4 +65,6 @@ export interface ICalendarEvent {
   lastSyncedAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
+  /** Set when listing events for multiple locations (e.g. `locationId=__all__`). */
+  locationName?: string;
 }

@@ -44,6 +44,137 @@ export interface AlertsCardProps {
   onViewAll?: (categoryId: string) => void;
 }
 
+function CategoryAlertCountBadge({
+  loading,
+  categoryTitle,
+  count,
+}: Readonly<{ loading: boolean; categoryTitle: string; count: number }>) {
+  if (loading) {
+    return (
+      <span
+        className="inline-flex items-center justify-center min-h-[1.25rem] min-w-[1.75rem]"
+        aria-label={`Loading ${categoryTitle} alert count`}
+        aria-busy="true"
+      >
+        <Spinner size="sm" className="text-button-primary" />
+      </span>
+    );
+  }
+  if (count > 0) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] md:text-xs font-semibold text-secondary tabular-nums">
+        {count}
+      </span>
+    );
+  }
+  return null;
+}
+
+function AlertSubtitleDisplay({
+  subtitle,
+  createdAt,
+}: Readonly<{ subtitle: string; createdAt?: string }>) {
+  if (createdAt != null && createdAt !== '') {
+    return (
+      <time className="text-[10px] text-secondary opacity-90 md:text-xs" dateTime={createdAt}>
+        {subtitle}
+      </time>
+    );
+  }
+  return <span className="text-[10px] text-secondary opacity-90 md:text-xs">{subtitle}</span>;
+}
+
+function CategoryAlertsContent({
+  loading,
+  categoryTitle,
+  alerts,
+  now,
+  onDismiss,
+}: Readonly<{
+  loading: boolean;
+  categoryTitle: string;
+  alerts: AlertItem[];
+  now: number;
+  onDismiss?: (notificationId: string) => void;
+}>) {
+  if (loading) {
+    return (
+      <section
+        aria-label={`Loading ${categoryTitle} alerts`}
+        aria-busy="true"
+        className="flex min-h-[min(12rem,32vh)] w-full items-center justify-center py-6"
+      >
+        <Spinner size="md" className="text-button-primary" />
+      </section>
+    );
+  }
+  if (alerts.length === 0) {
+    return <p className="text-[10px] md:text-xs 2xl:text-sm text-secondary pl-7">No active alerts.</p>;
+  }
+  return (
+    <section
+      aria-label={`${categoryTitle} alerts`}
+      className="max-h-[min(15rem,40vh)] overflow-y-auto overscroll-y-contain pr-1 dropdown-list-scrollbar"
+    >
+      <div className="flex flex-col">
+        {alerts.map((alert, index) => {
+          const showNew = isAlertNew(alert.createdAt, now);
+          const hasMetaBelow = showNew || (alert.subtitle != null && alert.subtitle !== '');
+          return (
+            <div
+              key={alert.id}
+              className={`flex flex-wrap items-start gap-x-3 gap-y-1 py-2 pl-7 pr-3 text-[10px] md:text-xs 2xl:text-sm text-primary ${index % 2 === 1 ? 'bg-[#F3F5F7]' : ''
+                }`}
+            >
+              <span className="flex min-w-0 flex-1 items-start gap-1.5">
+                <span
+                  className={`mt-1.5 h-1 w-1 flex-shrink-0 rounded-full md:h-1.5 md:w-1.5 2xl:h-2 2xl:w-2 ${alert.severity === 'critical' ? 'bg-[#F04B5B]' : 'bg-[#FBC52A]'
+                    }`}
+                  aria-hidden
+                />
+                <span className="min-w-0">
+                  <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                    <span className="font-semibold text-primary">{alert.titleLine}</span>
+                    {alert.bodyLine != null && alert.bodyLine !== '' ? (
+                      <>
+                        <span className="shrink-0 select-none text-secondary" aria-hidden>
+                          ·
+                        </span>
+                        <span className="min-w-0 font-normal text-secondary">{alert.bodyLine}</span>
+                      </>
+                    ) : null}
+                  </span>
+                  {hasMetaBelow ? (
+                    <span className="mt-0.5 flex flex-row flex-wrap items-center gap-1.5">
+                      {alert.subtitle != null && alert.subtitle !== '' ? (
+                        <AlertSubtitleDisplay subtitle={alert.subtitle} createdAt={alert.createdAt} />
+                      ) : null}
+                      {showNew ? (
+                        <span className={COMMAND_CENTER_ALERT_NEW_BADGE_CLASSNAME} aria-label="New alert">
+                          New
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : null}
+                </span>
+              </span>
+              {alert.dismissable && onDismiss != null && (
+                <button
+                  type="button"
+                  onClick={() => onDismiss(alert.id)}
+                  className="shrink-0 self-start text-[10px] text-button-primary hover:underline md:text-xs"
+                >
+                  Dismiss
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export const AlertsCard = ({
   categories,
   loading = false,
@@ -97,11 +228,11 @@ export const AlertsCard = ({
               <h4 className="flex flex-wrap items-center gap-2 text-xs md:text-sm 2xl:text-base font-medium text-secondary">
                 {category.icon}
                 <span>{category.title}</span>
-                {category.alerts.length > 0 ? (
-                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] md:text-xs font-semibold text-secondary tabular-nums">
-                    {category.alerts.length}
-                  </span>
-                ) : null}
+                <CategoryAlertCountBadge
+                  loading={loading}
+                  categoryTitle={category.title}
+                  count={category.alerts.length}
+                />
               </h4>
               {onViewAll != null && (
                 <button
@@ -114,94 +245,13 @@ export const AlertsCard = ({
                 </button>
               )}
             </div>
-            {loading ? (
-              <section
-                aria-label={`Loading ${category.title} alerts`}
-                aria-busy="true"
-                className="flex min-h-[min(12rem,32vh)] w-full items-center justify-center py-6"
-              >
-                <Spinner size="md" className="text-button-primary" />
-              </section>
-            ) : category.alerts.length === 0 ? (
-              <p className="text-[10px] md:text-xs 2xl:text-sm text-secondary pl-7">No active alerts.</p>
-            ) : (
-              <section
-                aria-label={`${category.title} alerts`}
-                className="max-h-[min(15rem,40vh)] overflow-y-auto overscroll-y-contain pr-1 dropdown-list-scrollbar"
-              >
-                <div className="flex flex-col">
-                  {category.alerts.map((alert, index) => {
-                    const showNew = isAlertNew(alert.createdAt, now);
-                    const hasMetaBelow =
-                      showNew ||
-                      (alert.subtitle != null && alert.subtitle !== '');
-                    return (
-                      <div
-                        key={alert.id}
-                        className={`flex flex-wrap items-start gap-x-3 gap-y-1 py-2 pl-7 pr-3 text-[10px] md:text-xs 2xl:text-sm text-primary ${index % 2 === 1 ? 'bg-[#F3F5F7]' : ''
-                          }`}
-                      >
-                        <span className="flex min-w-0 flex-1 items-start gap-1.5">
-                          <span
-                            className={`mt-1.5 h-1 w-1 flex-shrink-0 rounded-full md:h-1.5 md:w-1.5 2xl:h-2 2xl:w-2 ${alert.severity === 'critical' ? 'bg-[#F04B5B]' : 'bg-[#FBC52A]'
-                              }`}
-                            aria-hidden
-                          />
-                          <span className="min-w-0">
-                            <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-                              <span className="font-semibold text-primary">{alert.titleLine}</span>
-                              {alert.bodyLine != null && alert.bodyLine !== '' ? (
-                                <>
-                                  <span className="shrink-0 select-none text-secondary" aria-hidden>
-                                    ·
-                                  </span>
-                                  <span className="min-w-0 font-normal text-secondary">{alert.bodyLine}</span>
-                                </>
-                              ) : null}
-                            </span>
-                            {hasMetaBelow ? (
-                              <span className="mt-0.5 flex flex-row flex-wrap items-center gap-1.5">
-                                {alert.subtitle != null && alert.subtitle !== '' ? (
-                                  alert.createdAt != null && alert.createdAt !== '' ? (
-                                    <time
-                                      className="text-[10px] text-secondary opacity-90 md:text-xs"
-                                      dateTime={alert.createdAt}
-                                    >
-                                      {alert.subtitle}
-                                    </time>
-                                  ) : (
-                                    <span className="text-[10px] text-secondary opacity-90 md:text-xs">
-                                      {alert.subtitle}
-                                    </span>
-                                  )
-                                ) : null}
-                                {showNew ? (
-                                  <span
-                                    className={COMMAND_CENTER_ALERT_NEW_BADGE_CLASSNAME}
-                                    aria-label="New alert"
-                                  >
-                                    New
-                                  </span>
-                                ) : null}
-                              </span>
-                            ) : null}
-                          </span>
-                        </span>
-                        {alert.dismissable && onDismiss != null && (
-                          <button
-                            type="button"
-                            onClick={() => onDismiss(alert.id)}
-                            className="shrink-0 self-start text-[10px] text-button-primary hover:underline md:text-xs"
-                          >
-                            Dismiss
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+            <CategoryAlertsContent
+              loading={loading}
+              categoryTitle={category.title}
+              alerts={category.alerts}
+              now={now}
+              onDismiss={onDismiss}
+            />
           </div>
         ))}
       </div>

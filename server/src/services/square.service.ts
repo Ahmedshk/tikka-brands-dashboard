@@ -1025,6 +1025,7 @@ const SOURCE_LABEL_MAP: Record<string, string> = {
   "square pos": "In-Store",
   pos: "In-Store",
   pickup: "Pickup",
+  register: "Register",
   delivery: "Delivery",
   shipment: "Shipment",
   kiosk: "Kiosk",
@@ -1036,6 +1037,15 @@ const SOURCE_LABEL_MAP: Record<string, string> = {
   simple: "Order",
   order: "Order",
 };
+
+function normalizeTrendSourceKey(key: string): string {
+  const normalized = key.trim().toLowerCase().replaceAll("_", "-");
+  // For the Sales Trend "group by source" chart, treat Register as:
+  // - in-store (POS)
+  // - pickup
+  if (normalized === "in-store" || normalized === "pickup") return "register";
+  return normalized;
+}
 
 function deriveSegmentKey(order: SquareOrder): string {
   const sourceName = (order.source?.name ?? "").trim().toLowerCase();
@@ -1785,7 +1795,17 @@ export async function getOrderTimeSeriesBySourceInRange(
     );
     const rollupMs = Math.round(performance.now() - tSrc);
     if (fromRollup) {
-      const sourceKeys = Object.keys(fromRollup).sort((a, b) =>
+      // Merge keys for trend display (e.g. In-Store + Pickup => Register).
+      const mergedFromRollup: Record<string, Record<string, number>> = {};
+      for (const [rawKey, record] of Object.entries(fromRollup)) {
+        const key = normalizeTrendSourceKey(rawKey);
+        mergedFromRollup[key] ??= {};
+        for (const [bucketKey, value] of Object.entries(record ?? {})) {
+          mergedFromRollup[key]![bucketKey] =
+            (mergedFromRollup[key]![bucketKey] ?? 0) + (value ?? 0);
+        }
+      }
+      const sourceKeys = Object.keys(mergedFromRollup).sort((a, b) =>
         a.localeCompare(b),
       );
       logger.info("[sales-trend] getOrderTimeSeriesBySourceInRange: ROLLUPS", {
@@ -1802,7 +1822,7 @@ export async function getOrderTimeSeriesBySourceInRange(
         (sourceKey, index) => ({
           id: sourceKey,
           label: segmentKeyToLabel(sourceKey),
-          data: keys.map((k) => fromRollup[sourceKey]?.[k] ?? 0),
+          data: keys.map((k) => mergedFromRollup[sourceKey]?.[k] ?? 0),
           color: colors[index] ?? "#6D6D6D",
         }),
       );
@@ -1846,7 +1866,7 @@ export async function getOrderTimeSeriesBySourceInRange(
     if (!isOrderCountedForNetSales(order)) continue;
     const cents = orderNetSalesCents(order);
     if (cents <= 0) continue;
-    const sourceKey = deriveSegmentKey(order);
+    const sourceKey = normalizeTrendSourceKey(deriveSegmentKey(order));
     const bucketKey = getBucketKeyForDate(
       new Date(order.created_at ?? ""),
       timezone,

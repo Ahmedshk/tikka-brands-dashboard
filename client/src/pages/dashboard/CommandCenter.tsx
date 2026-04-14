@@ -37,7 +37,6 @@ import { getSocket } from '../../services/socket.service';
 import type {
   AlertRoleBindingCategory,
   CommandCenterAlertBuckets,
-  CommandCenterAlertRow,
 } from '../../types/alertNotification.types';
 
 const PAGE_ID = 'command-center';
@@ -170,12 +169,10 @@ export const CommandCenter = () => {
     dismissedAlertIdsRef.current.add(notificationId);
     setAlertBuckets((prev) => {
       if (prev == null) return prev;
-      const without = (rows: CommandCenterAlertRow[]) =>
-        rows.filter((r) => r.id !== notificationId);
       return {
-        financial_labor: without(prev.financial_labor),
-        inventory_supply_chain: without(prev.inventory_supply_chain),
-        reputation_hr: without(prev.reputation_hr),
+        financial_labor: prev.financial_labor.filter((r) => r.id !== notificationId),
+        inventory_supply_chain: prev.inventory_supply_chain.filter((r) => r.id !== notificationId),
+        reputation_hr: prev.reputation_hr.filter((r) => r.id !== notificationId),
       };
     });
   }, []);
@@ -191,54 +188,62 @@ export const CommandCenter = () => {
     [dismissAlertById],
   );
 
+  const handleSocketNotificationNew = useCallback((payload: unknown) => {
+    if (payload == null || typeof payload !== 'object') return;
+    if (!currentLocation?._id) return;
+    if (allLocationsSelected) return;
+
+    const timezone = currentLocation.timezone?.trim() || 'America/Denver';
+    const todayKey = getTodayInTimezone(timezone);
+    const locationId = currentLocation._id;
+
+    const parsed = tryCommandCenterRowFromNotificationNew(
+      payload as NotificationNewPayload,
+      {
+        locationId,
+        timezone,
+        todayKey,
+        dismissedIds: dismissedAlertIdsRef.current,
+        canFinancial: canAlertsFinancial,
+        canInventory: canAlertsInventory,
+        canReputation: canAlertsReputation,
+      },
+    );
+    if (parsed == null) return;
+    const { row, category } = parsed;
+
+    setAlertBuckets((prev) => {
+      const base: CommandCenterAlertBuckets =
+        prev ?? {
+          financial_labor: [],
+          inventory_supply_chain: [],
+          reputation_hr: [],
+        };
+      const list = base[category];
+      if (list.some((r) => r.id === row.id)) return prev ?? base;
+      return {
+        ...base,
+        [category]: [row, ...list],
+      };
+    });
+  }, [
+    currentLocation?._id,
+    currentLocation?.timezone,
+    allLocationsSelected,
+    canAlertsFinancial,
+    canAlertsInventory,
+    canAlertsReputation,
+  ]);
+
   useEffect(() => {
     if (!showAlerts || currentLocation?._id == null) return;
     if (allLocationsSelected) return;
     const sock = getSocket();
     if (sock == null) return;
 
-    const timezone = currentLocation.timezone?.trim() || 'America/Denver';
-    const todayKey = getTodayInTimezone(timezone);
-    const locationId = currentLocation._id;
-
-    const onNotificationNew = (payload: unknown) => {
-      if (payload == null || typeof payload !== 'object') return;
-      const parsed = tryCommandCenterRowFromNotificationNew(
-        payload as NotificationNewPayload,
-        {
-          locationId,
-          timezone,
-          todayKey,
-          dismissedIds: dismissedAlertIdsRef.current,
-          canFinancial: canAlertsFinancial,
-          canInventory: canAlertsInventory,
-          canReputation: canAlertsReputation,
-        },
-      );
-      if (parsed == null) return;
-      const { row, category } = parsed;
-
-      setAlertBuckets((prev) => {
-        const base: CommandCenterAlertBuckets =
-          prev ?? {
-            financial_labor: [],
-            inventory_supply_chain: [],
-            reputation_hr: [],
-          };
-        const list = base[category];
-        if (list.some((r) => r.id === row.id)) {
-          return prev ?? base;
-        }
-        return {
-          ...base,
-          [category]: [row, ...list],
-        };
-      });
-    };
-
-    sock.on('notification:new', onNotificationNew);
+    sock.on('notification:new', handleSocketNotificationNew);
     return () => {
-      sock.off('notification:new', onNotificationNew);
+      sock.off('notification:new', handleSocketNotificationNew);
     };
   }, [
     showAlerts,
@@ -248,6 +253,7 @@ export const CommandCenter = () => {
     canAlertsFinancial,
     canAlertsInventory,
     canAlertsReputation,
+    handleSocketNotificationNew,
   ]);
 
   const commandCenterKPIs = useMemo((): CommandCenterKPIItem[] => {
@@ -422,6 +428,7 @@ export const CommandCenter = () => {
                   goalTolerance={goalTolerance}
                   subtitle={allLocationsSelected ? "Labor Cost as % of Net Sales (Avg goal)" : "Labor Cost as % of Net Sales"}
                   overTarget={overTarget}
+                  loading={loading}
                   size={340}
                 />
               );

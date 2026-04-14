@@ -27,6 +27,9 @@ export interface SalesByCategoryCardProps {
   comparisonPeriodLabel: string;
   /** Full list for totals row and View All modal; if not provided, items are used */
   allItems?: SalesByCategoryItem[];
+  /** Authoritative totals from API; when provided, Total row uses these instead of summing items */
+  totalCurrentValue?: number;
+  totalComparisonValue?: number;
   /** When true, show spinner in card body */
   loading?: boolean;
   periodValue?: PeriodPickerValue;
@@ -43,6 +46,8 @@ export interface SalesByCategoryCardProps {
 export const SalesByCategoryCard = ({
   items,
   allItems,
+  totalCurrentValue,
+  totalComparisonValue,
   loading = false,
   currentPeriodLabel,
   comparisonPeriodLabel,
@@ -59,8 +64,8 @@ export const SalesByCategoryCard = ({
 
   const displayItems = items.slice(0, CARD_TOP_N);
   const totalsSource = allItems ?? items;
-  const totalCurrent = totalsSource.reduce((s, i) => s + i.currentValue, 0);
-  const totalComparison = totalsSource.reduce((s, i) => s + i.comparisonValue, 0);
+  const totalCurrent = totalCurrentValue ?? totalsSource.reduce((s, i) => s + i.currentValue, 0);
+  const totalComparison = totalComparisonValue ?? totalsSource.reduce((s, i) => s + i.comparisonValue, 0);
   const totalPercentChange = getPercentChange(totalCurrent, totalComparison);
 
   const usePickers =

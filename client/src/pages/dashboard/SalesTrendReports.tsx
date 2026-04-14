@@ -791,6 +791,8 @@ export const SalesTrendReports = () => {
               <SalesByCategoryCard
                 items={categoryTop5}
                 allItems={categoryItems}
+                totalCurrentValue={categoryData?.current.totalNetSales}
+                totalComparisonValue={categoryData?.comparison.totalNetSales}
                 loading={categoryLoading}
                 currentPeriodLabel={getKpiPeriodLabel(categoryPeriod)}
                 comparisonPeriodLabel={getKpiComparisonLabel(categoryPeriod, categoryComparison)}

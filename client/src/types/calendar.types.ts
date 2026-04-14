@@ -32,6 +32,8 @@ export interface CalendarEventDto {
   timeZone: string;
   createdBy?: string;
   lastSyncedAt?: string;
+  /** Present when events are listed for all locations. */
+  locationName?: string;
 }
 
 export interface CalendarRoleEventBindingDto {

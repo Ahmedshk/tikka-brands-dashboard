@@ -3,6 +3,7 @@ import type { CalendarEventDto } from '../../types/calendar.types';
 import { Pagination } from '../common/Pagination';
 import EditIcon from '@assets/icons/edit.svg?react';
 import DeleteIcon from '@assets/icons/delete.svg?react';
+import LocationIcon from '@assets/icons/location.svg?react';
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
 
@@ -16,6 +17,8 @@ export interface UpcomingEventItem {
   description: string;
   eventName: string;
   status: string;
+  /** Store label when listing all locations. */
+  locationName?: string;
 }
 
 export interface UpcomingEventRow extends UpcomingEventItem {
@@ -26,8 +29,19 @@ export interface UpcomingEventsCardProps {
   rows: UpcomingEventRow[];
   pageSize?: number;
   className?: string;
+  /** When true, show store name with each event (all-locations): inline before title on desktop, above on mobile. */
+  showLocationLabel?: boolean;
   onEdit?: (row: UpcomingEventRow) => void;
   onDelete?: (row: UpcomingEventRow) => void;
+}
+
+function UpcomingEventLocationLine({ name }: Readonly<{ name: string }>) {
+  return (
+    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1 truncate min-w-0">
+      <LocationIcon className="w-3 h-3 flex-shrink-0" aria-hidden />
+      <span className="truncate">{name}</span>
+    </p>
+  );
 }
 
 function sameLocalCalendarDay(a: Date, b: Date): boolean {
@@ -46,13 +60,8 @@ export function buildUpcomingEventRows(events: CalendarEventDto[]): UpcomingEven
   );
   const future = sorted.filter((e) => new Date(e.start).getTime() >= todayStart.getTime());
   const timeOpts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', hour12: true };
-  const currentYear = now.getFullYear();
-  const formatDay = (d: Date) => {
-    if (d.getFullYear() === currentYear) {
-      return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-    }
-    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  };
+  const formatDay = (d: Date) =>
+    d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const dot = '\u22C5';
 
   return future.map((dto) => {
@@ -71,12 +80,14 @@ export function buildUpcomingEventRows(events: CalendarEventDto[]): UpcomingEven
       dateTiming = `${formatDay(start)}, ${startTime} - ${formatDay(end)}, ${endTime}`;
     }
 
+    const locationName = dto.locationName?.trim();
     return {
       id: dto._id,
       dateTiming,
       description: (dto.description ?? '').trim(),
       eventName: dto.title,
       status: 'Scheduled',
+      ...(locationName ? { locationName } : {}),
       event: dto,
     };
   });
@@ -86,6 +97,7 @@ export const UpcomingEventsCard = ({
   rows,
   pageSize = DEFAULT_PAGE_SIZE,
   className = '',
+  showLocationLabel = false,
   onEdit,
   onDelete,
 }: UpcomingEventsCardProps) => {
@@ -137,9 +149,28 @@ export const UpcomingEventsCard = ({
                   </td>
                 </tr>
               ) : (
-                paginatedRows.map((row, index) => (
+                paginatedRows.map((row, index) => {
+                  const locLabel = row.locationName?.trim();
+                  return (
                   <tr key={row.id} className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}>
-                    <td className="py-3 pr-4 pl-2">{row.eventName}</td>
+                    <td className="py-3 pr-4 pl-2">
+                      {showLocationLabel && locLabel ? (
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
+                          <span className="inline-flex items-center gap-1 text-xs text-gray-400 shrink-0 max-w-[min(100%,18rem)] min-w-0">
+                            <LocationIcon className="w-3 h-3 flex-shrink-0" aria-hidden />
+                            <span className="truncate">{locLabel}</span>
+                          </span>
+                          <span className="text-gray-300 select-none shrink-0" aria-hidden>
+                            ·
+                          </span>
+                          <span className="text-primary font-medium whitespace-normal break-words min-w-0">
+                            {row.eventName}
+                          </span>
+                        </div>
+                      ) : (
+                        row.eventName
+                      )}
+                    </td>
                     <td className="py-3 pr-4 align-top">{row.dateTiming}</td>
                     <td className="py-3 pr-4 align-top text-primary whitespace-normal break-words">
                       {row.description || '—'}
@@ -178,7 +209,8 @@ export const UpcomingEventsCard = ({
                       </td>
                     ) : null}
                   </tr>
-                ))
+                );
+                })
               )}
             </tbody>
           </table>
@@ -191,12 +223,15 @@ export const UpcomingEventsCard = ({
             </p>
           ) : (
             <div className="divide-y divide-gray-200 overflow-y-auto flex-1 min-h-0">
-              {paginatedRows.map((row, index) => (
+              {paginatedRows.map((row, index) => {
+                const locLabel = row.locationName?.trim();
+                return (
                 <div
                   key={row.id}
                   className={`px-3 py-3 ${index % 2 === 1 ? 'bg-[#F3F5F7]' : 'bg-white'}`}
                 >
                   <div className="min-w-0">
+                    {showLocationLabel && locLabel ? <UpcomingEventLocationLine name={locLabel} /> : null}
                     <p className="text-sm font-medium text-primary whitespace-normal break-words">{row.eventName}</p>
                   </div>
                   <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
@@ -244,7 +279,8 @@ export const UpcomingEventsCard = ({
                     </div>
                   ) : null}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

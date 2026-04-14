@@ -53,6 +53,14 @@ export const CalendarEvents = () => {
   const canAddEvents = useCanAccessComponent(PAGE_ID, 'add-events');
   const canCalendar = useCanAccessComponent(PAGE_ID, 'calendar');
   const canUpcomingEvents = useCanAccessComponent(PAGE_ID, 'upcoming-events');
+  const browserDefaultTz = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    [],
+  );
+  const hasCalendarScope =
+    Boolean(locationId?.trim()) && (canCalendar || canUpcomingEvents);
+  const calendarTimezone =
+    currentLocation?.timezone?.trim() || browserDefaultTz;
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [currentView, setCurrentView] = useState<View>('month');
   const [selectedDate] = useState<Date | null>(null);
@@ -142,7 +150,7 @@ export const CalendarEvents = () => {
             <CalendarEventsIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
             Calendar & Events
           </h2>
-          {canAddEvents ? (
+          {canAddEvents && !allLocationsSelected ? (
             <button
               type="button"
               onClick={() => setAddEventModalOpen(true)}
@@ -153,15 +161,15 @@ export const CalendarEvents = () => {
           ) : null}
         </div>
 
-        {currentLocation?._id == null && (
+        {!hasCalendarScope && (
           <p className="text-sm text-secondary">Select a location to view and manage events.</p>
         )}
-        {currentLocation?._id != null && loading && (
+        {hasCalendarScope && loading && (
           <div className="flex justify-center py-16">
             <Spinner />
           </div>
         )}
-        {currentLocation?._id != null && !loading && (canCalendar || canUpcomingEvents) && (
+        {hasCalendarScope && !loading && (
           <div className="space-y-6">
             {canCalendar ? (
               <CalendarCard
@@ -180,6 +188,7 @@ export const CalendarEvents = () => {
               <UpcomingEventsCard
                 rows={upcomingRows}
                 pageSize={5}
+                showLocationLabel={allLocationsSelected}
                 onEdit={(row) => setEditingEvent(row.event)}
                 onDelete={(row) => setDeletingRow(row)}
               />
@@ -189,17 +198,17 @@ export const CalendarEvents = () => {
       </div>
 
       <AddEventModal
-        isOpen={canAddEvents && addEventModalOpen}
+        isOpen={canAddEvents && addEventModalOpen && !allLocationsSelected}
         onClose={() => setAddEventModalOpen(false)}
         locationId={allLocationsSelected ? null : (currentLocation?._id ?? null)}
-        locationTimezone={currentLocation?.timezone}
+        locationTimezone={calendarTimezone}
         onCreated={loadData}
       />
       <EditEventModal
         isOpen={editingEvent != null}
         event={editingEvent}
         onClose={() => setEditingEvent(null)}
-        locationTimezone={currentLocation?.timezone}
+        locationTimezone={calendarTimezone}
         onUpdated={loadData}
       />
       <ConfirmDialog

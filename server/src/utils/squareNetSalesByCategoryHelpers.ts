@@ -30,9 +30,55 @@ export interface VariationCentsAggregation {
   uncategorizedLineCents: number;
 }
 
+function allocateProportionalCentsByKey(
+  totalCents: number,
+  keyToWeightCents: Map<string, number>,
+): Map<string, number> {
+  const result = new Map<string, number>();
+  if (!Number.isFinite(totalCents) || totalCents <= 0) return result;
+  const entries = [...keyToWeightCents.entries()].filter(([, w]) => Number.isFinite(w) && w > 0);
+  if (entries.length === 0) return result;
+
+  const denom = entries.reduce((s, [, w]) => s + w, 0);
+  if (!Number.isFinite(denom) || denom <= 0) return result;
+
+  type Row = { key: string; base: number; rem: number };
+  const rows: Row[] = [];
+  let allocatedBase = 0;
+  for (const [key, weight] of entries) {
+    const numer = totalCents * weight;
+    const base = Math.floor(numer / denom);
+    const rem = numer - base * denom; // numer % denom, but safe with JS numbers
+    rows.push({ key, base, rem });
+    allocatedBase += base;
+  }
+
+  let leftover = totalCents - allocatedBase;
+  if (leftover > 0) {
+    rows.sort((a, b) => {
+      if (b.rem !== a.rem) return b.rem - a.rem;
+      // Stable-ish tie-breaker for determinism: key then base.
+      if (a.key !== b.key) return a.key.localeCompare(b.key);
+      return b.base - a.base;
+    });
+    let idx = 0;
+    while (leftover > 0 && rows.length > 0) {
+      rows[idx]!.base += 1;
+      leftover -= 1;
+      idx = (idx + 1) % rows.length;
+    }
+  }
+
+  for (const r of rows) {
+    if (r.base !== 0) result.set(r.key, r.base);
+  }
+  return result;
+}
+
 /**
  * Aggregate net sales from orders into variationToCents (and uncategorized line cents).
- * Uses proportional allocation by line total_money.
+ * Uses integer-cent proportional allocation (largest remainder) by line total_money,
+ * so per-order allocated cents always sum exactly to the order's net cents.
  */
 export function aggregateVariationCentsFromOrders(
   orders: OrderForCategoryAggregation[],
@@ -49,21 +95,22 @@ export function aggregateVariationCentsFromOrders(
     const orderNetCents = getOrderCents(order);
     totalNetSalesCents += orderNetCents;
     const lineItems = order.line_items ?? [];
-    const orderTotalCents = lineItems.reduce(
-      (sum, line) => sum + getLineCents(line),
-      0,
-    );
-    if (orderTotalCents <= 0) continue;
+    const keyToWeightCents = new Map<string, number>();
     for (const line of lineItems) {
-      const catalogObjectId = (line as { catalog_object_id?: string }).catalog_object_id?.trim();
-      const lineCents =
-        orderNetCents * (getLineCents(line) / orderTotalCents);
-      if (catalogObjectId === undefined || catalogObjectId === "") {
-        uncategorizedLineCents += lineCents;
-        continue;
+      const key =
+        (line as { catalog_object_id?: string }).catalog_object_id?.trim() ??
+        "";
+      const weight = getLineCents(line);
+      if (!Number.isFinite(weight) || weight <= 0) continue;
+      keyToWeightCents.set(key, (keyToWeightCents.get(key) ?? 0) + weight);
+    }
+    const allocated = allocateProportionalCentsByKey(orderNetCents, keyToWeightCents);
+    for (const [key, cents] of allocated.entries()) {
+      if (key === "") {
+        uncategorizedLineCents += cents;
+      } else {
+        variationToCents[key] = (variationToCents[key] ?? 0) + cents;
       }
-      variationToCents[catalogObjectId] =
-        (variationToCents[catalogObjectId] ?? 0) + lineCents;
     }
   }
 

@@ -469,6 +469,14 @@ export const Navbar = () => {
     if (first) dispatch(setCurrentLocation(first));
   }, [pathname, locations, allLocationsSelected, dispatch]);
 
+  // If "All" is selected but not allowed on this route, fall back to the first location.
+  useEffect(() => {
+    if (!allLocationsSelected) return;
+    if (shouldShowAllLocationsOption(pathname)) return;
+    const first = locations[0];
+    if (first) dispatch(setCurrentLocation(first));
+  }, [pathname, locations, allLocationsSelected, dispatch]);
+
   const locationsRefreshController = useRef<AbortController | null>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);

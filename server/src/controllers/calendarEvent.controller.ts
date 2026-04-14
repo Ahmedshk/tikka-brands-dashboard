@@ -1,10 +1,12 @@
 import type { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import { CalendarEventService, type CreateCalendarEventInput } from "../services/calendarEvent.service.js";
+import { LocationService } from "../services/location.service.js";
 import { AppError } from "../utils/errors.util.js";
 import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "../utils/locationScope.js";
 
 const service = new CalendarEventService();
+const locationService = new LocationService();
 
 function routeParamId(req: Request, name: string): string {
   const raw = req.params[name];
@@ -39,9 +41,14 @@ export async function listCalendarEvents(req: Request, res: Response, next: Next
         ? new Date(req.query.timeMax as string)
         : new Date(now.getFullYear(), now.getMonth() + 3, 0, 23, 59, 59, 999);
       const rows = await Promise.all(
-        effectiveIds.map((id) => {
+        effectiveIds.map(async (id) => {
           assertLocationAccess(req, id);
-          return service.listForLocation(id, timeMin, timeMax);
+          const [events, loc] = await Promise.all([
+            service.listForLocation(id, timeMin, timeMax),
+            locationService.getById(id),
+          ]);
+          const locationName = loc?.storeName?.trim() || "Location";
+          return events.map((ev) => ({ ...ev, locationName }));
         }),
       );
       const events = rows.flat();
