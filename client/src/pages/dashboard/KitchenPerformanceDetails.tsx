@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import toast from "react-hot-toast";
+import ViewIcon from "@assets/icons/view.svg?react";
 import OperationsIcon from "@assets/icons/operations.svg?react";
 import CompletedTicketsIcon from "@assets/icons/completed_tickets.svg?react";
 import CompletedItemsIcon from "@assets/icons/completed_items.svg?react";
@@ -13,12 +14,21 @@ import { Layout } from "../../components/common/Layout";
 import { Spinner } from "../../components/common/Spinner";
 import { KPICard } from "../../components/common/KPICard";
 import { TimeSeriesLineChart } from "../../components/charts/TimeSeriesLineChart";
-import {
-  formatDateToIso,
-  kitchenPerformanceService,
-} from "../../services/kitchenPerformance.service";
+import { kitchenPerformanceService } from "../../services/kitchenPerformance.service";
+import { zonedWallTodayYmd } from "../../utils/kitchenPerformancePeriodRange";
 import type { RootState } from "../../store/store";
 import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
+import {
+  KitchenPerformanceItemTicketsModal,
+  KitchenPerformanceTicketDetailModal,
+} from "../../components/KitchenPerformance";
+import {
+  formatDuration,
+  formatTicketItemCount,
+  TicketDateCell,
+  TicketValueCell,
+} from "../../components/KitchenPerformance/kitchenPerformanceTicketUi";
+import { ticketRowIncludesItemName } from "../../utils/kitchenPerformanceItemsInTicket";
 
 const DETAILS_PAGE_ID = "kitchen-performance-details";
 import type {
@@ -31,54 +41,18 @@ type DetailsTab = "ticket-performance" | "item-performance";
 const cardClass =
   "bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden";
 
-function parseIsoDate(iso: string | null): Date | null {
-  if (!iso) return null;
-  const parsed = new Date(`${iso}T00:00:00`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+function isValidYmd(s: string | null): boolean {
+  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s.trim());
 }
 
-function formatDateTimeParts(value: string | null): { time: string; date: string } {
-  if (!value) return { time: "—", date: "—" };
-  const parsed = new Date(value.replace(" ", "T"));
-  if (Number.isNaN(parsed.getTime())) return { time: "—", date: "—" };
-  const time = parsed.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
+function formatYmdShort(ymd: string): string {
+  const parsed = new Date(`${ymd}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return ymd;
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
-  const date = parsed.toLocaleDateString("en-US");
-  return { time, date };
-}
-
-function formatDuration(seconds: number | null): string {
-  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return "—";
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const sec = Math.floor(seconds % 60);
-  if (hrs > 0) return `${hrs}h ${mins}m`;
-  if (mins > 0) return `${mins}m ${sec}s`;
-  return `${sec}s`;
-}
-
-function TicketDateCell({ value }: Readonly<{ value: string | null }>) {
-  const parts = formatDateTimeParts(value);
-  return (
-    <div className="flex flex-col leading-tight">
-      <span className="text-primary">{parts.time}</span>
-      <span className="text-secondary text-[11px]">{parts.date}</span>
-    </div>
-  );
-}
-
-function TicketValueCell({
-  ticketName,
-  orderSource,
-}: Readonly<{ ticketName: string | null; orderSource: string | null }>) {
-  return (
-    <div className="flex flex-col leading-tight">
-      <span className="text-primary font-semibold">{ticketName ?? "—"}</span>
-      <span className="text-secondary text-[11px]">{orderSource ?? "—"}</span>
-    </div>
-  );
 }
 
 const KPI_ICON_CLASS = "w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9";
@@ -94,24 +68,54 @@ export const KitchenPerformanceDetails = () => {
   const [activeTab, setActiveTab] = useState<DetailsTab>("ticket-performance");
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<KitchenPerformanceDetailsData | null>(null);
+  const [ticketDetailRow, setTicketDetailRow] = useState<KitchenPerformanceTicketRow | null>(
+    null,
+  );
+  const [itemTicketsModal, setItemTicketsModal] = useState<{ itemName: string } | null>(null);
   const initialLocationIdRef = useRef<string | null>(null);
 
-  const selectedDate = useMemo(
-    () => parseIsoDate(searchParams.get("date")) ?? new Date(),
-    [searchParams],
+  const browserDefaultTz = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    [],
   );
-  const selectedDateLabel = useMemo(
-    () =>
-      selectedDate.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
-    [selectedDate],
-  );
+  const timezone = currentLocation?.timezone?.trim() || browserDefaultTz;
+
+  const startParam = searchParams.get("startDate");
+  const endParam = searchParams.get("endDate");
+  const legacyDate = searchParams.get("date");
+
   const deviceName = useMemo(
     () => (encodedDeviceName ? decodeURIComponent(encodedDeviceName) : ""),
     [encodedDeviceName],
+  );
+
+  useEffect(() => {
+    if (!encodedDeviceName) return;
+    const pathSeg = encodedDeviceName;
+    if (legacyDate && isValidYmd(legacyDate) && !startParam) {
+      navigate(
+        `/dashboard/kitchen-performance/${pathSeg}?startDate=${legacyDate}&endDate=${legacyDate}`,
+        { replace: true },
+      );
+      return;
+    }
+    if (!isValidYmd(startParam) || !isValidYmd(endParam) || startParam! > endParam!) {
+      const t = zonedWallTodayYmd(timezone);
+      navigate(`/dashboard/kitchen-performance/${pathSeg}?startDate=${t}&endDate=${t}`, {
+        replace: true,
+      });
+    }
+  }, [encodedDeviceName, endParam, legacyDate, navigate, startParam, timezone]);
+
+  const startDate = isValidYmd(startParam) ? startParam! : zonedWallTodayYmd(timezone);
+  const endDate = isValidYmd(endParam) ? endParam! : startDate;
+
+  const selectedDateLabel = useMemo(
+    () =>
+      startDate === endDate
+        ? formatYmdShort(startDate)
+        : `${formatYmdShort(startDate)} – ${formatYmdShort(endDate)}`,
+    [startDate, endDate],
   );
 
   const fetchDetails = useCallback(async () => {
@@ -124,7 +128,7 @@ export const KitchenPerformanceDetails = () => {
     try {
       const data = await kitchenPerformanceService.getDetails(
         currentLocation._id,
-        selectedDate,
+        { startDate, endDate },
         deviceName,
       );
       setDetails(data);
@@ -134,7 +138,7 @@ export const KitchenPerformanceDetails = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentLocation?._id, deviceName, selectedDate, canFullPage]);
+  }, [currentLocation?._id, deviceName, startDate, endDate, canFullPage]);
 
   useEffect(() => {
     fetchDetails();
@@ -156,15 +160,22 @@ export const KitchenPerformanceDetails = () => {
     (x) => x.completedTickets,
   );
   const ticketRows: KitchenPerformanceTicketRow[] = details?.ticketRows ?? [];
+  const itemModalTickets = useMemo(() => {
+    if (!itemTicketsModal) return [];
+    return ticketRows.filter((t) =>
+      ticketRowIncludesItemName(t.itemsInTicket, itemTicketsModal.itemName),
+    );
+  }, [itemTicketsModal, ticketRows]);
   const showTicketPerformance = activeTab === "ticket-performance";
-  const ticketsLatePercentage =
-    (details?.kpis.completedTickets ?? 0) > 0
-      ? Math.round(
-          (((details?.kpis.ticketsPastDueTime ?? 0) /
-            (details?.kpis.completedTickets ?? 1)) *
-            100),
-        )
-      : 0;
+  const completedTicketsForLate = details?.kpis.completedTickets ?? 0;
+  const ticketsPastDue = details?.kpis.ticketsPastDueTime ?? 0;
+  const ticketsLatePercentageDisplay =
+    completedTicketsForLate > 0
+      ? new Intl.NumberFormat("en-US", {
+          maximumFractionDigits: 2,
+          minimumFractionDigits: 0,
+        }).format((ticketsPastDue / completedTicketsForLate) * 100)
+      : "0";
   let content: ReactNode;
 
   if (showTicketPerformance) {
@@ -208,7 +219,7 @@ export const KitchenPerformanceDetails = () => {
           />
           <KPICard
             title="Tickets Past Their Due Time"
-            value={`${ticketsLatePercentage}% Late`}
+            value={`${ticketsLatePercentageDisplay}% Late`}
             accentColor="red"
             rightIcon={<TicketsPastTheirDueTimeIcon className={KPI_ICON_CLASS} />}
             loading={loading}
@@ -279,21 +290,36 @@ export const KitchenPerformanceDetails = () => {
                     key={`${row.ticketName ?? "ticket"}-${index}-mobile`}
                     className={`px-3 py-3 ${index % 2 === 1 ? "bg-[#F3F5F7]" : "bg-white"}`}
                   >
-                    <div className="min-w-0">
-                      <TicketValueCell ticketName={row.ticketName} orderSource={row.orderSource} />
+                    <div className="flex items-start justify-between gap-2 min-w-0">
+                      <div className="min-w-0 flex-1">
+                        <TicketValueCell ticketName={row.ticketName} orderSource={row.orderSource} />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setTicketDetailRow(row)}
+                        className="shrink-0 p-1.5 text-primary hover:bg-gray-200 rounded transition-colors inline-flex items-center justify-center"
+                        aria-label="View ticket details"
+                        title="View ticket details"
+                      >
+                        <ViewIcon className="w-4 h-4" />
+                      </button>
                     </div>
                     <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
                       <div className="flex items-start gap-2">
                         <span className="text-secondary shrink-0">Sent to KDS at:</span>
-                        <TicketDateCell value={row.timeCreated} />
+                        <TicketDateCell value={row.timeCreated} layout="inline" />
                       </div>
                       <div className="flex items-start gap-2">
                         <span className="text-secondary shrink-0">Time due:</span>
-                        <TicketDateCell value={row.timeDue} />
+                        <TicketDateCell value={row.timeDue} layout="inline" />
                       </div>
                       <div className="flex items-start gap-2">
                         <span className="text-secondary shrink-0">Completed at:</span>
-                        <TicketDateCell value={row.timeCompleted} />
+                        <TicketDateCell
+                          value={row.timeCompleted}
+                          compareDueForCompletedAt={row.timeDue}
+                          layout="inline"
+                        />
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-secondary">Completion time:</span>
@@ -303,11 +329,13 @@ export const KitchenPerformanceDetails = () => {
                       </div>
                       <div className="flex items-start gap-2">
                         <span className="text-secondary shrink-0">Recalled at:</span>
-                        <TicketDateCell value={row.timeRecalled} />
+                        <TicketDateCell value={row.timeRecalled} layout="inline" />
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-secondary"># of items:</span>
-                        <span className="text-primary font-semibold">{row.numberOfItems ?? "—"}</span>
+                        <span className="text-primary font-semibold">
+                          {formatTicketItemCount(row.numberOfItems)}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -325,13 +353,14 @@ export const KitchenPerformanceDetails = () => {
                   <th className="pb-3 pr-4 font-semibold">Completed at</th>
                   <th className="pb-3 pr-4 font-semibold">Completion time</th>
                   <th className="pb-3 pr-4 font-semibold">Recalled at</th>
-                  <th className="pb-3 pr-2 font-semibold text-right"># of items</th>
+                  <th className="pb-3 pr-4 font-semibold text-right"># of items</th>
+                  <th className="pb-3 pr-2 font-semibold text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="text-primary">
                 {ticketRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-primary/80 text-sm">
+                    <td colSpan={8} className="py-8 text-center text-primary/80 text-sm">
                       No data available
                     </td>
                   </tr>
@@ -354,7 +383,10 @@ export const KitchenPerformanceDetails = () => {
                         <TicketDateCell value={row.timeDue} />
                       </td>
                       <td className="py-3 pr-4">
-                        <TicketDateCell value={row.timeCompleted} />
+                        <TicketDateCell
+                          value={row.timeCompleted}
+                          compareDueForCompletedAt={row.timeDue}
+                        />
                       </td>
                       <td className="py-3 pr-4">
                         {formatDuration(row.completionTimeSeconds)}
@@ -362,8 +394,19 @@ export const KitchenPerformanceDetails = () => {
                       <td className="py-3 pr-4">
                         <TicketDateCell value={row.timeRecalled} />
                       </td>
-                      <td className="py-3 pr-2 text-right font-semibold">
-                        {row.numberOfItems ?? "—"}
+                      <td className="py-3 pr-4 text-right font-semibold">
+                        {formatTicketItemCount(row.numberOfItems)}
+                      </td>
+                      <td className="py-3 pr-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setTicketDetailRow(row)}
+                          className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors inline-flex items-center justify-center"
+                          aria-label="View ticket details"
+                          title="View ticket details"
+                        >
+                          <ViewIcon className="w-4 h-4" />
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -403,7 +446,20 @@ export const KitchenPerformanceDetails = () => {
                   key={`${row.itemName}-${index}-mobile`}
                   className={`px-3 py-3 ${index % 2 === 1 ? "bg-[#F3F5F7]" : "bg-white"}`}
                 >
-                  <p className="text-sm font-semibold text-primary truncate">{row.itemName}</p>
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <p className="text-sm font-semibold text-primary truncate min-w-0 flex-1">
+                      {row.itemName}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setItemTicketsModal({ itemName: row.itemName })}
+                      className="shrink-0 p-1.5 text-primary hover:bg-gray-200 rounded transition-colors inline-flex items-center justify-center"
+                      aria-label="View tickets for this item"
+                      title="View tickets for this item"
+                    >
+                      <ViewIcon className="w-4 h-4" />
+                    </button>
+                  </div>
                   <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
                     <div className="flex items-center gap-2">
                       <span className="text-secondary">Avg. Completion Time:</span>
@@ -441,13 +497,14 @@ export const KitchenPerformanceDetails = () => {
                       <th className="pb-3 pr-4 font-semibold">Avg. Completion Time</th>
                       <th className="pb-3 pr-4 font-semibold">Min. Completion Time</th>
                       <th className="pb-3 pr-4 font-semibold">Max. Completion Time</th>
-                <th className="pb-3 pr-2 font-semibold text-right">Total Quantity</th>
+                <th className="pb-3 pr-4 font-semibold text-right">Total Quantity</th>
+                <th className="pb-3 pr-2 font-semibold text-center">Action</th>
               </tr>
             </thead>
             <tbody className="text-primary">
               {(details?.itemPerformanceRows.length ?? 0) === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-primary/80 text-sm">
+                  <td colSpan={6} className="py-8 text-center text-primary/80 text-sm">
                     No data available
                   </td>
                 </tr>
@@ -467,8 +524,19 @@ export const KitchenPerformanceDetails = () => {
                           <td className="py-3 pr-4">
                       {formatDuration(row.maxCompletionTimeSeconds)}
                     </td>
-                    <td className="py-3 pr-2 text-right font-semibold">
+                    <td className="py-3 pr-4 text-right font-semibold">
                       {row.totalQuantity}
+                    </td>
+                    <td className="py-3 pr-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setItemTicketsModal({ itemName: row.itemName })}
+                        className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors inline-flex items-center justify-center"
+                        aria-label="View tickets for this item"
+                        title="View tickets for this item"
+                      >
+                        <ViewIcon className="w-4 h-4" />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -503,7 +571,7 @@ export const KitchenPerformanceDetails = () => {
             type="button"
             onClick={() =>
               navigate(
-                `/dashboard/kitchen-performance?date=${formatDateToIso(selectedDate)}`,
+                `/dashboard/kitchen-performance?startDate=${startDate}&endDate=${endDate}`,
               )
             }
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-gray-50 transition-colors"
@@ -543,6 +611,18 @@ export const KitchenPerformanceDetails = () => {
             </div>
 
             {content}
+
+            <KitchenPerformanceTicketDetailModal
+              isOpen={ticketDetailRow != null}
+              onClose={() => setTicketDetailRow(null)}
+              row={ticketDetailRow}
+            />
+            <KitchenPerformanceItemTicketsModal
+              isOpen={itemTicketsModal != null}
+              onClose={() => setItemTicketsModal(null)}
+              itemName={itemTicketsModal?.itemName ?? ""}
+              tickets={itemModalTickets}
+            />
           </>
         ) : (
           <p className="text-sm text-secondary">

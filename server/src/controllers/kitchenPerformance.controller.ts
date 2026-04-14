@@ -40,21 +40,24 @@ export async function getKitchenPerformance(
   try {
     const {
       locationId,
-      date,
+      startDate,
+      endDate,
       page: pageRaw,
       limit: limitRaw,
     } = req.query as {
       locationId: string;
-      date: string;
+      startDate: string;
+      endDate: string;
       page?: string;
       limit?: string;
     };
 
     const page = Number.parseInt(pageRaw ?? "1", 10);
     const limit = Number.parseInt(limitRaw ?? "10", 10);
-    const result = await service.getByLocationAndDate(
+    const result = await service.getByLocationAndDateRange(
       locationId,
-      date,
+      startDate,
+      endDate,
       Number.isNaN(page) ? 1 : page,
       Number.isNaN(limit) ? 10 : limit,
     );
@@ -75,7 +78,11 @@ export async function importKitchenPerformanceCsv(
       throw new ValidationError("Authentication required.");
     }
 
-    const { locationId, date } = req.body as { locationId: string; date: string };
+    const { locationId, startDate, endDate } = req.body as {
+      locationId: string;
+      startDate: string;
+      endDate: string;
+    };
     if (!hasLocationAccess(req, locationId)) {
       throw new ForbiddenError("You do not have access to this location.");
     }
@@ -85,7 +92,13 @@ export async function importKitchenPerformanceCsv(
       throw new ValidationError('No CSV file provided. Use multipart field "file".');
     }
 
-    const data = await service.importCsv(actorUserId, locationId, date, file.buffer);
+    const data = await service.importCsv(
+      actorUserId,
+      locationId,
+      startDate,
+      endDate,
+      file.buffer,
+    );
     res.status(201).json({ success: true, data });
   } catch (err) {
     next(err);
@@ -98,14 +111,16 @@ export async function getKitchenPerformanceDetails(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { locationId, date, deviceName } = req.query as {
+    const { locationId, startDate, endDate, deviceName } = req.query as {
       locationId: string;
-      date: string;
+      startDate: string;
+      endDate: string;
       deviceName: string;
     };
-    const details = await service.getDetailsByLocationDateAndDevice(
+    const details = await service.getDetailsByLocationDateRangeAndDevice(
       locationId,
-      date,
+      startDate,
+      endDate,
       deviceName,
     );
     res.json({ success: true, data: details });

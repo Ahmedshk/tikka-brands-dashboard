@@ -21,11 +21,14 @@ interface KitchenPerformanceTableCardProps {
 }
 
 function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0s";
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.round(seconds % 60);
-  if (mins <= 0) return `${secs}s`;
-  return `${mins}m ${secs}s`;
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0 sec";
+  const total = Math.floor(seconds);
+  const hrs = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  if (hrs > 0) return `${hrs} hr ${mins} min`;
+  if (mins > 0) return `${mins} min ${sec} sec`;
+  return `${sec} sec`;
 }
 
 export const KitchenPerformanceTableCard = ({

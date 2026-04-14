@@ -1,30 +1,34 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
-import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import TextField from "@mui/material/TextField";
 import UploadIcon from "@assets/icons/upload.svg?react";
 import {
   PENDING_LOCAL_FILE_ROW_CLASSNAME,
   PENDING_UPLOAD_TAG_CLASSNAME,
 } from "../../utils/createTrainingModalHelpers";
+import type { KitchenPerformancePeriodValue } from "../../utils/kitchenPerformancePeriodRange";
+import { periodToDateRange } from "../../utils/kitchenPerformancePeriodRange";
+import { KitchenPerformancePeriodPicker } from "./KitchenPerformancePeriodPicker";
 
 interface KitchenPerformanceImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (date: Date, file: File) => Promise<void>;
-  defaultDate: Date;
+  onImport: (
+    range: { startDate: string; endDate: string },
+    file: File,
+  ) => Promise<void>;
+  defaultPeriod: KitchenPerformancePeriodValue;
+  timezone: string;
 }
 
 export const KitchenPerformanceImportModal = ({
   isOpen,
   onClose,
   onImport,
-  defaultDate,
+  defaultPeriod,
+  timezone,
 }: KitchenPerformanceImportModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(defaultDate);
+  const [period, setPeriod] = useState<KitchenPerformancePeriodValue>(defaultPeriod);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -32,19 +36,19 @@ export const KitchenPerformanceImportModal = ({
   useEffect(() => {
     if (isOpen) {
       dialogRef.current?.showModal();
-      setSelectedDate(defaultDate);
+      setPeriod(defaultPeriod);
       setSelectedFile(null);
       setError("");
       return;
     }
     dialogRef.current?.close();
-  }, [defaultDate, isOpen]);
+  }, [defaultPeriod, isOpen]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
-    if (!selectedDate) {
-      setError("Please select a date.");
+    if (period.periodType === "custom" && (!period.periodStart || !period.periodEnd)) {
+      setError("Please select a start and end date for the import period.");
       return;
     }
     if (!selectedFile) {
@@ -52,9 +56,17 @@ export const KitchenPerformanceImportModal = ({
       return;
     }
 
+    let range: { startDate: string; endDate: string };
+    try {
+      range = periodToDateRange(period, timezone);
+    } catch {
+      setError("Please select a valid start and end date for the import period.");
+      return;
+    }
+
     try {
       setSubmitting(true);
-      await onImport(selectedDate, selectedFile);
+      await onImport(range, selectedFile);
       onClose();
     } catch (importError) {
       const message =
@@ -68,17 +80,6 @@ export const KitchenPerformanceImportModal = ({
   };
 
   if (!isOpen) return null;
-
-  const greyFocusFieldSx = {
-    "& .MuiOutlinedInput-root": {
-      "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-        borderColor: "#9CA3AF",
-      },
-      "&:hover .MuiOutlinedInput-notchedOutline": {
-        borderColor: "#9CA3AF",
-      },
-    },
-  } as const;
 
   return createPortal(
     <dialog
@@ -99,7 +100,10 @@ export const KitchenPerformanceImportModal = ({
         </button>
         <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
           <div className="w-full rounded-t-xl bg-primary px-5 py-3">
-            <h2 id="kitchen-performance-import-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+            <h2
+              id="kitchen-performance-import-title"
+              className="text-sm md:text-base 2xl:text-lg font-semibold text-white"
+            >
               Import Kitchen Performance CSV
             </h2>
           </div>
@@ -113,29 +117,20 @@ export const KitchenPerformanceImportModal = ({
               )}
 
               <div>
-                <p className="text-sm font-medium text-primary mb-2">Import Date</p>
-                <LocalizationProvider dateAdapter={AdapterDateFns}>
-                  <DatePicker
-                    value={selectedDate}
-                    onChange={(value) => setSelectedDate(value)}
-                    disableFuture
-                    enableAccessibleFieldDOMStructure={false}
-                    slots={{ textField: TextField }}
-                    slotProps={{
-                      popper: {
-                        disablePortal: false,
-                        container: () => dialogRef.current ?? document.body,
-                        sx: { zIndex: 1400 },
-                      },
-                      textField: {
-                        fullWidth: true,
-                        size: "small",
-                        placeholder: "MM/DD/YYYY",
-                        sx: greyFocusFieldSx,
-                      },
-                    }}
-                  />
-                </LocalizationProvider>
+                <p className="text-sm font-medium text-primary mb-2">Import period</p>
+                <p className="text-xs text-secondary mb-2">
+                  Tickets are assigned to a report day from{" "}
+                  <span className="font-medium">Time Created</span>. Naive timestamps in the CSV are treated
+                  as local time for this location; values with Z or an offset are parsed as absolute times.
+                  All derived dates must fall within this period.
+                </p>
+                <KitchenPerformancePeriodPicker
+                  value={period}
+                  onChange={setPeriod}
+                  timezone={timezone}
+                  className="w-full sm:w-auto"
+                  disablePortal
+                />
               </div>
 
               <div>

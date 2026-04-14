@@ -16,6 +16,7 @@ export interface KitchenPerformanceTicketRow {
   ticketName: string | null;
   orderSource: string | null;
   numberOfItems: number | null;
+  itemsInTicket: string | null;
   timeCreated: string | null;
   timeCompleted: string | null;
   timeDue: string | null;

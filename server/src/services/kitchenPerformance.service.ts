@@ -1,6 +1,8 @@
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { LocationService } from "./location.service.js";
 import { ValidationError } from "../utils/errors.util.js";
 import { KitchenPerformanceRepository } from "../repositories/kitchenPerformance.repository.js";
+import { getCalendarYmdInTz } from "../utils/timezone.util.js";
 import type {
   KitchenPerformanceDetailsResult,
   KitchenPerformanceHourlyPointDto,
@@ -38,6 +40,16 @@ interface GroupAccumulator {
 interface ItemAccumulator {
   totalQuantity: number;
   completionTimes: number[];
+}
+
+interface KitchenPerformanceLeanDoc {
+  reportDate?: string;
+  rows?: Array<{
+    deviceName: string;
+    completedTickets: number;
+    avgCompletionTimeSeconds: number;
+  }>;
+  rawTickets?: KitchenPerformanceRawTicketInput[] | null;
 }
 
 function normalizeLineBreaks(input: string): string {
@@ -89,12 +101,38 @@ function asNullableNumber(value: string | undefined): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function parseTimestamp(value: string | null): Date | null {
-  if (!value) return null;
-  const normalized = value.replace(" ", "T");
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
+/**
+ * Parse CSV datetime strings for the store location.
+ * Naive values (no `Z` / offset) are **wall time in `timezone`** (e.g. "2026-04-05 16:37:52").
+ * Values with `Z` or a numeric offset are parsed as absolute instants.
+ */
+function parseCsvTimestampInLocation(value: string | null, timezone: string): Date | null {
+  if (!value?.trim()) return null;
+  const s = value.trim();
+  const tz = timezone.trim();
+  if (s.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(s)) {
+    const normalized = s.includes("T") ? s : s.replace(" ", "T");
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const normalized = s.replace(" ", "T");
+  try {
+    const parsed = fromZonedTime(normalized, tz);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  } catch {
+    return null;
+  }
+}
+
+function formatYmdFromCalendarParts(y: number, m0: number, d: number): string {
+  return `${y}-${String(m0 + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function reportDateFromTimeCreated(timeCreated: string | null, timezone: string): string | null {
+  const instant = parseCsvTimestampInLocation(timeCreated, timezone);
+  if (!instant) return null;
+  const { y, m, d } = getCalendarYmdInTz(instant.getTime(), timezone);
+  return formatYmdFromCalendarParts(y, m, d);
 }
 
 function formatHourLabel(hour24: number): string {
@@ -215,6 +253,42 @@ function aggregateRowsFromRawTickets(
     .sort((a, b) => a.deviceName.localeCompare(b.deviceName));
 }
 
+function aggregateRowsFromStoredRowSubdocuments(
+  datasets: KitchenPerformanceLeanDoc[],
+): KitchenPerformanceRowInput[] {
+  const grouped = new Map<
+    string,
+    { deviceName: string; completedTickets: number; weightedTimeSum: number }
+  >();
+
+  for (const doc of datasets) {
+    for (const row of doc.rows ?? []) {
+      const key = row.deviceName?.trim() ?? "";
+      if (!key) continue;
+      const existing = grouped.get(key) ?? {
+        deviceName: key,
+        completedTickets: 0,
+        weightedTimeSum: 0,
+      };
+      const n = row.completedTickets ?? 0;
+      existing.completedTickets += n;
+      existing.weightedTimeSum += row.avgCompletionTimeSeconds * n;
+      grouped.set(key, existing);
+    }
+  }
+
+  return Array.from(grouped.values())
+    .map((item) => ({
+      deviceName: item.deviceName,
+      completedTickets: item.completedTickets,
+      avgCompletionTimeSeconds:
+        item.completedTickets > 0
+          ? Math.round(item.weightedTimeSum / item.completedTickets)
+          : 0,
+    }))
+    .sort((a, b) => a.deviceName.localeCompare(b.deviceName));
+}
+
 function paginateRows(
   rows: KitchenPerformanceRowDto[],
   page: number,
@@ -239,11 +313,13 @@ function paginateRows(
 
 function computeTicketKpisAndRows(
   tickets: KitchenPerformanceRawTicketInput[],
+  timezone: string,
 ): { kpis: KitchenPerformanceTicketKpisDto; ticketRows: KitchenPerformanceTicketRowDto[] } {
   const ticketRows: KitchenPerformanceTicketRowDto[] = tickets.map((ticket) => ({
     ticketName: ticket.ticketName,
     orderSource: ticket.orderSource,
     numberOfItems: ticket.numberOfItems,
+    itemsInTicket: ticket.itemsInTicket,
     timeCreated: ticket.timeCreated,
     timeCompleted: ticket.timeCompleted,
     timeDue: ticket.timeDue,
@@ -268,8 +344,8 @@ function computeTicketKpisAndRows(
   const recalledTickets = tickets.filter((ticket) => ticket.timeRecalled != null).length;
 
   const ticketsPastDueTime = tickets.reduce((count, ticket) => {
-    const completed = parseTimestamp(ticket.timeCompleted);
-    const due = parseTimestamp(ticket.timeDue);
+    const completed = parseCsvTimestampInLocation(ticket.timeCompleted, timezone);
+    const due = parseCsvTimestampInLocation(ticket.timeDue, timezone);
     if (!completed || !due) return count;
     return completed.getTime() > due.getTime() ? count + 1 : count;
   }, 0);
@@ -295,12 +371,16 @@ function computeTicketKpisAndRows(
 
 function computeHourlyCompletedTickets(
   tickets: KitchenPerformanceRawTicketInput[],
+  timezone: string,
 ): KitchenPerformanceHourlyPointDto[] {
+  const tz = timezone.trim();
   const counts = new Array<number>(24).fill(0);
   for (const ticket of tickets) {
-    const completed = parseTimestamp(ticket.timeCompleted);
+    const completed = parseCsvTimestampInLocation(ticket.timeCompleted, tz);
     if (!completed) continue;
-    const hour = completed.getHours();
+    const hourStr = formatInTimeZone(completed, tz, "H");
+    const hour = Number.parseInt(hourStr, 10);
+    if (Number.isNaN(hour) || hour < 0 || hour > 23) continue;
     counts[hour] = (counts[hour] ?? 0) + 1;
   }
   return counts.map((completedTickets, hour24) => ({
@@ -349,7 +429,23 @@ function computeItemPerformance(
         totalQuantity: aggregate.totalQuantity,
       };
     })
-    .sort((a, b) => a.itemName.localeCompare(b.itemName));
+    .sort((a, b) => {
+      if (b.totalQuantity !== a.totalQuantity) {
+        return b.totalQuantity - a.totalQuantity;
+      }
+      return a.itemName.localeCompare(b.itemName);
+    });
+}
+
+function mergeRawTicketsFromDatasets(
+  datasets: KitchenPerformanceLeanDoc[],
+): KitchenPerformanceRawTicketInput[] {
+  const out: KitchenPerformanceRawTicketInput[] = [];
+  for (const doc of datasets) {
+    const chunk = doc.rawTickets ?? [];
+    out.push(...chunk);
+  }
+  return out;
 }
 
 export class KitchenPerformanceService {
@@ -364,49 +460,95 @@ export class KitchenPerformanceService {
   async importCsv(
     actorUserId: string,
     locationId: string,
-    reportDate: string,
+    startDate: string,
+    endDate: string,
     fileBuffer: Buffer,
-  ): Promise<{ importedRows: number }> {
+  ): Promise<{ importedRows: number; daysUpdated: string[] }> {
+    const location = await this.locationService.getById(locationId);
+    const timezone = location?.timezone?.trim() ?? "UTC";
+
     const csvContent = fileBuffer.toString("utf-8");
     const parsedRecords = parseCsv(csvContent);
     const rawTickets = mapRawTickets(parsedRecords);
-    const aggregatedRows = aggregateRowsFromRawTickets(rawTickets);
-    if (rawTickets.length === 0 || aggregatedRows.length === 0) {
+    if (rawTickets.length === 0) {
+      throw new ValidationError("CSV contains no data rows.");
+    }
+
+    const byReportDate = new Map<string, KitchenPerformanceRawTicketInput[]>();
+    const outsideDates = new Set<string>();
+
+    for (const ticket of rawTickets) {
+      const rd = reportDateFromTimeCreated(ticket.timeCreated, timezone);
+      if (!rd) {
+        throw new ValidationError(
+          'Each row must have a valid "Time Created" value for import.',
+        );
+      }
+      if (rd < startDate || rd > endDate) {
+        outsideDates.add(rd);
+        continue;
+      }
+      const list = byReportDate.get(rd) ?? [];
+      list.push(ticket);
+      byReportDate.set(rd, list);
+    }
+
+    if (outsideDates.size > 0) {
+      const sorted = Array.from(outsideDates).sort((a, b) => a.localeCompare(b));
       throw new ValidationError(
-        "CSV contains no valid rows for Device Name.",
+        `CSV contains tickets whose local report date is outside the selected import period (${startDate}–${endDate}). Offending date(s): ${sorted.join(", ")}.`,
       );
     }
 
-    await this.repository.upsertByLocationAndDate(
-      locationId,
-      reportDate,
-      aggregatedRows,
-      rawTickets,
-      actorUserId,
-    );
-    return { importedRows: rawTickets.length };
+    if (byReportDate.size === 0) {
+      throw new ValidationError(
+        "No tickets fall within the selected import period after parsing Time Created.",
+      );
+    }
+
+    const daysUpdated: string[] = [];
+    for (const [reportDate, ticketsForDay] of Array.from(byReportDate.entries()).sort(
+      (a, b) => a[0].localeCompare(b[0]),
+    )) {
+      const aggregatedRows = aggregateRowsFromRawTickets(ticketsForDay);
+      if (aggregatedRows.length === 0) {
+        throw new ValidationError(
+          `CSV contains no valid rows for Device Name on report date ${reportDate}.`,
+        );
+      }
+      await this.repository.upsertByLocationAndDate(
+        locationId,
+        reportDate,
+        aggregatedRows,
+        ticketsForDay,
+        actorUserId,
+      );
+      daysUpdated.push(reportDate);
+    }
+
+    return { importedRows: rawTickets.length, daysUpdated };
   }
 
-  async getByLocationAndDate(
+  async getByLocationAndDateRange(
     locationId: string,
-    reportDate: string,
+    startDate: string,
+    endDate: string,
     page: number,
     limit: number,
   ): Promise<KitchenPerformanceListResult> {
-    const [dataset, location] = await Promise.all([
-      this.repository.findByLocationAndDate(locationId, reportDate),
+    const [datasets, location] = await Promise.all([
+      this.repository.findByLocationAndDateRange(locationId, startDate, endDate),
       this.locationService.getById(locationId),
     ]);
 
     const locationName = location?.storeName ?? "Unknown Location";
-    const sourceTickets = (dataset?.rawTickets ?? []) as KitchenPerformanceRawTicketInput[];
-    const sourceRows = sourceTickets.length > 0
-      ? aggregateRowsFromRawTickets(sourceTickets)
-      : ((dataset?.rows ?? []).map((row) => ({
-          deviceName: row.deviceName,
-          completedTickets: row.completedTickets,
-          avgCompletionTimeSeconds: row.avgCompletionTimeSeconds,
-        })) as KitchenPerformanceRowInput[]);
+    const mergedTickets = mergeRawTicketsFromDatasets(datasets as KitchenPerformanceLeanDoc[]);
+
+    const sourceRows: KitchenPerformanceRowInput[] =
+      mergedTickets.length > 0
+        ? aggregateRowsFromRawTickets(mergedTickets)
+        : aggregateRowsFromStoredRowSubdocuments(datasets as KitchenPerformanceLeanDoc[]);
+
     const rows: KitchenPerformanceRowDto[] = sourceRows
       .map((row) => ({
         deviceName: row.deviceName,
@@ -418,20 +560,26 @@ export class KitchenPerformanceService {
     return paginateRows(rows, page, limit);
   }
 
-  async getDetailsByLocationDateAndDevice(
+  async getDetailsByLocationDateRangeAndDevice(
     locationId: string,
-    reportDate: string,
+    startDate: string,
+    endDate: string,
     deviceName: string,
   ): Promise<KitchenPerformanceDetailsResult> {
-    const dataset = await this.repository.findByLocationAndDate(locationId, reportDate);
+    const [datasets, location] = await Promise.all([
+      this.repository.findByLocationAndDateRange(locationId, startDate, endDate),
+      this.locationService.getById(locationId),
+    ]);
+
+    const timezone = location?.timezone?.trim() ?? "UTC";
     const normalizedDevice = deviceName.trim().toLowerCase();
-    const allTickets = (dataset?.rawTickets ?? []) as KitchenPerformanceRawTicketInput[];
-    const deviceTickets = allTickets.filter(
+    const mergedTickets = mergeRawTicketsFromDatasets(datasets as KitchenPerformanceLeanDoc[]);
+    const deviceTickets = mergedTickets.filter(
       (ticket) => (ticket.deviceName?.trim().toLowerCase() ?? "") === normalizedDevice,
     );
 
-    const { kpis, ticketRows } = computeTicketKpisAndRows(deviceTickets);
-    const hourlyCompletedTickets = computeHourlyCompletedTickets(deviceTickets);
+    const { kpis, ticketRows } = computeTicketKpisAndRows(deviceTickets, timezone);
+    const hourlyCompletedTickets = computeHourlyCompletedTickets(deviceTickets, timezone);
     const itemPerformanceRows = computeItemPerformance(deviceTickets);
 
     return {

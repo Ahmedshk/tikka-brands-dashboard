@@ -1,44 +1,32 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
-import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import TextField from "@mui/material/TextField";
 import OperationsIcon from "@assets/icons/operations.svg?react";
 import ImportIcon from "@assets/icons/import.svg?react";
 import { Layout } from "../../components/common/Layout";
 import type { RootState } from "../../store/store";
 import type { KitchenPerformanceRow } from "../../types/kitchenPerformance.types";
-import {
-  formatDateToIso,
-  kitchenPerformanceService,
-} from "../../services/kitchenPerformance.service";
+import { kitchenPerformanceService } from "../../services/kitchenPerformance.service";
 import {
   KitchenPerformanceImportModal,
+  KitchenPerformancePeriodPicker,
   KitchenPerformanceTableCard,
 } from "../../components/KitchenPerformance";
 import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
+import type { KitchenPerformancePeriodValue } from "../../utils/kitchenPerformancePeriodRange";
+import {
+  inferPeriodFromDateRange,
+  periodToDateRange,
+  zonedWallTodayYmd,
+} from "../../utils/kitchenPerformancePeriodRange";
 
 const PAGE_SIZE = 10;
 const PAGE_ID = "kitchen-performance";
-const GREY_FOCUS_FIELD_SX = {
-  "& .MuiOutlinedInput-root": {
-    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-      borderColor: "#9CA3AF",
-    },
-    "&:hover .MuiOutlinedInput-notchedOutline": {
-      borderColor: "#9CA3AF",
-    },
-  },
-} as const;
 
-function parseDateQueryParam(value: string | null): Date | null {
-  if (!value) return null;
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
+function isValidYmd(s: string | null): boolean {
+  if (!s) return false;
+  return /^\d{4}-\d{2}-\d{2}$/.test(s.trim());
 }
 
 export const KitchenPerformance = () => {
@@ -49,15 +37,44 @@ export const KitchenPerformance = () => {
   );
   const canImportCsv = useCanAccessComponent(PAGE_ID, "import-csv");
   const canKitchenTable = useCanAccessComponent(PAGE_ID, "kitchen-performance");
-  const [selectedDate, setSelectedDate] = useState<Date>(
-    () => parseDateQueryParam(searchParams.get("date")) ?? new Date(),
-  );
   const [rows, setRows] = useState<KitchenPerformanceRow[]>([]);
   const [page, setPage] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [importModalOpen, setImportModalOpen] = useState(false);
+
+  const browserDefaultTz = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    [],
+  );
+  const timezone = currentLocation?.timezone?.trim() || browserDefaultTz;
+
+  const startParam = searchParams.get("startDate");
+  const endParam = searchParams.get("endDate");
+  const legacyDate = searchParams.get("date");
+
+  useEffect(() => {
+    if (legacyDate && isValidYmd(legacyDate) && !startParam) {
+      navigate(
+        `/dashboard/kitchen-performance?startDate=${legacyDate}&endDate=${legacyDate}`,
+        { replace: true },
+      );
+      return;
+    }
+    if (!isValidYmd(startParam) || !isValidYmd(endParam) || startParam! > endParam!) {
+      const t = zonedWallTodayYmd(timezone);
+      navigate(`/dashboard/kitchen-performance?startDate=${t}&endDate=${t}`, { replace: true });
+    }
+  }, [endParam, legacyDate, navigate, startParam, timezone]);
+
+  const startDate = isValidYmd(startParam) ? startParam! : zonedWallTodayYmd(timezone);
+  const endDate = isValidYmd(endParam) ? endParam! : startDate;
+
+  const period = useMemo(
+    () => inferPeriodFromDateRange(startDate, endDate, timezone),
+    [startDate, endDate, timezone],
+  );
 
   const fetchKitchenRows = useCallback(async () => {
     if (!currentLocation?._id || !canKitchenTable) {
@@ -72,7 +89,7 @@ export const KitchenPerformance = () => {
     try {
       const data = await kitchenPerformanceService.getRows(
         currentLocation._id,
-        selectedDate,
+        { startDate, endDate },
         { page, limit: PAGE_SIZE },
       );
       setRows(data.rows);
@@ -89,19 +106,11 @@ export const KitchenPerformance = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentLocation?._id, page, selectedDate, canKitchenTable]);
+  }, [currentLocation?._id, page, startDate, endDate, canKitchenTable]);
 
   useEffect(() => {
     fetchKitchenRows();
   }, [fetchKitchenRows]);
-
-  useEffect(() => {
-    const queryDate = parseDateQueryParam(searchParams.get("date"));
-    if (queryDate) {
-      setSelectedDate(queryDate);
-      setPage(1);
-    }
-  }, [searchParams]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -109,15 +118,34 @@ export const KitchenPerformance = () => {
     }
   }, [page, totalPages]);
 
-  const handleImport = async (date: Date, file: File) => {
+  const handlePeriodChange = (next: KitchenPerformancePeriodValue) => {
+    if (next.periodType === "custom" && (!next.periodStart || !next.periodEnd)) {
+      return;
+    }
+    try {
+      const { startDate: s, endDate: e } = periodToDateRange(next, timezone);
+      setPage(1);
+      navigate(`/dashboard/kitchen-performance?startDate=${s}&endDate=${e}`);
+    } catch {
+      /* incomplete custom */
+    }
+  };
+
+  const handleImport = async (range: { startDate: string; endDate: string }, file: File) => {
     if (!currentLocation?._id) {
       toast.error("Please select a location first.");
       return;
     }
-    await kitchenPerformanceService.importCsv(currentLocation._id, date, file);
-    toast.success("Kitchen performance CSV imported.");
-    setSelectedDate(date);
+    const result = await kitchenPerformanceService.importCsv(currentLocation._id, range, file);
+    toast.success(
+      result.daysUpdated?.length
+        ? `Kitchen performance imported (${result.importedRows} rows, ${result.daysUpdated.length} day(s)).`
+        : `Kitchen performance imported (${result.importedRows} rows).`,
+    );
     setPage(1);
+    navigate(
+      `/dashboard/kitchen-performance?startDate=${range.startDate}&endDate=${range.endDate}`,
+    );
     await fetchKitchenRows();
   };
 
@@ -132,27 +160,12 @@ export const KitchenPerformance = () => {
 
           <div className="flex flex-wrap items-center gap-2">
             {canKitchenTable ? (
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <DatePicker
-                  value={selectedDate}
-                  onChange={(date) => {
-                    if (date) {
-                      setSelectedDate(date);
-                      setPage(1);
-                    }
-                  }}
-                  disableFuture
-                  enableAccessibleFieldDOMStructure={false}
-                  slots={{ textField: TextField }}
-                  slotProps={{
-                    textField: {
-                      size: "small",
-                      placeholder: "MM/DD/YYYY",
-                      sx: { minWidth: 180, ...GREY_FOCUS_FIELD_SX },
-                    },
-                  }}
-                />
-              </LocalizationProvider>
+              <KitchenPerformancePeriodPicker
+                value={period}
+                onChange={handlePeriodChange}
+                timezone={timezone}
+                className="min-w-[10rem]"
+              />
             ) : null}
             {canImportCsv ? (
               <button
@@ -173,8 +186,9 @@ export const KitchenPerformance = () => {
             loading={loading}
             onView={(row) => {
               const encoded = encodeURIComponent(row.deviceName);
-              const date = formatDateToIso(selectedDate);
-              navigate(`/dashboard/kitchen-performance/${encoded}?date=${date}`);
+              navigate(
+                `/dashboard/kitchen-performance/${encoded}?startDate=${startDate}&endDate=${endDate}`,
+              );
             }}
             pagination={{
               currentPage: page,
@@ -195,7 +209,8 @@ export const KitchenPerformance = () => {
         isOpen={canImportCsv && importModalOpen}
         onClose={() => setImportModalOpen(false)}
         onImport={handleImport}
-        defaultDate={selectedDate}
+        defaultPeriod={period}
+        timezone={timezone}
       />
     </Layout>
   );

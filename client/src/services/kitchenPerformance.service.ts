@@ -12,6 +12,11 @@ interface KitchenPerformanceListResponse {
   meta: KitchenPerformancePaginationMeta;
 }
 
+export interface KitchenPerformanceDateRange {
+  startDate: string;
+  endDate: string;
+}
+
 export function formatDateToIso(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -19,15 +24,21 @@ export function formatDateToIso(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+export interface KitchenPerformanceImportResult {
+  importedRows: number;
+  daysUpdated?: string[];
+}
+
 export const kitchenPerformanceService = {
   async getRows(
     locationId: string,
-    date: Date,
+    range: KitchenPerformanceDateRange,
     options: { page?: number; limit?: number } = {},
   ): Promise<KitchenPerformanceListResponse> {
     const params = new URLSearchParams({
       locationId,
-      date: formatDateToIso(date),
+      startDate: range.startDate,
+      endDate: range.endDate,
       page: String(options.page ?? 1),
       limit: String(options.limit ?? 10),
     });
@@ -52,33 +63,41 @@ export const kitchenPerformanceService = {
     };
   },
 
-  async importCsv(locationId: string, date: Date, file: File): Promise<void> {
+  async importCsv(
+    locationId: string,
+    range: KitchenPerformanceDateRange,
+    file: File,
+  ): Promise<KitchenPerformanceImportResult> {
     const form = new FormData();
     form.append("locationId", locationId);
-    form.append("date", formatDateToIso(date));
+    form.append("startDate", range.startDate);
+    form.append("endDate", range.endDate);
     form.append("file", file);
 
-    const res = await api.post<ApiResponse<{ importedRows: number }>>(
-      API_ENDPOINTS.KITCHEN_PERFORMANCE.IMPORT,
-      form,
-      {
-        headers: { "Content-Type": "multipart/form-data" },
-      },
-    );
+    const res = await api.post<
+      ApiResponse<{ importedRows: number; daysUpdated?: string[] }>
+    >(API_ENDPOINTS.KITCHEN_PERFORMANCE.IMPORT, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
 
-    if (!res.data.success) {
+    if (!res.data.success || !res.data.data) {
       throw new Error(res.data.message ?? "Failed to import kitchen performance CSV.");
     }
+    return {
+      importedRows: res.data.data.importedRows,
+      daysUpdated: res.data.data.daysUpdated,
+    };
   },
 
   async getDetails(
     locationId: string,
-    date: Date,
+    range: KitchenPerformanceDateRange,
     deviceName: string,
   ): Promise<KitchenPerformanceDetails> {
     const params = new URLSearchParams({
       locationId,
-      date: formatDateToIso(date),
+      startDate: range.startDate,
+      endDate: range.endDate,
       deviceName,
     });
     const res = await api.get<ApiResponse<KitchenPerformanceDetails>>(

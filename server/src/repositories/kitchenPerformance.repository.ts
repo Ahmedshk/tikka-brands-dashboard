@@ -32,4 +32,13 @@ export class KitchenPerformanceRepository {
       reportDate,
     }).lean();
   }
+
+  async findByLocationAndDateRange(locationId: string, startDate: string, endDate: string) {
+    return KitchenPerformanceModel.find({
+      locationId: new Types.ObjectId(locationId),
+      reportDate: { $gte: startDate, $lte: endDate },
+    })
+      .sort({ reportDate: 1 })
+      .lean();
+  }
 }
