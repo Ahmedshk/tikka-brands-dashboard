@@ -25,6 +25,8 @@ const runScheduleSchema = z.object({
   interval: intervalSchema,
 });
 
+const lowInventoryCadenceSchema = z.enum(["every_run", "once_per_day", "once_per_episode"]);
+
 const metricToggleSchema = z.object({
   warnInToleranceZone: z.boolean(),
   alertBeyondTolerance: z.boolean(),
@@ -65,6 +67,9 @@ export const updateAlertNotificationSettingsBodySchema = z.object({
       .object({
         deliveryOverdueNotReceived: z.boolean().optional(),
         run: runScheduleSchema.optional(),
+        lowInventoryEnabled: z.boolean().optional(),
+        lowInventoryRun: runScheduleSchema.optional(),
+        lowInventoryCadence: lowInventoryCadenceSchema.optional(),
       })
       .optional(),
     reputationHr: z

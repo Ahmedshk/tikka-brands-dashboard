@@ -4,7 +4,7 @@ import type { DropdownOption } from "../components/common/Dropdown";
 /** Subcategory keys per category (must match server `ALERT_ROLE_SUBCATEGORIES`). */
 export const NOTIFY_ROLES_SUBCATEGORIES: Record<AlertRoleBindingCategory, readonly string[]> = {
   financial_labor: ["sales", "laborCostPct", "hours", "spmh", "foodCostPct"],
-  inventory_supply_chain: ["delivery_overdue"],
+  inventory_supply_chain: ["delivery_overdue", "low_inventory"],
   reputation_hr: ["training_overdue", "pending_pips"],
 };
 
@@ -15,6 +15,7 @@ export const NOTIFY_ROLES_SUBCATEGORY_LABELS: Record<string, string> = {
   spmh: "SPMH goal",
   foodCostPct: "Food cost %",
   delivery_overdue: "Delivery overdue (not received)",
+  low_inventory: "Low inventory (below minimum on hand)",
   training_overdue: "Training overdue",
   pending_pips: "Pending PIPs",
 };

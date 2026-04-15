@@ -37,6 +37,9 @@ export interface AlertNotificationSettingsDto {
   inventorySupplyChain: {
     deliveryOverdueNotReceived: boolean;
     run: AlertRunScheduleDto;
+    lowInventoryEnabled?: boolean;
+    lowInventoryRun?: AlertRunScheduleDto;
+    lowInventoryCadence?: "every_run" | "once_per_day" | "once_per_episode";
   };
   reputationHr: {
     trainingOverdue: boolean;

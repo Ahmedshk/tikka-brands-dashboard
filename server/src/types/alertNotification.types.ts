@@ -41,9 +41,14 @@ export interface IAlertFinancialLaborToggles {
   foodCostPct: IAlertMetricToggles;
 }
 
+export type LowInventoryCadence = "every_run" | "once_per_day" | "once_per_episode";
+
 export interface IAlertInventorySupplyChainToggles {
   deliveryOverdueNotReceived: boolean;
   run: IAlertRunSchedule;
+  lowInventoryEnabled: boolean;
+  lowInventoryRun: IAlertRunSchedule;
+  lowInventoryCadence: LowInventoryCadence;
 }
 
 export interface IAlertReputationHrToggles {
@@ -60,6 +65,7 @@ export interface IAlertReputationHrToggles {
 export type IAlertRoleBindingSubcategory =
   | keyof IAlertFinancialLaborToggles
   | "delivery_overdue"
+  | "low_inventory"
   | "training_overdue"
   | "pending_pips";
 
@@ -108,6 +114,9 @@ export const DEFAULT_ALERT_NOTIFICATION_SETTINGS: Omit<
   inventorySupplyChain: {
     deliveryOverdueNotReceived: false,
     run: { ...DEFAULT_ALERT_RUN_SCHEDULE },
+    lowInventoryEnabled: false,
+    lowInventoryRun: { ...DEFAULT_ALERT_RUN_SCHEDULE },
+    lowInventoryCadence: "once_per_episode",
   },
   reputationHr: {
     trainingOverdue: false,

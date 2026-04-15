@@ -81,6 +81,9 @@ export function CommandCenterAlertsHistoryModal({
   if (!open) return null;
 
   const now = Date.now();
+  const sortedRows = [...rows].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 
   return createPortal(
     <dialog
@@ -129,11 +132,11 @@ export function CommandCenterAlertsHistoryModal({
               <p className="text-xs text-negative md:text-sm" role="alert">
                 {error}
               </p>
-            ) : rows.length === 0 ? (
+            ) : sortedRows.length === 0 ? (
               <p className="text-xs text-secondary md:text-sm">No earlier alerts for this category.</p>
             ) : (
               <div className="flex flex-col gap-2">
-                {rows.map((row) => {
+                {sortedRows.map((row) => {
                   const alert = commandCenterAlertRowToAlertItem(row);
                   const showNew = isRowNew(row.createdAt, now);
                   return (

@@ -9,6 +9,7 @@ import {
   inventoryAlertsIcon,
   reputationAlertsIcon,
   type AlertCategory,
+  type AlertItem,
   type CommandCenterKPIItem,
   type CommandCenterKPIPeriod,
 } from '../../components/CommandCenter';
@@ -46,6 +47,14 @@ const ALERT_HISTORY_CATEGORY_TITLE: Record<AlertRoleBindingCategory, string> = {
   inventory_supply_chain: 'Inventory & Supply Chain',
   reputation_hr: 'Reputation & HR',
 };
+
+function sortAlertItemsNewestFirst<T extends { createdAt?: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const at = a.createdAt ? new Date(a.createdAt).getTime() : Number.NEGATIVE_INFINITY;
+    const bt = b.createdAt ? new Date(b.createdAt).getTime() : Number.NEGATIVE_INFINITY;
+    return bt - at;
+  });
+}
 
 export const CommandCenter = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
@@ -209,6 +218,15 @@ export const CommandCenter = () => {
         canReputation: canAlertsReputation,
       },
     );
+    const t = (payload as { type?: unknown })?.type;
+    if (parsed == null && t === 'alert_inventory_low_inventory') {
+      console.debug('[CommandCenter] low-inventory realtime ignored', {
+        payload,
+        locationId,
+        timezone,
+        todayKey,
+      });
+    }
     if (parsed == null) return;
     const { row, category } = parsed;
 
@@ -332,7 +350,9 @@ export const CommandCenter = () => {
         id: 'financial_labor',
         title: 'Financial & Labor',
         icon: financialAlertsIcon,
-        alerts: alertBuckets?.financial_labor.map(commandCenterAlertRowToAlertItem) ?? [],
+        alerts: sortAlertItemsNewestFirst<AlertItem>(
+          alertBuckets?.financial_labor.map(commandCenterAlertRowToAlertItem) ?? [],
+        ),
       });
     }
     if (canAlertsInventory) {
@@ -340,23 +360,27 @@ export const CommandCenter = () => {
         id: 'inventory_supply_chain',
         title: 'Inventory & Supply Chain',
         icon: inventoryAlertsIcon,
-        alerts: alertBuckets?.inventory_supply_chain.map(commandCenterAlertRowToAlertItem) ?? [],
+        alerts: sortAlertItemsNewestFirst<AlertItem>(
+          alertBuckets?.inventory_supply_chain.map(commandCenterAlertRowToAlertItem) ?? [],
+        ),
       });
     }
     if (canAlertsReputation) {
       const dynamic = alertBuckets?.reputation_hr.map(commandCenterAlertRowToAlertItem) ?? [];
-      const staticPlaceholders = [
+      const staticPlaceholders: AlertItem[] = [
         {
           id: 'placeholder-review-thresholds',
           titleLine: 'Review and rating thresholds are not yet available.',
           severity: 'warning' as const,
+          dismissable: false,
+          createdAt: undefined,
         },
       ];
       cats.push({
         id: 'reputation_hr',
         title: 'Reputation & HR',
         icon: reputationAlertsIcon,
-        alerts: [...dynamic, ...staticPlaceholders],
+        alerts: sortAlertItemsNewestFirst<AlertItem>([...dynamic, ...staticPlaceholders]),
       });
     }
     return cats;

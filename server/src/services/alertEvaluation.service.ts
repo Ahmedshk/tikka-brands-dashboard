@@ -36,7 +36,11 @@ import {
   type LocationForSalesLabor,
 } from "../utils/salesLaborControllerHelpers.js";
 import { formatMarketManDateUtc } from "./marketman.client.js";
-import { getInventoryKPIs, getOrdersByDeliveryDate } from "./marketman.service.js";
+import {
+  getInventoryItems,
+  getInventoryKPIs,
+  getOrdersByDeliveryDate,
+} from "./marketman.service.js";
 import type { MarketManOrder, OrderTrackerRange } from "./marketman.service.js";
 import { loadMarketManOrdersFromOrderCacheByKindInRange } from "../utils/inventoryOrderCacheRead.util.js";
 import { isExternalDataCacheReadEnabled } from "../config/externalDataCache.config.js";
@@ -45,6 +49,7 @@ import { loadFirstNamesByUserId } from "../utils/notificationRecipientFirstNames
 import { formatOrderDateInTz, parseMarketManUtc } from "../utils/marketManOrderDisplay.util.js";
 import { buildFinancialKpiEmailRows } from "../utils/alertFinancialKpiEmail.util.js";
 import { roleBindingMatchesSubcategory } from "../utils/alertRoleBindingSubcategory.util.js";
+import { LowInventoryAlertStateModel } from "../models/lowInventoryAlertState.model.js";
 
 const alertSettingsService = new AlertNotificationSettingsService();
 const locationService = new LocationService();
@@ -360,6 +365,7 @@ async function sendAlert(params: {
   const commandCenterUrl = getDashboardCommandCenterUrl();
   const inventoryFoodCostUrl = getDashboardInventoryFoodCostUrl();
   const isDeliveryOverdueEmail = params.alertKind === "delivery_overdue";
+  const isLowInventoryEmail = params.alertKind === "low_inventory";
   const overdueRowsRaw = isDeliveryOverdueEmail
     ? (params.data.overdueOrderRows as DeliveryOverdueOrderEmailRow[] | undefined)
     : undefined;
@@ -404,7 +410,9 @@ async function sendAlert(params: {
       ...(wantsEmail
         ? {
             emailSubject: params.title,
-            emailTemplateFile: "alert-notification-email.ejs",
+            emailTemplateFile: isLowInventoryEmail
+              ? "alert-low-inventory-email.ejs"
+              : "alert-notification-email.ejs",
             emailTemplateData: {
               title: params.title,
               calloutLine: params.title,
@@ -418,6 +426,28 @@ async function sendAlert(params: {
               calloutBg: sevStyles.calloutBg,
               calloutBorder: sevStyles.calloutBorder,
               calloutText: sevStyles.calloutText,
+              ...(isLowInventoryEmail
+                ? {
+                    locationName:
+                      typeof params.data.locationName === "string"
+                        ? params.data.locationName
+                        : params.storeName,
+                    inventoryName:
+                      typeof params.data.itemName === "string" ? params.data.itemName : "",
+                    categoryName:
+                      typeof params.data.categoryName === "string"
+                        ? params.data.categoryName
+                        : "",
+                    uomName:
+                      typeof params.data.uomName === "string" ? params.data.uomName : "",
+                    minOnHand:
+                      typeof params.data.minOnHand === "number"
+                        ? params.data.minOnHand
+                        : null,
+                    onHand:
+                      typeof params.data.onHand === "number" ? params.data.onHand : null,
+                  }
+                : {}),
               ...(overdueRowsForEmail.length > 0
                 ? {
                     deliveryOverdueOrders: overdueRowsForEmail,
@@ -715,48 +745,215 @@ async function evaluateInventory(
   tickAnchorMs: number,
 ): Promise<void> {
   const locationId = String(loc._id ?? "");
-
-  if (!settings.inventorySupplyChain.deliveryOverdueNotReceived) {
-    return;
-  }
   const buyerGuid = loc.marketManBuyerGuid?.trim();
   if (!locationId || !buyerGuid) {
     return;
   }
 
   const timezone = loc.timezone?.trim() || "America/Denver";
-  const run = settings.inventorySupplyChain.run;
-  if (!shouldRunAlertScheduleTick(run, timezone, tickAnchorMs)) {
-    return;
+
+  if (settings.inventorySupplyChain.deliveryOverdueNotReceived) {
+    const run = settings.inventorySupplyChain.run;
+    if (shouldRunAlertScheduleTick(run, timezone, tickAnchorMs)) {
+      const overdueOrders = await listOverdueDeliveryOrdersNotReceived(locationId, buyerGuid, timezone);
+      if (overdueOrders.length > 0) {
+        const im = intervalMinutesForSchedule(run);
+        const fireKey = buildFireTimeKey(run, timezone, im, tickAnchorMs);
+        const n = overdueOrders.length;
+
+        await sendAlert({
+          settings,
+          locationId,
+          storeName: loc.storeName ?? "Location",
+          category: "inventory_supply_chain",
+          roleBindingSubcategory: "delivery_overdue",
+          type: "alert_inventory_delivery_overdue",
+          title: "Delivery overdue",
+          message: `${loc.storeName ?? "Location"}: ${n} order(s) have a past delivery date and are not marked received.`,
+          alertKind: "delivery_overdue",
+          severity: "critical",
+          fireKey,
+          data: {
+            sourceKey: "delivery_overdue",
+            count: n,
+            overdueOrderRows: overdueOrders,
+          },
+        });
+      }
+    }
   }
 
-  const overdueOrders = await listOverdueDeliveryOrdersNotReceived(locationId, buyerGuid, timezone);
-  if (overdueOrders.length === 0) {
-    return;
+  if (settings.inventorySupplyChain.lowInventoryEnabled) {
+    const run = settings.inventorySupplyChain.lowInventoryRun;
+    if (!shouldRunAlertScheduleTick(run, timezone, tickAnchorMs)) {
+      return;
+    }
+
+    let items: Awaited<ReturnType<typeof getInventoryItems>>;
+    try {
+      items = await getInventoryItems(buyerGuid);
+    } catch (err) {
+      logger.warn("[Alerts] MarketMan inventory items fetch failed", { locationId, err });
+      return;
+    }
+
+    const low: Array<{
+      itemId: string;
+      name: string;
+      categoryName: string;
+      uomName: string;
+      onHand: number;
+      minOnHand: number;
+    }> = [];
+    for (const it of items) {
+      const min = it.MinOnHand;
+      if (min == null || !Number.isFinite(min)) continue;
+      const onHand = it.OnHand;
+      if (onHand == null || !Number.isFinite(onHand)) continue;
+      if (onHand >= min) continue;
+      const itemId = String(it.ID ?? "").trim();
+      if (!itemId) continue;
+      const categoryName = String(it.CategoryName ?? "").trim();
+      const uomName = String(it.UOMName ?? "").trim();
+      low.push({
+        itemId,
+        name: String(it.Name ?? "").trim() || "Item",
+        categoryName,
+        uomName,
+        onHand,
+        minOnHand: min,
+      });
+    }
+    if (low.length === 0) {
+      const lowStates = await LowInventoryAlertStateModel.find({
+        locationId: new mongoose.Types.ObjectId(locationId),
+        isLow: true,
+      })
+        .lean()
+        .exec();
+      if (lowStates.length > 0) {
+        await LowInventoryAlertStateModel.updateMany(
+          { locationId: new mongoose.Types.ObjectId(locationId), isLow: true },
+          { $set: { isLow: false, lastAlertedAt: null } },
+        ).exec();
+      }
+      return;
+    }
+
+    const cadence = settings.inventorySupplyChain.lowInventoryCadence;
+    const lowIds = low.map((x) => x.itemId);
+    const stateDocs = await LowInventoryAlertStateModel.find({
+      locationId: new mongoose.Types.ObjectId(locationId),
+      $or: [{ isLow: true }, { itemId: { $in: lowIds } }],
+    })
+      .lean()
+      .exec();
+    const stateByItemId = new Map(stateDocs.map((d) => [String(d.itemId), d]));
+    const lowSet = new Set(lowIds);
+
+    const lowOid = new mongoose.Types.ObjectId(locationId);
+
+    // Resolve previously-low items that are no longer low.
+    const resolveOps: Array<Promise<unknown>> = [];
+    for (const s of stateDocs) {
+      if (!s.isLow) continue;
+      if (lowSet.has(String(s.itemId))) continue;
+      resolveOps.push(
+        LowInventoryAlertStateModel.updateOne(
+          { locationId: lowOid, itemId: String(s.itemId) },
+          { $set: { isLow: false, lastAlertedAt: null } },
+        ).exec(),
+      );
+    }
+    if (resolveOps.length) await Promise.all(resolveOps);
+
+    const dayKey = getTodayInTimezoneAt(timezone, tickAnchorMs);
+    const im = intervalMinutesForSchedule(run);
+    const tickFireKey = buildFireTimeKey(run, timezone, im, tickAnchorMs);
+
+    for (const row of low) {
+      const prev = stateByItemId.get(row.itemId);
+
+      let shouldSend = false;
+      let fireKey = "";
+      let nextEpisodeStartedAt: Date | null = null;
+      let nextLastAlertedAt: Date | null = null;
+
+      if (cadence === "every_run") {
+        shouldSend = true;
+        fireKey = `${tickFireKey}|item:${row.itemId}`;
+      } else if (cadence === "once_per_day") {
+        shouldSend = true;
+        fireKey = `${dayKey}|item:${row.itemId}`;
+      } else {
+        const wasLow = Boolean(prev?.isLow);
+        const alreadyAlerted = prev?.lastAlertedAt != null;
+        if (!wasLow) {
+          shouldSend = true;
+          nextEpisodeStartedAt = new Date(tickAnchorMs);
+          nextLastAlertedAt = new Date(tickAnchorMs);
+          fireKey = `${new Date(tickAnchorMs).toISOString()}|item:${row.itemId}`;
+        } else if (!alreadyAlerted) {
+          shouldSend = true;
+          nextEpisodeStartedAt = prev?.episodeStartedAt ? new Date(prev.episodeStartedAt) : new Date(tickAnchorMs);
+          nextLastAlertedAt = new Date(tickAnchorMs);
+          const ep = nextEpisodeStartedAt.toISOString();
+          fireKey = `${ep}|item:${row.itemId}`;
+        } else {
+          shouldSend = false;
+        }
+      }
+
+      if (cadence === "once_per_episode") {
+        await LowInventoryAlertStateModel.updateOne(
+          { locationId: lowOid, itemId: row.itemId },
+          {
+            $set: {
+              isLow: true,
+              locationName: (loc.storeName ?? "").trim() || null,
+              itemName: row.name,
+              categoryName: row.categoryName || null,
+              uomName: row.uomName || null,
+              lastOnHand: row.onHand,
+              lastMinOnHand: row.minOnHand,
+              ...(nextEpisodeStartedAt ? { episodeStartedAt: nextEpisodeStartedAt } : {}),
+              ...(nextLastAlertedAt ? { lastAlertedAt: nextLastAlertedAt } : {}),
+            },
+            $setOnInsert: {
+              episodeStartedAt: new Date(tickAnchorMs),
+            },
+          },
+          { upsert: true },
+        ).exec();
+      }
+
+      if (!shouldSend) continue;
+
+      await sendAlert({
+        settings,
+        locationId,
+        storeName: loc.storeName ?? "Location",
+        category: "inventory_supply_chain",
+        roleBindingSubcategory: "low_inventory",
+        type: "alert_inventory_low_inventory",
+        title: "Low inventory",
+        message: `${loc.storeName ?? "Location"}: ${row.name} is below minimum on hand (${row.onHand} < ${row.minOnHand}).`,
+        alertKind: "low_inventory",
+        severity: "critical",
+        fireKey,
+        data: {
+          sourceKey: "low_inventory",
+          itemId: row.itemId,
+          itemName: row.name,
+          categoryName: row.categoryName,
+          uomName: row.uomName,
+          onHand: row.onHand,
+          minOnHand: row.minOnHand,
+          locationName: loc.storeName ?? "Location",
+        },
+      });
+    }
   }
-
-  const im = intervalMinutesForSchedule(run);
-  const fireKey = buildFireTimeKey(run, timezone, im, tickAnchorMs);
-  const n = overdueOrders.length;
-
-  await sendAlert({
-    settings,
-    locationId,
-    storeName: loc.storeName ?? "Location",
-    category: "inventory_supply_chain",
-    roleBindingSubcategory: "delivery_overdue",
-    type: "alert_inventory_delivery_overdue",
-    title: "Delivery overdue",
-    message: `${loc.storeName ?? "Location"}: ${n} order(s) have a past delivery date and are not marked received.`,
-    alertKind: "delivery_overdue",
-    severity: "critical",
-    fireKey,
-    data: {
-      sourceKey: "delivery_overdue",
-      count: n,
-      overdueOrderRows: overdueOrders,
-    },
-  });
 }
 
 async function evaluateReputationHr(
@@ -825,6 +1022,7 @@ async function evaluateReputationHr(
 function hasAnyAlertRule(settings: IAlertNotificationSettings): boolean {
   if (anyFinancialTogglesOn(settings.financialLabor)) return true;
   if (settings.inventorySupplyChain.deliveryOverdueNotReceived) return true;
+  if (settings.inventorySupplyChain.lowInventoryEnabled) return true;
   if (settings.reputationHr.trainingOverdue || settings.reputationHr.pendingPips) return true;
   return false;
 }

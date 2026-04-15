@@ -39,6 +39,7 @@ export const NOTIFICATION_TYPES = [
   "alert_goal_food_cost_warning",
   "alert_goal_food_cost_critical",
   "alert_inventory_delivery_overdue",
+  "alert_inventory_low_inventory",
   "alert_training_overdue",
   "alert_pip_pending",
 ] as const;

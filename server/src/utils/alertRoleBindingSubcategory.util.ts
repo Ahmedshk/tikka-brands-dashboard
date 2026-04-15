@@ -6,7 +6,7 @@ import type {
 /** Subcategory keys stored on role bindings (aligns with financial metric keys and alert sources). */
 export const ALERT_ROLE_SUBCATEGORIES: Record<AlertRoleBindingCategory, readonly string[]> = {
   financial_labor: ["sales", "laborCostPct", "hours", "spmh", "foodCostPct"],
-  inventory_supply_chain: ["delivery_overdue"],
+  inventory_supply_chain: ["delivery_overdue", "low_inventory"],
   reputation_hr: ["training_overdue", "pending_pips"],
 } as const;
 

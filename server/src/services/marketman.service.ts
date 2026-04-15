@@ -107,6 +107,65 @@ export interface GetCatalogItemsResponse {
   ErrorCode?: string | null;
 }
 
+export interface MarketManInventoryItemPurchaseItem {
+  Name?: string | null;
+  SupplierName?: string | null;
+  VendorName?: string | null;
+  PackQty?: number | null;
+  PacksPerCase?: number | null;
+  UOMName?: string | null;
+  UOMID?: number | null;
+  ProductCode?: string | number | null;
+  Price?: number | null;
+  MinOrderQty?: number | null;
+  PriceType?: string | null;
+  Ratio?: number | null;
+  VendorGuid?: string | null;
+  CatalogItemCode?: number | null;
+  TaxLevelID?: number | null;
+  TaxValue?: number | null;
+  PriceWithVat?: number | null;
+  ScanBarcode?: string | null;
+  IsMainPurchaseOption?: boolean | null;
+  DeletedFromSupplier?: boolean | null;
+  IsForOrdering?: boolean | null;
+}
+
+export interface MarketManInventoryItem {
+  ID?: string | number | null;
+  Name?: string | null;
+  AboutTheItem?: string | null;
+  UpdateDate?: string | null;
+  CategoryID?: number | null;
+  CategoryName?: string | null;
+  UOMName?: string | null;
+  UOMID?: number | null;
+  ReportingUOM?: string | null;
+  MinOnHand?: number | null;
+  ParLevel?: number | null;
+  MinOrderQty?: number | null;
+  MaxOrderQty?: number | null;
+  DateRangeType?: string | null;
+  StorageIDs?: number[] | null;
+  StorageNames?: string[] | null;
+  OnHand?: number | null;
+  BOMPrice?: number | null;
+  DebitAccountName?: string | null;
+  PurchaseItems?: MarketManInventoryItemPurchaseItem[] | null;
+  IsDeleted?: boolean | null;
+  CountDefOptions?: unknown;
+}
+
+export interface GetInventoryItemsResponse {
+  Items?: MarketManInventoryItem[];
+  MaxTakeAllowed?: number | null;
+  Page?: { Skip?: number | null; Take?: number | null; Total?: number | null } | null;
+  IsSuccess?: boolean;
+  ErrorMessage?: string | null;
+  ErrorCode?: string | null;
+  RequestID?: string | null;
+}
+
 export interface InventoryKPIsResult {
   currentFoodCost: number | null;
   inventoryValue: number | null;
@@ -927,4 +986,18 @@ export async function getMarketManCatalogItems(
     );
   }
   return Array.isArray(data.CatalogItems) ? data.CatalogItems : [];
+}
+
+export async function getInventoryItems(buyerGuid: string): Promise<MarketManInventoryItem[]> {
+  const data = await marketManRequest<GetInventoryItemsResponse>(
+    "/buyers/inventory/GetInventoryItems",
+    {},
+    buyerGuid.trim(),
+  );
+  if (data.IsSuccess === false) {
+    throw new Error(
+      (data.ErrorMessage && data.ErrorMessage.trim()) || "GetInventoryItems failed",
+    );
+  }
+  return Array.isArray(data.Items) ? data.Items : [];
 }

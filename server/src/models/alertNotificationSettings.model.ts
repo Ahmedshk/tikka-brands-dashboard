@@ -15,6 +15,9 @@ export interface AlertNotificationSettingsDocument extends Document {
   inventorySupplyChain: {
     deliveryOverdueNotReceived: boolean;
     run?: IAlertRunSchedule;
+    lowInventoryEnabled: boolean;
+    lowInventoryRun?: IAlertRunSchedule;
+    lowInventoryCadence: "every_run" | "once_per_day" | "once_per_episode";
   };
   reputationHr: {
     trainingOverdue: boolean;
@@ -116,6 +119,13 @@ const alertNotificationSettingsSchema = new Schema<AlertNotificationSettingsDocu
         {
           deliveryOverdueNotReceived: { type: Boolean, default: false },
           run: { type: runScheduleSchema, default: () => ({}) },
+          lowInventoryEnabled: { type: Boolean, default: false },
+          lowInventoryRun: { type: runScheduleSchema, default: () => ({}) },
+          lowInventoryCadence: {
+            type: String,
+            enum: ["every_run", "once_per_day", "once_per_episode"],
+            default: "once_per_episode",
+          },
         },
         { _id: false },
       ),

@@ -12,6 +12,7 @@ const COMMAND_CENTER_ALERT_TYPES: ReadonlySet<string> = new Set([
   "alert_goal_food_cost_warning",
   "alert_goal_food_cost_critical",
   "alert_inventory_delivery_overdue",
+  "alert_inventory_low_inventory",
   "alert_training_overdue",
   "alert_pip_pending",
 ]);
@@ -38,6 +39,7 @@ export function notificationTypeToCommandCenterCategory(
   }
   if (COMMAND_CENTER_ALERT_TYPES.has(type)) {
     if (type === "alert_inventory_delivery_overdue") return "inventory_supply_chain";
+    if (type === "alert_inventory_low_inventory") return "inventory_supply_chain";
     if (type === "alert_training_overdue" || type === "alert_pip_pending") return "reputation_hr";
     if (type.startsWith("alert_goal_")) return "financial_labor";
   }
@@ -93,12 +95,20 @@ export function tryCommandCenterRowFromNotificationNew(
     canReputation: boolean;
   },
 ): { row: CommandCenterAlertRow; category: AlertRoleBindingCategory } | null {
+  const locationIdFromData = (data: Record<string, unknown> | undefined): string | null => {
+    if (!data) return null;
+    const raw = data.locationId;
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+    if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+    return null;
+  };
+
   const id = String(payload._id);
   if (ctx.dismissedIds.has(id)) return null;
 
   const data = payload.data ?? undefined;
-  const locInData = data?.locationId != null ? String(data.locationId) : null;
-  if (locInData != null && locInData !== ctx.locationId) return null;
+  const locInData = locationIdFromData(data);
+  if (locInData !== null && locInData !== ctx.locationId) return null;
 
   const cat = notificationTypeToCommandCenterCategory(String(payload.type), data);
   if (!cat) return null;

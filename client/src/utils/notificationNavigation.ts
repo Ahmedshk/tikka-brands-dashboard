@@ -98,6 +98,9 @@ export function getNotificationNavigationTarget(
   if (type === 'alert_inventory_delivery_overdue') {
     return { path: '/dashboard/inventory-food-cost', pageId: 'inventory-food-cost' };
   }
+  if (type === 'alert_inventory_low_inventory') {
+    return { path: '/dashboard/command-center', pageId: 'command-center' };
+  }
   if (type === 'alert_training_overdue') {
     return { path: '/dashboard/training-management', pageId: 'training-management' };
   }

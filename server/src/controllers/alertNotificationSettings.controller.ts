@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { AlertNotificationSettingsService } from "../services/alertNotificationSettings.service.js";
 import type {
   IAlertFinancialLaborToggles,
+  LowInventoryCadence,
   IAlertReputationHrToggles,
   IAlertRoleBinding,
   IAlertRunSchedule,
@@ -36,6 +37,9 @@ export async function updateAlertNotificationSettings(
       inventorySupplyChain?: Partial<{
         deliveryOverdueNotReceived: boolean;
         run: IAlertRunSchedule;
+        lowInventoryEnabled: boolean;
+        lowInventoryRun: IAlertRunSchedule;
+        lowInventoryCadence: LowInventoryCadence;
       }>;
       reputationHr?: Partial<IAlertReputationHrToggles>;
       roleBindings?: Array<{

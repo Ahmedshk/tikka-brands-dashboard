@@ -12,6 +12,7 @@ export const COMMAND_CENTER_ALERT_TYPES: ReadonlySet<NotificationType> = new Set
   "alert_goal_food_cost_warning",
   "alert_goal_food_cost_critical",
   "alert_inventory_delivery_overdue",
+  "alert_inventory_low_inventory",
   "alert_training_overdue",
   "alert_pip_pending",
 ]);
@@ -39,6 +40,7 @@ export function notificationTypeToCommandCenterCategory(
   }
   if (COMMAND_CENTER_ALERT_TYPES.has(type as NotificationType)) {
     if (type === "alert_inventory_delivery_overdue") return "inventory_supply_chain";
+    if (type === "alert_inventory_low_inventory") return "inventory_supply_chain";
     if (type === "alert_training_overdue" || type === "alert_pip_pending") return "reputation_hr";
     if (type.startsWith("alert_goal_")) return "financial_labor";
   }

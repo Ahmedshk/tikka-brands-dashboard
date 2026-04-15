@@ -112,6 +112,12 @@ const scheduleModeOptions: DropdownOption[] = [
   { value: "interval", label: "Regular interval" },
 ];
 
+const lowInventoryCadenceOptions: DropdownOption[] = [
+  { value: "every_run", label: "Every time the check runs" },
+  { value: "once_per_day", label: "Once per day" },
+  { value: "once_per_episode", label: "Once per low-inventory episode" },
+];
+
 const FINANCIAL_ROWS: Array<{ key: keyof AlertFinancialLaborDto; label: string }> = [
   { key: "sales", label: "Sales goal" },
   { key: "laborCostPct", label: "Labor cost %" },
@@ -134,6 +140,14 @@ function normalizeSettings(s: AlertNotificationSettingsDto): AlertNotificationSe
     inventorySupplyChain: {
       deliveryOverdueNotReceived: s.inventorySupplyChain?.deliveryOverdueNotReceived ?? false,
       run: normalizeRun(s.inventorySupplyChain?.run),
+      lowInventoryEnabled: s.inventorySupplyChain?.lowInventoryEnabled ?? false,
+      lowInventoryRun: normalizeRun(s.inventorySupplyChain?.lowInventoryRun),
+      lowInventoryCadence:
+        s.inventorySupplyChain?.lowInventoryCadence === "every_run" ||
+        s.inventorySupplyChain?.lowInventoryCadence === "once_per_day" ||
+        s.inventorySupplyChain?.lowInventoryCadence === "once_per_episode"
+          ? s.inventorySupplyChain.lowInventoryCadence
+          : "once_per_episode",
     },
     reputationHr: {
       trainingOverdue: s.reputationHr?.trainingOverdue ?? false,
@@ -329,7 +343,11 @@ export const AlertsNotificationsSettings = () => {
   /** Empty string = all alert types in the category (legacy catch-all). */
   const [roleModalSubcategory, setRoleModalSubcategory] = useState("");
   const [roleModalSelected, setRoleModalSelected] = useState<Set<string>>(() => new Set());
-  const [roleModalChannels, setRoleModalChannels] = useState({ ...DEFAULT_ALERT_CHANNELS });
+  const [roleModalChannels, setRoleModalChannels] = useState<{
+    inApp: boolean;
+    email: boolean;
+    sms: boolean;
+  }>(() => ({ ...DEFAULT_ALERT_CHANNELS }));
 
   const [notifyRolesDeletePending, setNotifyRolesDeletePending] = useState<{
     category: AlertRoleBindingCategory;
@@ -698,7 +716,7 @@ export const AlertsNotificationsSettings = () => {
                     Inventory & supply chain
                   </h3>
                   <p className="text-xs text-tertiary max-w-3xl">
-                    Delivery-overdue checks use their own schedule.
+                    Delivery-overdue and low-inventory checks each use their own schedule.
                   </p>
                   <div className="rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
                     <label className="flex items-center gap-2 text-sm text-primary">
@@ -725,6 +743,60 @@ export const AlertsNotificationsSettings = () => {
                         setSettings({
                           ...settings,
                           inventorySupplyChain: { ...settings.inventorySupplyChain, run },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
+                    <label className="flex items-center gap-2 text-sm text-primary">
+                      <input
+                        type="checkbox"
+                        checked={settings.inventorySupplyChain.lowInventoryEnabled ?? false}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            inventorySupplyChain: {
+                              ...settings.inventorySupplyChain,
+                              lowInventoryEnabled: e.target.checked,
+                            },
+                          })
+                        }
+                        className="rounded border-gray-300"
+                      />
+                      Notify when inventory is below minimum on hand
+                    </label>
+                    <div className="max-w-md">
+                      <p className="block text-[10px] md:text-xs text-secondary mb-1">Alert frequency</p>
+                      <Dropdown
+                        options={lowInventoryCadenceOptions}
+                        value={settings.inventorySupplyChain.lowInventoryCadence ?? "once_per_episode"}
+                        onChange={(v) =>
+                          setSettings({
+                            ...settings,
+                            inventorySupplyChain: {
+                              ...settings.inventorySupplyChain,
+                              lowInventoryCadence: v as
+                                | "every_run"
+                                | "once_per_day"
+                                | "once_per_episode",
+                            },
+                          })
+                        }
+                        placeholder="Alert frequency"
+                        aria-label="Low inventory alert frequency"
+                        allowEmpty={false}
+                      />
+                    </div>
+                    <ScheduleEditor
+                      idPrefix="inv-low"
+                      schedule={settings.inventorySupplyChain.lowInventoryRun ?? defaultRunSchedule()}
+                      onChange={(lowInventoryRun) =>
+                        setSettings({
+                          ...settings,
+                          inventorySupplyChain: {
+                            ...settings.inventorySupplyChain,
+                            lowInventoryRun,
+                          },
                         })
                       }
                     />
