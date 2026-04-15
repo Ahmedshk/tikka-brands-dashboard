@@ -75,13 +75,14 @@ export async function createCalendarEvent(req: Request, res: Response, next: Nex
   try {
     const userId = req.user?.userId;
     if (!userId) throw new AppError("Unauthorized", 401);
-    const { title, description, start, end, eventTypeId, locationId } = req.body as {
+    const { title, description, start, end, eventTypeId, locationId, googleCalendarId } = req.body as {
       title: string;
       description?: string;
       start: Date;
       end: Date;
       eventTypeId: string;
       locationId: string;
+      googleCalendarId: string;
     };
     assertLocationAccess(req, locationId);
     const createPayload: CreateCalendarEventInput = {
@@ -91,6 +92,7 @@ export async function createCalendarEvent(req: Request, res: Response, next: Nex
       eventTypeId,
       locationId,
       createdBy: userId,
+      googleCalendarId,
     };
     if (description != null && description !== "") createPayload.description = description;
     const event = await service.create(createPayload);

@@ -2,6 +2,8 @@ import mongoose, { Schema, Document, Types } from "mongoose";
 
 export interface CalendarEventDocument extends Document {
   _id: Types.ObjectId;
+  /** Google Calendar id (e.g. email or calendar-specific id) this event belongs to. */
+  googleCalendarId: string;
   googleEventId: string;
   locationId: Types.ObjectId;
   eventTypeId: Types.ObjectId;
@@ -18,7 +20,8 @@ export interface CalendarEventDocument extends Document {
 
 const calendarEventSchema = new Schema<CalendarEventDocument>(
   {
-    googleEventId: { type: String, required: true, unique: true, trim: true },
+    googleCalendarId: { type: String, required: true, trim: true, index: true },
+    googleEventId: { type: String, required: true, trim: true },
     locationId: { type: Schema.Types.ObjectId, ref: "Location", required: true, index: true },
     eventTypeId: { type: Schema.Types.ObjectId, ref: "CalendarEventType", required: true },
     title: { type: String, required: true, trim: true },
@@ -33,6 +36,7 @@ const calendarEventSchema = new Schema<CalendarEventDocument>(
 );
 
 calendarEventSchema.index({ locationId: 1, start: 1 });
+calendarEventSchema.index({ googleCalendarId: 1, googleEventId: 1 }, { unique: true });
 
 export const CalendarEventModel = mongoose.model<CalendarEventDocument>(
   "CalendarEvent",

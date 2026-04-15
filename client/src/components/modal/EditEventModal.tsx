@@ -376,6 +376,8 @@ export const EditEventModal = ({
 
   if (!isOpen || !event) return null;
 
+  const initialLoading = typesLoading;
+
   return createPortal(
     <>
       <dialog
@@ -410,19 +412,28 @@ export const EditEventModal = ({
               onSubmit={handleFormSubmit}
               className="flex flex-col gap-7 px-6 py-6 border-x border-gray-200 overflow-y-auto"
             >
-              <p className="text-xs text-secondary leading-relaxed">
-                {effectiveTz ? (
-                  <>
-                    Date and time use this event&apos;s timezone:{' '}
-                    <span className="font-medium text-primary">{effectiveTz}</span>
-                  </>
-                ) : (
-                  <>
-                    No timezone on this event; times use your browser&apos;s local timezone until saved with a location
-                    timezone.
-                  </>
-                )}
-              </p>
+              {initialLoading ? (
+                <div className="flex-1 min-h-[320px] grid place-items-center">
+                  <div className="flex flex-col items-center gap-3 text-primary">
+                    <Spinner size="xl" className="text-button-primary" />
+                    <p className="text-sm text-secondary">Loading…</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-secondary leading-relaxed">
+                    {effectiveTz ? (
+                      <>
+                        Date and time use this event&apos;s timezone:{' '}
+                        <span className="font-medium text-primary">{effectiveTz}</span>
+                      </>
+                    ) : (
+                      <>
+                        No timezone on this event; times use your browser&apos;s local timezone until saved with a location
+                        timezone.
+                      </>
+                    )}
+                  </p>
               <div>
                 <label htmlFor="edit-event-title" className="block text-xs font-semibold text-primary mb-2">
                   Title
@@ -546,6 +557,8 @@ export const EditEventModal = ({
                   Update
                 </button>
               </div>
+                </>
+              )}
             </form>
           </div>
         </div>

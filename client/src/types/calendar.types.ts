@@ -22,6 +22,7 @@ export interface CalendarEventTypeDto {
 
 export interface CalendarEventDto {
   _id: string;
+  googleCalendarId: string;
   googleEventId: string;
   locationId: string;
   eventTypeId: string;
@@ -48,4 +49,13 @@ export interface CalendarNotificationSettingsDto {
   _id?: string;
   reminderPolicy: CalendarReminderPolicyDto;
   roleEventBindings: CalendarRoleEventBindingDto[];
+}
+
+export interface IntegratedGoogleCalendarDto {
+  _id: string;
+  name: string;
+  googleCalendarId: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
 }

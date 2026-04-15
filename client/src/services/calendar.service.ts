@@ -7,6 +7,7 @@ import type {
   CalendarNotificationSettingsDto,
   CalendarRoleEventBindingDto,
   CalendarReminderPolicyDto,
+  IntegratedGoogleCalendarDto,
 } from "../types/calendar.types";
 
 function toIso(d: Date): string {
@@ -51,6 +52,7 @@ export const calendarService = {
     end: Date;
     eventTypeId: string;
     locationId: string;
+    googleCalendarId: string;
   }): Promise<CalendarEventDto> {
     const res = await api.post<ApiResponse<{ event: CalendarEventDto }>>(
       API_ENDPOINTS.CALENDAR.EVENTS,
@@ -61,6 +63,7 @@ export const calendarService = {
         end: toIso(payload.end),
         eventTypeId: payload.eventTypeId,
         locationId: payload.locationId,
+        googleCalendarId: payload.googleCalendarId,
       },
     );
     if (!res.data.success || !res.data.data?.event) {
@@ -190,5 +193,70 @@ export const calendarService = {
       throw new Error(res.data.message ?? "Failed to save notification settings.");
     }
     return res.data.data.settings;
+  },
+
+  async listGoogleCalendarIntegrations(): Promise<IntegratedGoogleCalendarDto[]> {
+    const res = await api.get<ApiResponse<{ integrations: IntegratedGoogleCalendarDto[] }>>(
+      API_ENDPOINTS.CALENDAR.INTEGRATIONS_GOOGLE_CALENDARS,
+    );
+    if (!res.data.success || !res.data.data?.integrations) {
+      throw new Error(res.data.message ?? "Failed to load Google calendars.");
+    }
+    return res.data.data.integrations;
+  },
+
+  async getGoogleCalendarIntegrationsInfo(): Promise<{
+    serviceAccountEmail: string | null;
+    impersonatedUser: string | null;
+  }> {
+    const res = await api.get<
+      ApiResponse<{ serviceAccountEmail: string | null; impersonatedUser: string | null }>
+    >(API_ENDPOINTS.CALENDAR.INTEGRATIONS_GOOGLE_CALENDARS_INFO);
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.message ?? "Failed to load Google Calendar integration info.");
+    }
+    return {
+      serviceAccountEmail: res.data.data.serviceAccountEmail ?? null,
+      impersonatedUser: res.data.data.impersonatedUser ?? null,
+    };
+  },
+
+  async createGoogleCalendarIntegration(body: {
+    name: string;
+    googleCalendarId: string;
+    description?: string;
+  }): Promise<IntegratedGoogleCalendarDto> {
+    const res = await api.post<ApiResponse<{ integration: IntegratedGoogleCalendarDto }>>(
+      API_ENDPOINTS.CALENDAR.INTEGRATIONS_GOOGLE_CALENDARS,
+      body,
+    );
+    if (!res.data.success || !res.data.data?.integration) {
+      throw new Error(res.data.message ?? "Failed to add Google calendar.");
+    }
+    return res.data.data.integration;
+  },
+
+  async deleteGoogleCalendarIntegration(id: string): Promise<{ deletedEventCount: number }> {
+    const res = await api.delete<
+      ApiResponse<{ deletedEventCount: number }> & { message?: string }
+    >(`${API_ENDPOINTS.CALENDAR.INTEGRATIONS_GOOGLE_CALENDARS}/${id}`);
+    if (!res.data.success || res.data.data == null) {
+      throw new Error(res.data.message ?? "Failed to remove Google calendar.");
+    }
+    return { deletedEventCount: res.data.data.deletedEventCount ?? 0 };
+  },
+
+  async updateGoogleCalendarIntegration(
+    id: string,
+    body: { name: string; description?: string },
+  ): Promise<IntegratedGoogleCalendarDto> {
+    const res = await api.patch<ApiResponse<{ integration: IntegratedGoogleCalendarDto }>>(
+      `${API_ENDPOINTS.CALENDAR.INTEGRATIONS_GOOGLE_CALENDARS}/${id}`,
+      body,
+    );
+    if (!res.data.success || !res.data.data?.integration) {
+      throw new Error(res.data.message ?? "Failed to update Google calendar.");
+    }
+    return res.data.data.integration;
   },
 };

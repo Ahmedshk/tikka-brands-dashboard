@@ -60,14 +60,6 @@ function loadServiceAccountCredentials(): { client_email: string; private_key: s
   );
 }
 
-function getCalendarId(): string {
-  const id = process.env.GOOGLE_CALENDAR_ID?.trim();
-  if (!id) {
-    throw new AppError("GOOGLE_CALENDAR_ID is not set.", 503);
-  }
-  return id;
-}
-
 function getJwtClient(): JWT {
   const { client_email, private_key } = loadServiceAccountCredentials();
   const subject = process.env.GOOGLE_CALENDAR_IMPERSONATED_USER?.trim();
@@ -90,14 +82,32 @@ function getCalendarApi(): calendar_v3.Calendar {
   return google.calendar({ version: "v3", auth });
 }
 
-export function isGoogleCalendarConfigured(): boolean {
+/** Service account (or credentials file) is present and loadable. */
+export function hasGoogleCalendarCredentials(): boolean {
   try {
-    if (!process.env.GOOGLE_CALENDAR_ID?.trim()) return false;
     if (process.env.GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON?.trim()) return true;
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()) return true;
     return false;
   } catch {
     return false;
+  }
+}
+
+/**
+ * @deprecated Prefer hasGoogleCalendarCredentials(); calendar targets now live in DB.
+ * True when credentials exist (no longer requires GOOGLE_CALENDAR_ID).
+ */
+export function isGoogleCalendarConfigured(): boolean {
+  return hasGoogleCalendarCredentials();
+}
+
+/** Returns configured service account email (safe to display), if available. */
+export function getGoogleCalendarServiceAccountEmail(): string | null {
+  try {
+    const { client_email } = loadServiceAccountCredentials();
+    return client_email?.trim() ? client_email.trim() : null;
+  } catch {
+    return null;
   }
 }
 
@@ -111,9 +121,11 @@ export interface GoogleCalendarInsertInput {
   eventTypeId: string;
 }
 
-export async function insertGoogleEvent(input: GoogleCalendarInsertInput): Promise<string> {
+export async function insertGoogleEvent(
+  calendarId: string,
+  input: GoogleCalendarInsertInput,
+): Promise<string> {
   const calendar = getCalendarApi();
-  const calendarId = getCalendarId();
   const res = await calendar.events.insert({
     calendarId,
     requestBody: {
@@ -136,11 +148,11 @@ export async function insertGoogleEvent(input: GoogleCalendarInsertInput): Promi
 }
 
 export async function patchGoogleEvent(
+  calendarId: string,
   googleEventId: string,
   input: Partial<GoogleCalendarInsertInput>,
 ): Promise<void> {
   const calendar = getCalendarApi();
-  const calendarId = getCalendarId();
   const body: calendar_v3.Schema$Event = {};
   if (input.title != null) body.summary = input.title;
   if (input.description != null) body.description = input.description;
@@ -150,10 +162,7 @@ export async function patchGoogleEvent(
   if (input.end != null && input.timeZone != null) {
     body.end = { dateTime: input.end.toISOString(), timeZone: input.timeZone };
   }
-  if (
-    input.locationId != null &&
-    input.eventTypeId != null
-  ) {
+  if (input.locationId != null && input.eventTypeId != null) {
     body.extendedProperties = {
       private: {
         locationId: input.locationId,
@@ -169,9 +178,8 @@ export async function patchGoogleEvent(
   });
 }
 
-export async function deleteGoogleEvent(googleEventId: string): Promise<void> {
+export async function deleteGoogleEvent(calendarId: string, googleEventId: string): Promise<void> {
   const calendar = getCalendarApi();
-  const calendarId = getCalendarId();
   try {
     await calendar.events.delete({ calendarId, eventId: googleEventId });
   } catch (err: unknown) {
@@ -182,6 +190,7 @@ export async function deleteGoogleEvent(googleEventId: string): Promise<void> {
 }
 
 export interface ParsedGoogleEvent {
+  googleCalendarId: string;
   googleEventId: string;
   title: string;
   description: string;
@@ -192,7 +201,10 @@ export interface ParsedGoogleEvent {
   eventTypeId: string | null;
 }
 
-function parseGoogleEventItem(ev: calendar_v3.Schema$Event): ParsedGoogleEvent | null {
+function parseGoogleEventItem(
+  ev: calendar_v3.Schema$Event,
+  googleCalendarId: string,
+): ParsedGoogleEvent | null {
   const googleEventId = ev.id;
   if (!googleEventId) return null;
   const priv = ev.extendedProperties?.private as Record<string, string> | undefined;
@@ -206,6 +218,7 @@ function parseGoogleEventItem(ev: calendar_v3.Schema$Event): ParsedGoogleEvent |
   const title = ev.summary ?? "(No title)";
   const description = ev.description ?? "";
   return {
+    googleCalendarId,
     googleEventId,
     title,
     description,
@@ -218,12 +231,12 @@ function parseGoogleEventItem(ev: calendar_v3.Schema$Event): ParsedGoogleEvent |
 }
 
 export async function listGoogleEventsInRange(
+  calendarId: string,
   timeMin: Date,
   timeMax: Date,
 ): Promise<ParsedGoogleEvent[]> {
-  if (!isGoogleCalendarConfigured()) return [];
+  if (!hasGoogleCalendarCredentials()) return [];
   const calendar = getCalendarApi();
-  const calendarId = getCalendarId();
   const out: ParsedGoogleEvent[] = [];
   let pageToken: string | undefined;
   do {
@@ -239,10 +252,37 @@ export async function listGoogleEventsInRange(
     const res = await calendar.events.list(listParams);
     const items = res.data.items ?? [];
     for (const ev of items) {
-      const parsed = parseGoogleEventItem(ev);
+      const parsed = parseGoogleEventItem(ev, calendarId);
       if (parsed?.locationId && parsed.eventTypeId) out.push(parsed);
     }
     pageToken = res.data.nextPageToken ?? undefined;
   } while (pageToken);
   return out;
+}
+
+/** Throws AppError 400 if calendar is missing or not accessible with current credentials. */
+export async function assertGoogleCalendarAccessible(calendarId: string): Promise<void> {
+  if (!hasGoogleCalendarCredentials()) {
+    throw new AppError(
+      "Google Calendar is not configured. Set GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS.",
+      503,
+    );
+  }
+  const trimmed = calendarId.trim();
+  if (!trimmed) throw new AppError("Google Calendar id is required.", 400);
+  const calendar = getCalendarApi();
+  try {
+    await calendar.calendars.get({ calendarId: trimmed });
+  } catch (err: unknown) {
+    const status = (err as { code?: number })?.code;
+    const msg = (err as { message?: string })?.message ?? "Unknown error";
+    if (status === 404) {
+      throw new AppError(
+        "Google Calendar was not found or the service account cannot access it. Share the calendar with the service account email or use domain-wide delegation.",
+        400,
+      );
+    }
+    logger.warn("calendars.get failed", { status, msg });
+    throw new AppError(`Could not verify Google Calendar access: ${msg}`, 400);
+  }
 }

@@ -16,16 +16,18 @@ import { ConfirmDialog } from "../../components/modal/ConfirmDialog";
 import { calendarService } from "../../services/calendar.service";
 import api from "../../services/api.service";
 import { API_ENDPOINTS } from "../../utils/constants";
+import { format } from "date-fns";
 import {
   DEFAULT_CALENDAR_REMINDER_POLICY,
   type CalendarEventTypeDto,
   type CalendarNotificationSettingsDto,
   type CalendarRoleEventBindingDto,
+  type IntegratedGoogleCalendarDto,
 } from "../../types/calendar.types";
 import AdminAndSettingsIcon from "@assets/icons/admin_and_settings.svg?react";
 import EditIcon from "@assets/icons/edit.svg?react";
 import DeleteIcon from "@assets/icons/delete.svg?react";
-import { FiPlus } from "react-icons/fi";
+import { FiInfo, FiPlus } from "react-icons/fi";
 
 const fieldInputClass =
   "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary";
@@ -135,6 +137,22 @@ export const EventsNotificationsSettings = () => {
   const [eventTypePendingDelete, setEventTypePendingDelete] = useState<CalendarEventTypeDto | null>(null);
   const [deletingEventType, setDeletingEventType] = useState(false);
 
+  const [googleCalIntegrations, setGoogleCalIntegrations] = useState<IntegratedGoogleCalendarDto[]>([]);
+  const [addCalModalOpen, setAddCalModalOpen] = useState(false);
+  const [newCalName, setNewCalName] = useState("");
+  const [newCalGoogleId, setNewCalGoogleId] = useState("");
+  const [newCalDescription, setNewCalDescription] = useState("");
+  const [savingCalIntegration, setSavingCalIntegration] = useState(false);
+  const [editingIntegration, setEditingIntegration] = useState<IntegratedGoogleCalendarDto | null>(null);
+  const [googleCalInfo, setGoogleCalInfo] = useState<{
+    serviceAccountEmail: string | null;
+    impersonatedUser: string | null;
+  }>({ serviceAccountEmail: null, impersonatedUser: null });
+  const [integrationPendingDelete, setIntegrationPendingDelete] = useState<IntegratedGoogleCalendarDto | null>(
+    null,
+  );
+  const [deletingIntegration, setDeletingIntegration] = useState(false);
+
   const [roleRuleModalOpen, setRoleRuleModalOpen] = useState(false);
   const [roleRuleModalEventTypeId, setRoleRuleModalEventTypeId] = useState("");
   const [roleRuleSelectedRoleIds, setRoleRuleSelectedRoleIds] = useState<Set<string>>(() => new Set());
@@ -203,15 +221,17 @@ export const EventsNotificationsSettings = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [typesRes, rolesRes, settings] = await Promise.all([
+      const [typesRes, rolesRes, settings, integrations] = await Promise.all([
         calendarService.listEventTypesAll(),
         api.get(API_ENDPOINTS.ROLES),
         calendarService.getNotificationSettings(),
+        calendarService.listGoogleCalendarIntegrations().catch(() => [] as IntegratedGoogleCalendarDto[]),
       ]);
       setEventTypes(typesRes);
       const rolesBody = rolesRes.data as { success?: boolean; data?: { roles: RoleOption[] } };
       const roleList = rolesBody.data?.roles ?? [];
       setRoles(roleList);
+      setGoogleCalIntegrations(integrations);
       applySettings(settings);
     } catch {
       toast.error("Failed to load events & notifications settings.");
@@ -219,6 +239,14 @@ export const EventsNotificationsSettings = () => {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!addCalModalOpen) return;
+    calendarService
+      .getGoogleCalendarIntegrationsInfo()
+      .then((info) => setGoogleCalInfo(info))
+      .catch(() => setGoogleCalInfo({ serviceAccountEmail: null, impersonatedUser: null }));
+  }, [addCalModalOpen]);
 
   function applySettings(settings: CalendarNotificationSettingsDto) {
     setBindings(bindingsFromSettings(settings.roleEventBindings ?? []));
@@ -446,6 +474,69 @@ export const EventsNotificationsSettings = () => {
     }
   };
 
+  const submitAddCalIntegration = async () => {
+    if (!newCalName.trim()) {
+      toast.error("Calendar name is required.");
+      return;
+    }
+    if (!newCalGoogleId.trim()) {
+      toast.error("Google Calendar ID is required.");
+      return;
+    }
+    setSavingCalIntegration(true);
+    try {
+      if (editingIntegration) {
+        const updated = await calendarService.updateGoogleCalendarIntegration(editingIntegration._id, {
+          name: newCalName.trim(),
+          ...(newCalDescription.trim() ? { description: newCalDescription.trim() } : { description: "" }),
+        });
+        setGoogleCalIntegrations((prev) =>
+          prev.map((x) => (x._id === updated._id ? updated : x)),
+        );
+        setAddCalModalOpen(false);
+        setEditingIntegration(null);
+        toast.success("Google Calendar updated.");
+      } else {
+        const created = await calendarService.createGoogleCalendarIntegration({
+          name: newCalName.trim(),
+          googleCalendarId: newCalGoogleId.trim(),
+          ...(newCalDescription.trim() ? { description: newCalDescription.trim() } : {}),
+        });
+        setGoogleCalIntegrations((prev) =>
+          [...prev, created].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+        );
+        setAddCalModalOpen(false);
+        toast.success("Google Calendar integrated.");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to add calendar.";
+      toast.error(msg);
+    } finally {
+      setSavingCalIntegration(false);
+    }
+  };
+
+  const confirmDeleteIntegration = async () => {
+    const row = integrationPendingDelete;
+    if (!row) return;
+    setDeletingIntegration(true);
+    try {
+      const { deletedEventCount } = await calendarService.deleteGoogleCalendarIntegration(row._id);
+      setGoogleCalIntegrations((prev) => prev.filter((x) => x._id !== row._id));
+      setIntegrationPendingDelete(null);
+      toast.success(
+        deletedEventCount > 0
+          ? `Integration removed and ${deletedEventCount} dashboard event(s) deleted.`
+          : "Integration removed.",
+      );
+    } catch {
+      toast.error("Failed to remove integration.");
+      throw new Error("delete failed");
+    } finally {
+      setDeletingIntegration(false);
+    }
+  };
+
   return (
     <Layout>
       <div className="p-6">
@@ -469,6 +560,104 @@ export const EventsNotificationsSettings = () => {
               </div>
             ) : (
               <div className="space-y-8">
+                <div>
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+                    <div>
+                      <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-primary">Google calendars</h3>
+                      <p className="text-xs text-tertiary mt-1 max-w-2xl">
+                        Integrate calendars from the same Google account (service account / delegation). The calendar
+                        events page shows events from all integrated calendars together. Use each calendar&apos;s ID
+                        from Google Calendar settings.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewCalName("");
+                        setNewCalGoogleId("");
+                        setNewCalDescription("");
+                        setEditingIntegration(null);
+                        setAddCalModalOpen(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-button-primary text-white text-xs md:text-sm rounded-lg hover:opacity-90 transition-opacity cursor-pointer shrink-0 self-start"
+                    >
+                      <FiPlus className="w-3.5 h-3.5" aria-hidden />
+                      Add calendar
+                    </button>
+                  </div>
+                  <div className={eventTypesTableCardClass}>
+                    <div className="overflow-x-auto overflow-y-auto">
+                      <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
+                        <thead>
+                          <tr className="bg-primary text-white">
+                            <th className={eventTypesThFirstColClass}>Calendar</th>
+                            <th className={eventTypesThFirstColClass}>Description</th>
+                            <th className={eventTypesThActionsClass}>Integrated</th>
+                            <th className={`${eventTypesThFirstColClass} min-w-[140px]`}>Calendar ID</th>
+                            <th className={eventTypesThActionsClass}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-primary">
+                          {googleCalIntegrations.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="py-12 px-5 text-center text-secondary text-sm">
+                                No calendars integrated yet. Add one to sync and create events.
+                              </td>
+                            </tr>
+                          ) : (
+                            googleCalIntegrations.map((row, index) => (
+                              <tr key={row._id} className={index % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
+                                <td className={eventTypesTdFirstColClass}>
+                                  <span className="font-medium text-primary">{row.name}</span>
+                                </td>
+                                <td className={eventTypesTdFirstColClass}>
+                                  <span className="font-medium text-primary">
+                                    {row.description?.trim() || "—"}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-2 text-center whitespace-nowrap">
+                                  {format(new Date(row.createdAt), "PP")}
+                                </td>
+                                <td className={`${eventTypesTdFirstColClass} font-mono text-[10px] md:text-xs break-all`}>
+                                  {row.googleCalendarId}
+                                </td>
+                                <td className="py-3 px-2 text-center">
+                                  <div className="inline-flex items-center justify-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingIntegration(row);
+                                        setNewCalName(row.name);
+                                        setNewCalGoogleId(row.googleCalendarId);
+                                        setNewCalDescription(row.description ?? "");
+                                        setAddCalModalOpen(true);
+                                      }}
+                                      className="p-1 text-primary hover:bg-gray-200 rounded transition-colors cursor-pointer inline-flex"
+                                      aria-label={`Edit calendar ${row.name}`}
+                                      title="Edit"
+                                    >
+                                      <EditIcon className="w-4 h-4" aria-hidden />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setIntegrationPendingDelete(row)}
+                                      className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer inline-flex"
+                                      aria-label={`Remove calendar ${row.googleCalendarId}`}
+                                      title="Remove integration"
+                                    >
+                                      <DeleteIcon className="w-4 h-4" aria-hidden />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
                     <div>
@@ -1192,6 +1381,144 @@ export const EventsNotificationsSettings = () => {
           </div>
         </div>
       )}
+
+      {addCalModalOpen && (
+        <div
+          className="fixed inset-0 z-[400] grid place-items-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setAddCalModalOpen(false);
+          }}
+        >
+          <div className="relative w-full max-w-md min-w-0">
+            <button
+              type="button"
+              onClick={() => setAddCalModalOpen(false)}
+              className="absolute -top-2 -right-2 md:-top-4 md:-right-4 z-[401] flex h-5 w-5 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-100 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+              aria-label="Close"
+              title="Close"
+            >
+              <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
+            </button>
+            <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+              <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
+                <h2 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+                  {editingIntegration ? "Edit Google calendar" : "Add Google calendar"}
+                </h2>
+              </div>
+              <div className="flex-1 min-h-0 px-5 py-4 overflow-y-auto border-x border-gray-200 space-y-4">
+                <div>
+                  <label htmlFor="new-cal-name" className="block text-xs md:text-sm font-medium text-secondary mb-1">
+                    Calendar name
+                  </label>
+                  <input
+                    id="new-cal-name"
+                    type="text"
+                    value={newCalName}
+                    onChange={(e) => setNewCalName(e.target.value)}
+                    className={fieldInputClass}
+                    placeholder="e.g. Catering"
+                    maxLength={200}
+                    autoComplete="off"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <label
+                      htmlFor="new-cal-google-id"
+                      className="block text-xs md:text-sm font-medium text-secondary"
+                    >
+                      Google Calendar ID
+                    </label>
+                    <span
+                      className="inline-flex items-center justify-center text-tertiary cursor-help"
+                      title={
+                        [
+                          "If you see “not found / cannot access”, share the calendar with the service account email used by this server (or set up domain-wide delegation).",
+                          googleCalInfo.serviceAccountEmail
+                            ? `Service account email: ${googleCalInfo.serviceAccountEmail}`
+                            : "Service account email: (not available)",
+                          googleCalInfo.impersonatedUser
+                            ? `Impersonated user (delegation): ${googleCalInfo.impersonatedUser}`
+                            : "",
+                          "Google Calendar → Settings for my calendars → (calendar) → Share with specific people → Add the service account email with permission “Make changes to events”.",
+                        ]
+                          .filter(Boolean)
+                          .join("\n")
+                      }
+                      aria-label="How to grant calendar access"
+                    >
+                      <FiInfo className="w-4 h-4" aria-hidden />
+                    </span>
+                  </div>
+                  <input
+                    id="new-cal-google-id"
+                    type="text"
+                    value={newCalGoogleId}
+                    onChange={(e) => setNewCalGoogleId(e.target.value)}
+                    className={fieldInputClass}
+                    placeholder="e.g. group.calendar.google.com/calendar-id or email"
+                    autoComplete="off"
+                    disabled={editingIntegration != null}
+                  />
+                  <p className="text-xs text-tertiary mt-1">
+                    From Google Calendar: Settings for my calendars → Integrate calendar → Calendar ID.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="new-cal-desc" className="block text-xs md:text-sm font-medium text-secondary mb-1">
+                    Description (optional)
+                  </label>
+                  <textarea
+                    id="new-cal-desc"
+                    value={newCalDescription}
+                    onChange={(e) => setNewCalDescription(e.target.value)}
+                    rows={3}
+                    maxLength={500}
+                    className={`${fieldInputClass} resize-y min-h-[72px]`}
+                    placeholder="e.g. Catering schedule"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setAddCalModalOpen(false)}
+                    disabled={savingCalIntegration}
+                    className="px-4 py-2 rounded-lg border border-gray-300 text-primary text-sm font-medium hover:bg-gray-50 cursor-pointer disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void submitAddCalIntegration()}
+                    disabled={savingCalIntegration}
+                    className="px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                  >
+                    {savingCalIntegration ? "Saving…" : editingIntegration ? "Save changes" : "Add calendar"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        isOpen={integrationPendingDelete != null}
+        onClose={() => setIntegrationPendingDelete(null)}
+        title="Remove Google calendar"
+        message={
+          integrationPendingDelete
+            ? `Remove “${
+                integrationPendingDelete.description?.trim() || integrationPendingDelete.googleCalendarId
+              }”? All dashboard events linked to this calendar will be permanently deleted from the database, scheduled notifications for those events will be cancelled, and those events will be removed from Google Calendar. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        variant="danger"
+        isLoading={deletingIntegration}
+        onConfirm={confirmDeleteIntegration}
+      />
 
       <ConfirmDialog
         isOpen={eventTypePendingDelete != null}

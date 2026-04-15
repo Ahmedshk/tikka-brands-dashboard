@@ -53,6 +53,7 @@ export interface ICalendarEventType {
 
 export interface ICalendarEvent {
   _id?: string;
+  googleCalendarId: string;
   googleEventId: string;
   locationId: Types.ObjectId | string;
   eventTypeId: Types.ObjectId | string;

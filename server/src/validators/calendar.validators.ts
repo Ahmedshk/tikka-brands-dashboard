@@ -16,6 +16,7 @@ export const createCalendarEventBodySchema = z.object({
     end: z.coerce.date(),
     eventTypeId: z.string().min(1),
     locationId: z.string().min(1),
+    googleCalendarId: z.string().min(1).max(1024),
   }),
 });
 
@@ -36,6 +37,30 @@ export const syncCalendarBodySchema = z.object({
   body: z.object({
     timeMin: z.coerce.date(),
     timeMax: z.coerce.date(),
+  }),
+});
+
+export const createIntegratedGoogleCalendarBodySchema = z.object({
+  body: z.object({
+    name: z.string().min(1).max(200),
+    googleCalendarId: z.string().min(1).max(1024),
+    description: z.string().max(500).optional(),
+  }),
+});
+
+export const updateIntegratedGoogleCalendarSchema = z.object({
+  params: z.object({
+    id: z.string().min(1),
+  }),
+  body: z.object({
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(500).optional(),
+  }),
+});
+
+export const deleteIntegratedGoogleCalendarParamsSchema = z.object({
+  params: z.object({
+    id: z.string().min(1),
   }),
 });
 

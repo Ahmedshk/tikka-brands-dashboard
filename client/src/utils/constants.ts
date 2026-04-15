@@ -55,6 +55,8 @@ export const API_ENDPOINTS = {
     EVENT_TYPES: "/calendar/event-types",
     EVENT_TYPES_ALL: "/calendar/event-types/all",
     NOTIFICATION_SETTINGS: "/calendar/notification-settings",
+    INTEGRATIONS_GOOGLE_CALENDARS: "/calendar/integrations/google-calendars",
+    INTEGRATIONS_GOOGLE_CALENDARS_INFO: "/calendar/integrations/google-calendars/info",
   },
   ROLES: "/roles",
   USERS: "/users",

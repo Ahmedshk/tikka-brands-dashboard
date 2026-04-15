@@ -11,6 +11,7 @@ import { initializeAgenda, shutdownAgenda } from './config/agenda.js';
 import { RoleService } from './services/role.service.js';
 import { ReviewCycleService } from './services/reviewCycle.service.js';
 import { logger } from './utils/logger.util.js';
+import { bootstrapGoogleCalendarIntegrations } from './utils/googleCalendarBootstrap.util.js';
 
 // Load environment variables from server directory (so correct .env is used regardless of cwd)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,7 @@ const startServer = async (): Promise<void> => {
   try {
     // Connect to database
     await connectDatabase();
+    await bootstrapGoogleCalendarIntegrations();
     initializeCloudinary();
     initializeNodemailer();
     // Ensure Owner (system) role exists

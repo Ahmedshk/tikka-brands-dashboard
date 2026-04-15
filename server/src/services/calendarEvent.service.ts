@@ -4,13 +4,14 @@ import { LocationModel } from "../models/location.model.js";
 import { AppError } from "../utils/errors.util.js";
 import {
   deleteGoogleEvent,
+  hasGoogleCalendarCredentials,
   insertGoogleEvent,
-  isGoogleCalendarConfigured,
   listGoogleEventsInRange,
   patchGoogleEvent,
   type GoogleCalendarInsertInput,
   type ParsedGoogleEvent,
 } from "./googleCalendar.service.js";
+import { IntegratedGoogleCalendarService } from "./integratedGoogleCalendar.service.js";
 import { CalendarEventTypeService } from "./calendarEventType.service.js";
 import type { ICalendarEvent } from "../types/calendar.types.js";
 import {
@@ -44,11 +45,13 @@ export type CreateCalendarEventInput = {
   eventTypeId: string;
   locationId: string;
   createdBy: string;
+  googleCalendarId: string;
   description?: string;
 };
 
 export class CalendarEventService {
   private readonly typeService = new CalendarEventTypeService();
+  private readonly integrationService = new IntegratedGoogleCalendarService();
 
   async listForLocation(
     locationId: string,
@@ -64,6 +67,7 @@ export class CalendarEventService {
     return rows.map((r) => {
       const base: ICalendarEvent = {
         _id: r._id.toString(),
+        googleCalendarId: r.googleCalendarId,
         googleEventId: r.googleEventId,
         locationId: r.locationId.toString(),
         eventTypeId: r.eventTypeId.toString(),
@@ -82,10 +86,18 @@ export class CalendarEventService {
   }
 
   async create(input: CreateCalendarEventInput): Promise<ICalendarEvent> {
-    if (!isGoogleCalendarConfigured()) {
+    if (!hasGoogleCalendarCredentials()) {
       throw new AppError(
-        "Google Calendar is not configured on the server. Set credentials and GOOGLE_CALENDAR_ID.",
+        "Google Calendar is not configured on the server. Set GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS.",
         503,
+      );
+    }
+    const googleCalendarId = input.googleCalendarId.trim();
+    const integrated = await this.integrationService.isIntegratedGoogleCalendarId(googleCalendarId);
+    if (!integrated) {
+      throw new AppError(
+        "That Google Calendar is not integrated. Add it under Events & Notifications settings.",
+        400,
       );
     }
     const loc = await LocationModel.findById(input.locationId).lean();
@@ -94,7 +106,7 @@ export class CalendarEventService {
     const type = await this.typeService.getById(input.eventTypeId);
     if (!type?.isActive) throw new AppError("Invalid or inactive event type", 400);
 
-    const googleEventId = await insertGoogleEvent({
+    const googleEventId = await insertGoogleEvent(googleCalendarId, {
       title: input.title,
       ...(input.description != null && input.description !== ""
         ? { description: input.description }
@@ -107,6 +119,7 @@ export class CalendarEventService {
     });
 
     const doc = await CalendarEventModel.create({
+      googleCalendarId,
       googleEventId,
       locationId: new mongoose.Types.ObjectId(input.locationId),
       eventTypeId: new mongoose.Types.ObjectId(input.eventTypeId),
@@ -121,6 +134,7 @@ export class CalendarEventService {
 
     const created: ICalendarEvent = {
       _id: doc._id.toString(),
+      googleCalendarId: doc.googleCalendarId,
       googleEventId: doc.googleEventId,
       locationId: doc.locationId.toString(),
       eventTypeId: doc.eventTypeId.toString(),
@@ -159,7 +173,7 @@ export class CalendarEventService {
     if (input.start != null) existing.start = input.start;
     if (input.end != null) existing.end = input.end;
 
-    if (isGoogleCalendarConfigured()) {
+    if (hasGoogleCalendarCredentials()) {
       const patch: Partial<GoogleCalendarInsertInput> = {
         title: existing.title,
         start: existing.start,
@@ -169,7 +183,7 @@ export class CalendarEventService {
         eventTypeId: existing.eventTypeId.toString(),
       };
       if (existing.description) patch.description = existing.description;
-      await patchGoogleEvent(existing.googleEventId, patch);
+      await patchGoogleEvent(existing.googleCalendarId, existing.googleEventId, patch);
     }
 
     existing.lastSyncedAt = new Date();
@@ -177,6 +191,7 @@ export class CalendarEventService {
 
     const updated: ICalendarEvent = {
       _id: existing._id.toString(),
+      googleCalendarId: existing.googleCalendarId,
       googleEventId: existing.googleEventId,
       locationId: existing.locationId.toString(),
       eventTypeId: existing.eventTypeId.toString(),
@@ -195,8 +210,8 @@ export class CalendarEventService {
     const existing = await CalendarEventModel.findById(id);
     if (!existing) throw new AppError("Event not found", 404);
     await cancelJobsForEvent(existing._id.toString());
-    if (isGoogleCalendarConfigured()) {
-      await deleteGoogleEvent(existing.googleEventId);
+    if (hasGoogleCalendarCredentials()) {
+      await deleteGoogleEvent(existing.googleCalendarId, existing.googleEventId);
     }
     await CalendarEventModel.deleteOne({ _id: existing._id });
   }
@@ -211,12 +226,18 @@ export class CalendarEventService {
     const typeOk = await this.typeService.getById(parsed.eventTypeId);
     if (!typeOk) return { rescheduled: false };
 
-    const before = await CalendarEventModel.findOne({ googleEventId: parsed.googleEventId }).lean();
+    const filter = {
+      googleCalendarId: parsed.googleCalendarId,
+      googleEventId: parsed.googleEventId,
+    };
+
+    const before = await CalendarEventModel.findOne(filter).lean();
 
     const after = await CalendarEventModel.findOneAndUpdate(
-      { googleEventId: parsed.googleEventId },
+      filter,
       {
         $set: {
+          googleCalendarId: parsed.googleCalendarId,
           locationId: new mongoose.Types.ObjectId(parsed.locationId),
           eventTypeId: new mongoose.Types.ObjectId(parsed.eventTypeId),
           title: parsed.title,
@@ -264,11 +285,18 @@ export class CalendarEventService {
     timeMin: Date,
     timeMax: Date,
   ): Promise<{ upserted: number; rescheduled: number }> {
-    if (!isGoogleCalendarConfigured()) return { upserted: 0, rescheduled: 0 };
-    const list = await listGoogleEventsInRange(timeMin, timeMax);
+    if (!hasGoogleCalendarCredentials()) return { upserted: 0, rescheduled: 0 };
+    const calendarIds = await this.integrationService.listGoogleCalendarIds();
+    if (calendarIds.length === 0) return { upserted: 0, rescheduled: 0 };
+
+    const lists = await Promise.all(
+      calendarIds.map((cid) => listGoogleEventsInRange(cid, timeMin, timeMax)),
+    );
+    const merged = lists.flat();
+
     let rescheduled = 0;
     let n = 0;
-    for (const ev of list) {
+    for (const ev of merged) {
       const r = await this.upsertFromParsed(ev);
       if (r.rescheduled) rescheduled += 1;
       n += 1;
@@ -281,6 +309,7 @@ export class CalendarEventService {
     if (!r) return null;
     const ev: ICalendarEvent = {
       _id: r._id.toString(),
+      googleCalendarId: r.googleCalendarId,
       googleEventId: r.googleEventId,
       locationId: r.locationId.toString(),
       eventTypeId: r.eventTypeId.toString(),
@@ -293,5 +322,24 @@ export class CalendarEventService {
     if (r.createdBy) ev.createdBy = r.createdBy.toString();
     if (r.lastSyncedAt) ev.lastSyncedAt = r.lastSyncedAt;
     return ev;
+  }
+
+  /**
+   * Remove all dashboard events (and notification jobs) for a given integrated Google calendar id.
+   * Optionally delete remote Google events when credentials are configured.
+   */
+  async deleteAllForGoogleCalendarId(googleCalendarId: string): Promise<{ deletedCount: number }> {
+    const trimmed = googleCalendarId.trim();
+    const events = await CalendarEventModel.find({ googleCalendarId: trimmed }).lean();
+    let deletedCount = 0;
+    for (const ev of events) {
+      await cancelJobsForEvent(ev._id.toString());
+      if (hasGoogleCalendarCredentials()) {
+        await deleteGoogleEvent(trimmed, ev.googleEventId);
+      }
+      await CalendarEventModel.deleteOne({ _id: ev._id });
+      deletedCount += 1;
+    }
+    return { deletedCount };
   }
 }

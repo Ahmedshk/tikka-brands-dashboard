@@ -3,11 +3,11 @@ import { createPortal } from 'react-dom';
 import { addDays, format, isValid, parse } from 'date-fns';
 import toast from 'react-hot-toast';
 import { AnalogDatePickerField } from '../common/AnalogDatePickerField';
-import { Dropdown } from '../common/Dropdown';
+import { Dropdown, type DropdownOption } from '../common/Dropdown';
 import { QuarterHourTimeSelect } from '../common/QuarterHourTimeSelect';
 import { Spinner } from '../common/Spinner';
 import { calendarService } from '../../services/calendar.service';
-import type { CalendarEventTypeDto } from '../../types/calendar.types';
+import type { CalendarEventTypeDto, IntegratedGoogleCalendarDto } from '../../types/calendar.types';
 import {
   combineDateTimeInTimezone,
   defaultEventRange,
@@ -47,6 +47,9 @@ export const AddEventModal = ({
   const [startTime, setStartTime] = useState('');
   const [endDate, setEndDate] = useState('');
   const [endTime, setEndTime] = useState('');
+  const [integrations, setIntegrations] = useState<IntegratedGoogleCalendarDto[]>([]);
+  const [integrationsLoading, setIntegrationsLoading] = useState(false);
+  const [googleCalendarId, setGoogleCalendarId] = useState('');
 
   const setDialogEl = (el: HTMLDialogElement | null) => {
     dialogRef.current = el;
@@ -74,6 +77,7 @@ export const AddEventModal = ({
     setDescription('');
     setEventTypeId('');
     setTypesLoading(true);
+    setIntegrationsLoading(true);
     calendarService
       .listEventTypesActive()
       .then((t) => {
@@ -85,6 +89,18 @@ export const AddEventModal = ({
         setTypes([]);
       })
       .finally(() => setTypesLoading(false));
+    calendarService
+      .listGoogleCalendarIntegrations()
+      .then((list) => {
+        setIntegrations(list);
+        if (list.length >= 1) setGoogleCalendarId(list[0]!.googleCalendarId);
+        else setGoogleCalendarId('');
+      })
+      .catch(() => {
+        setIntegrations([]);
+        setGoogleCalendarId('');
+      })
+      .finally(() => setIntegrationsLoading(false));
   }, [isOpen, locationTimezone]);
 
   useEffect(() => {
@@ -216,6 +232,59 @@ export const AddEventModal = ({
     return 'Select event type';
   }, [typesLoading, types.length]);
 
+  const calendarDropdownOptions = useMemo((): DropdownOption[] => {
+    return integrations.map((c) => ({
+      value: c.googleCalendarId,
+      label: c.name,
+    }));
+  }, [integrations]);
+
+  const calendarPickerBlock = useMemo(() => {
+    if (integrationsLoading) {
+      return (
+        <p className="text-xs text-secondary flex items-center gap-2">
+          <Spinner size="sm" className="text-button-primary shrink-0" />
+          Loading calendars…
+        </p>
+      );
+    }
+    if (integrations.length === 0) {
+      return (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 leading-relaxed">
+          No Google calendars are integrated. Add one on{' '}
+          <span className="font-medium">Events &amp; Notifications</span> settings, then try again.
+        </p>
+      );
+    }
+    if (integrations.length === 1) {
+      const c = integrations[0]!;
+      return (
+        <p className="text-xs text-secondary leading-relaxed">
+          This event will be added to:{' '}
+          <span className="font-medium text-primary break-all">{c.name}</span>
+        </p>
+      );
+    }
+    return (
+      <Dropdown
+        options={calendarDropdownOptions}
+        value={googleCalendarId}
+        onChange={setGoogleCalendarId}
+        placeholder="Select calendar"
+        aria-label="Select Google calendar"
+        aria-labelledby="add-event-calendar-label"
+        className="w-full"
+        allowEmpty={false}
+        disabled={integrations.length === 0}
+      />
+    );
+  }, [
+    integrationsLoading,
+    integrations,
+    calendarDropdownOptions,
+    googleCalendarId,
+  ]);
+
   const selectedEventTypeName = useMemo(
     () => types.find((t) => t._id === eventTypeId)?.name,
     [types, eventTypeId],
@@ -259,6 +328,10 @@ export const AddEventModal = ({
       toast.error('Select an event type.');
       return;
     }
+    if (!googleCalendarId.trim()) {
+      toast.error('Add a Google calendar under Events & Notifications settings first.');
+      return;
+    }
     const start = combineDateTimeInTimezone(startDate, startTime, locationTimezone);
     const end = combineDateTimeInTimezone(endDate, endTime, locationTimezone);
     if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
@@ -287,6 +360,7 @@ export const AddEventModal = ({
         end,
         eventTypeId,
         locationId,
+        googleCalendarId: googleCalendarId.trim(),
       });
       toast.success('Event added.');
       onCreated?.();
@@ -300,6 +374,8 @@ export const AddEventModal = ({
   };
 
   if (!isOpen) return null;
+
+  const initialLoading = typesLoading || integrationsLoading;
 
   return createPortal(
     <dialog
@@ -334,26 +410,35 @@ export const AddEventModal = ({
             onSubmit={handleSubmit}
             className="flex flex-col gap-7 px-6 py-6 border-x border-gray-200 overflow-y-auto"
           >
-            {!locationId && (
-              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                Select a location in the header to add an event.
-              </p>
-            )}
-            {locationId && (
-              <p className="text-xs text-secondary leading-relaxed">
-                {locationTimezone?.trim() ? (
-                  <>
-                    Date and time use this location&apos;s timezone:{' '}
-                    <span className="font-medium text-primary">{locationTimezone.trim()}</span>
-                  </>
-                ) : (
-                  <>
-                    This location has no timezone set. Times use your browser&apos;s local timezone until a timezone is
-                    saved on the location.
-                  </>
+            {initialLoading ? (
+              <div className="flex-1 min-h-[320px] grid place-items-center">
+                <div className="flex flex-col items-center gap-3 text-primary">
+                  <Spinner size="xl" className="text-button-primary" />
+                  <p className="text-sm text-secondary">Loading…</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {!locationId && (
+                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                    Select a location in the header to add an event.
+                  </p>
                 )}
-              </p>
-            )}
+                {locationId && (
+                  <p className="text-xs text-secondary leading-relaxed">
+                    {locationTimezone?.trim() ? (
+                      <>
+                        Date and time use this location&apos;s timezone:{' '}
+                        <span className="font-medium text-primary">{locationTimezone.trim()}</span>
+                      </>
+                    ) : (
+                      <>
+                        This location has no timezone set. Times use your browser&apos;s local timezone until a timezone is
+                        saved on the location.
+                      </>
+                    )}
+                  </p>
+                )}
             <div>
               <label htmlFor="add-event-title" className="block text-xs font-semibold text-primary mb-2">
                 Title
@@ -384,6 +469,12 @@ export const AddEventModal = ({
                 disabled={typesLoading || types.length === 0}
                 triggerLabel={eventTypeTriggerContent}
               />
+            </div>
+            <div>
+              <span id="add-event-calendar-label" className="block text-xs font-semibold text-primary mb-2">
+                Google calendar
+              </span>
+              {calendarPickerBlock}
             </div>
             <fieldset className="border-0 p-0 m-0 min-w-0">
               <legend className="block text-xs font-semibold text-primary mb-3 px-0">Start</legend>
@@ -470,12 +561,21 @@ export const AddEventModal = ({
               </button>
               <button
                 type="submit"
-                disabled={saving || !locationId || typesLoading}
+                disabled={
+                  saving ||
+                  !locationId ||
+                  typesLoading ||
+                  integrationsLoading ||
+                  integrations.length === 0 ||
+                  !googleCalendarId.trim()
+                }
                 className="px-4 py-2 bg-button-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 {saving ? 'Saving…' : 'Save event'}
               </button>
             </div>
+              </>
+            )}
           </form>
         </div>
       </div>
