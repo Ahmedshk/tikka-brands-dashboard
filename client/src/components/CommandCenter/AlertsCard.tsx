@@ -17,6 +17,8 @@ function isAlertNew(createdAt: string | undefined, now: number): boolean {
 
 export interface AlertItem {
   id: string;
+  /** Optional location label shown above the alert (e.g. "Stackers Burger Co. 1 - ..."). */
+  locationLine?: string;
   /** Short alert kind (e.g. "Sales goal") */
   titleLine: string;
   /** Detail text; omitted when empty */
@@ -133,6 +135,11 @@ function CategoryAlertsContent({
                   aria-hidden
                 />
                 <span className="min-w-0">
+                  {alert.locationLine != null && alert.locationLine !== '' ? (
+                    <span className="block text-[10px] md:text-xs text-secondary opacity-90 mb-0.5">
+                      {alert.locationLine}
+                    </span>
+                  ) : null}
                   <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
                     <span className="font-semibold text-primary">{alert.titleLine}</span>
                     {alert.bodyLine != null && alert.bodyLine !== '' ? (

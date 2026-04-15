@@ -937,7 +937,7 @@ async function evaluateInventory(
         roleBindingSubcategory: "low_inventory",
         type: "alert_inventory_low_inventory",
         title: "Low inventory",
-        message: `${loc.storeName ?? "Location"}: ${row.name} is below minimum on hand (${row.onHand} < ${row.minOnHand}).`,
+        message: `${loc.storeName ?? "Location"}: ${row.name} is below minimum on hand (${row.onHand}${row.uomName ? ` ${row.uomName}` : ""} < ${row.minOnHand}${row.uomName ? ` ${row.uomName}` : ""}).`,
         alertKind: "low_inventory",
         severity: "critical",
         fireKey,

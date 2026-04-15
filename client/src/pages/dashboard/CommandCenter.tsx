@@ -345,13 +345,16 @@ export const CommandCenter = () => {
 
   const alertCategories = useMemo((): AlertCategory[] => {
     const cats: AlertCategory[] = [];
+    const includeLocationLine = allLocationsSelected;
     if (canAlertsFinancial) {
       cats.push({
         id: 'financial_labor',
         title: 'Financial & Labor',
         icon: financialAlertsIcon,
         alerts: sortAlertItemsNewestFirst<AlertItem>(
-          alertBuckets?.financial_labor.map(commandCenterAlertRowToAlertItem) ?? [],
+          alertBuckets?.financial_labor.map((r) =>
+            commandCenterAlertRowToAlertItem(r, { includeLocationLine }),
+          ) ?? [],
         ),
       });
     }
@@ -361,12 +364,17 @@ export const CommandCenter = () => {
         title: 'Inventory & Supply Chain',
         icon: inventoryAlertsIcon,
         alerts: sortAlertItemsNewestFirst<AlertItem>(
-          alertBuckets?.inventory_supply_chain.map(commandCenterAlertRowToAlertItem) ?? [],
+          alertBuckets?.inventory_supply_chain.map((r) =>
+            commandCenterAlertRowToAlertItem(r, { includeLocationLine }),
+          ) ?? [],
         ),
       });
     }
     if (canAlertsReputation) {
-      const dynamic = alertBuckets?.reputation_hr.map(commandCenterAlertRowToAlertItem) ?? [];
+      const dynamic =
+        alertBuckets?.reputation_hr.map((r) =>
+          commandCenterAlertRowToAlertItem(r, { includeLocationLine }),
+        ) ?? [];
       const staticPlaceholders: AlertItem[] = [
         {
           id: 'placeholder-review-thresholds',
@@ -389,6 +397,7 @@ export const CommandCenter = () => {
     canAlertsFinancial,
     canAlertsInventory,
     canAlertsReputation,
+    allLocationsSelected,
   ]);
 
   return (
