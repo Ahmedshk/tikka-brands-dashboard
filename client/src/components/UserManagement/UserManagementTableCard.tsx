@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { UserRow, UserStatus } from '../../types/userManagement.types';
+import { isOwnerRole } from '../../utils/userManagementTableHelpers';
 import { Pagination } from '../common/Pagination';
 import EditIcon from '@assets/icons/edit.svg?react';
 import { FaPaperPlane } from 'react-icons/fa';
@@ -100,6 +101,15 @@ function RowActionsMenu({
     ? 'w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5'
     : 'w-4 h-4';
 
+  const owner = isOwnerRole(row.role);
+  const showStartReview =
+    !owner &&
+    row.status !== 'Terminated' &&
+    !row.hasActiveReviewCycle &&
+    Boolean(onStartReviewCycle);
+  const showTerminate = !owner && row.status !== 'Terminated' && Boolean(onTerminate);
+  const showOverflowMenu = showStartReview || showTerminate;
+
   return (
     <div className="flex items-center gap-1 md:gap-2">
       {row.status === 'Pending' && onResendInvite && (
@@ -122,41 +132,43 @@ function RowActionsMenu({
       >
         <EditIcon className={iconSize} />
       </button>
-      <div className="relative" ref={menuRef}>
-        <button
-          type="button"
-          onClick={() => setOpen((prev) => !prev)}
-          className={`${btnSize} text-primary hover:bg-gray-200 rounded transition-colors`}
-          aria-label="More actions"
-          title="More actions"
-          aria-haspopup="true"
-          aria-expanded={open}
-        >
-          <BsThreeDotsVertical className={iconSize} />
-        </button>
-        {open && (
-          <div className="absolute right-0 top-full mt-1 z-50 min-w-[10rem] bg-white rounded-lg shadow-lg border border-gray-200 py-1">
-            {row.status !== 'Terminated' && !row.hasActiveReviewCycle && onStartReviewCycle && (
-              <button
-                type="button"
-                onClick={() => { setOpen(false); onStartReviewCycle(row); }}
-                className="w-full text-left px-4 py-2 text-sm text-primary hover:bg-gray-50 transition-colors"
-              >
-                Start review cycle
-              </button>
-            )}
-            {row.status !== 'Terminated' && onTerminate && (
-              <button
-                type="button"
-                onClick={() => { setOpen(false); onTerminate(row); }}
-                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-              >
-                Terminate
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      {showOverflowMenu && (
+        <div className="relative" ref={menuRef}>
+          <button
+            type="button"
+            onClick={() => setOpen((prev) => !prev)}
+            className={`${btnSize} text-primary hover:bg-gray-200 rounded transition-colors`}
+            aria-label="More actions"
+            title="More actions"
+            aria-haspopup="true"
+            aria-expanded={open}
+          >
+            <BsThreeDotsVertical className={iconSize} />
+          </button>
+          {open && (
+            <div className="absolute right-0 top-full mt-1 z-50 min-w-[10rem] bg-white rounded-lg shadow-lg border border-gray-200 py-1">
+              {showStartReview && (
+                <button
+                  type="button"
+                  onClick={() => { setOpen(false); onStartReviewCycle?.(row); }}
+                  className="w-full text-left px-4 py-2 text-sm text-primary hover:bg-gray-50 transition-colors"
+                >
+                  Start review cycle
+                </button>
+              )}
+              {showTerminate && (
+                <button
+                  type="button"
+                  onClick={() => { setOpen(false); onTerminate?.(row); }}
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  Terminate
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
