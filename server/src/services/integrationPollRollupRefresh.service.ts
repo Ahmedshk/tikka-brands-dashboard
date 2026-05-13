@@ -332,6 +332,19 @@ export async function refreshRollupsAfterManualSyncSingleResource(
   },
 ): Promise<void> {
   const { startTrim, endTrim, locationIds } = options;
+
+  if (
+    resource === "square_catalog" ||
+    resource === "square_team_members" ||
+    resource === "marketman_valid_count_dates"
+  ) {
+    return;
+  }
+
+  if (!startTrim || !endTrim) {
+    return;
+  }
+
   const startIso = new Date(startTrim).toISOString();
   const endIso = new Date(endTrim).toISOString();
 
@@ -373,7 +386,6 @@ export async function refreshRollupsAfterManualSyncSingleResource(
       });
       break;
     case "square_orders":
-      if (!startTrim || !endTrim) return;
       await refreshSquareOrderRollupsForUtcRange({
         startAtIso: startIso,
         endAtIso: endIso,
@@ -381,16 +393,11 @@ export async function refreshRollupsAfterManualSyncSingleResource(
       });
       break;
     case "square_payments":
-      if (!startTrim || !endTrim) return;
       await refreshSquarePaymentRollupsForUtcRange({
         startAtIso: startIso,
         endAtIso: endIso,
         ...locFilter,
       });
-      break;
-    case "square_catalog":
-    case "square_team_members":
-    case "marketman_valid_count_dates":
       break;
     default:
       break;
