@@ -12,31 +12,37 @@ interface LogEntry {
   data?: unknown;
 }
 
-// ANSI color codes
+/** https://no-color.org/ — Azure Log Stream and other non-TTY sinks show raw ESC sequences if we always colorize. */
+const ansiEnabled =
+  Boolean(process.stdout.isTTY) && !('NO_COLOR' in process.env);
+
+const esc = (sequence: string): string => (ansiEnabled ? sequence : '');
+
+// ANSI color codes (empty strings when ansiEnabled is false)
 const colors = {
-  reset: '\x1b[0m',
-  bright: '\x1b[1m',
-  dim: '\x1b[2m',
-  
+  reset: esc('\x1b[0m'),
+  bright: esc('\x1b[1m'),
+  dim: esc('\x1b[2m'),
+
   // Foreground colors
-  black: '\x1b[30m',
-  red: '\x1b[31m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  magenta: '\x1b[35m',
-  cyan: '\x1b[36m',
-  white: '\x1b[37m',
-  
+  black: esc('\x1b[30m'),
+  red: esc('\x1b[31m'),
+  green: esc('\x1b[32m'),
+  yellow: esc('\x1b[33m'),
+  blue: esc('\x1b[34m'),
+  magenta: esc('\x1b[35m'),
+  cyan: esc('\x1b[36m'),
+  white: esc('\x1b[37m'),
+
   // Background colors
-  bgBlack: '\x1b[40m',
-  bgRed: '\x1b[41m',
-  bgGreen: '\x1b[42m',
-  bgYellow: '\x1b[43m',
-  bgBlue: '\x1b[44m',
-  bgMagenta: '\x1b[45m',
-  bgCyan: '\x1b[46m',
-  bgWhite: '\x1b[47m',
+  bgBlack: esc('\x1b[40m'),
+  bgRed: esc('\x1b[41m'),
+  bgGreen: esc('\x1b[42m'),
+  bgYellow: esc('\x1b[43m'),
+  bgBlue: esc('\x1b[44m'),
+  bgMagenta: esc('\x1b[45m'),
+  bgCyan: esc('\x1b[46m'),
+  bgWhite: esc('\x1b[47m'),
 };
 
 const getLevelColor = (level: LogLevel): string => {
