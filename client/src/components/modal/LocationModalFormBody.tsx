@@ -503,25 +503,6 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
 
       <section className="space-y-4 pt-6 border-t border-gray-200">
         <h4 className="text-base font-semibold text-primary border-l-4 border-button-primary pl-3 py-1">
-          MarketMan
-        </h4>
-        <div>
-          <label htmlFor="marketManBuyerGuid" className="block text-sm font-medium text-primary mb-1">
-            MarketMan Buyer GUID
-          </label>
-          <input
-            id="marketManBuyerGuid"
-            type="text"
-            value={marketManBuyerGuid}
-            onChange={(e) => setMarketManBuyerGuid(e.target.value)}
-            className="w-full px-4 py-3 bg-[#F9F9F9] border border-[#DBDBDB] rounded-xl text-sm md:text-base 2xl:text-lg placeholder:text-sm md:placeholder:text-base 2xl:placeholder:text-lg"
-            placeholder="MarketMan Buyer GUID (optional)"
-          />
-        </div>
-      </section>
-
-      <section className="space-y-4 pt-6 border-t border-gray-200">
-        <h4 className="text-base font-semibold text-primary border-l-4 border-button-primary pl-3 py-1">
           Square
         </h4>
         <div>
@@ -627,11 +608,11 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
           MarketMan
         </h4>
         <div>
-          <label htmlFor="marketManBuyerGuidFooter" className="block text-sm font-medium text-primary mb-1">
+          <label htmlFor="marketManBuyerGuid" className="block text-sm font-medium text-primary mb-1">
             MarketMan buyer GUID
           </label>
           <input
-            id="marketManBuyerGuidFooter"
+            id="marketManBuyerGuid"
             type="text"
             value={marketManBuyerGuid}
             onChange={(e) => setMarketManBuyerGuid(e.target.value)}
