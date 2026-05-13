@@ -9,9 +9,6 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -46,7 +43,7 @@ jobs:
           cp -r client/dist deploy/client/
 
       - name: Login to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_536C5093A9B54812AB987B5996D69F60 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_19335179EDC9449196093613F6950F8A }}
