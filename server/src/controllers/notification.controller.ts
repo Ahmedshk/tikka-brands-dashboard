@@ -40,8 +40,9 @@ export async function markAsRead(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { id } = req.params;
-    if (!id) throw new AppError("Notification ID required", 400);
+    const rawId = req.params.id;
+    const id = typeof rawId === "string" ? rawId : rawId?.[0];
+    if (!id?.trim()) throw new AppError("Notification ID required", 400);
     const updated = await notificationService.markAsRead(id, req.user!.userId);
     if (!updated) throw new AppError("Notification not found or already read", 404);
     res.json({ success: true });

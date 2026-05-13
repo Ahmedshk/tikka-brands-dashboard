@@ -21,6 +21,7 @@ import type {
 } from "./homebase.service.js";
 import {
   getOrderedBucketsAndLabels,
+  type GetOrderedBucketsAndLabelsOptions,
   type SalesTrendGranularity,
 } from "../utils/homebaseOrderedBuckets.util.js";
 import { aggregateTimecardsIntoBuckets } from "../utils/homebaseTimeSeriesHelpers.js";
@@ -285,13 +286,19 @@ export async function getLaborAndHoursTimeSeriesInRangeFromCache(
   businessStartTime?: string,
 ): Promise<LaborHoursTimeSeriesResult> {
   const bst = businessStartTime?.trim();
-  const bucketOpts =
-    periodType == null && bst == null
-      ? undefined
-      : {
-          periodType,
-          ...(bst != null && bst !== "" ? { businessStartTime: bst } : {}),
-        };
+  let bucketOpts: GetOrderedBucketsAndLabelsOptions | undefined;
+  if (periodType == null && bst == null) {
+    bucketOpts = undefined;
+  } else {
+    const o: GetOrderedBucketsAndLabelsOptions = {};
+    if (periodType != null) {
+      o.periodType = periodType;
+    }
+    if (bst != null && bst !== "") {
+      o.businessStartTime = bst;
+    }
+    bucketOpts = o;
+  }
   const { keys, labels } = getOrderedBucketsAndLabels(
     range,
     timezone,
