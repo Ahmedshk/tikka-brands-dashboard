@@ -33,7 +33,6 @@ import {
 import {
   isOrderCountedForNetSales,
   orderNetSalesCents,
-  type SquareOrder,
 } from "./square.service.js";
 import { loadSquareOrdersForMongoRange } from "./integrationCacheRead.service.js";
 import { timeRangeForBusinessDateKey } from "./dailyRollupBuilder.service.js";
@@ -70,15 +69,17 @@ export async function buildSquareOrderHourlyRollupsForDay(
       businessStartTime,
       businessDateKey,
     );
-    if (slot < 0) continue;
-    if (!isOrderCountedForNetSales(order as SquareOrder)) continue;
-    const netCents = orderNetSalesCents(order as SquareOrder);
-    bySlot[slot].netCents += netCents;
+    if (slot < 0 || slot >= bySlot.length) continue;
+    const bucket = bySlot[slot];
+    if (bucket === undefined) continue;
+    if (!isOrderCountedForNetSales(order)) continue;
+    const netCents = orderNetSalesCents(order);
+    bucket.netCents += netCents;
     if (netCents > 0) {
-      bySlot[slot].txCount += 1;
+      bucket.txCount += 1;
       addCentsToSourcesOfSalesCentsById(
-        bySlot[slot].centsBySourceId,
-        deriveSquareSourcesOfSalesKey(order as SquareOrder),
+        bucket.centsBySourceId,
+        deriveSquareSourcesOfSalesKey(order),
         netCents,
       );
     }
@@ -86,6 +87,12 @@ export async function buildSquareOrderHourlyRollupsForDay(
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   const computedAt = new Date();
   for (let slotIndex = 0; slotIndex < 24; slotIndex++) {
+    const bucket = bySlot[slotIndex];
+    if (bucket === undefined) {
+      throw new Error(
+        `Invariant: hourly rollup bucket missing at index ${slotIndex}`,
+      );
+    }
     await SquareOrderHourlyRollupModel.replaceOne(
       { locationId: oid, businessDateKey, slotIndex },
       {
@@ -93,9 +100,9 @@ export async function buildSquareOrderHourlyRollupsForDay(
         businessDateKey,
         slotIndex,
         computedAt,
-        netSalesCents: bySlot[slotIndex].netCents,
-        transactionCount: bySlot[slotIndex].txCount,
-        sourcesOfSales: sourcesOfSalesFactsFromCentsById(bySlot[slotIndex].centsBySourceId),
+        netSalesCents: bucket.netCents,
+        transactionCount: bucket.txCount,
+        sourcesOfSales: sourcesOfSalesFactsFromCentsById(bucket.centsBySourceId),
       },
       { upsert: true },
     ).exec();

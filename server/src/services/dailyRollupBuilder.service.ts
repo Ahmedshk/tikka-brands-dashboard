@@ -138,7 +138,7 @@ export async function computeSquarePaymentMetricsForRange(
   let paymentCount = 0;
   let totalAmountCents = 0;
   for (const d of docs) {
-    const raw = d.raw as Record<string, unknown>;
+    const raw = d.raw;
     const status =
       typeof d.paymentStatus === "string" && d.paymentStatus.trim().length > 0
         ? d.paymentStatus.trim()

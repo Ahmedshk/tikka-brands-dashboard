@@ -10,6 +10,7 @@ import type {
   ActivityLogListResult,
   ActivityLogRowDto,
 } from "../types/activityLog.types.js";
+import { buildActivityLogRowsForOrders, sortActivityLogRowsNewestFirst } from "../utils/activityLogRowsBuilder.util.js";
 
 type PaymentDetails = Awaited<
   ReturnType<typeof getSquarePaymentDetailsFromCache>
@@ -338,7 +339,7 @@ export class ActivityLogService {
                 id: fromDb.id,
                 givenName: fromDb.givenName,
                 familyName: fromDb.familyName,
-                ...(fromDb.jobTitle != null ? { jobTitle: fromDb.jobTitle } : {}),
+                ...(fromDb.jobTitle ? { jobTitle: fromDb.jobTitle } : {}),
               }
             : null,
         );
@@ -376,91 +377,21 @@ export class ActivityLogService {
     const paymentCache = new Map<string, PaymentDetails>();
     const teamMemberCache = new Map<string, TeamMemberDetails>();
 
-    const rows: ActivityLogRowDto[] = [];
-
-    for (const order of orders) {
-      const firstPaymentId = order.paymentIds[0] ?? null;
-      const payment = await this.getCachedPayment(
-        firstPaymentId,
-        paymentCache,
-      );
-      const refundPaymentId =
-        order.refunds.length > 0 ? order.refunds[0]?.tenderId ?? null : null;
-      const refundPayment = await this.getCachedPayment(
-        refundPaymentId,
-        paymentCache,
-      );
-
-      const teamMemberId = payment?.employeeId ?? payment?.teamMemberId ?? null;
-      const teamMember = await this.getCachedTeamMember(
-        teamMemberId,
-        teamMemberCache,
-      );
-
-      const appliedBy = formatAppliedBy(
-        teamMember?.givenName ?? null,
-        teamMember?.familyName ?? null,
-      );
-      const appliedByJobTitle = teamMember?.jobTitle;
-      const appliedAt =
-        order.updatedAt ??
-        order.createdAt ??
-        payment?.updatedAt ??
-        payment?.createdAt ??
-        null;
-      const locationName = location.storeName || "—";
-      const deviceName = payment?.deviceName ?? "—";
-
-      for (const discount of order.discounts) {
-        const nameParts = listNamePartsWithAmount(
-          discountRowNameBase(discount, order),
-          discount.amountMoneyCents,
-        );
-        rows.push({
-          eventType: "Discounts",
-          ...nameParts,
-          appliedBy,
-          ...(appliedByJobTitle != null && appliedByJobTitle !== ""
-            ? { appliedByJobTitle }
-            : {}),
-          appliedAt,
-          details: buildDiscountDetails(order, payment, locationName, deviceName),
-        });
-      }
-
-      for (const refund of order.refunds) {
-        const names = refund.lineItems.map((lineItem) => lineItem.name);
-        const baseName = names.length > 0 ? names.join(", ") : "Refund";
-        const nameParts = listNamePartsWithAmount(
-          baseName,
-          refund.refundAmountMoneyCents,
-        );
-        rows.push({
-          eventType: "Refunds",
-          ...nameParts,
-          appliedBy,
-          ...(appliedByJobTitle != null && appliedByJobTitle !== ""
-            ? { appliedByJobTitle }
-            : {}),
-          appliedAt,
-          details: buildRefundDetails(
-            payment,
-            refundPayment,
-            refund,
-            locationName,
-            deviceName,
-            refund.refundCreatedAt ?? order.updatedAt ?? order.createdAt ?? null,
-            appliedAt,
-          ),
-        });
-      }
-    }
-
-    rows.sort((a, b) => {
-      const aTs = a.appliedAt ? new Date(a.appliedAt).getTime() : -1;
-      const bTs = b.appliedAt ? new Date(b.appliedAt).getTime() : -1;
-      return bTs - aTs;
+    const rows: ActivityLogRowDto[] = await buildActivityLogRowsForOrders({
+      orders,
+      location,
+      getCachedPayment: (paymentId) => this.getCachedPayment(paymentId, paymentCache),
+      getCachedTeamMember: (teamMemberId) => this.getCachedTeamMember(teamMemberId, teamMemberCache),
+      formatAppliedBy,
+      discountRowNameBase,
+      listNamePartsWithAmount: (baseWithoutAmount, amountMoneyCents) => {
+        const parts = listNamePartsWithAmount(baseWithoutAmount, amountMoneyCents);
+        return { ...parts, amount: parts.nameAmountBadgeText ?? "—" };
+      },
+      buildDiscountDetails,
+      buildRefundDetails,
     });
+    sortActivityLogRowsNewestFirst(rows);
 
     const total = rows.length;
     return {

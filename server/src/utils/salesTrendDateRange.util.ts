@@ -201,7 +201,8 @@ export function getCalendarDayCountInRange(
 
 const BUSINESS_START_REGEX = /^([01]?\d|2[0-3]):[0-5]\d$/;
 
-function useBusinessDayBoundaries(businessStartTime?: string): boolean {
+/** True when `businessStartTime` is a valid HH:mm so business-day (not civil midnight) bounds apply. */
+function businessDayBoundariesEnabled(businessStartTime?: string): boolean {
   const bizStart = (businessStartTime ?? "00:00").trim();
   return BUSINESS_START_REGEX.test(bizStart);
 }
@@ -214,7 +215,7 @@ function getTodayPeriodRange(
   businessStartTime?: string,
 ): PeriodRangeResult {
   const bizStart = (businessStartTime ?? "00:00").trim();
-  if (useBusinessDayBoundaries(businessStartTime)) {
+  if (businessDayBoundariesEnabled(businessStartTime)) {
     const { startAt, endAt } = getBusinessStartTimeRange(tz, bizStart);
     return { startAt, endAt: new Date().toISOString(), granularity: "hourly", displayEndAt: endAt };
   }
@@ -239,7 +240,7 @@ function getLastNDaysPeriodRange(
   const end = { y, m, d };
   const start = addDays(end.y, end.m, end.d, -(n - 1));
   const bizStart = (businessStartTime ?? "00:00").trim();
-  if (useBusinessDayBoundaries(businessStartTime)) {
+  if (businessDayBoundariesEnabled(businessStartTime)) {
     const startRange = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
     const endRange = getBusinessDayRangeForDate(tz, bizStart, end.y, end.m, end.d);
     return { startAt: startRange.startAt, endAt: endRange.endAt, granularity: "daily" };
@@ -257,7 +258,7 @@ function getLast52WeeksPeriodRange(
   businessStartTime?: string,
 ): PeriodRangeResult {
   const { start, end } = getLast52WeeksCivilBounds({ y, m, d });
-  if (useBusinessDayBoundaries(businessStartTime)) {
+  if (businessDayBoundariesEnabled(businessStartTime)) {
     const bizStart = (businessStartTime ?? "00:00").trim();
     const startRange = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
     const endRange = getBusinessDayRangeForDate(tz, bizStart, end.y, end.m, end.d);
@@ -280,7 +281,7 @@ function getThisWeekPeriodRange(
   const start = addDays(y, m, d, -toSunday);
   const saturday = addDays(start.y, start.m, start.d, 6);
   const bizStart = (businessStartTime ?? "00:00").trim();
-  if (useBusinessDayBoundaries(businessStartTime)) {
+  if (businessDayBoundariesEnabled(businessStartTime)) {
     const startRange = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
     const satEndRange = getBusinessDayRangeForDate(tz, bizStart, saturday.y, saturday.m, saturday.d);
     const now = new Date();
@@ -308,7 +309,7 @@ function getThisMonthPeriodRange(
 ): PeriodRangeResult {
   const lastDayOfMonth = new Date(y, m + 1, 0).getDate();
   const bizStart = (businessStartTime ?? "00:00").trim();
-  if (useBusinessDayBoundaries(businessStartTime)) {
+  if (businessDayBoundariesEnabled(businessStartTime)) {
     const startRange = getBusinessDayRangeForDate(tz, bizStart, y, m, 1);
     const endRange = getBusinessDayRangeForDate(tz, bizStart, y, m, d);
     const displayEndRange = getBusinessDayRangeForDate(tz, bizStart, y, m, lastDayOfMonth);
@@ -338,7 +339,7 @@ function getThisYearPeriodRange(
   businessStartTime?: string,
 ): PeriodRangeResult {
   const bizStart = (businessStartTime ?? "00:00").trim();
-  if (useBusinessDayBoundaries(businessStartTime)) {
+  if (businessDayBoundariesEnabled(businessStartTime)) {
     const startRange = getBusinessDayRangeForDate(tz, bizStart, y, 0, 1);
     const endRange = getBusinessDayRangeForDate(tz, bizStart, y, m, d);
     const displayEndRange = getBusinessDayRangeForDate(tz, bizStart, y, 11, 31);
@@ -634,15 +635,26 @@ function getFullPriorCalendarYearComparison(
   return rangeFromCalendar(tz, bizStart, useBiz, { y, m: 0, d: 1 }, { y, m: 11, d: 31 });
 }
 
-function getComparisonRangeWithWeekLogic(
-  comparisonType: ComparisonType,
+type YmdParts = { y: number; m: number; d: number };
+
+type WeekComparisonDerived = {
+  startParts: YmdParts;
+  endParts: YmdParts;
+  startDayOfWeek: number;
+  endDayOfWeek: number;
+  useMonthAnchorWeekAndSpanEnd: boolean;
+  useSevenDayBlockYoY: boolean;
+  W_start: number;
+  W_end: number;
+};
+
+function deriveWeekComparisonIndices(
   start: Date,
   end: Date,
   tz: string,
-  bizStart: string,
-  useBiz: boolean,
-  periodType?: PeriodType,
-): ComparisonRangeResult {
+  periodType: PeriodType | undefined,
+  comparisonType: ComparisonType,
+): WeekComparisonDerived {
   const startParts = getDatePartsInTz(start, tz);
   const endParts = getDatePartsInTz(end, tz);
   const startDayOfWeek = getDayOfWeekInTz(startParts.y, startParts.m, startParts.d, tz);
@@ -676,101 +688,25 @@ function getComparisonRangeWithWeekLogic(
     W_end = getWeekOfMonthForSunday(endSunday.y, endSunday.m, endSunday.d, tz);
   }
 
-  const { prevStartY, prevStartM, prevEndY, prevEndM, targetW_start, targetW_end } =
-    computeWeekLogicTargets(comparisonType, startParts, endParts, W_start, W_end);
+  return {
+    startParts,
+    endParts,
+    startDayOfWeek,
+    endDayOfWeek,
+    useMonthAnchorWeekAndSpanEnd,
+    useSevenDayBlockYoY,
+    W_start,
+    W_end,
+  };
+}
 
-  const useAnchorWeek = useMonthAnchorWeekAndSpanEnd;
-
-  /** thisWeek: always compare against the full Sun–Sat week in the aligned prior week / month / year (chart may still clip the current period to “today”). */
-  let compStart: { y: number; m: number; d: number };
-  let compEnd: { y: number; m: number; d: number };
-  if (periodType === "thisWeek") {
-    const sunStart = getSunStartForWeekLogic(
-      comparisonType,
-      prevStartY,
-      prevStartM,
-      targetW_start,
-      tz,
-      useAnchorWeek,
-    );
-    compStart = { y: sunStart.y, m: sunStart.m, d: sunStart.d };
-    compEnd = addDays(sunStart.y, sunStart.m, sunStart.d, 6);
-  } else if (useSevenDayBlockYoY) {
-    const blockStart = findDayInSevenDayBlockWithDow(
-      prevStartY,
-      prevStartM,
-      targetW_start,
-      startDayOfWeek,
-      tz,
-    );
-    const blockEnd = findDayInSevenDayBlockWithDow(
-      prevEndY,
-      prevEndM,
-      targetW_end,
-      endDayOfWeek,
-      tz,
-    );
-    if (blockStart && blockEnd) {
-      compStart = blockStart;
-      compEnd = blockEnd;
-    } else {
-      const wSunS = getWeekOfMonthFromFirstOfMonth(
-        startParts.y,
-        startParts.m,
-        startParts.d,
-        tz,
-      );
-      const wSunE = getWeekOfMonthFromFirstOfMonth(
-        endParts.y,
-        endParts.m,
-        endParts.d,
-        tz,
-      );
-      const t2 = computeWeekLogicTargets(
-        comparisonType,
-        startParts,
-        endParts,
-        wSunS,
-        wSunE,
-      );
-      const sunStart = getSunStartForWeekLogic(
-        comparisonType,
-        t2.prevStartY,
-        t2.prevStartM,
-        t2.targetW_start,
-        tz,
-        useAnchorWeek,
-      );
-      compStart = addDays(sunStart.y, sunStart.m, sunStart.d, startDayOfWeek);
-      const spanDays = calendarDayDiff(startParts, endParts, tz);
-      compEnd = addDays(compStart.y, compStart.m, compStart.d, spanDays);
-    }
-  } else {
-    const sunStart = getSunStartForWeekLogic(
-      comparisonType,
-      prevStartY,
-      prevStartM,
-      targetW_start,
-      tz,
-      useAnchorWeek,
-    );
-    compStart = addDays(sunStart.y, sunStart.m, sunStart.d, startDayOfWeek);
-    if (useMonthAnchorWeekAndSpanEnd) {
-      const spanDays = calendarDayDiff(startParts, endParts, tz);
-      compEnd = addDays(compStart.y, compStart.m, compStart.d, spanDays);
-    } else {
-      const sunEnd = getSunEndForWeekLogic(
-        comparisonType,
-        prevEndY,
-        prevEndM,
-        targetW_end,
-        tz,
-        useAnchorWeek,
-      );
-      compEnd = addDays(sunEnd.y, sunEnd.m, sunEnd.d, endDayOfWeek);
-    }
-  }
-
+function comparisonRangeFromCompYmdBounds(
+  useBiz: boolean,
+  tz: string,
+  bizStart: string,
+  compStart: YmdParts,
+  compEnd: YmdParts,
+): ComparisonRangeResult {
   if (useBiz) {
     const startR = getBusinessDayRangeForDate(tz, bizStart, compStart.y, compStart.m, compStart.d);
     const endR = getBusinessDayRangeForDate(tz, bizStart, compEnd.y, compEnd.m, compEnd.d);
@@ -780,6 +716,210 @@ function getComparisonRangeWithWeekLogic(
     startAt: getStartOfDayUtc(compStart.y, compStart.m, compStart.d, tz).toISOString(),
     endAt: getEndOfDayUtc(compEnd.y, compEnd.m, compEnd.d, tz).toISOString(),
   };
+}
+
+type PickSundayOfWeekInMonthFn = (
+  y: number,
+  m: number,
+  weekNum: number,
+  tz: string,
+) => { y: number; m: number; d: number };
+
+/** thisWeek: full Sun–Sat comparison window in the aligned prior period. */
+function compBoundsForThisWeekBranch(args: {
+  comparisonType: ComparisonType;
+  prevStartY: number;
+  prevStartM: number;
+  targetW_start: number;
+  tz: string;
+  pickSundayOfWeekInMonth: PickSundayOfWeekInMonthFn;
+}): { compStart: YmdParts; compEnd: YmdParts } {
+  const sunStart = getSunStartForWeekLogic(
+    args.comparisonType,
+    args.prevStartY,
+    args.prevStartM,
+    args.targetW_start,
+    args.tz,
+    args.pickSundayOfWeekInMonth,
+  );
+  const compStart: YmdParts = { y: sunStart.y, m: sunStart.m, d: sunStart.d };
+  const compEnd = addDays(sunStart.y, sunStart.m, sunStart.d, 6);
+  return { compStart, compEnd };
+}
+
+function compBoundsForSevenDayBlockYoYBranch(args: {
+  comparisonType: ComparisonType;
+  prevStartY: number;
+  prevStartM: number;
+  prevEndY: number;
+  prevEndM: number;
+  targetW_start: number;
+  targetW_end: number;
+  tz: string;
+  pickSundayOfWeekInMonth: PickSundayOfWeekInMonthFn;
+  startDayOfWeek: number;
+  endDayOfWeek: number;
+  startParts: YmdParts;
+  endParts: YmdParts;
+}): { compStart: YmdParts; compEnd: YmdParts } {
+  const blockStart = findDayInSevenDayBlockWithDow(
+    args.prevStartY,
+    args.prevStartM,
+    args.targetW_start,
+    args.startDayOfWeek,
+    args.tz,
+  );
+  const blockEnd = findDayInSevenDayBlockWithDow(
+    args.prevEndY,
+    args.prevEndM,
+    args.targetW_end,
+    args.endDayOfWeek,
+    args.tz,
+  );
+  if (blockStart && blockEnd) {
+    return { compStart: blockStart, compEnd: blockEnd };
+  }
+  const wSunS = getWeekOfMonthFromFirstOfMonth(
+    args.startParts.y,
+    args.startParts.m,
+    args.startParts.d,
+    args.tz,
+  );
+  const wSunE = getWeekOfMonthFromFirstOfMonth(
+    args.endParts.y,
+    args.endParts.m,
+    args.endParts.d,
+    args.tz,
+  );
+  const t2 = computeWeekLogicTargets(
+    args.comparisonType,
+    args.startParts,
+    args.endParts,
+    wSunS,
+    wSunE,
+  );
+  const sunStart = getSunStartForWeekLogic(
+    args.comparisonType,
+    t2.prevStartY,
+    t2.prevStartM,
+    t2.targetW_start,
+    args.tz,
+    args.pickSundayOfWeekInMonth,
+  );
+  const compStart = addDays(sunStart.y, sunStart.m, sunStart.d, args.startDayOfWeek);
+  const spanDays = calendarDayDiff(args.startParts, args.endParts, args.tz);
+  const compEnd = addDays(compStart.y, compStart.m, compStart.d, spanDays);
+  return { compStart, compEnd };
+}
+
+function compBoundsForDefaultWeekBranch(args: {
+  comparisonType: ComparisonType;
+  prevStartY: number;
+  prevStartM: number;
+  prevEndY: number;
+  prevEndM: number;
+  targetW_start: number;
+  targetW_end: number;
+  tz: string;
+  pickSundayOfWeekInMonth: PickSundayOfWeekInMonthFn;
+  startDayOfWeek: number;
+  endDayOfWeek: number;
+  useMonthAnchorWeekAndSpanEnd: boolean;
+  startParts: YmdParts;
+  endParts: YmdParts;
+}): { compStart: YmdParts; compEnd: YmdParts } {
+  const sunStart = getSunStartForWeekLogic(
+    args.comparisonType,
+    args.prevStartY,
+    args.prevStartM,
+    args.targetW_start,
+    args.tz,
+    args.pickSundayOfWeekInMonth,
+  );
+  const compStart = addDays(sunStart.y, sunStart.m, sunStart.d, args.startDayOfWeek);
+  if (args.useMonthAnchorWeekAndSpanEnd) {
+    const spanDays = calendarDayDiff(args.startParts, args.endParts, args.tz);
+    const compEnd = addDays(compStart.y, compStart.m, compStart.d, spanDays);
+    return { compStart, compEnd };
+  }
+  const sunEnd = getSunEndForWeekLogic(
+    args.comparisonType,
+    args.prevEndY,
+    args.prevEndM,
+    args.targetW_end,
+    args.tz,
+    args.pickSundayOfWeekInMonth,
+  );
+  const compEnd = addDays(sunEnd.y, sunEnd.m, sunEnd.d, args.endDayOfWeek);
+  return { compStart, compEnd };
+}
+
+function getComparisonRangeWithWeekLogic(
+  comparisonType: ComparisonType,
+  start: Date,
+  end: Date,
+  tz: string,
+  bizStart: string,
+  useBiz: boolean,
+  periodType?: PeriodType,
+): ComparisonRangeResult {
+  const derived = deriveWeekComparisonIndices(start, end, tz, periodType, comparisonType);
+  const { startParts, endParts, startDayOfWeek, endDayOfWeek, useMonthAnchorWeekAndSpanEnd, useSevenDayBlockYoY } =
+    derived;
+  const { prevStartY, prevStartM, prevEndY, prevEndM, targetW_start, targetW_end } =
+    computeWeekLogicTargets(comparisonType, startParts, endParts, derived.W_start, derived.W_end);
+
+  const pickSundayOfWeekInMonth: PickSundayOfWeekInMonthFn = useMonthAnchorWeekAndSpanEnd
+    ? getSundayOfNthAnchorWeekInMonth
+    : getSundayOfWeekInMonth;
+
+  let compStart: YmdParts;
+  let compEnd: YmdParts;
+  if (periodType === "thisWeek") {
+    ({ compStart, compEnd } = compBoundsForThisWeekBranch({
+      comparisonType,
+      prevStartY,
+      prevStartM,
+      targetW_start,
+      tz,
+      pickSundayOfWeekInMonth,
+    }));
+  } else if (useSevenDayBlockYoY) {
+    ({ compStart, compEnd } = compBoundsForSevenDayBlockYoYBranch({
+      comparisonType,
+      prevStartY,
+      prevStartM,
+      prevEndY,
+      prevEndM,
+      targetW_start,
+      targetW_end,
+      tz,
+      pickSundayOfWeekInMonth,
+      startDayOfWeek,
+      endDayOfWeek,
+      startParts,
+      endParts,
+    }));
+  } else {
+    ({ compStart, compEnd } = compBoundsForDefaultWeekBranch({
+      comparisonType,
+      prevStartY,
+      prevStartM,
+      prevEndY,
+      prevEndM,
+      targetW_start,
+      targetW_end,
+      tz,
+      pickSundayOfWeekInMonth,
+      startDayOfWeek,
+      endDayOfWeek,
+      useMonthAnchorWeekAndSpanEnd,
+      startParts,
+      endParts,
+    }));
+  }
+
+  return comparisonRangeFromCompYmdBounds(useBiz, tz, bizStart, compStart, compEnd);
 }
 
 function computeWeekLogicTargets(
@@ -843,25 +983,13 @@ function computeWeekLogicTargets(
   };
 }
 
-function weekSundayInMonth(
-  y: number,
-  m: number,
-  weekNum: number,
-  tz: string,
-  useAnchorWeek: boolean,
-): { y: number; m: number; d: number } {
-  return useAnchorWeek
-    ? getSundayOfNthAnchorWeekInMonth(y, m, weekNum, tz)
-    : getSundayOfWeekInMonth(y, m, weekNum, tz);
-}
-
 function getSunStartForWeekLogic(
   comparisonType: ComparisonType,
   prevStartY: number,
   prevStartM: number,
   targetW_start: number,
   tz: string,
-  useAnchorWeek: boolean,
+  pickSundayOfWeekInMonth: PickSundayOfWeekInMonthFn,
 ): { y: number; m: number; d: number } {
   if (comparisonType === "samePeriodPreviousWeek" && targetW_start <= 1) {
     const py = prevStartM === 0 ? prevStartY - 1 : prevStartY;
@@ -870,15 +998,9 @@ function getSunStartForWeekLogic(
     return lastStart;
   }
   if (comparisonType === "samePeriodPreviousWeek") {
-    return weekSundayInMonth(
-      prevStartY,
-      prevStartM,
-      targetW_start - 1,
-      tz,
-      useAnchorWeek,
-    );
+    return pickSundayOfWeekInMonth(prevStartY, prevStartM, targetW_start - 1, tz);
   }
-  return weekSundayInMonth(prevStartY, prevStartM, targetW_start, tz, useAnchorWeek);
+  return pickSundayOfWeekInMonth(prevStartY, prevStartM, targetW_start, tz);
 }
 
 function getSunEndForWeekLogic(
@@ -887,7 +1009,7 @@ function getSunEndForWeekLogic(
   prevEndM: number,
   targetW_end: number,
   tz: string,
-  useAnchorWeek: boolean,
+  pickSundayOfWeekInMonth: PickSundayOfWeekInMonthFn,
 ): { y: number; m: number; d: number } {
   if (comparisonType === "samePeriodPreviousWeek" && targetW_end <= 1) {
     const py = prevEndM === 0 ? prevEndY - 1 : prevEndY;
@@ -896,9 +1018,9 @@ function getSunEndForWeekLogic(
     return lastStart;
   }
   if (comparisonType === "samePeriodPreviousWeek") {
-    return weekSundayInMonth(prevEndY, prevEndM, targetW_end - 1, tz, useAnchorWeek);
+    return pickSundayOfWeekInMonth(prevEndY, prevEndM, targetW_end - 1, tz);
   }
-  return weekSundayInMonth(prevEndY, prevEndM, targetW_end, tz, useAnchorWeek);
+  return pickSundayOfWeekInMonth(prevEndY, prevEndM, targetW_end, tz);
 }
 
 function getCustomComparisonRange(
@@ -1143,7 +1265,7 @@ export function getSalesTrendComparisonRange(
   const end = new Date(periodEndAt);
   const durationMs = end.getTime() - start.getTime();
   const bizStart = (businessStartTime ?? "00:00").trim();
-  const useBiz = useBusinessDayBoundaries(businessStartTime);
+  const useBiz = businessDayBoundariesEnabled(businessStartTime);
 
   if (periodType === "thisMonth" && comparisonType === "samePeriodPreviousMonth") {
     return getFullPreviousCalendarMonthComparison(periodEndAt, tz, bizStart, useBiz);

@@ -14,8 +14,11 @@ import {
 import { SquareWebhookEventModel } from "../models/squareWebhookEvent.model.js";
 import { getSquareOrderMongoIndexFields } from "../utils/squareOrderMongoIndexFields.util.js";
 import { getSquarePaymentMongoIndexFields } from "../utils/squarePaymentMongoIndexFields.util.js";
+import { squareRawIdAsString } from "../utils/squareRawIdString.util.js";
+import { catalogObjectVersionFromUnknown } from "../utils/squareCatalogObjectVersionHelpers.util.js";
 import { getHomebaseTimecardClockInAt } from "../utils/homebaseTimecardIndexFields.util.js";
 import { getMarketManOrderBusinessDateAt } from "../utils/marketmanOrderIndexFields.util.js";
+import { marketManOrderNumberAsString } from "../utils/marketManOrderNumberString.util.js";
 
 function toObjectId(id: string): mongoose.Types.ObjectId {
   return new mongoose.Types.ObjectId(id);
@@ -25,16 +28,15 @@ export async function upsertSquarePayment(
   locationId: string,
   payment: Record<string, unknown>,
 ): Promise<void> {
-  const squareId = String(payment.id ?? "").trim();
+  const squareId = squareRawIdAsString(payment.id, "");
   if (!squareId) return;
-  const raw = payment as Record<string, unknown>;
-  const idx = getSquarePaymentMongoIndexFields(raw);
+  const idx = getSquarePaymentMongoIndexFields(payment);
   await SquarePaymentModel.findOneAndUpdate(
     { squareId },
     {
       squareId,
       locationId: toObjectId(locationId),
-      raw,
+      raw: payment,
       paymentCreatedAt: idx.paymentCreatedAt,
       paymentStatus: idx.paymentStatus,
     },
@@ -47,16 +49,15 @@ export async function upsertSquareOrder(
   locationId: string,
   order: Record<string, unknown>,
 ): Promise<void> {
-  const squareId = String(order.id ?? "").trim();
+  const squareId = squareRawIdAsString(order.id, "");
   if (!squareId) return;
-  const raw = order as Record<string, unknown>;
-  const idx = getSquareOrderMongoIndexFields(raw);
+  const idx = getSquareOrderMongoIndexFields(order);
   await SquareOrderModel.findOneAndUpdate(
     { squareId },
     {
       squareId,
       locationId: toObjectId(locationId),
-      raw,
+      raw: order,
       squareCreatedAt: idx.squareCreatedAt,
       excludedFromDashboard: idx.excludedFromDashboard,
     },
@@ -68,25 +69,26 @@ export async function upsertSquareCatalogObject(
   locationId: string,
   obj: Record<string, unknown>,
 ): Promise<void> {
-  const objectId = String(obj.id ?? "").trim();
+  const objectId = squareRawIdAsString(obj.id, "");
   if (!objectId) return;
-  const versionRaw = obj.version;
-  const version =
-    typeof versionRaw === "bigint"
-      ? Number(versionRaw)
-      : typeof versionRaw === "number"
-        ? versionRaw
-        : versionRaw != null
-          ? Number(versionRaw)
-          : undefined;
+  const version = catalogObjectVersionFromUnknown(obj.version);
+  const locationOid = toObjectId(locationId);
+  const updateBody: {
+    objectId: string;
+    locationId: mongoose.Types.ObjectId;
+    raw: Record<string, unknown>;
+    version?: number;
+  } = {
+    objectId,
+    locationId: locationOid,
+    raw: obj,
+  };
+  if (version != null && Number.isFinite(version)) {
+    updateBody.version = version;
+  }
   await SquareCatalogObjectModel.findOneAndUpdate(
-    { objectId, locationId: toObjectId(locationId) },
-    {
-      objectId,
-      locationId: toObjectId(locationId),
-      ...(version != null && !Number.isNaN(version) ? { version } : {}),
-      raw: obj,
-    },
+    { objectId, locationId: locationOid },
+    updateBody,
     { upsert: true, new: true },
   ).exec();
 }
@@ -95,14 +97,14 @@ export async function upsertSquareTeamMember(
   locationId: string,
   member: Record<string, unknown>,
 ): Promise<void> {
-  const squareId = String(member.id ?? "").trim();
+  const squareId = squareRawIdAsString(member.id, "");
   if (!squareId) return;
   await SquareTeamMemberModel.findOneAndUpdate(
     { squareId, locationId: toObjectId(locationId) },
     {
       squareId,
       locationId: toObjectId(locationId),
-      raw: member as Record<string, unknown>,
+      raw: member,
     },
     { upsert: true, new: true },
   ).exec();
@@ -115,14 +117,13 @@ export async function upsertHomebaseTimecard(
   const id = card.id;
   const homebaseId = typeof id === "number" ? id : Number(id);
   if (!Number.isFinite(homebaseId)) return;
-  const raw = card as Record<string, unknown>;
   await HomebaseTimecardModel.findOneAndUpdate(
     { homebaseId, locationId: toObjectId(locationId) },
     {
       homebaseId,
       locationId: toObjectId(locationId),
-      raw,
-      clockInAt: getHomebaseTimecardClockInAt(raw),
+      raw: card,
+      clockInAt: getHomebaseTimecardClockInAt(card),
     },
     { upsert: true, new: true },
   ).exec();
@@ -210,9 +211,8 @@ export async function upsertMarketManOrder(
   dateTimeToUTC: string,
   order: Record<string, unknown>,
 ): Promise<void> {
-  const orderNumber = String(order.OrderNumber ?? "").trim();
+  const orderNumber = marketManOrderNumberAsString(order.OrderNumber);
   if (!orderNumber) return;
-  const raw = order as Record<string, unknown>;
   await MarketManOrderCacheModel.findOneAndUpdate(
     { buyerGuid, apiKind, orderNumber },
     {
@@ -220,11 +220,11 @@ export async function upsertMarketManOrder(
       buyerGuid,
       apiKind,
       orderNumber,
-      raw,
+      raw: order,
       dateTimeFromUTC,
       dateTimeToUTC,
       fetchedAt: new Date(),
-      businessDateAt: getMarketManOrderBusinessDateAt(raw, apiKind),
+      businessDateAt: getMarketManOrderBusinessDateAt(order, apiKind),
     },
     { upsert: true, new: true },
   ).exec();

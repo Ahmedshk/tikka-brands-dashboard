@@ -6,7 +6,9 @@ import { ManagerReviewModel } from "../models/managerReview.model.js";
 import { ActionPlanModel } from "../models/actionPlan.model.js";
 import { CheckInModel } from "../models/checkIn.model.js";
 import { AppError } from "../utils/errors.util.js";
+import { routeParamId } from "../utils/routeParams.util.js";
 import type { QuestionResponse } from "../types/reviewCycle.types.js";
+import mongoose from "mongoose";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import { getReviewCheckInFolder } from "../config/upload.config.js";
@@ -40,9 +42,9 @@ export async function getCycles(req: Request, res: Response, next: NextFunction)
       ...(actorUserId != null && actorUserId !== "" ? { actorUserId } : {}),
       ...(userId != null && userId !== "" ? { userId } : {}),
       ...(status != null && status !== "" ? { status } : {}),
-      ...(activeOnly && !pastOnly ? { activeOnly: true } : {}),
-      ...(locationId != null ? { locationId } : {}),
-      ...(employeeNameSearch != null ? { employeeNameSearch } : {}),
+      ...(activeOnly && pastOnly === false ? { activeOnly: true } : {}),
+      ...(locationId ? { locationId } : {}),
+      ...(employeeNameSearch ? { employeeNameSearch } : {}),
     });
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
@@ -50,14 +52,16 @@ export async function getCycles(req: Request, res: Response, next: NextFunction)
 
 export async function getCycleSnapshot(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const data = await service.getCycleSnapshot(req.params.id, req.user?.userId);
+    const id = routeParamId(req, "id");
+    const data = await service.getCycleSnapshot(id, req.user?.userId);
     res.json({ success: true, data });
   } catch (err) { next(err); }
 }
 
 export async function getCycleById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const cycle = await ReviewCycleModel.findById(req.params.id)
+    const id = routeParamId(req, "id");
+    const cycle = await ReviewCycleModel.findById(id)
       .populate(
         "employeeId",
         "firstName lastName email phone role profileImagePublicId startDate homebaseData",
@@ -80,7 +84,8 @@ export async function getDashboard(req: Request, res: Response, next: NextFuncti
 
 export async function submitSelfReview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await service.submitSelfReview(req.params.id, req.user!.userId, req.body.responses);
+    const id = routeParamId(req, "id");
+    const result = await service.submitSelfReview(id, req.user!.userId, req.body.responses);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 }
@@ -105,7 +110,7 @@ export async function getSelfReviewByToken(req: Request, res: Response, next: Ne
 /** Public (no auth): submit self-review using token. */
 export async function submitSelfReviewByToken(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { token, responses } = req.body as { token?: string; responses?: unknown[] };
+    const { token, responses } = req.body as { token?: string; responses?: QuestionResponse[] };
     if (!token?.trim()) {
       res.status(400).json({ success: false, message: "Token is required" });
       return;
@@ -122,7 +127,7 @@ export async function submitSelfReviewByToken(req: Request, res: Response, next:
 function safeInlineFilenameForAttachment(filename?: string, format?: string): string | null {
   const fn = filename?.trim() ?? "";
   if (fn && !fn.includes("/") && !fn.includes("\\") && /\.[^./\\]+$/i.test(fn)) return fn;
-  const fmt = format?.trim().toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
+  const fmt = format?.trim().toLowerCase().replaceAll(/[^a-z0-9]/g, "") ?? "";
   if (fmt) return `document.${fmt}`;
   return null;
 }
@@ -155,7 +160,7 @@ export async function getSelfReviewDocumentByToken(req: Request, res: Response, 
     const contentType = docResponse.headers.get("content-type") ?? "application/octet-stream";
     const safeFilename = safeInlineFilenameForAttachment(meta.filename, meta.format);
     const contentDisposition = safeFilename
-      ? `inline; filename="${safeFilename.replace(/"/g, '\\"')}"`
+      ? `inline; filename="${safeFilename.replaceAll('"', '\u005C"')}"`
       : (docResponse.headers.get("content-disposition") ?? "inline");
     res.set({
       "Content-Type": contentType,
@@ -171,7 +176,8 @@ export async function getSelfReviewDocumentByToken(req: Request, res: Response, 
 
 export async function getSelfReview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const cycle = await ReviewCycleModel.findById(req.params.id).lean();
+    const id = routeParamId(req, "id");
+    const cycle = await ReviewCycleModel.findById(id).lean();
     if (!cycle) throw new AppError("Cycle not found", 404);
 
     const userId = req.user!.userId;
@@ -188,45 +194,54 @@ export async function getSelfReview(req: Request, res: Response, next: NextFunct
       throw new AppError("Access denied", 403);
     }
 
-    const review = await SelfReviewModel.findOne({ reviewCycleId: req.params.id }).lean();
+    if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError("Invalid id", 400);
+    const oid = new mongoose.Types.ObjectId(id);
+    const review = await SelfReviewModel.findOne({ reviewCycleId: oid }).lean();
     res.json({ success: true, data: review });
   } catch (err) { next(err); }
 }
 
 export async function completeManagerReview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await service.completeManagerReview(req.params.id, req.user!.userId, req.body.responses);
+    const id = routeParamId(req, "id");
+    const result = await service.completeManagerReview(id, req.user!.userId, req.body.responses);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 }
 
 export async function submitManagerReview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    const id = routeParamId(req, "id");
     const { responses } = req.body as { responses?: unknown };
     if (!Array.isArray(responses)) {
       throw new AppError("Request body must include a responses array", 400);
     }
-    const result = await service.submitManagerReview(req.params.id, req.user!.userId, responses as QuestionResponse[]);
+    const result = await service.submitManagerReview(id, req.user!.userId, responses as QuestionResponse[]);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 }
 
 export async function updateManagerReview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await service.updateManagerReview(req.params.id, req.user!.userId, req.body.responses);
+    const id = routeParamId(req, "id");
+    const result = await service.updateManagerReview(id, req.user!.userId, req.body.responses);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 }
 
 export async function getManagerReview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const review = await ManagerReviewModel.findOne({ reviewCycleId: req.params.id }).lean();
+    const id = routeParamId(req, "id");
+    if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError("Invalid id", 400);
+    const oid = new mongoose.Types.ObjectId(id);
+    const review = await ManagerReviewModel.findOne({ reviewCycleId: oid }).lean();
     res.json({ success: true, data: review });
   } catch (err) { next(err); }
 }
 
 export async function approveReview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    const id = routeParamId(req, "id");
     const { comments, salaryIncrement: rawInc, salaryIncrementType } = req.body as {
       comments?: string;
       salaryIncrement?: unknown;
@@ -247,7 +262,7 @@ export async function approveReview(req: Request, res: Response, next: NextFunct
       throw new AppError("Invalid salary increment", 400);
     }
     const result = await service.approveReview(
-      req.params.id,
+      id,
       req.user!.userId,
       comments,
       inc,
@@ -259,38 +274,45 @@ export async function approveReview(req: Request, res: Response, next: NextFunct
 
 export async function rejectReview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    const id = routeParamId(req, "id");
     if (!req.body.comments) throw new AppError("Comments are required for rejection", 400);
-    const result = await service.rejectReview(req.params.id, req.user!.userId, req.body.comments);
+    const result = await service.rejectReview(id, req.user!.userId, req.body.comments);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 }
 
 export async function createActionPlan(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await service.createActionPlan(req.params.id, req.user!.userId, req.body.items);
+    const id = routeParamId(req, "id");
+    const result = await service.createActionPlan(id, req.user!.userId, req.body.items);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 }
 
 export async function getActionPlan(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const plan = await ActionPlanModel.findOne({ reviewCycleId: req.params.id }).lean();
+    const id = routeParamId(req, "id");
+    if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError("Invalid id", 400);
+    const oid = new mongoose.Types.ObjectId(id);
+    const plan = await ActionPlanModel.findOne({ reviewCycleId: oid }).lean();
     res.json({ success: true, data: plan });
   } catch (err) { next(err); }
 }
 
 export async function completeReview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await service.completeReview(req.params.id, req.user!.userId);
+    const id = routeParamId(req, "id");
+    const result = await service.completeReview(id, req.user!.userId);
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 }
 
 export async function submitCheckIn(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    const id = routeParamId(req, "id");
     const period = req.params.period as "30" | "60";
     if (period !== "30" && period !== "60") throw new AppError("Invalid period", 400);
-    const result = await service.submitCheckIn(req.params.id, period, req.user!.userId, {
+    const result = await service.submitCheckIn(id, period, req.user!.userId, {
       responses: req.body.responses,
       managerComments: req.body.managerComments,
       actionPlanProgress: req.body.actionPlanProgress,
@@ -302,18 +324,31 @@ export async function submitCheckIn(req: Request, res: Response, next: NextFunct
 
 export async function uploadCheckInDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    const id = routeParamId(req, "id");
     const period = req.params.period as "30" | "60";
     const files = (req.files as Express.Multer.File[] | undefined) ?? [];
     if (files.length === 0) throw new AppError("No files uploaded", 400);
 
+    if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError("Invalid id", 400);
+    const oid = new mongoose.Types.ObjectId(id);
     const checkIn = await CheckInModel.findOne({
-      reviewCycleId: req.params.id,
+      reviewCycleId: oid,
       period,
     });
     if (!checkIn) throw new AppError("Check-in not found. Submit check-in first.", 404);
 
     const employeeId = checkIn.employeeId.toString();
     const folder = getReviewCheckInFolder(employeeId, period);
+
+    const toError = (e: unknown): Error => {
+      if (e instanceof Error) return e;
+      if (typeof e === "string") return new Error(e);
+      try {
+        return new Error(JSON.stringify(e));
+      } catch {
+        return new Error("Unknown error");
+      }
+    };
 
     const uploadOne = async (file: Express.Multer.File) =>
       new Promise<{
@@ -328,7 +363,7 @@ export async function uploadCheckInDocument(req: Request, res: Response, next: N
           { folder, resource_type: resourceType, use_filename: true, unique_filename: true },
           (err, result) => {
             if (err) {
-              reject(err);
+              reject(toError(err));
               return;
             }
             resolve(result as {
@@ -345,16 +380,22 @@ export async function uploadCheckInDocument(req: Request, res: Response, next: N
 
     const uploaded = await Promise.all(files.map((file) => uploadOne(file)));
     const existing = checkIn.documents ?? [];
-    const mapped = uploaded.map((u, idx) => ({
-      publicId: u.public_id,
-      filename: files[idx]?.originalname ?? u.original_filename,
-      resourceType: files[idx]?.mimetype.startsWith("image/") ? "image" : "raw",
-      format: u.format ?? files[idx]?.originalname.split(".").pop()?.toLowerCase(),
-    }));
-    checkIn.documents = [...existing, ...mapped];
-    if (checkIn.documents.length > 0) {
-      checkIn.documentUrl = undefined;
-      checkIn.documentPublicId = checkIn.documents[0]!.publicId;
+    const mapped = uploaded.map((u, idx) => {
+      const fallbackFormat = files[idx]?.originalname.split(".").pop()?.toLowerCase();
+      const filename = files[idx]?.originalname ?? u.original_filename;
+      const format = u.format ?? fallbackFormat;
+      return {
+        publicId: u.public_id,
+        ...(filename ? { filename } : {}),
+        resourceType: files[idx]?.mimetype.startsWith("image/") ? "image" : "raw",
+        ...(format ? { format } : {}),
+      };
+    });
+    const updatedDocs = [...existing, ...mapped];
+    checkIn.documents = updatedDocs;
+    if (updatedDocs.length > 0) {
+      checkIn.set("documentUrl", undefined);
+      checkIn.documentPublicId = updatedDocs[0]!.publicId;
     }
     await checkIn.save();
 

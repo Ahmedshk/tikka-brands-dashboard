@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useSelector } from "react-redux";
 import toast from "react-hot-toast";
@@ -77,6 +77,131 @@ export function EmployeePastReviewsListModal({
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  let bodyContent: ReactNode;
+  if (loading) {
+    bodyContent = (
+      <div className="flex flex-1 min-h-[200px] items-center justify-center py-12">
+        <Spinner size="lg" className="text-button-primary" />
+      </div>
+    );
+  } else if (cycles.length === 0) {
+    bodyContent = (
+      <p className="text-sm text-gray-500 text-center py-10 px-5">
+        No past reviews for this employee.
+      </p>
+    );
+  } else {
+    bodyContent = (
+      <>
+        <div className="md:hidden flex-1 min-h-0 overflow-y-auto divide-y divide-gray-200">
+          {pageRows.map((c, i) => {
+            const globalIndex = (page - 1) * PAGE_SIZE + i;
+            const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+            const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
+            const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
+            const name = emp ? `${emp.firstName} ${emp.lastName}` : "—";
+            const cardBg = globalIndex % 2 === 0 ? "bg-white" : "bg-gray-50/50";
+            return (
+              <div key={c._id} className={`${cardBg} px-4 py-4 flex flex-col gap-3`}>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-primary truncate" title={name}>
+                    {name}
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1">
+                    <span className="font-medium">Cycle:</span> #{c.cycleNumber}
+                  </p>
+                  <p className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-1">
+                    <span className="font-medium">Status:</span>
+                    <span
+                      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}
+                    >
+                      {getStatusLabel(c.status)}
+                    </span>
+                  </p>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    <span className="font-medium">Period:</span> {periodStart} – {periodEnd}
+                  </p>
+                </div>
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onViewCycle(c._id);
+                      onClose();
+                    }}
+                    className="p-2 text-primary hover:bg-gray-200 rounded transition-colors"
+                    aria-label="View Past Review"
+                    title="View Past Review"
+                  >
+                    <ViewIcon className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="hidden md:block flex-1 min-h-0 overflow-auto px-5 pt-4">
+          <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm min-w-[520px]">
+            <thead>
+              <tr className="text-left text-secondary border-b border-gray-200">
+                <th className="pb-3 pr-2 pl-2 font-semibold">Employee</th>
+                <th className="pb-3 pr-2 font-semibold text-center">Cycle</th>
+                <th className="pb-3 pr-2 font-semibold text-center">Status</th>
+                <th className="pb-3 pr-2 font-semibold text-center">Period</th>
+                <th className="pb-3 pr-2 font-semibold text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody className="text-primary">
+              {pageRows.map((c, i) => {
+                const globalIndex = (page - 1) * PAGE_SIZE + i;
+                const emp = typeof c.employeeId === "object" ? c.employeeId : null;
+                const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
+                const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
+                return (
+                  <tr key={c._id} className={globalIndex % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
+                    <td className="py-3 pr-2 pl-2">{emp ? `${emp.firstName} ${emp.lastName}` : "—"}</td>
+                    <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
+                    <td className="py-3 pr-2 text-center">
+                      <span
+                        className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}
+                      >
+                        {getStatusLabel(c.status)}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-2 text-center whitespace-nowrap">
+                      {periodStart} - {periodEnd}
+                    </td>
+                    <td className="py-3 pr-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onViewCycle(c._id);
+                          onClose();
+                        }}
+                        className="p-1.5 text-button-primary hover:bg-blue-50 rounded cursor-pointer"
+                        aria-label="View Past Review"
+                        title="View Past Review"
+                      >
+                        <ViewIcon className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={cycles.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+        />
+      </>
+    );
+  }
+
   if (!isOpen) return null;
 
   return createPortal(
@@ -96,121 +221,7 @@ export function EmployeePastReviewsListModal({
             <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">Past reviews for employee</h3>
           </div>
           <div className="flex-1 min-h-0 overflow-hidden border-x border-gray-200 flex flex-col">
-            {loading ? (
-              <div className="flex flex-1 min-h-[200px] items-center justify-center py-12">
-                <Spinner size="lg" className="text-button-primary" />
-              </div>
-            ) : cycles.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-10 px-5">No past reviews for this employee.</p>
-            ) : (
-              <>
-                <div className="md:hidden flex-1 min-h-0 overflow-y-auto divide-y divide-gray-200">
-                  {pageRows.map((c, i) => {
-                    const globalIndex = (page - 1) * PAGE_SIZE + i;
-                    const emp = typeof c.employeeId === "object" ? c.employeeId : null;
-                    const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
-                    const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
-                    const name = emp ? `${emp.firstName} ${emp.lastName}` : "—";
-                    const cardBg = globalIndex % 2 === 0 ? "bg-white" : "bg-gray-50/50";
-                    return (
-                      <div key={c._id} className={`${cardBg} px-4 py-4 flex flex-col gap-3`}>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-primary truncate" title={name}>
-                            {name}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-1">
-                            <span className="font-medium">Cycle:</span> #{c.cycleNumber}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-1">
-                            <span className="font-medium">Status:</span>
-                            <span
-                              className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}
-                            >
-                              {getStatusLabel(c.status)}
-                            </span>
-                          </p>
-                          <p className="text-xs text-gray-600 mt-0.5">
-                            <span className="font-medium">Period:</span> {periodStart} – {periodEnd}
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-end">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onViewCycle(c._id);
-                              onClose();
-                            }}
-                            className="p-2 text-primary hover:bg-gray-200 rounded transition-colors"
-                            aria-label="View Past Review"
-                            title="View Past Review"
-                          >
-                            <ViewIcon className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="hidden md:block flex-1 min-h-0 overflow-auto px-5 pt-4">
-                  <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm min-w-[520px]">
-                    <thead>
-                      <tr className="text-left text-secondary border-b border-gray-200">
-                        <th className="pb-3 pr-2 pl-2 font-semibold">Employee</th>
-                        <th className="pb-3 pr-2 font-semibold text-center">Cycle</th>
-                        <th className="pb-3 pr-2 font-semibold text-center">Status</th>
-                        <th className="pb-3 pr-2 font-semibold text-center">Period</th>
-                        <th className="pb-3 pr-2 font-semibold text-center">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-primary">
-                      {pageRows.map((c, i) => {
-                        const globalIndex = (page - 1) * PAGE_SIZE + i;
-                        const emp = typeof c.employeeId === "object" ? c.employeeId : null;
-                        const periodStart = c.referenceDate ? new Date(c.referenceDate).toLocaleDateString() : "—";
-                        const periodEnd = c.dueDate90 ? new Date(c.dueDate90).toLocaleDateString() : "—";
-                        return (
-                          <tr key={c._id} className={globalIndex % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
-                            <td className="py-3 pr-2 pl-2">{emp ? `${emp.firstName} ${emp.lastName}` : "—"}</td>
-                            <td className="py-3 pr-2 text-center">#{c.cycleNumber}</td>
-                            <td className="py-3 pr-2 text-center">
-                              <span
-                                className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${getStatusColor(c.status)}`}
-                              >
-                                {getStatusLabel(c.status)}
-                              </span>
-                            </td>
-                            <td className="py-3 pr-2 text-center whitespace-nowrap">
-                              {periodStart} - {periodEnd}
-                            </td>
-                            <td className="py-3 pr-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onViewCycle(c._id);
-                                  onClose();
-                                }}
-                                className="p-1.5 text-button-primary hover:bg-blue-50 rounded cursor-pointer"
-                                aria-label="View Past Review"
-                                title="View Past Review"
-                              >
-                                <ViewIcon className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                <Pagination
-                  currentPage={page}
-                  totalPages={totalPages}
-                  totalItems={cycles.length}
-                  pageSize={PAGE_SIZE}
-                  onPageChange={setPage}
-                />
-              </>
-            )}
+            {bodyContent}
           </div>
         </div>
       </div>

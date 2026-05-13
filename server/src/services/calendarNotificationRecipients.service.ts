@@ -14,7 +14,7 @@ function userHasLocationAccess(
   role: LeanRole,
   locationId: string,
 ): boolean {
-  const removals = new Set((user.locationRemovals ?? []).map((id) => String(id)));
+  const removals = new Set((user.locationRemovals ?? []).map(String));
   if (removals.has(locationId)) return false;
 
   if (!role) return true;
@@ -45,10 +45,9 @@ export async function listUserIdsForRoleAtLocation(
   locationId: string,
 ): Promise<string[]> {
   if (!mongoose.Types.ObjectId.isValid(roleId)) return [];
-  const roleObjectId = new mongoose.Types.ObjectId(roleId);
 
   const users = await UserModel.find({
-    roleId: roleObjectId,
+    roleId,
     isActive: true,
     $or: [{ isTerminated: false }, { isTerminated: { $exists: false } }],
   })

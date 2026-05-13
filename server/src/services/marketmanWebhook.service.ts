@@ -4,7 +4,6 @@
  * {@link MARKETMAN_ORDER_WEBHOOK_EVENT_NAMES} and {@link extractMarketManWebhookPayload} when documented.
  */
 import type { Request, Response } from "express";
-import { upsertMarketManOrder } from "./integrationCacheWrite.service.js";
 import { LocationRepository } from "../repositories/location.repository.js";
 import {
   extractMarketManWebhookPayload,
@@ -14,10 +13,11 @@ import {
 import { marketManOrderWebhookSyncWindowUtc } from "../utils/marketmanOrderWebhookSyncWindow.util.js";
 import { logger } from "../utils/logger.util.js";
 import type { MarketManOrderApiKind } from "../models/marketmanOrderCache.model.js";
-import { enrichMarketManWebhookOrder } from "../utils/marketmanWebhookOrderEnrich.util.js";
-import { buildMarketManRollupForDay } from "./dailyRollupBuilder.service.js";
-import { getMarketManOrderBusinessDateAt } from "../utils/marketmanOrderIndexFields.util.js";
-import { marketManBusinessDateKeyFromUtcDate } from "../utils/marketManBusinessDateKey.util.js";
+import {
+  marketManWebhookBodyAsRecord,
+  marketManWebhookHoodEventIdFromBody,
+  runMarketManWebhookOrderPipeline,
+} from "../utils/marketmanWebhookHttpProcess.util.js";
 
 const locationRepository = new LocationRepository();
 
@@ -50,20 +50,17 @@ export async function processMarketManWebhookHttp(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const body = req.body;
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
+  const b = marketManWebhookBodyAsRecord(req.body);
+  if (!b) {
     console.warn(`[${mmWebhookTs()}] MarketMan webhook: invalid body (expected JSON object)`);
     res.status(400).json({ message: "Expected JSON object body" });
     return;
   }
 
-  const b = body as Record<string, unknown>;
   const extracted = extractMarketManWebhookPayload(b);
   const { eventName, buyerGuid, order, explicitApiKind } = extracted;
 
-  let hoodEventId: string | null = null;
-  if (typeof b.HoodEventID === "string") hoodEventId = b.HoodEventID;
-  else if (typeof b.hoodEventId === "string") hoodEventId = b.hoodEventId;
+  const hoodEventId = marketManWebhookHoodEventIdFromBody(b);
   const orderNumberEarly = order ? marketManOrderNumberStringFromRaw(order) : "";
 
   console.log(`[${mmWebhookTs()}] MarketMan webhook: received`, {
@@ -155,101 +152,17 @@ export async function processMarketManWebhookHttp(
     return;
   }
 
-  let enrichedOrder: Record<string, unknown>;
-  let enrichmentPartial: boolean;
-  try {
-    const enriched = await enrichMarketManWebhookOrder(order, buyerGuid);
-    enrichedOrder = enriched.order;
-    enrichmentPartial = enriched.enrichmentPartial;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[${mmWebhookTs()}] MarketMan webhook: enrich failed`, {
-      buyerGuid,
-      orderNumber: orderNumberEarly || null,
-      error: msg,
-    });
-    logger.error("marketman webhook: enrich failed", {
-      buyerGuid,
-      orderNumber: orderNumberEarly || null,
-      error: msg,
-    });
-    throw err;
-  }
-
-  try {
-    await upsertMarketManOrder(
-      String(loc._id),
+  const { enrichmentPartial, orderNumberFinal, rollupUpdated } =
+    await runMarketManWebhookOrderPipeline({
+      order,
       buyerGuid,
       apiKind,
-      window.dateTimeFromUTC,
-      window.dateTimeToUTC,
-      enrichedOrder,
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[${mmWebhookTs()}] MarketMan webhook: upsert failed`, {
-      buyerGuid,
-      orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-      apiKind,
-      error: msg,
+      window,
+      locationMongoId: String(loc._id),
+      timezone: loc.timezone ?? "UTC",
+      businessStartTime: loc.businessStartTime ?? "00:00",
+      orderNumberEarly,
     });
-    logger.error("marketman webhook: upsert failed", {
-      buyerGuid,
-      orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-      apiKind,
-      error: msg,
-    });
-    throw err;
-  }
-
-  let rollupUpdated = false;
-  const businessDateAt = getMarketManOrderBusinessDateAt(enrichedOrder, apiKind);
-  if (businessDateAt) {
-    const businessDateKey = marketManBusinessDateKeyFromUtcDate(
-      businessDateAt,
-      loc.timezone ?? "UTC",
-      loc.businessStartTime ?? "00:00",
-    );
-    try {
-      await buildMarketManRollupForDay(
-        String(loc._id),
-        buyerGuid,
-        apiKind,
-        businessDateKey,
-        loc.timezone ?? "UTC",
-        loc.businessStartTime ?? "00:00",
-      );
-      rollupUpdated = true;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error("marketman webhook: rollup refresh failed", {
-        buyerGuid,
-        apiKind,
-        orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-        error: msg,
-      });
-      console.error(`[${mmWebhookTs()}] MarketMan webhook: rollup refresh failed`, {
-        buyerGuid,
-        orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-        apiKind,
-        businessDateKey,
-        error: msg,
-      });
-    }
-  } else {
-    logger.info("marketman webhook: skipped rollup (no businessDateAt)", {
-      buyerGuid,
-      apiKind,
-      orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-    });
-    console.log(`[${mmWebhookTs()}] MarketMan webhook: rollup skipped (no businessDateAt)`, {
-      buyerGuid,
-      orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-      apiKind,
-    });
-  }
-
-  const orderNumberFinal = marketManOrderNumberStringFromRaw(enrichedOrder);
 
   logger.info("marketman webhook: order upserted", {
     eventName,

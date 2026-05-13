@@ -1,5 +1,6 @@
 import type { Response } from "express";
-import { assertCanAccessMetrics, type RolePermissions } from "../config/kpi-metrics.config.js";
+import { assertCanAccessMetrics } from "../config/kpi-metrics.config.js";
+import type { RolePermissions } from "../types/rbac.types.js";
 import { ForbiddenError } from "./errors.util.js";
 import {
   getOrderStatsAndSourcesFromCache,

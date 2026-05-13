@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { commandCenterService } from "../../services/commandCenter.service";
 import { commandCenterAlertRowToAlertItem } from "../../utils/commandCenterAlertRowToAlertItem.util";
@@ -85,6 +85,70 @@ export function CommandCenterAlertsHistoryModal({
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 
+  let historyContent: ReactNode;
+  if (loading) {
+    historyContent = (
+      <div className="flex min-h-[10rem] flex-1 items-center justify-center">
+        <Spinner size="lg" className="text-button-primary" />
+      </div>
+    );
+  } else if (error != null && error !== "") {
+    historyContent = (
+      <p className="text-xs text-negative md:text-sm" role="alert">
+        {error}
+      </p>
+    );
+  } else if (sortedRows.length === 0) {
+    historyContent = (
+      <p className="text-xs text-secondary md:text-sm">No earlier alerts for this category.</p>
+    );
+  } else {
+    historyContent = (
+      <div className="flex flex-col gap-2">
+        {sortedRows.map((row) => {
+          const alert = commandCenterAlertRowToAlertItem(row);
+          const showNew = isRowNew(row.createdAt, now);
+          return (
+            <div
+              key={row.id}
+              className="flex flex-wrap items-start gap-x-3 gap-y-1 text-[10px] text-primary md:text-xs 2xl:text-sm"
+            >
+              <span className="flex min-w-0 flex-1 items-start gap-1.5">
+                <span
+                  className={`mt-1.5 h-1 w-1 flex-shrink-0 rounded-full md:h-1.5 md:w-1.5 2xl:h-2 2xl:w-2 ${
+                    alert.severity === "critical" ? "bg-[#F04B5B]" : "bg-[#FBC52A]"
+                  }`}
+                  aria-hidden
+                />
+                <span className="min-w-0">
+                  <span className="inline-flex flex-wrap items-center gap-1.5 font-semibold text-primary">
+                    <span>{alert.titleLine}</span>
+                    {showNew ? (
+                      <span
+                        className={COMMAND_CENTER_ALERT_NEW_BADGE_CLASSNAME}
+                        aria-label="New alert"
+                      >
+                        New
+                      </span>
+                    ) : null}
+                  </span>
+                  {alert.bodyLine != null && alert.bodyLine !== "" && (
+                    <span className="mt-0.5 block font-normal text-secondary">{alert.bodyLine}</span>
+                  )}
+                  {alert.subtitle != null && alert.subtitle !== "" && (
+                    <span className="mt-0.5 block text-[10px] text-secondary opacity-90 md:text-xs">
+                      {alert.subtitle}
+                    </span>
+                  )}
+                </span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   return createPortal(
     <dialog
       ref={dialogRef}
@@ -124,60 +188,7 @@ export function CommandCenterAlertsHistoryModal({
             </h2>
           </div>
           <div className="min-h-[8rem] flex-1 overflow-y-auto border-x border-gray-200 px-5 pb-4 pt-4 dropdown-list-scrollbar">
-            {loading ? (
-              <div className="flex min-h-[10rem] flex-1 items-center justify-center">
-                <Spinner size="lg" className="text-button-primary" />
-              </div>
-            ) : error != null && error !== "" ? (
-              <p className="text-xs text-negative md:text-sm" role="alert">
-                {error}
-              </p>
-            ) : sortedRows.length === 0 ? (
-              <p className="text-xs text-secondary md:text-sm">No earlier alerts for this category.</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {sortedRows.map((row) => {
-                  const alert = commandCenterAlertRowToAlertItem(row);
-                  const showNew = isRowNew(row.createdAt, now);
-                  return (
-                    <div
-                      key={row.id}
-                      className="flex flex-wrap items-start gap-x-3 gap-y-1 text-[10px] text-primary md:text-xs 2xl:text-sm"
-                    >
-                      <span className="flex min-w-0 flex-1 items-start gap-1.5">
-                        <span
-                          className={`mt-1.5 h-1 w-1 flex-shrink-0 rounded-full md:h-1.5 md:w-1.5 2xl:h-2 2xl:w-2 ${
-                            alert.severity === "critical" ? "bg-[#F04B5B]" : "bg-[#FBC52A]"
-                          }`}
-                          aria-hidden
-                        />
-                        <span className="min-w-0">
-                          <span className="inline-flex flex-wrap items-center gap-1.5 font-semibold text-primary">
-                            <span>{alert.titleLine}</span>
-                            {showNew ? (
-                              <span
-                                className={COMMAND_CENTER_ALERT_NEW_BADGE_CLASSNAME}
-                                aria-label="New alert"
-                              >
-                                New
-                              </span>
-                            ) : null}
-                          </span>
-                          {alert.bodyLine != null && alert.bodyLine !== "" && (
-                            <span className="mt-0.5 block font-normal text-secondary">{alert.bodyLine}</span>
-                          )}
-                          {alert.subtitle != null && alert.subtitle !== "" && (
-                            <span className="mt-0.5 block text-[10px] text-secondary opacity-90 md:text-xs">
-                              {alert.subtitle}
-                            </span>
-                          )}
-                        </span>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            {historyContent}
           </div>
         </div>
       </div>

@@ -1,25 +1,15 @@
 import type { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import {
-  runSyncForAllLocations,
   runSyncAllResourcesForToday,
 } from "../services/integrationSyncRunner.service.js";
 import {
-  refreshRollupsAfterManualSyncSingleResource,
   refreshDailyRollupsAfterRunAllToday,
 } from "../services/integrationPollRollupRefresh.service.js";
 import { IntegrationSyncLogModel } from "../models/integrationSyncLog.model.js";
 import type { IntegrationSyncResource } from "../models/integrationSyncLog.model.js";
-import { ValidationError } from "../utils/errors.util.js";
 import { logger } from "../utils/logger.util.js";
-
-/** Manual sync only; periodic jobs call runSyncForAllLocations without these and use today / sliding windows. */
-const RESOURCES_REQUIRING_DATE_RANGE: readonly IntegrationSyncResource[] = [
-  "homebase_timecards",
-  "marketman_orders_both",
-  "marketman_orders_sent",
-  "marketman_orders_delivery",
-];
+import { runManualIntegrationSync } from "../utils/integrationSyncControllerHelpers.util.js";
 
 export const postIntegrationSync = async (
   req: Request,
@@ -27,106 +17,17 @@ export const postIntegrationSync = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const userId = req.user?.userId;
-    const { resource, locationIds, startDate, endDate } = req.body as {
+    const body = req.body as {
       resource: IntegrationSyncResource;
       locationIds?: string[];
       startDate?: string;
       endDate?: string;
     };
-
-    const startTrim =
-      typeof startDate === "string" ? startDate.trim() : "";
-    const endTrim = typeof endDate === "string" ? endDate.trim() : "";
-
-    if (
-      RESOURCES_REQUIRING_DATE_RANGE.includes(resource) &&
-      (!startTrim || !endTrim)
-    ) {
-      next(
-        new ValidationError(
-          "startDate and endDate are required for this resource.",
-        ),
-      );
-      return;
-    }
-
-    const logDoc: {
-      triggeredByUserId?: mongoose.Types.ObjectId;
-      resource: IntegrationSyncResource;
-      locationIds: string[];
-      startDate?: string;
-      endDate?: string;
-      status: "started";
-    } = {
-      resource,
-      locationIds: locationIds ?? [],
-      status: "started",
-    };
-    if (userId) {
-      logDoc.triggeredByUserId = new mongoose.Types.ObjectId(userId);
-    }
-    if (startTrim) {
-      logDoc.startDate = startTrim;
-    }
-    if (endTrim) {
-      logDoc.endDate = endTrim;
-    }
-
-    const log = await IntegrationSyncLogModel.create(logDoc);
-
-    const runOpts: {
-      startDate?: string;
-      endDate?: string;
-      locationIds?: string[];
-    } = {};
-    if (startTrim) runOpts.startDate = startTrim;
-    if (endTrim) runOpts.endDate = endTrim;
-    if (locationIds?.length) runOpts.locationIds = locationIds;
-
-    const result = await runSyncForAllLocations(resource, runOpts);
-
-    const anyErrors = Object.values(result.byLocation).some(
-      (c) => c.errors.length > 0,
-    );
-    const logId = log._id as mongoose.Types.ObjectId;
-    await IntegrationSyncLogModel.findByIdAndUpdate(logId, {
-      status: anyErrors ? "failed" : "success",
-      message: anyErrors
-        ? Object.entries(result.byLocation)
-            .filter(([, v]) => v.errors.length)
-            .map(([id, v]) => `${id}: ${v.errors.join("; ")}`)
-            .join(" | ")
-        : undefined,
-      counts: {
-        totalUpserted: result.totalUpserted,
-        locations: Object.keys(result.byLocation).length,
-      },
-    }).exec();
-
-    if (!anyErrors) {
-      try {
-        const rollupOpts: {
-          startTrim: string;
-          endTrim: string;
-          locationIds?: string[];
-        } = { startTrim, endTrim };
-        if (locationIds?.length) rollupOpts.locationIds = locationIds;
-        await refreshRollupsAfterManualSyncSingleResource(resource, rollupOpts);
-      } catch (err) {
-        logger.error("postIntegrationSync: rollup refresh failed", {
-          err,
-          resource,
-        });
-      }
-    }
-
-    res.json({
-      ok: !anyErrors,
-      logId: String(logId),
-      totalUpserted: result.totalUpserted,
-      byLocation: result.byLocation,
+    const payload = await runManualIntegrationSync({
+      ...(req.user?.userId ? { userId: req.user.userId } : {}),
+      body,
     });
+    res.json(payload);
   } catch (e) {
     next(e);
   }
@@ -153,7 +54,7 @@ export const postIntegrationSyncRunAllToday = async (
       logDoc.triggeredByUserId = new mongoose.Types.ObjectId(userId);
     }
     const log = await IntegrationSyncLogModel.create(logDoc);
-    const logId = log._id as mongoose.Types.ObjectId;
+    const logId = log._id;
 
     try {
       const { steps, totalUpserted, allOk } = await runSyncAllResourcesForToday();
@@ -186,13 +87,13 @@ export const postIntegrationSyncRunAllToday = async (
           ok: s.ok,
         })),
       });
-    } catch (inner) {
+    } catch (error_) {
       await IntegrationSyncLogModel.findByIdAndUpdate(logId, {
         status: "failed",
         message:
-          inner instanceof Error ? inner.message : String(inner),
+          error_ instanceof Error ? error_.message : String(error_),
       }).exec();
-      throw inner;
+      throw error_;
     }
   } catch (e) {
     next(e);

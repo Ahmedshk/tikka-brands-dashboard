@@ -1,8 +1,7 @@
 import type { Agenda } from "agenda";
-import { ALERTS_EVALUATE_JOB, ALERTS_RESCHEDULE_JOB } from "../constants/alertAgendaJobs.js";
+import { ALERTS_EVALUATE_JOB } from "../constants/alertAgendaJobs.js";
 import { runAlertEvaluation } from "../services/alertEvaluation.service.js";
 import {
-  queueAlertReschedule,
   registerAlertRescheduleJob,
   rescheduleAlertAgendaJobs,
 } from "../services/alertAgendaSchedule.service.js";
@@ -24,5 +23,3 @@ export function registerAlertJobs(agenda: Agenda): void {
 export async function bootstrapAlertAgendaSchedule(agenda: Agenda): Promise<void> {
   await rescheduleAlertAgendaJobs(agenda);
 }
-
-export { queueAlertReschedule, ALERTS_RESCHEDULE_JOB };

@@ -61,7 +61,8 @@ export function wallYmdMax(a: string, b: string): string {
   const bt = b.trim();
   if (!at) return bt;
   if (!bt) return at;
-  return at >= bt ? at : bt;
+  if (at >= bt) return at;
+  return bt;
 }
 
 /** Next calendar day after `ymd` (yyyy-MM-dd). */
@@ -177,4 +178,162 @@ export function splitInstantToLocationWallForForm(
     const s = splitBrowserLocalDateTime(d);
     return { date: s.date, time: snapHmToQuarterHour(s.time, '09:00') };
   }
+}
+
+export interface AddEventModalWallRange {
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+}
+
+export type AddEventModalWallRangeAdjustments = Partial<AddEventModalWallRange>;
+
+function computeStartRangeAdjustmentsOnOpen({
+  tz,
+  todayY,
+  startDate,
+  startTime,
+}: {
+  tz: string | undefined;
+  todayY: string;
+  startDate: string;
+  startTime: string;
+}): AddEventModalWallRangeAdjustments | null {
+  const sd = startDate.trim();
+  if (!sd) return null;
+
+  const startSlots = quarterHoursOnOrAfterNowOnWallDate(sd, tz);
+  if (sd === todayY && startSlots.length === 0) {
+    return { startDate: nextWallYmd(todayY), startTime: '00:00' };
+  }
+
+  const st = startTime.trim();
+  if (sd === todayY && st && startSlots.length > 0 && !startSlots.includes(st)) {
+    return { startTime: startSlots[0]! };
+  }
+
+  return null;
+}
+
+function computeSameDayEndAdjustmentsOnOpen({
+  tz,
+  todayY,
+  wallDate,
+  startTime,
+  endTime,
+}: {
+  tz: string | undefined;
+  todayY: string;
+  wallDate: string;
+  startTime: string;
+  endTime: string;
+}): AddEventModalWallRangeAdjustments | null {
+  const st = startTime.trim();
+  if (!st) return null;
+
+  let validEnd = QUARTER_HOUR_HH_MM.filter((hm) => hm >= st);
+  if (wallDate === todayY) {
+    const nowSlots = new Set(quarterHoursOnOrAfterNowOnWallDate(wallDate, tz));
+    validEnd = validEnd.filter((hm) => nowSlots.has(hm));
+  }
+
+  if (validEnd.length === 0) {
+    const p = parse(wallDate, 'yyyy-MM-dd', new Date());
+    if (!isValid(p)) return null;
+    return { endDate: format(addDays(p, 1), 'yyyy-MM-dd'), endTime: '00:00' };
+  }
+
+  const et = endTime.trim();
+  if (et && !validEnd.includes(et)) {
+    return { endTime: validEnd[0]! };
+  }
+
+  return null;
+}
+
+function computeEndRangeAdjustmentsOnOpen({
+  tz,
+  todayY,
+  startDate,
+  startTime,
+  endDate,
+  endTime,
+}: {
+  tz: string | undefined;
+  todayY: string;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+}): AddEventModalWallRangeAdjustments | null {
+  const sd = startDate.trim();
+  const ed = endDate.trim();
+  if (!sd || !ed) return null;
+
+  if (ed < sd) {
+    return { endDate: sd };
+  }
+
+  if (sd === ed) {
+    return computeSameDayEndAdjustmentsOnOpen({
+      tz,
+      todayY,
+      wallDate: sd,
+      startTime,
+      endTime,
+    });
+  }
+
+  if (ed !== todayY) return null;
+
+  const endSlots = quarterHoursOnOrAfterNowOnWallDate(ed, tz);
+  if (endSlots.length === 0) {
+    return { endDate: nextWallYmd(ed), endTime: '00:00' };
+  }
+
+  const et = endTime.trim();
+  if (et && !endSlots.includes(et)) {
+    return { endTime: endSlots[0]! };
+  }
+
+  return null;
+}
+
+/**
+ * Applies guardrails to keep start/end wall date+times valid when the modal opens.
+ * Returns only the state updates that should be applied (or null for "no change").
+ */
+export function computeAddEventModalRangeAdjustmentsOnOpen({
+  timeZone,
+  startDate,
+  startTime,
+  endDate,
+  endTime,
+}: {
+  timeZone: string | undefined;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+}): AddEventModalWallRangeAdjustments | null {
+  const tz = timeZone;
+  const todayY = zonedWallTodayYmd(tz);
+
+  const startAdj = computeStartRangeAdjustmentsOnOpen({
+    tz,
+    todayY,
+    startDate,
+    startTime,
+  });
+  if (startAdj) return startAdj;
+
+  return computeEndRangeAdjustmentsOnOpen({
+    tz,
+    todayY,
+    startDate,
+    startTime,
+    endDate,
+    endTime,
+  });
 }

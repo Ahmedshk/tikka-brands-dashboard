@@ -25,56 +25,87 @@ function normalizeMarketManBuyerGuid(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const OPTIONAL_BODY_STRING_FIELDS = [
+  "storeName",
+  "address",
+  "squareLocationId",
+  "homebaseLocationId",
+  "timezone",
+  "businessStartTime",
+] as const satisfies readonly (keyof UpdateLocationData)[];
+
+function applyOptionalBodyStringFields(
+  updateData: UpdateLocationData,
+  body: Record<string, unknown>,
+): void {
+  for (const key of OPTIONAL_BODY_STRING_FIELDS) {
+    const v = body[key];
+    if (v !== undefined) {
+      (updateData as Record<string, unknown>)[key] = v;
+    }
+  }
+}
+
+function applySquareMerchantId(
+  updateData: UpdateLocationData,
+  squareMerchantId: unknown,
+): void {
+  if (squareMerchantId === undefined) return;
+  const s = typeof squareMerchantId === "string" ? squareMerchantId.trim() : "";
+  updateData.squareMerchantId = s === "" ? "" : s;
+}
+
+function applyTokenCredentialFields(
+  updateData: UpdateLocationData,
+  squareTrim: string,
+  homebaseTrim: string,
+): void {
+  if (squareTrim) updateData.squareAccessToken = squareTrim;
+  if (homebaseTrim) updateData.homebaseApiKey = homebaseTrim;
+}
+
+function applyLogoAndMarketManBuyerGuid(
+  updateData: UpdateLocationData,
+  logoId: unknown,
+  marketManBuyerGuid: unknown,
+): void {
+  if (logoId !== undefined) updateData.logoId = normalizeLogoId(logoId);
+  if (marketManBuyerGuid !== undefined) {
+    updateData.marketManBuyerGuid = normalizeMarketManBuyerGuid(marketManBuyerGuid);
+  }
+}
+
+function applySquareWebhookSignatureKeyFromBody(
+  updateData: UpdateLocationData,
+  body: Record<string, unknown>,
+  squareWebhookSignatureKey: unknown,
+): void {
+  if (!Object.hasOwn(body, "squareWebhookSignatureKey")) return;
+  updateData.squareWebhookSignatureKey =
+    typeof squareWebhookSignatureKey === "string"
+      ? squareWebhookSignatureKey.trim()
+      : "";
+}
+
 /**
  * Build UpdateLocationData from request body (only include defined fields).
  */
 export function buildUpdateLocationData(body: Record<string, unknown>): UpdateLocationData {
-  const {
-    storeName,
-    address,
-    squareLocationId,
-    squareMerchantId,
-    homebaseLocationId,
-    timezone,
-    businessStartTime,
-    squareAccessToken,
-    homebaseApiKey,
-    logoId,
-    marketManBuyerGuid,
-    squareWebhookSignatureKey,
-  } = body;
-
   const squareTrim =
-    typeof squareAccessToken === "string" ? squareAccessToken.trim() : "";
+    typeof body.squareAccessToken === "string" ? body.squareAccessToken.trim() : "";
   const homebaseTrim =
-    typeof homebaseApiKey === "string" ? homebaseApiKey.trim() : "";
+    typeof body.homebaseApiKey === "string" ? body.homebaseApiKey.trim() : "";
 
   const updateData: UpdateLocationData = {};
-
-  if (storeName !== undefined) updateData.storeName = storeName as string;
-  if (address !== undefined) updateData.address = address as string;
-  if (squareLocationId !== undefined)
-    updateData.squareLocationId = squareLocationId as string;
-  if (squareMerchantId !== undefined) {
-    const s = typeof squareMerchantId === "string" ? squareMerchantId.trim() : "";
-    updateData.squareMerchantId = s === "" ? "" : s;
-  }
-  if (homebaseLocationId !== undefined)
-    updateData.homebaseLocationId = homebaseLocationId as string;
-  if (timezone !== undefined) updateData.timezone = timezone as string;
-  if (businessStartTime !== undefined)
-    updateData.businessStartTime = businessStartTime as string;
-  if (squareTrim) updateData.squareAccessToken = squareTrim;
-  if (homebaseTrim) updateData.homebaseApiKey = homebaseTrim;
-  if (logoId !== undefined) updateData.logoId = normalizeLogoId(logoId);
-  if (marketManBuyerGuid !== undefined)
-    updateData.marketManBuyerGuid = normalizeMarketManBuyerGuid(marketManBuyerGuid);
-  if (Object.prototype.hasOwnProperty.call(body, "squareWebhookSignatureKey")) {
-    updateData.squareWebhookSignatureKey =
-      typeof squareWebhookSignatureKey === "string"
-        ? squareWebhookSignatureKey.trim()
-        : "";
-  }
+  applyOptionalBodyStringFields(updateData, body);
+  applySquareMerchantId(updateData, body.squareMerchantId);
+  applyTokenCredentialFields(updateData, squareTrim, homebaseTrim);
+  applyLogoAndMarketManBuyerGuid(updateData, body.logoId, body.marketManBuyerGuid);
+  applySquareWebhookSignatureKeyFromBody(
+    updateData,
+    body,
+    body.squareWebhookSignatureKey,
+  );
 
   return updateData;
 }

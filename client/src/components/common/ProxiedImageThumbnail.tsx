@@ -18,15 +18,17 @@ export function ProxiedImageThumbnail({
     let revoked = false;
     getDocumentImageBlobUrl(publicId)
       .then((url) => {
-        if (!revoked) {
-          blobUrlRef.current = url;
-          setBlobUrl(url);
-        } else {
+        if (revoked) {
           URL.revokeObjectURL(url);
+          return;
         }
+
+        blobUrlRef.current = url;
+        setBlobUrl(url);
       })
       .catch(() => {
-        if (!revoked) setFailed(true);
+        if (revoked) return;
+        setFailed(true);
       });
     return () => {
       revoked = true;

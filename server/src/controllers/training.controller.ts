@@ -5,6 +5,7 @@ import { TrainingService } from '../services/training.service.js';
 import { ValidationError } from '../utils/errors.util.js';
 import { slugifyTrainingName, getFileFormat } from '../utils/training.util.js';
 import { uploadTrainingDocumentMulter } from '../middleware/upload-training.middleware.js';
+import { routeParamId } from '../utils/routeParams.util.js';
 
 const trainingService = new TrainingService();
 
@@ -115,7 +116,7 @@ export const getTrainingById = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = routeParamId(req, 'id');
     const training = await trainingService.getById(id);
     if (!training) {
       res.status(404).json({ success: false, message: 'Training not found' });
@@ -133,7 +134,7 @@ export const updateTraining = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = routeParamId(req, 'id');
     const { name, modules, assignToRoles } = req.body;
     const training = await trainingService.update(id, { name, modules, assignToRoles });
     if (!training) {
@@ -152,7 +153,7 @@ export const deleteTraining = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = routeParamId(req, 'id');
     const deleted = await trainingService.delete(id);
     if (!deleted) {
       res.status(404).json({ success: false, message: 'Training not found' });

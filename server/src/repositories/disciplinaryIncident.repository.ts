@@ -194,8 +194,10 @@ export class DisciplinaryIncidentRepository {
         },
       },
     ]).exec();
-    return new Map(
-      rows.map((r) => [r._id.toString(), r.maxDate]).filter((e) => e[1] != null),
-    );
+    const entries: Array<[string, Date]> = [];
+    for (const r of rows) {
+      if (r.maxDate) entries.push([r._id.toString(), r.maxDate]);
+    }
+    return new Map(entries);
   }
 }

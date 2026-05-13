@@ -1,10 +1,8 @@
-import type { UpdateQuery } from 'mongoose';
 import {
   LocationRepository,
   type LocationListFilter,
 } from '../repositories/location.repository.js';
 import { LogoService } from './logo.service.js';
-import type { LocationDocument } from '../models/location.model.js';
 import {
   ILocation,
   ILocationResponse,
@@ -14,6 +12,7 @@ import {
 } from '../types/location.types.js';
 import { NotFoundError } from '../utils/errors.util.js';
 import { encryptCredentials, decryptCredentials } from '../utils/credentialsEncryption.util.js';
+import { buildLocationMongoUpdateQuery } from '../utils/locationUpdateMongoMutationHelpers.util.js';
 
 /** Safely coerce logoId (string, ObjectId, or populated doc) to string for API response. */
 function toLogoIdString(val: unknown): string | undefined {
@@ -126,14 +125,14 @@ export class LocationService {
     const filter = toLocationListFilter(options);
     const skip = (page - 1) * limit;
     const [docs, total] =
-      filter != null
+      filter === undefined
         ? await Promise.all([
-            this.locationRepository.findPaginatedWithFilter(skip, limit, filter),
-            this.locationRepository.countWithFilter(filter),
-          ])
-        : await Promise.all([
             this.locationRepository.findPaginated(skip, limit),
             this.locationRepository.count(),
+          ])
+        : await Promise.all([
+            this.locationRepository.findPaginatedWithFilter(skip, limit, filter),
+            this.locationRepository.countWithFilter(filter),
           ]);
     const totalPages = Math.ceil(total / limit) || 1;
     const locations = await this.enrichBatchWithLogoUrls(docs.map((d) => this.toLocationResponse(d)));
@@ -147,39 +146,8 @@ export class LocationService {
   }
 
   async update(id: string, data: UpdateLocationData): Promise<ILocationResponse> {
-    const { squareAccessToken, homebaseApiKey, squareWebhookSignatureKey, ...rest } = data;
-    const $set: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(rest)) {
-      if (value !== undefined) $set[key] = value;
-    }
-    const squareTrim = squareAccessToken?.trim();
-    const homebaseTrim = homebaseApiKey?.trim();
-    if (squareTrim) {
-      $set.squareAccessTokenEnc = encryptCredentials(squareTrim);
-    }
-    if (homebaseTrim) {
-      $set.homebaseApiKeyEnc = encryptCredentials(homebaseTrim);
-    }
-    if (data.logoId !== undefined) {
-      $set.logoId = data.logoId === null || data.logoId === '' ? null : data.logoId;
-    }
-    const $unset: Record<string, 1> = {};
-    if (squareWebhookSignatureKey !== undefined) {
-      const w = squareWebhookSignatureKey.trim();
-      if (w === '') {
-        $unset.squareWebhookSignatureKeyEnc = 1;
-      } else {
-        $set.squareWebhookSignatureKeyEnc = encryptCredentials(w);
-      }
-    }
-    if (data.logoId === null) {
-      $unset.logoId = 1;
-      delete $set.logoId;
-    }
-    const updateQuery: UpdateQuery<LocationDocument> = {};
-    if (Object.keys($set).length > 0) updateQuery.$set = $set;
-    if (Object.keys($unset).length > 0) updateQuery.$unset = $unset;
-    if (Object.keys(updateQuery).length === 0) {
+    const { updateQuery, isEmptyMutation } = buildLocationMongoUpdateQuery(data);
+    if (isEmptyMutation) {
       const existing = await this.locationRepository.findById(id);
       if (!existing) {
         throw new NotFoundError('Location not found');

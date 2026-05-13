@@ -75,6 +75,219 @@ export const EmployeeTrainingEditModal = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadForModuleRef = useRef<number>(0);
 
+  const toggleModuleExpanded = (idx: number, isExpanded: boolean) => {
+    setModulesExpanded((p) => ({ ...p, [idx]: !isExpanded }));
+  };
+
+  const handleOpenTrainingModuleFile = (f: { publicId: string; resourceType: 'image' | 'raw'; filename?: string }) => {
+    handleOpenFile(f.publicId, f.resourceType, f.filename ?? undefined);
+  };
+
+  const renderModules = () => {
+    if (!detail) return null;
+    const savedProgress = detail.moduleProgress ?? [];
+    const firstIncomplete = savedProgress.findIndex((p) => p.status !== 'completed');
+    const currentModuleIndex =
+      firstIncomplete >= 0 ? firstIncomplete : Math.max(0, detail.training.modules.length - 1);
+    const defaultExpandedIndex = currentModuleIndex;
+
+    return detail.training.modules.map((mod, idx) => {
+      const canExpand = idx <= currentModuleIndex;
+      const hasExplicit = Object.keys(modulesExpanded).length > 0;
+      const isExpanded =
+        canExpand && (hasExplicit ? modulesExpanded[idx] !== false : idx === defaultExpandedIndex);
+      const headerLabel = mod.name?.trim()
+        ? `Module ${idx + 1} – ${mod.name.trim()}`
+        : `Module ${idx + 1}`;
+      const progress = moduleProgress[idx] ?? {
+        completedAt: null,
+        status: 'not_started' as const,
+      };
+      const savedExtra = progress.extraFiles ?? [];
+      const pendingList = pendingFilesByModule[idx] ?? [];
+      const totalExtraCount = savedExtra.length + pendingList.length;
+      const extraLabelSuffix = totalExtraCount === 1 ? '' : 's';
+
+      return (
+        <div key={`${mod.name}-${idx}`} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          {canExpand ? (
+            <button
+              type="button"
+              onClick={() => toggleModuleExpanded(idx, isExpanded)}
+              className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-primary hover:bg-gray-100/80 transition-colors"
+            >
+              <span>{headerLabel}</span>
+              <span className="text-gray-500 shrink-0" aria-hidden>
+                {isExpanded ? '▼' : '▶'}
+              </span>
+            </button>
+          ) : (
+            <div
+              className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-gray-400 cursor-not-allowed select-none"
+              aria-disabled="true"
+            >
+              <span>{headerLabel}</span>
+              <span className="shrink-0" aria-hidden>▶</span>
+            </div>
+          )}
+
+          {isExpanded && (
+            <div className="border-t border-gray-200 p-4 space-y-4 bg-gray-50/50">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-secondary text-xs">
+                  {mod.duration ?? 1} day{(mod.duration ?? 1) === 1 ? '' : 's'}
+                </span>
+                <Dropdown
+                  options={statusOptions.map((o) => ({ value: o.value, label: o.label }))}
+                  value={progress.status}
+                  onChange={(value) => setProgressAt(idx, { status: value as ModuleProgressEntry['status'] })}
+                  placeholder="Status"
+                  aria-label="Module status"
+                  allowEmpty={false}
+                  className="min-w-[10rem] text-sm"
+                />
+              </div>
+
+              {mod.moduleFiles?.length > 0 && (
+                <div>
+                  <p className="text-xs text-secondary font-medium mb-1.5">Training documents</p>
+                  <ul className="space-y-0 rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
+                    {mod.moduleFiles.map((f) => (
+                      <li key={f.publicId} className="flex items-center gap-2 px-3 py-1.5 min-w-0">
+                        {f.resourceType === 'image' ? (
+                          <ProxiedImageThumbnail
+                            publicId={f.publicId}
+                            fallbackFormat={getDocumentFormatFromApiModuleFile(f)}
+                          />
+                        ) : (
+                          <DocumentTypeThumbnail format={getDocumentFormatFromApiModuleFile(f)} />
+                        )}
+                        <span className="text-sm text-primary truncate min-w-0 flex-1" title={f.filename ?? 'File'}>
+                          {f.filename ?? 'View file'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleOpenTrainingModuleFile.bind(null, f)}
+                          className="p-1 text-primary hover:bg-gray-100 rounded shrink-0"
+                          aria-label="View file"
+                          title="View file"
+                        >
+                          <ViewIcon className="w-4 h-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <label className="block">
+                <span className="text-xs text-secondary font-medium">Manager notes</span>
+                <textarea
+                  value={progress.managerNotes ?? ''}
+                  onChange={(e) => setProgressAt(idx, { managerNotes: e.target.value })}
+                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-primary text-sm resize-y min-h-[60px]"
+                  rows={2}
+                />
+              </label>
+
+              <div className="border-t border-gray-200 pt-4" data-section="additional-documents">
+                <p className="text-xs text-secondary font-medium mb-1.5">
+                  Additional documents
+                  {totalExtraCount > 0 ? (
+                    <span className="text-primary ml-1">
+                      ({totalExtraCount} file{extraLabelSuffix})
+                    </span>
+                  ) : null}
+                </p>
+                {totalExtraCount > 0 ? (
+                  <ul className="mb-3 list-none space-y-2 p-0 m-0">
+                    {savedExtra.map((f, i) => (
+                      <li key={`${f.publicId}-${i}`} className={SAVED_REMOTE_FILE_ROW_CLASSNAME}>
+                        {f.resourceType === 'image' ? (
+                          <ProxiedImageThumbnail
+                            publicId={f.publicId}
+                            fallbackFormat={getDocumentFormatFromApiModuleFile(f)}
+                          />
+                        ) : (
+                          <DocumentTypeThumbnail format={getDocumentFormatFromApiModuleFile(f)} />
+                        )}
+                        <span className="text-sm text-primary truncate min-w-0 flex-1" title={f.filename ?? 'File'}>
+                          {f.filename ?? 'View file'}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={handleOpenFile.bind(null, f.publicId, f.resourceType, f.filename)}
+                            className="p-1.5 text-primary hover:bg-gray-100 rounded"
+                            aria-label="View file"
+                            title="View file"
+                          >
+                            <ViewIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={removeExtraFile.bind(null, idx, i)}
+                            className="p-1.5 text-negative hover:bg-red-50 rounded"
+                            aria-label="Remove file"
+                            title="Remove file"
+                          >
+                            <span className="text-lg leading-none" aria-hidden>×</span>
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                    {pendingList.map((item, i) => (
+                      <li key={item.id} className={PENDING_LOCAL_FILE_ROW_CLASSNAME}>
+                        {isImageFile(item.file) ? (
+                          <FilePreviewThumbnail objectUrl={item.objectUrl} />
+                        ) : (
+                          <DocumentTypeThumbnail format={getDocumentFormatFromFile(item.file)} />
+                        )}
+                        <span className="text-sm text-primary truncate min-w-0 flex-1" title={item.file.name}>
+                          {item.file.name}
+                          <span className={PENDING_UPLOAD_TAG_CLASSNAME}>(pending upload)</span>
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={openFileInNewTab.bind(null, item.file)}
+                            className="p-1.5 text-primary hover:bg-gray-100 rounded"
+                            aria-label="View file"
+                            title="View file"
+                          >
+                            <ViewIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={removeExtraFile.bind(null, idx, savedExtra.length + i)}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                            aria-label="Remove file"
+                          >
+                            <span className="text-lg leading-none" aria-hidden>×</span>
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-secondary mb-3">No documents added yet.</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => triggerUploadForModule(idx)}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 text-primary text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <UploadIcon className="w-4 h-4" />
+                  Add documents
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    });
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     const handleEscape = (e: KeyboardEvent) => {
@@ -302,208 +515,7 @@ export const EmployeeTrainingEditModal = ({
                 <section className="mb-4">
                   <h3 className="text-xs font-semibold text-secondary uppercase tracking-wide mb-2">Modules</h3>
                   <div className="space-y-3">
-                    {(() => {
-                      const savedProgress = detail.moduleProgress ?? [];
-                      const firstIncomplete = savedProgress.findIndex((p) => p.status !== 'completed');
-                      const currentModuleIndex =
-                        firstIncomplete >= 0 ? firstIncomplete : Math.max(0, detail.training.modules.length - 1);
-                      const defaultExpandedIndex = currentModuleIndex;
-                      return detail.training.modules.map((mod, idx) => {
-                        const canExpand = idx <= currentModuleIndex;
-                        const hasExplicit = Object.keys(modulesExpanded).length > 0;
-                        const isExpanded =
-                          canExpand && (hasExplicit ? modulesExpanded[idx] !== false : idx === defaultExpandedIndex);
-                        const headerLabel = mod.name?.trim() ? `Module ${idx + 1} – ${mod.name.trim()}` : `Module ${idx + 1}`;
-                        const progress = moduleProgress[idx] ?? {
-                          completedAt: null,
-                          status: 'not_started' as const,
-                        };
-                        const savedExtra = progress.extraFiles ?? [];
-                        const pendingList = pendingFilesByModule[idx] ?? [];
-                        const totalExtraCount = savedExtra.length + pendingList.length;
-                        return (
-                          <div key={`${mod.name}-${idx}`} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                            {canExpand ? (
-                              <button
-                                type="button"
-                                onClick={() => setModulesExpanded((p) => ({ ...p, [idx]: !isExpanded }))}
-                                className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-primary hover:bg-gray-100/80 transition-colors"
-                              >
-                                <span>{headerLabel}</span>
-                                <span className="text-gray-500 shrink-0" aria-hidden>
-                                  {isExpanded ? '▼' : '▶'}
-                                </span>
-                              </button>
-                            ) : (
-                              <div
-                                className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-gray-400 cursor-not-allowed select-none"
-                                aria-disabled="true"
-                              >
-                                <span>{headerLabel}</span>
-                                <span className="shrink-0" aria-hidden>▶</span>
-                              </div>
-                            )}
-                            {isExpanded && (
-                              <div className="border-t border-gray-200 p-4 space-y-4 bg-gray-50/50">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <span className="text-secondary text-xs">
-                                    {mod.duration ?? 1} day{(mod.duration ?? 1) === 1 ? '' : 's'}
-                                  </span>
-                                  <Dropdown
-                                    options={statusOptions.map((o) => ({ value: o.value, label: o.label }))}
-                                    value={progress.status}
-                                    onChange={(value) =>
-                                      setProgressAt(idx, { status: value as ModuleProgressEntry['status'] })
-                                    }
-                                    placeholder="Status"
-                                    aria-label="Module status"
-                                    allowEmpty={false}
-                                    className="min-w-[10rem] text-sm"
-                                  />
-                                </div>
-                                {mod.moduleFiles?.length > 0 && (
-                                  <div>
-                                    <p className="text-xs text-secondary font-medium mb-1.5">Training documents</p>
-                                    <ul className="space-y-0 rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
-                                      {mod.moduleFiles.map((f) => (
-                                        <li key={f.publicId} className="flex items-center gap-2 px-3 py-1.5 min-w-0">
-                                          {f.resourceType === 'image' ? (
-                                            <ProxiedImageThumbnail
-                                              publicId={f.publicId}
-                                              fallbackFormat={getDocumentFormatFromApiModuleFile(f)}
-                                            />
-                                          ) : (
-                                            <DocumentTypeThumbnail format={getDocumentFormatFromApiModuleFile(f)} />
-                                          )}
-                                          <span className="text-sm text-primary truncate min-w-0 flex-1" title={f.filename ?? 'File'}>
-                                            {f.filename ?? 'View file'}
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleOpenFile(
-                                                f.publicId,
-                                                f.resourceType,
-                                                f.filename ?? undefined
-                                              )
-                                            }
-                                            className="p-1 text-primary hover:bg-gray-100 rounded shrink-0"
-                                            aria-label="View file"
-                                            title="View file"
-                                          >
-                                            <ViewIcon className="w-4 h-4" />
-                                          </button>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                                <label className="block">
-                                  <span className="text-xs text-secondary font-medium">Manager notes</span>
-                                  <textarea
-                                    value={progress.managerNotes ?? ''}
-                                    onChange={(e) => setProgressAt(idx, { managerNotes: e.target.value })}
-                                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-primary text-sm resize-y min-h-[60px]"
-                                    rows={2}
-                                  />
-                                </label>
-                                <div className="border-t border-gray-200 pt-4" data-section="additional-documents">
-                                  <p className="text-xs text-secondary font-medium mb-1.5">
-                                    Additional documents
-                                    {totalExtraCount > 0 && (
-                                      <span className="text-primary ml-1">
-                                        ({totalExtraCount} file{totalExtraCount !== 1 ? 's' : ''})
-                                      </span>
-                                    )}
-                                  </p>
-                                  {totalExtraCount > 0 ? (
-                                    <ul className="mb-3 list-none space-y-2 p-0 m-0">
-                                      {savedExtra.map((f, i) => (
-                                        <li key={`${f.publicId}-${i}`} className={SAVED_REMOTE_FILE_ROW_CLASSNAME}>
-                                          {f.resourceType === 'image' ? (
-                                            <ProxiedImageThumbnail
-                                              publicId={f.publicId}
-                                              fallbackFormat={getDocumentFormatFromApiModuleFile(f)}
-                                            />
-                                          ) : (
-                                            <DocumentTypeThumbnail format={getDocumentFormatFromApiModuleFile(f)} />
-                                          )}
-                                          <span className="text-sm text-primary truncate min-w-0 flex-1" title={f.filename ?? 'File'}>
-                                            {f.filename ?? 'View file'}
-                                          </span>
-                                          <div className="flex items-center gap-1 shrink-0">
-                                            <button
-                                              type="button"
-                                              onClick={() => handleOpenFile(f.publicId, f.resourceType, f.filename)}
-                                              className="p-1.5 text-primary hover:bg-gray-100 rounded"
-                                              aria-label="View file"
-                                              title="View file"
-                                            >
-                                              <ViewIcon className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => removeExtraFile(idx, i)}
-                                              className="p-1.5 text-negative hover:bg-red-50 rounded"
-                                              aria-label="Remove file"
-                                              title="Remove file"
-                                            >
-                                              <span className="text-lg leading-none" aria-hidden>×</span>
-                                            </button>
-                                          </div>
-                                        </li>
-                                      ))}
-                                      {pendingList.map((item, i) => (
-                                        <li key={item.id} className={PENDING_LOCAL_FILE_ROW_CLASSNAME}>
-                                          {isImageFile(item.file) ? (
-                                            <FilePreviewThumbnail objectUrl={item.objectUrl} />
-                                          ) : (
-                                            <DocumentTypeThumbnail format={getDocumentFormatFromFile(item.file)} />
-                                          )}
-                                          <span className="text-sm text-primary truncate min-w-0 flex-1" title={item.file.name}>
-                                            {item.file.name}
-                                            <span className={PENDING_UPLOAD_TAG_CLASSNAME}>(pending upload)</span>
-                                          </span>
-                                          <div className="flex items-center gap-1 shrink-0">
-                                            <button
-                                              type="button"
-                                              onClick={() => openFileInNewTab(item.file)}
-                                              className="p-1.5 text-primary hover:bg-gray-100 rounded"
-                                              aria-label="View file"
-                                              title="View file"
-                                            >
-                                              <ViewIcon className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => removeExtraFile(idx, savedExtra.length + i)}
-                                              className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                                              aria-label="Remove file"
-                                            >
-                                              <span className="text-lg leading-none" aria-hidden>×</span>
-                                            </button>
-                                          </div>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p className="text-xs text-secondary mb-3">No documents added yet.</p>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => triggerUploadForModule(idx)}
-                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 text-primary text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-                                  >
-                                    <UploadIcon className="w-4 h-4" />
-                                    Add documents
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      });
-                    })()}
+                    {renderModules()}
                   </div>
                 </section>
                 <input

@@ -45,7 +45,7 @@ const roleBindingSchema = z
     if (!sub) return;
     if (!isValidRoleBindingSubcategory(b.category as AlertRoleBindingCategory, sub)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: `Invalid subcategory for ${b.category}`,
         path: ["subcategory"],
       });

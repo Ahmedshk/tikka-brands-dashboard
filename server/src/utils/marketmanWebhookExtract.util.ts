@@ -64,6 +64,82 @@ function tryExtractHoodStyleOrder(root: Record<string, unknown>): {
   return { order: data, eventName, buyerGuid };
 }
 
+type WebhookExtractionScratch = {
+  eventName: string | null;
+  buyerGuid: string | null;
+  order: Record<string, unknown> | null;
+};
+
+function applyHoodExtraction(
+  state: WebhookExtractionScratch,
+  hood: NonNullable<ReturnType<typeof tryExtractHoodStyleOrder>>,
+): void {
+  state.order = hood.order;
+  state.eventName = hood.eventName;
+  state.buyerGuid = hood.buyerGuid ?? state.buyerGuid;
+}
+
+function tryResolveOrderFromEventWrapper(
+  state: WebhookExtractionScratch,
+  body: Record<string, unknown>,
+): void {
+  const eventObj = pickRecord(body, ["Event", "event"]);
+  if (!eventObj) return;
+  const hood = tryExtractHoodStyleOrder(eventObj);
+  if (!hood) return;
+  applyHoodExtraction(state, hood);
+}
+
+function tryResolveHoodFromBodyRoot(
+  state: WebhookExtractionScratch,
+  body: Record<string, unknown>,
+): void {
+  if (state.order != null) return;
+  const hood = tryExtractHoodStyleOrder(body);
+  if (!hood) return;
+  applyHoodExtraction(state, hood);
+}
+
+function tryResolveLegacyOrderRecord(body: Record<string, unknown>): Record<string, unknown> | null {
+  let o = pickRecord(body, ["Order", "order", "Payload", "payload", "Data", "data"]);
+  if (!o) return null;
+  const nested = pickRecord(o, ["Order", "order"]);
+  return nested ?? o;
+}
+
+function backfillBuyerGuidFromOrderRecord(
+  order: Record<string, unknown> | null,
+  buyerGuid: string | null,
+): string | null {
+  if (order == null || buyerGuid != null) return buyerGuid;
+  return pickString(order, ["BuyerGuid", "buyerGuid", "BuyerGUID", "buyer_guid"]);
+}
+
+function finalizeOrderRecord(
+  order: Record<string, unknown> | null,
+  body: Record<string, unknown>,
+): Record<string, unknown> | null {
+  let o = order;
+  if (o == null && orderHasOrderNumber(body)) o = body;
+  if (o != null && !orderHasOrderNumber(o)) return null;
+  return o;
+}
+
+function parseExplicitApiKindFromPayload(
+  body: Record<string, unknown>,
+  order: Record<string, unknown> | null,
+): MarketManOrderApiKind | null {
+  const kindRaw =
+    pickString(body, ["ApiKind", "apiKind", "OrderApiKind", "orderApiKind"]) ??
+    (order == null
+      ? null
+      : pickString(order, ["ApiKind", "apiKind", "OrderApiKind", "orderApiKind"]));
+  if (kindRaw == null) return null;
+  const u = kindRaw.toLowerCase();
+  if (u === "sent" || u === "delivery") return u;
+  return null;
+}
+
 /**
  * Best-effort extraction: HoodEventID + Data, Event wrapper, then legacy Order / Payload / Data / body.
  */
@@ -73,84 +149,39 @@ export function extractMarketManWebhookPayload(body: Record<string, unknown>): {
   order: Record<string, unknown> | null;
   explicitApiKind: MarketManOrderApiKind | null;
 } {
-  let eventName = pickString(body, [
-    "EventType",
-    "eventType",
-    "Type",
-    "type",
-    "Name",
-    "name",
-  ]);
-
-  let buyerGuid = pickString(body, [
-    "BuyerGuid",
-    "buyerGuid",
-    "BuyerGUID",
-    "buyer_guid",
-    "BuyerId",
-    "buyerId",
-  ]);
-
-  let order: Record<string, unknown> | null = null;
-
-  const eventObj = pickRecord(body, ["Event", "event"]);
-  if (eventObj) {
-    const hood = tryExtractHoodStyleOrder(eventObj);
-    if (hood) {
-      order = hood.order;
-      eventName = hood.eventName;
-      buyerGuid = hood.buyerGuid ?? buyerGuid;
-    }
-  }
-
-  if (!order) {
-    const hood = tryExtractHoodStyleOrder(body);
-    if (hood) {
-      order = hood.order;
-      eventName = hood.eventName;
-      buyerGuid = hood.buyerGuid ?? buyerGuid;
-    }
-  }
-
-  if (!order) {
-    let o = pickRecord(body, ["Order", "order", "Payload", "payload", "Data", "data"]);
-    if (o) {
-      const nested = pickRecord(o, ["Order", "order"]);
-      if (nested) o = nested;
-    }
-    order = o ?? null;
-  }
-
-  if (order && !buyerGuid) {
-    buyerGuid = pickString(order, [
+  const state: WebhookExtractionScratch = {
+    eventName: pickString(body, [
+      "EventType",
+      "eventType",
+      "Type",
+      "type",
+      "Name",
+      "name",
+    ]),
+    buyerGuid: pickString(body, [
       "BuyerGuid",
       "buyerGuid",
       "BuyerGUID",
       "buyer_guid",
-    ]);
-  }
+      "BuyerId",
+      "buyerId",
+    ]),
+    order: null,
+  };
 
-  if (!order && orderHasOrderNumber(body)) {
-    order = body;
-  }
+  tryResolveOrderFromEventWrapper(state, body);
+  tryResolveHoodFromBodyRoot(state, body);
+  state.order ??= tryResolveLegacyOrderRecord(body);
+  state.buyerGuid = backfillBuyerGuidFromOrderRecord(state.order, state.buyerGuid);
+  state.order = finalizeOrderRecord(state.order, body);
+  const explicitApiKind = parseExplicitApiKindFromPayload(body, state.order);
 
-  if (order && !orderHasOrderNumber(order)) {
-    order = null;
-  }
-
-  const kindRaw =
-    pickString(body, ["ApiKind", "apiKind", "OrderApiKind", "orderApiKind"]) ??
-    (order
-      ? pickString(order, ["ApiKind", "apiKind", "OrderApiKind", "orderApiKind"])
-      : null);
-
-  let explicitApiKind: MarketManOrderApiKind | null = null;
-  if (kindRaw) {
-    const u = kindRaw.toLowerCase();
-    if (u === "sent" || u === "delivery") explicitApiKind = u;
-  }
-
-  return { eventName, buyerGuid, order, explicitApiKind };
+  return {
+    eventName: state.eventName,
+    buyerGuid: state.buyerGuid,
+    order: state.order,
+    explicitApiKind,
+  };
 }
 
 export function inferMarketManOrderApiKindFromOrderRaw(

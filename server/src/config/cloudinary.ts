@@ -1,8 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import type { UploadToCloudinaryResult } from '../types/cloudinary.types.js';
 
-export type { UploadToCloudinaryResult };
-
 const isConfigured = (): boolean => {
   const name = process.env.CLOUDINARY_CLOUD_NAME;
   const key = process.env.CLOUDINARY_API_KEY;
@@ -12,10 +10,15 @@ const isConfigured = (): boolean => {
 
 export const initializeCloudinary = (): void => {
   if (!isConfigured()) return;
+  // With `exactOptionalPropertyTypes`, Cloudinary config requires definite strings.
+  // `isConfigured()` guarantees these env vars are set.
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME as string;
+  const apiKey = process.env.CLOUDINARY_API_KEY as string;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET as string;
   cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
+    cloud_name: cloudName,
+    api_key: apiKey,
+    api_secret: apiSecret,
   });
 };
 
@@ -48,12 +51,11 @@ export async function uploadToCloudinary(
     throw new Error('Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.');
   }
   const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+  const mimeDefaultResourceType = IMAGE_MIMES.has(file.mimetype) ? 'image' : 'raw';
   const resourceType =
     options?.resource_type === 'auto'
-      ? IMAGE_MIMES.has(file.mimetype)
-        ? 'image'
-        : 'raw'
-      : options?.resource_type ?? (IMAGE_MIMES.has(file.mimetype) ? 'image' : 'raw');
+      ? mimeDefaultResourceType
+      : options?.resource_type ?? mimeDefaultResourceType;
   const uploadOptions: Record<string, unknown> = {
     folder,
     resource_type: resourceType,
@@ -66,11 +68,12 @@ export async function uploadToCloudinary(
     uploadOptions.invalidate = true;
   }
   const result = await cloudinary.uploader.upload(dataUri, uploadOptions);
-  return {
+  const format = (result as { format?: string }).format;
+  const base: UploadToCloudinaryResult = {
     public_id: result.public_id,
     secure_url: result.secure_url ?? '',
-    format: (result as { format?: string }).format,
   };
+  return format ? { ...base, format } : base;
 }
 
 /**

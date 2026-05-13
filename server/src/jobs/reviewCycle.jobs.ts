@@ -7,15 +7,26 @@ import { ReviewCycleService } from "../services/reviewCycle.service.js";
 import { logger } from "../utils/logger.util.js";
 import {
   addPeriod, diffPeriod,
-  LATE_AFTER_DUE, PAST_DUE_AFTER_DUE, MANAGER_DEADLINE, DIRECTOR_DEADLINE, SHARING_DEADLINE,
+  LATE_AFTER_DUE, PAST_DUE_AFTER_DUE, DIRECTOR_DEADLINE, SHARING_DEADLINE,
   getCheckin30, getCheckin30PastDue, getCheckin60, getCheckin60PastDue,
 } from "../utils/reviewTimings.js";
 import type { ReviewCycleStatus } from "../types/reviewCycle.types.js";
+import { runReviewCheckManagerDeadlineJob } from "../utils/reviewCycleJobsManagerDeadline.util.js";
 
 const notificationService = new NotificationService();
 const reviewCycleService = new ReviewCycleService();
 
 const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
+
+function asObjectId(id: unknown): Types.ObjectId | null {
+  if (id instanceof Types.ObjectId) return id;
+  if (typeof id === "string" && Types.ObjectId.isValid(id)) return new Types.ObjectId(id);
+  if (id != null && typeof (id as { toString?: unknown }).toString === "function") {
+    const s = (id as { toString(): string }).toString();
+    if (Types.ObjectId.isValid(s)) return new Types.ObjectId(s);
+  }
+  return null;
+}
 
 async function getSelfReviewActionUrl(cycleId: unknown): Promise<string> {
   const cycle = await ReviewCycleModel.findById(cycleId)
@@ -33,7 +44,9 @@ async function isEmployeeTerminated(employeeId: string): Promise<boolean> {
 
 async function cancelCycleIfTerminated(cycleId: unknown, employeeId: string): Promise<boolean> {
   if (!(await isEmployeeTerminated(employeeId))) return false;
-  await ReviewCycleModel.updateOne({ _id: cycleId }, { $set: { status: "cycle_complete" } });
+  const _id = asObjectId(cycleId);
+  if (!_id) return false;
+  await ReviewCycleModel.updateOne({ _id }, { $set: { status: "cycle_complete" } });
   return true;
 }
 
@@ -55,6 +68,11 @@ async function processMilestone(
   now: Date,
 ): Promise<void> {
   const employeeId = cycle.employeeId.toString();
+  const cycleObjectId = asObjectId(cycle._id);
+  if (!cycleObjectId) {
+    logger.warn("review:check-milestones - invalid cycle id", { employeeId });
+    return;
+  }
   const cycleId = (cycle._id as { toString(): string }).toString();
   const firstName = await getEmployeeFirstName(employeeId);
 
@@ -80,7 +98,7 @@ async function processMilestone(
   };
 
   if (cycle.status === "upcoming" && now >= cycle.notifyDate75) {
-    await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "notification_sent_75" } });
+    await ReviewCycleModel.updateOne({ _id: cycleObjectId }, { $set: { status: "notification_sent_75" } });
     await notificationService.send({
       recipientId: employeeId,
       type: "review_self_upcoming",
@@ -95,7 +113,7 @@ async function processMilestone(
   }
 
   if (cycle.status === "notification_sent_75" && now >= cycle.formAvailableDate85) {
-    await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "form_available_85" } });
+    await ReviewCycleModel.updateOne({ _id: cycleObjectId }, { $set: { status: "form_available_85" } });
     const actionUrl = await getSelfReviewActionUrl(cycle._id);
     await sendSelfReviewNotification(
       actionUrl,
@@ -108,7 +126,7 @@ async function processMilestone(
   }
 
   if (cycle.status === "form_available_85" && now >= cycle.dueDate90) {
-    await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "self_review_due" } });
+    await ReviewCycleModel.updateOne({ _id: cycleObjectId }, { $set: { status: "self_review_due" } });
     const actionUrl = await getSelfReviewActionUrl(cycle._id);
     await sendSelfReviewNotification(
       actionUrl,
@@ -121,7 +139,7 @@ async function processMilestone(
   }
 
   if (cycle.status === "self_review_due" && now >= addPeriod(cycle.dueDate90, LATE_AFTER_DUE)) {
-    await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "self_review_late" } });
+    await ReviewCycleModel.updateOne({ _id: cycleObjectId }, { $set: { status: "self_review_late" } });
     const actionUrl = await getSelfReviewActionUrl(cycle._id);
     await sendSelfReviewNotification(
       actionUrl,
@@ -134,7 +152,7 @@ async function processMilestone(
   }
 
   if (cycle.status === "self_review_late" && now >= addPeriod(cycle.dueDate90, PAST_DUE_AFTER_DUE)) {
-    await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "self_review_past_due" } });
+    await ReviewCycleModel.updateOne({ _id: cycleObjectId }, { $set: { status: "self_review_past_due" } });
     const actionUrl = await getSelfReviewActionUrl(cycle._id);
     await sendSelfReviewNotification(
       actionUrl,
@@ -147,10 +165,12 @@ async function processMilestone(
 }
 
 async function processCheckInCycle(
-  cycle: { _id: unknown; employeeId: { toString(): string }; status: string; completedAt: Date | null; reviewedByManagerId?: { toString(): string } | null },
+  cycle: { _id: unknown; employeeId: { toString(): string }; status: string; completedAt?: Date | null; reviewedByManagerId?: { toString(): string } | null },
   now: Date,
 ): Promise<void> {
   if (!cycle.completedAt) return;
+  const cycleObjectId = asObjectId(cycle._id);
+  if (!cycleObjectId) return;
   const unitsSinceComplete = diffPeriod(now, cycle.completedAt);
   const cycleId = (cycle._id as { toString(): string }).toString();
   const managerId = cycle.reviewedByManagerId?.toString();
@@ -165,7 +185,10 @@ async function processCheckInCycle(
   const dashboardUrl = `${CLIENT_URL}/dashboard/reviews-management`;
 
   if (cycle.status === "checkin_30_due" && unitsSinceComplete >= getCheckin30PastDue()) {
-    await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "checkin_30_past_due" as ReviewCycleStatus } });
+    await ReviewCycleModel.updateOne(
+      { _id: cycleObjectId },
+      { $set: { status: "checkin_30_past_due" as ReviewCycleStatus } },
+    );
     if (managerId) {
       await notificationService.send({
         recipientId: managerId,
@@ -189,7 +212,10 @@ async function processCheckInCycle(
   }
 
   if (cycle.status === "checkin_60_due" && unitsSinceComplete >= getCheckin60PastDue()) {
-    await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "checkin_60_past_due" as ReviewCycleStatus } });
+    await ReviewCycleModel.updateOne(
+      { _id: cycleObjectId },
+      { $set: { status: "checkin_60_past_due" as ReviewCycleStatus } },
+    );
     if (managerId) {
       await notificationService.send({
         recipientId: managerId,
@@ -228,66 +254,17 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
   });
 
   agenda.define("review:check-manager-deadline", async (_job) => {
-    const now = new Date();
-    logger.info("Job: review:check-manager-deadline - running");
-
-    const cycles = await ReviewCycleModel.find({
-      status: { $in: ["manager_review_due", "manager_review_pending", "manager_review_past_due"] },
-      selfReviewId: { $ne: null },
-    }).populate("selfReviewId", "submittedAt").lean();
-
-    for (const cycle of cycles) {
-      if (await cancelCycleIfTerminated(cycle._id, cycle.employeeId.toString())) continue;
-
-      const selfReview = cycle.selfReviewId as unknown as { submittedAt: Date } | undefined;
-      if (!selfReview?.submittedAt) continue;
-
-      const selfSubmitted = new Date(selfReview.submittedAt);
-      const rejectedAt = (cycle as { directorRejectedAt?: Date }).directorRejectedAt;
-      const anchorStart =
-        rejectedAt != null
-          ? new Date(Math.max(selfSubmitted.getTime(), new Date(rejectedAt).getTime()))
-          : selfSubmitted;
-      const unitsSinceSubmission = diffPeriod(now, anchorStart);
-      if (unitsSinceSubmission >= MANAGER_DEADLINE && (cycle.status === "manager_review_due" || cycle.status === "manager_review_pending")) {
-        const employeeId = cycle.employeeId.toString();
-        let managerId = cycle.reviewedByManagerId
-          ? cycle.reviewedByManagerId.toString()
-          : null;
-        if (!managerId) {
-          managerId = await reviewCycleService.getManagerForEmployee(employeeId);
-        }
-
-        const setFields: { status: ReviewCycleStatus; reviewedByManagerId?: Types.ObjectId } = {
-          status: "manager_review_past_due",
-        };
-        if (!cycle.reviewedByManagerId && managerId) {
-          setFields.reviewedByManagerId = new Types.ObjectId(managerId);
-        }
-        await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: setFields });
-
-        if (managerId) {
-          const actionUrl = `${CLIENT_URL}/dashboard/reviews-management`;
-          await notificationService.send({
-            recipientId: managerId,
-            type: "review_manager_past_due",
-            title: "Manager Review Past Due",
-            message: "Your employee review is past the 5-day deadline. Please complete it immediately.",
-            data: await reviewNotificationData(employeeId, { reviewCycleId: cycle._id.toString() }),
-            channels: ["all"],
-            actionUrl,
-            emailTemplateFile: "review-email.ejs",
-            emailTemplateData: { actionUrl, firstName: await getEmployeeFirstName(managerId) },
-            emailButtonText: "View",
-          });
-        } else {
-          logger.warn("review:check-manager-deadline: past due but no manager to notify", {
-            cycleId: cycle._id.toString(),
-            employeeId,
-          });
-        }
-      }
-    }
+    await runReviewCheckManagerDeadlineJob({
+      now: new Date(),
+      clientUrl: CLIENT_URL,
+      reviewCycleService,
+      notificationService,
+      cancelCycleIfTerminated,
+      asObjectId,
+      getEmployeeFirstName,
+      reviewNotificationData,
+      logger,
+    });
   });
 
   agenda.define("review:check-director-deadline", async (_job) => {
@@ -303,6 +280,8 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
 
     for (const cycle of cycles) {
       if (await cancelCycleIfTerminated(cycle._id, cycle.employeeId.toString())) continue;
+      const cycleObjectId = asObjectId(cycle._id);
+      if (!cycleObjectId) continue;
 
       const mgrReview = cycle.managerReviewId as unknown as { submittedAt: Date } | undefined;
       if (!mgrReview?.submittedAt) continue;
@@ -314,7 +293,7 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
 
       const unitsSince = diffPeriod(now, deadlineStart);
       if (unitsSince >= DIRECTOR_DEADLINE && (cycle.status === "director_approval_due" || cycle.status === "director_approval_pending")) {
-        await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "director_approval_past_due" } });
+        await ReviewCycleModel.updateOne({ _id: cycleObjectId }, { $set: { status: "director_approval_past_due" } });
         if (cycle.approvedByDirectorId) {
           const directorId = cycle.approvedByDirectorId.toString();
           const actionUrl = `${CLIENT_URL}/dashboard/reviews-management`;
@@ -346,16 +325,18 @@ export function registerReviewCycleJobs(agenda: Agenda): void {
 
     for (const cycle of cycles) {
       if (await cancelCycleIfTerminated(cycle._id, cycle.employeeId.toString())) continue;
+      const cycleObjectId = asObjectId(cycle._id);
+      if (!cycleObjectId) continue;
 
       if (cycle.status === "approved") {
-        await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "sharing_due" } });
+        await ReviewCycleModel.updateOne({ _id: cycleObjectId }, { $set: { status: "sharing_due" } });
         continue;
       }
 
       const approvedAt = cycle.updatedAt;
       const unitsSince = diffPeriod(now, approvedAt);
       if (unitsSince >= SHARING_DEADLINE && (cycle.status === "sharing_due" || cycle.status === "sharing_pending")) {
-        await ReviewCycleModel.updateOne({ _id: cycle._id }, { $set: { status: "sharing_past_due" } });
+        await ReviewCycleModel.updateOne({ _id: cycleObjectId }, { $set: { status: "sharing_past_due" } });
         if (cycle.reviewedByManagerId) {
           const managerId = cycle.reviewedByManagerId.toString();
           const actionUrl = `${CLIENT_URL}/dashboard/reviews-management`;
@@ -412,7 +393,9 @@ async function transitionCheckIn(
   managerId: string | undefined,
   employeeId: string,
 ): Promise<void> {
-  await ReviewCycleModel.updateOne({ _id: cycleId }, { $set: { status } });
+  const _id = asObjectId(cycleId);
+  if (!_id) return;
+  await ReviewCycleModel.updateOne({ _id }, { $set: { status } });
   if (managerId) {
     const period = status.includes("30") ? "30" : "60";
     const actionUrl = `${CLIENT_URL}/dashboard/reviews-management`;

@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Tooltip } from "@mui/material";
 import toast from "react-hot-toast";
 import { FiPlus, FiTrash2, FiX } from "react-icons/fi";
 import { Layout } from "../../components/common/Layout";
@@ -33,6 +34,7 @@ import {
   notifyRolesRowLabel,
   subcategoryOptionsForNotifyRoles,
 } from "../../utils/alertRoleBindingNotify.util";
+import { getRoleNamesForBindingRow } from "../../utils/alertsNotificationsSettingsHelpers";
 
 const fieldClass =
   "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary";
@@ -54,6 +56,21 @@ interface RoleOption {
   _id: string;
   name: string;
 }
+
+const InfoIcon = ({ className }: { className?: string }) => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className ?? "text-primary/70 shrink-0"}
+    aria-hidden
+  >
+    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
+    <path d="M12 16v-4M12 8h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
 
 const DEFAULT_METRIC: Omit<AlertMetricTogglesDto, "run"> = {
   warnInToleranceZone: false,
@@ -163,11 +180,11 @@ function ScheduleEditor({
   idPrefix,
   schedule,
   onChange,
-}: {
+}: Readonly<{
   idPrefix: string;
   schedule: AlertRunScheduleDto;
   onChange: (next: AlertRunScheduleDto) => void;
-}) {
+}>) {
   const [hoursDraft, setHoursDraft] = useState<string | null>(null);
   const [minutesDraft, setMinutesDraft] = useState<string | null>(null);
 
@@ -191,7 +208,7 @@ function ScheduleEditor({
     onChange({
       ...schedule,
       ...patch,
-      interval: patch.interval != null ? { ...schedule.interval, ...patch.interval } : schedule.interval,
+      interval: patch.interval ? { ...schedule.interval, ...patch.interval } : schedule.interval,
       fixedTimesLocal: patch.fixedTimesLocal ?? schedule.fixedTimesLocal,
     });
   };
@@ -423,15 +440,14 @@ export const AlertsNotificationsSettings = () => {
       setSettings((prev) => {
         if (!prev) return prev;
         const cur = prev.financialLabor[key];
-        const run =
-          patch.run != null
-            ? {
-                ...cur.run,
-                ...patch.run,
-                interval: { ...cur.run.interval, ...patch.run.interval },
-                fixedTimesLocal: patch.run.fixedTimesLocal ?? cur.run.fixedTimesLocal,
-              }
-            : cur.run;
+        const run = patch.run
+          ? {
+              ...cur.run,
+              ...patch.run,
+              interval: { ...cur.run.interval, ...patch.run.interval },
+              fixedTimesLocal: patch.run.fixedTimesLocal ?? cur.run.fixedTimesLocal,
+            }
+          : cur.run;
         return {
           ...prev,
           financialLabor: {
@@ -448,10 +464,7 @@ export const AlertsNotificationsSettings = () => {
     (preselectedCategory: AlertRoleBindingCategory, preselectedSubKey?: string) => {
       if (!settings || roles.length === 0) return;
       const cat = preselectedCategory;
-      const sub =
-        preselectedSubKey !== undefined
-          ? preselectedSubKey
-          : firstSubcategoryForNotifyRoles(cat);
+      const sub = preselectedSubKey ?? firstSubcategoryForNotifyRoles(cat);
       setRoleModalCategory(cat);
       setRoleModalSubcategory(sub);
       const bindings = settings.roleBindings.filter((b) => {
@@ -671,7 +684,7 @@ export const AlertsNotificationsSettings = () => {
                                 }
                                 className="rounded border-gray-300"
                               />
-                              Warn in tolerance
+                              <span>Warn in tolerance</span>
                             </label>
                             <label className="flex items-center gap-2 text-xs text-primary">
                               <input
@@ -684,7 +697,7 @@ export const AlertsNotificationsSettings = () => {
                                 }
                                 className="rounded border-gray-300"
                               />
-                              Alert beyond tolerance
+                              <span>Alert beyond tolerance</span>
                             </label>
                           </div>
                         );
@@ -734,7 +747,7 @@ export const AlertsNotificationsSettings = () => {
                         }
                         className="rounded border-gray-300"
                       />
-                      Notify when delivery date has passed and order is not received
+                      <span>Notify when delivery date has passed and order is not received</span>
                     </label>
                     <ScheduleEditor
                       idPrefix="inv"
@@ -763,10 +776,28 @@ export const AlertsNotificationsSettings = () => {
                         }
                         className="rounded border-gray-300"
                       />
-                      Notify when inventory is below minimum on hand
+                      <span>Notify when inventory is below minimum on hand</span>
                     </label>
                     <div className="max-w-md">
-                      <p className="block text-[10px] md:text-xs text-secondary mb-1">Alert frequency</p>
+                      <p className="block text-[10px] md:text-xs text-secondary mb-1">
+                        <span className="inline-flex items-center gap-1">
+                          Alert frequency
+                          <Tooltip
+                            title="This frequency applies per item, so you control how often you’re alerted for the same item being low."
+                            placement="top"
+                            arrow
+                            enterDelay={200}
+                          >
+                            <button
+                              type="button"
+                              className="inline-flex cursor-help p-0 border-0 bg-transparent"
+                              aria-label="Low inventory alert frequency info"
+                            >
+                              <InfoIcon />
+                            </button>
+                          </Tooltip>
+                        </span>
+                      </p>
                       <Dropdown
                         options={lowInventoryCadenceOptions}
                         value={settings.inventorySupplyChain.lowInventoryCadence ?? "once_per_episode"}
@@ -830,7 +861,7 @@ export const AlertsNotificationsSettings = () => {
                           }
                           className="rounded border-gray-300"
                         />
-                        Training overdue (assignments past module end date)
+                        <span>Training overdue (assignments past module end date)</span>
                       </label>
                       <ScheduleEditor
                         idPrefix="hr-train"
@@ -859,7 +890,7 @@ export const AlertsNotificationsSettings = () => {
                           }
                           className="rounded border-gray-300"
                         />
-                        Pending PIPs (disciplinary signatures pending)
+                        <span>Pending PIPs (disciplinary signatures pending)</span>
                       </label>
                       <ScheduleEditor
                         idPrefix="hr-pip"
@@ -929,14 +960,13 @@ export const AlertsNotificationsSettings = () => {
                           <ul className="space-y-3 mt-3">
                             {rowsForCat.map((row) => {
                               const rowKey = `${row.category}|${row.subKey}`;
-                              const roleNames = settings.roleBindings
-                                .filter(
-                                  (b) =>
-                                    b.category === row.category &&
-                                    bindingSubKey(b.subcategory) === row.subKey,
-                                )
-                                .map((b) => roles.find((r) => r._id === b.roleId)?.name ?? "Role")
-                                .join(", ");
+                              const roleNames = getRoleNamesForBindingRow({
+                                roleBindings: settings.roleBindings,
+                                roles,
+                                category: row.category,
+                                subKey: row.subKey,
+                                bindingSubKey,
+                              });
                               const isLegacyCatchAll = row.subKey === "";
                               return (
                                 <li
@@ -958,7 +988,7 @@ export const AlertsNotificationsSettings = () => {
                                     ) : null}
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-center">
-                                    {!isLegacyCatchAll ? (
+                                    {isLegacyCatchAll ? null : (
                                       <button
                                         type="button"
                                         onClick={() => openRoleModal(row.category, row.subKey)}
@@ -967,7 +997,7 @@ export const AlertsNotificationsSettings = () => {
                                         <EditIcon className="w-3.5 h-3.5" aria-hidden />
                                         Edit
                                       </button>
-                                    ) : null}
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() =>
@@ -1094,7 +1124,7 @@ export const AlertsNotificationsSettings = () => {
                           onChange={toggleRoleModalSelectAllRoles}
                           className="rounded border-gray-300 text-button-primary focus:ring-button-primary/30 h-4 w-4 shrink-0"
                         />
-                        Select all
+                        <span>Select all</span>
                       </label>
                     ) : null}
                   </div>
@@ -1133,7 +1163,7 @@ export const AlertsNotificationsSettings = () => {
                         }
                         className="rounded border-gray-300 text-button-primary focus:ring-button-primary/30"
                       />
-                      In-app
+                      <span>In-app</span>
                     </label>
                     <label className="flex items-center gap-2 text-xs md:text-sm text-primary cursor-pointer">
                       <input
@@ -1144,7 +1174,7 @@ export const AlertsNotificationsSettings = () => {
                         }
                         className="rounded border-gray-300 text-button-primary focus:ring-button-primary/30"
                       />
-                      Email
+                      <span>Email</span>
                     </label>
                     <label className="flex items-center gap-2 text-xs md:text-sm text-primary cursor-pointer">
                       <input
@@ -1155,7 +1185,7 @@ export const AlertsNotificationsSettings = () => {
                         }
                         className="rounded border-gray-300 text-button-primary focus:ring-button-primary/30"
                       />
-                      SMS
+                      <span>SMS</span>
                     </label>
                   </div>
                 </div>

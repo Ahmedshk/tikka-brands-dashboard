@@ -107,7 +107,7 @@ export const SelfReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitted 
           <div className="flex justify-center py-12"><Spinner size="lg" className="text-button-primary" /></div>
         ) : (
           <div className="space-y-4 pb-2">
-            {questions.toSorted((a, b) => a.order - b.order).map((q) => (
+            {[...questions].sort((a, b) => a.order - b.order).map((q) => (
               <div key={q.id} className="space-y-1">
                 <label className="text-sm font-medium text-primary">
                   {q.text} {q.required && <span className="text-red-500">*</span>}

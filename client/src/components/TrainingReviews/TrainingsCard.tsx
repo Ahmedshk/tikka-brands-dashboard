@@ -24,6 +24,61 @@ export interface TrainingsCardProps {
 }
 
 export const TrainingsCard = ({ trainings, loading = false, onEdit, onDelete, pagination }: TrainingsCardProps) => {
+  let body: React.ReactNode;
+  if (loading) {
+    body = (
+      <tr>
+        <td colSpan={4} className="p-0">
+          <div className="flex min-h-[200px] items-center justify-center py-8" aria-busy="true">
+            <Spinner size="lg" className="text-button-primary" />
+          </div>
+        </td>
+      </tr>
+    );
+  } else if (trainings.length === 0) {
+    body = (
+      <tr>
+        <td colSpan={4} className="py-12 px-5 text-center text-secondary text-sm">
+          No trainings yet. Use Create to add one.
+        </td>
+      </tr>
+    );
+  } else {
+    body = (
+      <>
+        {trainings.map((training, index) => (
+          <tr key={training.id} className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}>
+            <td className="py-3 px-5">{training.name}</td>
+            <td className="py-3 px-4 text-center">{training.moduleCount}</td>
+            <td className="py-3 px-4 text-center">{training.durationDays}</td>
+            <td className="py-3 px-5">
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onEdit?.(training, index)}
+                  className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
+                  aria-label="Edit"
+                  title="Edit"
+                >
+                  <EditIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete?.(training, index)}
+                  className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
+                  aria-label="Delete"
+                  title="Delete"
+                >
+                  <DeleteIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
+                </button>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </>
+    );
+  }
+
   return (
     <div className={`${cardClass} flex flex-col h-full min-h-0`}>
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -46,57 +101,7 @@ export const TrainingsCard = ({ trainings, loading = false, onEdit, onDelete, pa
               </tr>
             </thead>
             <tbody className="text-primary">
-              {loading ? (
-                <tr>
-                  <td colSpan={4} className="p-0">
-                    <div
-                      className="flex min-h-[200px] items-center justify-center py-8"
-                      aria-busy="true"
-                    >
-                      <Spinner size="lg" className="text-button-primary" />
-                    </div>
-                  </td>
-                </tr>
-              ) : trainings.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="py-12 px-5 text-center text-secondary text-sm">
-                    No trainings yet. Use Create to add one.
-                  </td>
-                </tr>
-              ) : (
-                trainings.map((training, index) => (
-                  <tr
-                    key={training.id}
-                    className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}
-                  >
-                    <td className="py-3 px-5">{training.name}</td>
-                    <td className="py-3 px-4 text-center">{training.moduleCount}</td>
-                    <td className="py-3 px-4 text-center">{training.durationDays}</td>
-                    <td className="py-3 px-5">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => onEdit?.(training, index)}
-                          className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
-                          aria-label="Edit"
-                          title="Edit"
-                        >
-                          <EditIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onDelete?.(training, index)}
-                          className="p-1 text-primary hover:bg-gray-200 rounded transition-colors"
-                          aria-label="Delete"
-                          title="Delete"
-                        >
-                          <DeleteIcon className="w-2.5 h-2.5 md:w-3 md:h-3 2xl:w-3.5 2xl:h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
+              {body}
             </tbody>
           </table>
         </div>

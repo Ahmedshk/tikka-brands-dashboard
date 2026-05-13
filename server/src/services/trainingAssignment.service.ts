@@ -12,13 +12,21 @@ import type {
   IAssignmentExtraFile,
 } from '../types/trainingAssignment.types.js';
 import { ValidationError, ForbiddenError } from '../utils/errors.util.js';
-import { canManageTrainee, type HierarchyRole } from '../utils/roleHierarchy.util.js';
+import {
+  canManageTrainee,
+  reportsToValueToParentIdString,
+  type HierarchyRole,
+} from '../utils/roleHierarchy.util.js';
 
 function toIdStr(v: unknown): string {
   if (v == null) return '';
-  if (typeof v === 'object' && '_id' in (v as object))
+  if (typeof v === 'object' && v !== null && '_id' in v) {
     return String((v as { _id: unknown })._id);
-  return String(v);
+  }
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'bigint') {
+    return String(v);
+  }
+  return '';
 }
 
 function buildInitialModuleProgress(moduleCount: number): IModuleProgressEntry[] {
@@ -29,9 +37,9 @@ function buildInitialModuleProgress(moduleCount: number): IModuleProgressEntry[]
 }
 
 export class TrainingAssignmentService {
-  private assignmentRepository: TrainingAssignmentRepository;
-  private roleRepository: RoleRepository;
-  private userService: UserService;
+  private readonly assignmentRepository: TrainingAssignmentRepository;
+  private readonly roleRepository: RoleRepository;
+  private readonly userService: UserService;
 
   constructor() {
     this.assignmentRepository = new TrainingAssignmentRepository();
@@ -43,13 +51,7 @@ export class TrainingAssignmentService {
   private async getHierarchyRoles(): Promise<HierarchyRole[]> {
     const docs = await this.roleRepository.findAll(true);
     return docs.map((r) => {
-      const reportsToVal = r.reportsTo;
-      const reportsToStr =
-        reportsToVal == null
-          ? null
-          : typeof reportsToVal === 'object' && reportsToVal !== null && '_id' in reportsToVal
-            ? String((reportsToVal as { _id: unknown })._id)
-            : String(reportsToVal);
+      const reportsToStr = reportsToValueToParentIdString(r.reportsTo);
       return {
         _id: toIdStr(r._id),
         name: r.name,
@@ -187,12 +189,14 @@ export class TrainingAssignmentService {
         totalModules > 0 &&
         progress.length >= totalModules &&
         progress.every((p) => !p.status || p.status === 'not_started');
-      const status =
-        totalModules > 0 && completedModules >= totalModules
-          ? 'Complete'
-          : allNotStarted
-            ? 'NotStarted'
-            : 'Pending';
+      let status: IAssignmentListItem['status'];
+      if (totalModules > 0 && completedModules >= totalModules) {
+        status = 'Complete';
+      } else if (allNotStarted) {
+        status = 'NotStarted';
+      } else {
+        status = 'Pending';
+      }
       const assignTo = user
         ? [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email
         : '—';
@@ -204,14 +208,19 @@ export class TrainingAssignmentService {
         const d = (m as { duration?: number }).duration;
         return typeof d === 'number' && d >= 1 ? d : 1;
       });
-      const moduleProgress = (a.moduleProgress ?? []).map((p) => ({
-        completedAt: p.completedAt
-          ? p.completedAt instanceof Date
-            ? p.completedAt.toISOString()
-            : String(p.completedAt)
-          : null,
-        status: p.status,
-      }));
+      const moduleProgress = (a.moduleProgress ?? []).map((p) => {
+        let completedAt: string | null = null;
+        if (p.completedAt) {
+          completedAt =
+            p.completedAt instanceof Date
+              ? p.completedAt.toISOString()
+              : String(p.completedAt);
+        }
+        return {
+          completedAt,
+          status: p.status,
+        };
+      });
       return {
         _id: toIdStr(a._id),
         userId,

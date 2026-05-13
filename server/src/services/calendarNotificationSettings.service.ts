@@ -59,12 +59,10 @@ async function queueRescheduleBySettings(eventTypeIds: string[]): Promise<void> 
 export class CalendarNotificationSettingsService {
   async get(): Promise<ICalendarNotificationSettings> {
     let doc = await CalendarNotificationSettingsModel.findOne();
-    if (!doc) {
-      doc = await CalendarNotificationSettingsModel.create({
-        reminderPolicy: DEFAULT_CALENDAR_REMINDER_POLICY,
-        roleEventBindings: [],
-      });
-    }
+    doc ??= await CalendarNotificationSettingsModel.create({
+      reminderPolicy: DEFAULT_CALENDAR_REMINDER_POLICY,
+      roleEventBindings: [],
+    });
     return toPlain(doc);
   }
 
@@ -73,11 +71,12 @@ export class CalendarNotificationSettingsService {
     roleEventBindings?: ICalendarRoleEventBinding[];
   }): Promise<ICalendarNotificationSettings> {
     let doc = await CalendarNotificationSettingsModel.findOne();
-    if (!doc) {
-      doc = await CalendarNotificationSettingsModel.create({
-        reminderPolicy: data.reminderPolicy ?? DEFAULT_CALENDAR_REMINDER_POLICY,
-        roleEventBindings: data.roleEventBindings ?? [],
-      });
+    const wasMissing = doc == null;
+    doc ??= await CalendarNotificationSettingsModel.create({
+      reminderPolicy: data.reminderPolicy ?? DEFAULT_CALENDAR_REMINDER_POLICY,
+      roleEventBindings: data.roleEventBindings ?? [],
+    });
+    if (wasMissing) {
       const plain = toPlain(doc);
       await queueRescheduleBySettings(eventTypeIdsFromBindings(doc.roleEventBindings ?? []));
       return plain;

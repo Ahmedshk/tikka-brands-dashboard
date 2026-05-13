@@ -193,8 +193,6 @@ export const getCommandCenterKPIs = async (
   }
 };
 
-export type { HourlySalesRow } from "../types/commandCenter.types.js";
-
 const HOURLY_SALES_COMPONENT_ID = "hourly-net-sales-chart";
 
 export const getHourlySales = async (

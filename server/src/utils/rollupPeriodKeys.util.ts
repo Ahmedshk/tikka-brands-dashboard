@@ -71,11 +71,10 @@ export function businessDateKeysForMonthPeriod(
 
 export function businessDateKeysForYearPeriod(
   yearPeriodKey: string,
-  tz: string,
+  _tz: string,
 ): string[] {
   const y = yearPeriodKey.trim();
   if (!/^\d{4}$/.test(y)) return [];
-  const timezone = tz.trim() || "UTC";
   const startKey = `${y}-01-01`;
   const endKey = `${y}-12-31`;
   return iterBusinessDateKeysInclusive(startKey, endKey);

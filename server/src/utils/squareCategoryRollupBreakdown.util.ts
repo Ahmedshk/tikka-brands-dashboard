@@ -9,11 +9,20 @@ import {
   type BatchRetrieveCatalogFn,
   type OrderForCategoryAggregation,
 } from "./squareNetSalesByCategoryHelpers.js";
+import {
+  UNCATEGORIZED_CATEGORY_DISPLAY_LABEL,
+  UNCATEGORIZED_CATEGORY_ROLLUP_ID,
+} from "./squareCategoryRollupBreakdownConstants.util.js";
+import {
+  allocateOrderNetCentsLargestRemainder,
+  buildWeightByCategoryForOrderLines,
+  mergeAllocatedCentsIntoMaps,
+} from "./squareCategoryRollupBreakdownHelpers.util.js";
 
-/** Persisted id for lines/variations with no resolvable category (aligns with "Uncategorized" label at read). */
-export const UNCATEGORIZED_CATEGORY_ROLLUP_ID = "__uncategorized__";
-
-export const UNCATEGORIZED_CATEGORY_DISPLAY_LABEL = "Uncategorized";
+export {
+  UNCATEGORIZED_CATEGORY_ROLLUP_ID,
+  UNCATEGORIZED_CATEGORY_DISPLAY_LABEL,
+} from "./squareCategoryRollupBreakdownConstants.util.js";
 
 /** Batch retrieve chunk size; keep in sync with `BATCH_RETRIEVE_CATALOG_LIMIT` in square.service. */
 const BATCH_RETRIEVE_CATALOG_CHUNK = 100;
@@ -23,21 +32,6 @@ export interface CategoryRollupBreakdownRow {
   netSalesCents: number;
   transactionCount: number;
   nameSnapshot?: string;
-}
-
-function catalogLineToCategoryId(
-  catalogObjectId: string | undefined,
-  variationToItemId: Record<string, string>,
-  itemIdToCategoryId: Record<string, string>,
-): string {
-  if (catalogObjectId == null || catalogObjectId === "") {
-    return UNCATEGORIZED_CATEGORY_ROLLUP_ID;
-  }
-  const itemId = variationToItemId[catalogObjectId];
-  if (itemId == null || itemId === "") {
-    return UNCATEGORIZED_CATEGORY_ROLLUP_ID;
-  }
-  return itemIdToCategoryId[itemId] ?? UNCATEGORIZED_CATEGORY_ROLLUP_ID;
 }
 
 function collectCatalogObjectIdsFromOrders(
@@ -126,73 +120,18 @@ export async function computeCategoryBreakdownFromOrdersForRollup(
   for (const order of orders) {
     if (!options.isCounted(order)) continue;
     const orderNetCents = options.getOrderCents(order);
-    const lineItems = order.line_items ?? [];
-
-    // Build weights per category for this order (in integer cents).
-    const weightByCategory = new Map<string, number>();
-    for (const line of lineItems) {
-      const catalogObjectId = (line as { catalog_object_id?: string }).catalog_object_id?.trim();
-      const catId = catalogLineToCategoryId(
-        catalogObjectId,
-        variationToItemId,
-        itemIdToCategoryId,
-      );
-      const w = options.getLineCents(line);
-      if (!Number.isFinite(w) || w <= 0) continue;
-      weightByCategory.set(catId, (weightByCategory.get(catId) ?? 0) + w);
-    }
-
-    // Allocate this order's net cents across categories using largest remainder (integer-safe).
-    const allocated = (() => {
-      const entries = [...weightByCategory.entries()].filter(([, w]) => w > 0);
-      const res = new Map<string, number>();
-      if (orderNetCents <= 0 || entries.length === 0) return res;
-      const denom = entries.reduce((s, [, w]) => s + w, 0);
-      if (denom <= 0) return res;
-      type Row = { key: string; base: number; rem: number };
-      const rows: Row[] = [];
-      let baseSum = 0;
-      for (const [key, w] of entries) {
-        const numer = orderNetCents * w;
-        const base = Math.floor(numer / denom);
-        const rem = numer - base * denom;
-        rows.push({ key, base, rem });
-        baseSum += base;
-      }
-      let leftover = orderNetCents - baseSum;
-      if (leftover > 0) {
-        rows.sort((a, b) => {
-          if (b.rem !== a.rem) return b.rem - a.rem;
-          if (a.key !== b.key) return a.key.localeCompare(b.key);
-          return b.base - a.base;
-        });
-        for (let i = 0; i < rows.length && leftover > 0; i += 1) {
-          rows[i]!.base += 1;
-          leftover -= 1;
-          if (i === rows.length - 1 && leftover > 0) i = -1;
-        }
-      }
-      for (const r of rows) {
-        if (r.base !== 0) res.set(r.key, r.base);
-      }
-      return res;
-    })();
-
-    for (const [catId, cents] of allocated.entries()) {
-      netByCategory.set(catId, (netByCategory.get(catId) ?? 0) + cents);
-      if (cents > 0) {
-        txnByCategory.set(catId, (txnByCategory.get(catId) ?? 0) + 1);
-      }
-    }
+    const weightByCategory = buildWeightByCategoryForOrderLines(
+      order.line_items,
+      variationToItemId,
+      itemIdToCategoryId,
+      options.getLineCents,
+    );
+    const allocated = allocateOrderNetCentsLargestRemainder(orderNetCents, weightByCategory);
+    mergeAllocatedCentsIntoMaps(netByCategory, txnByCategory, allocated);
   }
 
-  const allIds = new Set<string>([
-    ...netByCategory.keys(),
-    ...txnByCategory.keys(),
-  ]);
-  const categoryIdsForNames = [...allIds].filter(
-    (id) => id !== UNCATEGORIZED_CATEGORY_ROLLUP_ID,
-  );
+  const allIds = new Set<string>([...netByCategory.keys(), ...txnByCategory.keys()]);
+  const categoryIdsForNames = [...allIds].filter((id) => id !== UNCATEGORIZED_CATEGORY_ROLLUP_ID);
   const idToName =
     categoryIdsForNames.length === 0
       ? {}

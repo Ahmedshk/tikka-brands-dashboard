@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { Modifier } from '@popperjs/core';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
@@ -12,12 +13,12 @@ import {
 } from '../../utils/locationModalHelpers';
 
 /** MUI anchors the picker to the inner input; shift horizontally so the popover centers on the modal card. */
-function locationModalPanelXAlignModifier(panelEl: HTMLElement) {
+function locationModalPanelXAlignModifier(panelEl: HTMLElement): Partial<Modifier<any, any>> {
   return {
     name: 'locationModalPanelXAlign',
     enabled: true,
     phase: 'main' as const,
-    requires: ['popperOffsets'] as const,
+    requires: ['popperOffsets'] as string[],
     fn({
       state,
     }: {
@@ -450,32 +451,37 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <Spinner size="sm" className="h-4 w-4" /> Loading logos...
           </div>
-        ) : logoList.length > 0 ? (
-          <div>
-            <p className="text-xs font-medium text-gray-600 mb-2">Pick from existing logos</p>
-            <div className="flex flex-wrap gap-2">
-              {logoList.map((logo) => (
-                <button
-                  key={logo._id}
-                  type="button"
-                  onClick={() => onSelectLogo(logo)}
-                  className={`relative h-14 w-14 rounded-lg border-2 bg-white p-1 transition-colors ${
-                    selectedLogoId === logo._id
-                      ? 'border-button-primary ring-1 ring-button-primary'
-                      : 'border-gray-200 hover:border-gray-400'
-                  }`}
-                  title={logo.name ?? 'Logo'}
-                >
-                  <img
-                    src={logo.url}
-                    alt={logo.name ?? 'Logo'}
-                    className="h-full w-full object-contain"
-                  />
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        ) : (
+          (() => {
+            if (logoList.length === 0) return null;
+            return (
+              <div>
+                <p className="text-xs font-medium text-gray-600 mb-2">Pick from existing logos</p>
+                <div className="flex flex-wrap gap-2">
+                  {logoList.map((logo) => (
+                    <button
+                      key={logo._id}
+                      type="button"
+                      onClick={() => onSelectLogo(logo)}
+                      className={`relative h-14 w-14 rounded-lg border-2 bg-white p-1 transition-colors ${
+                        selectedLogoId === logo._id
+                          ? 'border-button-primary ring-1 ring-button-primary'
+                          : 'border-gray-200 hover:border-gray-400'
+                      }`}
+                      title={logo.name ?? 'Logo'}
+                    >
+                      <img
+                        src={logo.url}
+                        alt={logo.name ?? 'Logo'}
+                        className="h-full w-full object-contain"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()
+        )}
 
         <div className="flex flex-wrap gap-2 items-center">
           <button

@@ -8,9 +8,9 @@ import {
   getOrderTimeSeriesBySourceInRange,
   getOrderedBucketsAndLabels,
   type SquareServiceOptions,
-  type SalesTrendGranularity,
   type OrderTimeSeriesBySourceSeries,
 } from "../services/square.service.js";
+import type { SalesTrendGranularity } from "./homebaseOrderedBuckets.util.js";
 import {
   createMongoCatalogBatchRetrieve,
   getLaborAndHoursTimeSeriesInRangeFromCache,
@@ -93,6 +93,17 @@ export function toSeriesGranularity(g: Granularity): SalesTrendGranularity {
   return "daily";
 }
 
+/** Spreads `base` and only sets `accessToken` when non-empty (exactOptionalPropertyTypes). */
+function squareServiceOptionsWithOptionalAccessToken(
+  accessToken: string | null | undefined,
+  base: SquareServiceOptions,
+): SquareServiceOptions {
+  if (accessToken == null || String(accessToken).trim() === "") {
+    return { ...base };
+  }
+  return { ...base, accessToken: String(accessToken).trim() };
+}
+
 export function parseSalesTrendQuery(query: Request["query"]): SalesTrendQueryParams {
   return {
     locationId: typeof query.locationId === "string" ? query.locationId : "",
@@ -139,16 +150,16 @@ async function buildSquareOrderCacheOptions(
   return {
     ...base,
     batchRetrieveCatalogOverride: createMongoCatalogBatchRetrieve(id),
-    ...(bst != null && bst !== "" ? { businessStartTime: bst } : {}),
-    ...(rollupCtx != null
-      ? {
+    ...(bst == null || bst === "" ? {} : { businessStartTime: bst }),
+    ...(rollupCtx == null
+      ? {}
+      : {
           rollupRead: {
             locationMongoId: id,
             timezone: rollupCtx.timezone,
             businessStartTime: rollupCtx.businessStartTime,
           },
-        }
-      : {}),
+        }),
   };
 }
 
@@ -213,7 +224,9 @@ export async function fetchSalesTrendBySource(
   const squareOpts = await buildSquareOrderCacheOptions(
     opts.locationMongoId,
     opts.dataRange,
-    { accessToken: opts.accessToken, periodType: opts.periodType },
+    squareServiceOptionsWithOptionalAccessToken(opts.accessToken, {
+      periodType: opts.periodType,
+    }),
     {
       timezone: opts.timezone,
       businessStartTime: opts.businessStartTime,
@@ -224,11 +237,11 @@ export async function fetchSalesTrendBySource(
     opts.dataRange,
     opts.timezone,
     opts.seriesGranularity,
-    squareOpts ?? {
-      accessToken: opts.accessToken,
-      periodType: opts.periodType,
-      businessStartTime: opts.businessStartTime,
-    },
+    squareOpts ??
+      squareServiceOptionsWithOptionalAccessToken(opts.accessToken, {
+        periodType: opts.periodType,
+        businessStartTime: opts.businessStartTime,
+      }),
   );
   let xAxisLabelsSource = result.labels;
   let seriesSource = result.series;
@@ -347,11 +360,10 @@ export async function fetchSalesTrendOrderMetrics(
   squareLocationId: string,
   opts: FetchOrderMetricsOptions,
 ): Promise<{ xAxisLabels: string[]; currentPeriod: (number | null)[]; comparisonPeriod: (number | null)[] }> {
-  const baseOpts: SquareServiceOptions = {
-    accessToken: opts.accessToken,
+  const baseOpts = squareServiceOptionsWithOptionalAccessToken(opts.accessToken, {
     periodType: opts.periodType,
     businessStartTime: opts.businessStartTime,
-  };
+  });
   const rollupCtx = {
     timezone: opts.timezone,
     businessStartTime: opts.businessStartTime,
@@ -718,7 +730,7 @@ async function fetchSeriesMetricsPayload(
       ...opts,
       metric,
       accessToken: ctx.squareAccessToken ?? undefined,
-      ...(ctx.locationMongoId != null ? { locationMongoId: ctx.locationMongoId } : {}),
+      ...(ctx.locationMongoId == null ? {} : { locationMongoId: ctx.locationMongoId }),
     });
   }
   if (!homebaseLocationId) return empty;
@@ -727,7 +739,7 @@ async function fetchSeriesMetricsPayload(
       ...opts,
       metric,
       apiKey: ctx.homebaseApiKey ?? undefined,
-      ...(ctx.locationMongoId != null ? { locationMongoId: ctx.locationMongoId } : {}),
+      ...(ctx.locationMongoId == null ? {} : { locationMongoId: ctx.locationMongoId }),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -761,7 +773,7 @@ export async function getSalesTrendData(
       useDisplayRange,
       periodType,
       accessToken: ctx.squareAccessToken ?? undefined,
-      ...(ctx.locationMongoId != null ? { locationMongoId: ctx.locationMongoId } : {}),
+      ...(ctx.locationMongoId == null ? {} : { locationMongoId: ctx.locationMongoId }),
     });
     return { kind: "bySource", data: bySource! };
   }
@@ -827,12 +839,12 @@ export async function getSalesTrendData(
       comparisonPeriod: aligned.comparisonPeriod,
       periodRange: { startAt: period.startAt, endAt: period.endAt },
       comparisonRange,
-      ...(currentPeriodTooltipLabels != null
-        ? { currentPeriodTooltipLabels }
-        : {}),
-      ...(aligned.comparisonPeriodTooltipLabels != null
-        ? { comparisonPeriodTooltipLabels: aligned.comparisonPeriodTooltipLabels }
-        : {}),
+      ...(currentPeriodTooltipLabels == null
+        ? {}
+        : { currentPeriodTooltipLabels }),
+      ...(aligned.comparisonPeriodTooltipLabels == null
+        ? {}
+        : { comparisonPeriodTooltipLabels: aligned.comparisonPeriodTooltipLabels }),
     },
   };
 }
@@ -903,11 +915,10 @@ async function fetchSquareKpiTotals(
   seriesGranularity: SalesTrendGranularity,
   periodType: string,
 ): Promise<KpiTotals> {
-  const baseOpts: SquareServiceOptions = {
-    accessToken: ctx.squareAccessToken ?? undefined,
+  const baseOpts = squareServiceOptionsWithOptionalAccessToken(ctx.squareAccessToken, {
     periodType,
     businessStartTime: ctx.businessStartTime,
-  };
+  });
   const rollupCtx = {
     timezone: ctx.timezone,
     businessStartTime: ctx.businessStartTime,

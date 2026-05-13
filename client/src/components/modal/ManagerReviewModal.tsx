@@ -9,9 +9,15 @@ import { ReviewEmployeeBioSection } from "../review/ReviewEmployeeBioSection";
 import { ManagerReviewResponsesWithHistory } from "../review/ManagerReviewResponsesWithHistory";
 import { ReviewQuestionAttachmentLinks } from "../ReviewSettings/ReviewQuestionAttachmentLinks";
 import { reviewEmployeeHeaderSubtitle } from "../../utils/employeeBioHelpers";
+import {
+  buildManagerReviewResponses,
+  canManagerDoReview,
+  isManagerReviewSubmittedToDirector,
+  renderManagerReviewQuestionField,
+  shouldShowDirectorReturnCallout,
+} from "../../utils/managerReviewModalHelpers";
 import type {
   Question,
-  QuestionResponse,
   ReviewCycle,
   ReviewCycleStatus,
   SelfReview,
@@ -24,6 +30,193 @@ interface ManagerReviewModalProps {
   cycleId: string;
   status: ReviewCycleStatus;
   onSubmitted?: () => void;
+}
+
+function DirectorReturnCallout({
+  show,
+  directorComments,
+}: Readonly<{ show: boolean; directorComments: string | null | undefined }>) {
+  if (!show) return null;
+  const comments = directorComments?.trim();
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+      <p className="font-semibold text-amber-900">Director requested changes</p>
+      <p className="mt-1 text-amber-900/90">
+        Please update your manager review and submit again for director approval.
+      </p>
+      {comments ? (
+        <div className="mt-2 border-t border-amber-200/80 pt-2">
+          <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Director comments</p>
+          <p className="mt-1 whitespace-pre-wrap text-amber-950">{comments}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ManagerQuestionsSection({
+  questions,
+  answers,
+  setAnswers,
+  isFormLocked,
+}: Readonly<{
+  questions: Question[];
+  answers: Record<string, string>;
+  setAnswers: (next: Record<string, string>) => void;
+  isFormLocked: boolean;
+}>) {
+  const sortedQuestions = [...questions].sort((a, b) => a.order - b.order);
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Your Review</h3>
+      <div className="space-y-4">
+        {sortedQuestions.map((q) => (
+          <div key={q.id} className="space-y-1">
+            <label className="text-sm font-medium text-primary">
+              {q.text} {q.required && <span className="text-red-500">*</span>}
+            </label>
+            <ReviewQuestionAttachmentLinks attachments={q.attachments} />
+            {renderManagerReviewQuestionField(
+              q,
+              answers[q.id] ?? "",
+              (v) => setAnswers({ ...answers, [q.id]: v }),
+              isFormLocked,
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function EmployeeSelfReviewSection({
+  hasCompleted,
+  showSelfReview,
+  loadingSelfReview,
+  canSeeEmployeeReview,
+  selfReview,
+  selfReviewQuestionnaire,
+  handleViewEmployeeSelfReview,
+}: Readonly<{
+  hasCompleted: boolean;
+  showSelfReview: boolean;
+  loadingSelfReview: boolean;
+  canSeeEmployeeReview: boolean;
+  selfReview: SelfReview | null;
+  selfReviewQuestionnaire: Question[];
+  handleViewEmployeeSelfReview: () => void;
+}>) {
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={handleViewEmployeeSelfReview}
+        disabled={!hasCompleted}
+        className={`text-sm font-semibold flex items-center gap-1 cursor-pointer ${
+          hasCompleted ? "text-button-primary hover:underline" : "text-gray-400 cursor-not-allowed"
+        }`}
+      >
+        {showSelfReview ? "▼" : "►"} View Employee Self-Review
+        {!hasCompleted && " (complete your review first)"}
+      </button>
+      {!hasCompleted && (
+        <p className="text-xs text-gray-500 mt-1">Click &quot;Complete Review&quot; to save and unlock.</p>
+      )}
+      {loadingSelfReview && (
+        <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
+          <Spinner size="sm" className="text-button-primary" /> Loading…
+        </div>
+      )}
+      {canSeeEmployeeReview && selfReview && showSelfReview && (
+        <div className="mt-3 space-y-4 bg-blue-50/50 rounded-lg p-4">
+          {[...selfReview.responses]
+            .sort((a, b) => {
+              const qa = selfReviewQuestionnaire.find((q) => q.id === a.questionId);
+              const qb = selfReviewQuestionnaire.find((q) => q.id === b.questionId);
+              return (qa?.order ?? 0) - (qb?.order ?? 0);
+            })
+            .map((r) => {
+              const sq = selfReviewQuestionnaire.find((q) => q.id === r.questionId);
+              return (
+                <div key={r.questionId} className="space-y-1 text-sm">
+                  <span className="font-medium text-black block">{r.questionText}</span>
+                  <ReviewQuestionAttachmentLinks attachments={sq?.attachments} />
+                  <p className="text-gray-800">{r.answer}</p>
+                </div>
+              );
+            })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ManagerReviewFooter({
+  loading,
+  handleClose,
+  showCompleteReview,
+  handleCompleteReview,
+  showUpdateReview,
+  setEditing,
+  showSubmitReview,
+  handleSubmitToDirector,
+  submitting,
+  hasMissingRequired,
+  isSubmitDisabled,
+}: Readonly<{
+  loading: boolean;
+  handleClose: () => void;
+  showCompleteReview: boolean;
+  handleCompleteReview: () => void;
+  showUpdateReview: boolean;
+  setEditing: (v: boolean) => void;
+  showSubmitReview: boolean;
+  handleSubmitToDirector: () => void;
+  submitting: boolean;
+  hasMissingRequired: boolean;
+  isSubmitDisabled: boolean;
+}>) {
+  if (loading) return null;
+  return (
+    <div className="flex-shrink-0 flex flex-wrap justify-end gap-3 px-5 py-4 border-t border-gray-200 bg-card-background">
+      <button
+        type="button"
+        onClick={handleClose}
+        className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer"
+      >
+        Close
+      </button>
+      {showCompleteReview && (
+        <button
+          type="button"
+          onClick={handleCompleteReview}
+          disabled={submitting || hasMissingRequired}
+          className="px-6 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer"
+        >
+          {submitting ? "Saving..." : "Complete Review"}
+        </button>
+      )}
+      {showUpdateReview && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="px-6 py-2 bg-gray-200 text-gray-900 rounded-lg text-sm font-medium hover:bg-gray-300 cursor-pointer"
+        >
+          Update Review
+        </button>
+      )}
+      {showSubmitReview && (
+        <button
+          type="button"
+          onClick={handleSubmitToDirector}
+          disabled={submitting || isSubmitDisabled}
+          className="px-6 py-2 bg-button-primary text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer"
+        >
+          {submitting ? "Submitting..." : "Submit to Director"}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitted }: ManagerReviewModalProps) => {
@@ -43,16 +236,9 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
 
   const hasCompleted = !!existingReview;
   const canSeeEmployeeReview = hasCompleted;
-  const submittedToDirector = [
-    "manager_review_submitted", "director_approval_due", "director_approval_pending", "director_approval_past_due",
-    "approved", "sharing_due", "sharing_pending", "sharing_past_due", "completed",
-    "checkin_30_due", "checkin_30_past_due", "checkin_30_complete", "checkin_30_done", "checkin_60_due", "checkin_60_past_due", "checkin_60_complete", "checkin_60_done", "cycle_complete",
-  ].includes(status);
-  const canDoReview = ["self_review_submitted", "manager_review_due", "manager_review_pending", "manager_review_past_due"].includes(status);
-
-  const showDirectorReturnCallout =
-    reviewCycle?.directorDecision === "rejected" &&
-    ["manager_review_due", "manager_review_pending", "manager_review_past_due"].includes(status);
+  const submittedToDirector = isManagerReviewSubmittedToDirector(status);
+  const canDoReview = canManagerDoReview(status);
+  const showDirectorReturnCallout = shouldShowDirectorReturnCallout(reviewCycle, status);
 
   const handleViewEmployeeSelfReview = async () => {
     if (!hasCompleted || selfReview) {
@@ -113,13 +299,6 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
     })();
   }, [isOpen, cycleId]);
 
-  const buildResponses = (): QuestionResponse[] =>
-    questions.map((q) => ({
-      questionId: q.id,
-      questionText: q.text,
-      answer: answers[q.id] ?? "",
-    }));
-
   const handleCompleteReview = async () => {
     const missing = questions.filter((q) => q.required && !answers[q.id]?.trim());
     if (missing.length > 0) {
@@ -128,11 +307,7 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
     }
     setSubmitting(true);
     try {
-      const responses: QuestionResponse[] = questions.map((q) => ({
-        questionId: q.id,
-        questionText: q.text,
-        answer: answers[q.id] ?? "",
-      }));
+      const responses = buildManagerReviewResponses(questions, answers);
       const result = await reviewService.completeManagerReview(cycleId, responses);
       setExistingReview(result);
       toast.success("Review saved. You can now view the employee's self-review.");
@@ -148,7 +323,7 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
     }
     setSubmitting(true);
     try {
-      const responses = buildResponses();
+      const responses = buildManagerReviewResponses(questions, answers);
       await reviewService.submitManagerReview(cycleId, responses);
       toast.success("Review submitted to director!");
       setEditing(false);
@@ -158,54 +333,6 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
       toast.error(isAxiosError(e) ? getErrorMessage(e) : "Failed to submit review");
     }
     finally { setSubmitting(false); }
-  };
-
-  const renderQuestionField = (q: Question, value: string, onChange: (v: string) => void, disabled: boolean) => {
-    switch (q.type) {
-      case "text":
-        return (
-          <textarea value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} rows={3}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20 disabled:bg-gray-50" />
-        );
-      case "rating":
-        return (
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((v) => (
-              <button key={v} type="button" disabled={disabled} onClick={() => onChange(String(v))}
-                className={`w-10 h-10 rounded-lg border text-sm font-medium cursor-pointer transition-colors ${
-                  value === String(v) ? "bg-button-primary text-white border-button-primary" : "bg-white border-gray-200 hover:border-gray-400"
-                } disabled:opacity-60`}>
-                {v}
-              </button>
-            ))}
-          </div>
-        );
-      case "multiple_choice":
-        return (
-          <div className="space-y-1">
-            {(q.options ?? []).map((opt) => (
-              <label key={opt} className="flex items-center gap-2 text-sm">
-                <input type="radio" name={`mgr-${q.id}`} value={opt} checked={value === opt}
-                  onChange={() => onChange(opt)} disabled={disabled} />
-                {opt}
-              </label>
-            ))}
-          </div>
-        );
-      case "yes_no":
-        return (
-          <div className="flex gap-3">
-            {["Yes", "No"].map((v) => (
-              <button key={v} type="button" disabled={disabled} onClick={() => onChange(v)}
-                className={`px-4 py-2 rounded-lg border text-sm cursor-pointer transition-colors ${
-                  value === v ? "bg-button-primary text-white border-button-primary" : "bg-white border-gray-200 hover:border-gray-400"
-                } disabled:opacity-60`}>
-                {v}
-              </button>
-            ))}
-          </div>
-        );
-    }
   };
 
   const handleClose = () => {
@@ -254,36 +381,17 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
           <div className="space-y-6 pb-2">
             <ReviewEmployeeBioSection cycle={reviewCycle} sectionHeadingId="manager-review-employee-bio-heading" />
 
-            {showDirectorReturnCallout && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                <p className="font-semibold text-amber-900">Director requested changes</p>
-                <p className="mt-1 text-amber-900/90">
-                  Please update your manager review and submit again for director approval.
-                </p>
-                {reviewCycle?.directorComments?.trim() ? (
-                  <div className="mt-2 border-t border-amber-200/80 pt-2">
-                    <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Director comments</p>
-                    <p className="mt-1 whitespace-pre-wrap text-amber-950">{reviewCycle.directorComments}</p>
-                  </div>
-                ) : null}
-              </div>
-            )}
+            <DirectorReturnCallout
+              show={showDirectorReturnCallout}
+              directorComments={reviewCycle?.directorComments}
+            />
 
-            {/* Manager's own review */}
-            <section>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Your Review</h3>
-              <div className="space-y-4">
-                {questions.toSorted((a, b) => a.order - b.order).map((q) => (
-                  <div key={q.id} className="space-y-1">
-                    <label className="text-sm font-medium text-primary">
-                      {q.text} {q.required && <span className="text-red-500">*</span>}
-                    </label>
-                    <ReviewQuestionAttachmentLinks attachments={q.attachments} />
-                    {renderQuestionField(q, answers[q.id] ?? "", (v) => setAnswers({ ...answers, [q.id]: v }), isFormLocked)}
-                  </div>
-                ))}
-              </div>
-            </section>
+            <ManagerQuestionsSection
+              questions={questions}
+              answers={answers}
+              setAnswers={setAnswers}
+              isFormLocked={isFormLocked}
+            />
 
             {/* Prior saved snapshots (current answers are in the form above) */}
             {existingReview && existingReview.revisionHistory.length > 0 && (
@@ -298,94 +406,32 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
               </section>
             )}
 
-            {/* View Employee Self-Review: locked until manager has completed */}
-            <section>
-              <button
-                type="button"
-                onClick={handleViewEmployeeSelfReview}
-                disabled={!hasCompleted}
-                className={`text-sm font-semibold flex items-center gap-1 cursor-pointer ${
-                  hasCompleted
-                    ? "text-button-primary hover:underline"
-                    : "text-gray-400 cursor-not-allowed"
-                }`}
-              >
-                {showSelfReview ? "▼" : "►"} View Employee Self-Review
-                {!hasCompleted && " (complete your review first)"}
-              </button>
-              {!hasCompleted && (
-                <p className="text-xs text-gray-500 mt-1">Click &quot;Complete Review&quot; to save and unlock.</p>
-              )}
-              {loadingSelfReview && (
-                <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
-                  <Spinner size="sm" className="text-button-primary" /> Loading…
-                </div>
-              )}
-              {canSeeEmployeeReview && selfReview && showSelfReview && (
-                <div className="mt-3 space-y-4 bg-blue-50/50 rounded-lg p-4">
-                  {selfReview.responses
-                    .toSorted((a, b) => {
-                      const qa = selfReviewQuestionnaire.find((q) => q.id === a.questionId);
-                      const qb = selfReviewQuestionnaire.find((q) => q.id === b.questionId);
-                      return (qa?.order ?? 0) - (qb?.order ?? 0);
-                    })
-                    .map((r) => {
-                      const sq = selfReviewQuestionnaire.find((q) => q.id === r.questionId);
-                      return (
-                        <div key={r.questionId} className="space-y-1 text-sm">
-                          <span className="font-medium text-black block">{r.questionText}</span>
-                          <ReviewQuestionAttachmentLinks attachments={sq?.attachments} />
-                          <p className="text-gray-800">{r.answer}</p>
-                        </div>
-                      );
-                    })}
-                </div>
-              )}
-            </section>
+            <EmployeeSelfReviewSection
+              hasCompleted={hasCompleted}
+              showSelfReview={showSelfReview}
+              loadingSelfReview={loadingSelfReview}
+              canSeeEmployeeReview={canSeeEmployeeReview}
+              selfReview={selfReview}
+              selfReviewQuestionnaire={selfReviewQuestionnaire}
+              handleViewEmployeeSelfReview={handleViewEmployeeSelfReview}
+            />
           </div>
         )}
             </div>
 
-            {loading ? null : (
-              <div className="flex-shrink-0 flex flex-wrap justify-end gap-3 px-5 py-4 border-t border-gray-200 bg-card-background">
-            <button type="button" onClick={handleClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer">
-              Close
-            </button>
-            {showCompleteReview && (
-              <button type="button" onClick={handleCompleteReview} disabled={submitting || hasMissingRequired}
-                className="px-6 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer">
-                {submitting ? "Saving..." : "Complete Review"}
-              </button>
-            )}
-            {showUpdateReview && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditing(true);
-                  toast.success("You can edit your answers below. Submit when ready to send to the director.");
-                }}
-                className="px-6 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:opacity-90 cursor-pointer"
-              >
-                Update Review
-              </button>
-            )}
-            {hasCompleted && editing && (
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
-              >
-                Cancel edit
-              </button>
-            )}
-            {showSubmitReview && (
-              <button type="button" onClick={handleSubmitToDirector} disabled={submitting || isSubmitDisabled}
-                className="px-6 py-2 bg-button-primary text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer">
-                {submitting ? "Submitting..." : "Submit Review"}
-              </button>
-            )}
-              </div>
-            )}
+            <ManagerReviewFooter
+              loading={loading}
+              handleClose={handleClose}
+              showCompleteReview={showCompleteReview}
+              handleCompleteReview={handleCompleteReview}
+              showUpdateReview={showUpdateReview}
+              setEditing={setEditing}
+              showSubmitReview={showSubmitReview}
+              handleSubmitToDirector={handleSubmitToDirector}
+              submitting={submitting}
+              hasMissingRequired={hasMissingRequired}
+              isSubmitDisabled={isSubmitDisabled}
+            />
           </div>
         </div>
       </div>

@@ -4,6 +4,8 @@ import {
   useRef,
   useCallback,
   useLayoutEffect,
+  type JSX,
+  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
@@ -190,7 +192,7 @@ export const AssignPointsModal = ({
     }
   };
 
-  let bodyContent: JSX.Element;
+  let bodyContent: ReactNode;
   if (loadingSettings) {
     bodyContent = (
       <div className="flex flex-col items-center justify-center py-12 gap-4">

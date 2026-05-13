@@ -75,8 +75,14 @@ export function WeeklyGoalsTab({
             ? formatDateMmDdYyyy(addDaysToDate(currentWeekStart, day))
             : null;
           const iso =
-            currentWeekStart != null ? addDaysToDate(currentWeekStart, day) : null;
-          const dayActuals = iso != null ? actualsByDate?.[iso] ?? null : null;
+            currentWeekStart === null || currentWeekStart === undefined
+              ? null
+              : addDaysToDate(currentWeekStart, day);
+
+          let dayActuals: GoalDailyActuals | null = null;
+          if (iso !== null && actualsByDate !== null && actualsByDate !== undefined) {
+            dayActuals = actualsByDate[iso] ?? null;
+          }
           return (
             <div
               key={day}

@@ -57,8 +57,8 @@ export const listAssignments = async (
       const result = await listTrainingAssignmentsAllLocations({
         req,
         assignmentService,
-        search,
-        limit,
+        ...(search ? { search } : {}),
+        ...(limit != null && !Number.isNaN(limit) && limit > 0 ? { limit } : {}),
       });
       res.status(200).json({ success: true, data: result });
       return;

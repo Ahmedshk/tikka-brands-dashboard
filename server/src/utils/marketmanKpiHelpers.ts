@@ -74,6 +74,7 @@ const METRICS_REQUIRING_COUNT_PERIOD = new Set([
   "currentFoodCost",
   "inventoryValue",
   "wasteCost",
+  "foodCostPercent",
   "varianceItems",
 ]);
 

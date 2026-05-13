@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { reviewService } from "../../services/review.service";
@@ -19,6 +19,12 @@ import type {
   SalaryIncrementType,
   SelfReview,
 } from "../../types/review.types";
+import {
+  buildSalaryIncrementPayload,
+  canDirectorDecide,
+  sanitizeSalaryIncrementInput,
+  submitDecisionLabel,
+} from "../../utils/directorApprovalModalHelpers";
 
 interface DirectorApprovalModalProps {
   isOpen: boolean;
@@ -26,6 +32,213 @@ interface DirectorApprovalModalProps {
   cycleId: string;
   status: ReviewCycleStatus;
   onDecision?: () => void;
+}
+
+type DirectorDecision = "approve" | "reject" | null;
+
+function DirectorApprovalReviewsGrid({
+  selfReview,
+  managerReview,
+  cycle,
+  reviewSettings,
+}: Readonly<{
+  selfReview: SelfReview | null;
+  managerReview: ManagerReview | null;
+  cycle: ReviewCycle | null;
+  reviewSettings: ReviewSettings | null;
+}>) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <section className="bg-blue-50/50 rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-blue-700 mb-3 uppercase tracking-wide">
+          Employee Self-Review
+        </h3>
+        {selfReview ? (
+          <ReviewQuestionResponseList
+            responses={selfReview.responses ?? []}
+            questionnaire={reviewSettings?.selfReviewQuestionnaire}
+          />
+        ) : (
+          <p className="text-sm text-gray-400 italic">No self-review submitted</p>
+        )}
+      </section>
+
+      <section className="bg-green-50/50 rounded-lg p-4 space-y-4">
+        <h3 className="text-sm font-semibold text-green-700 mb-2 uppercase tracking-wide">
+          Manager Review
+        </h3>
+        <p className="text-xs text-gray-600 mb-3">
+          <span className="text-secondary">Reviewed by: </span>
+          <span className="font-semibold text-gray-900">
+            {personLabelFromReviewRef(cycle?.reviewedByManagerId)}
+          </span>
+          {personRoleFromReviewRef(cycle?.reviewedByManagerId) ? (
+            <span className="text-gray-500">
+              {" "}
+              · {personRoleFromReviewRef(cycle?.reviewedByManagerId)}
+            </span>
+          ) : null}
+        </p>
+        {managerReview ? (
+          <ManagerReviewResponsesWithHistory
+            managerReview={managerReview}
+            questionnaire={reviewSettings?.managerReviewQuestionnaire}
+            accent="green"
+          />
+        ) : (
+          <p className="text-sm text-gray-400 italic">No manager review submitted</p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function SalaryIncrementControls({
+  salaryIncrement,
+  salaryIncrementKind,
+  setSalaryIncrement,
+  setSalaryIncrementKind,
+}: Readonly<{
+  salaryIncrement: string;
+  salaryIncrementKind: SalaryIncrementType;
+  setSalaryIncrement: Dispatch<SetStateAction<string>>;
+  setSalaryIncrementKind: Dispatch<SetStateAction<SalaryIncrementType>>;
+}>) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <span className="text-sm font-medium text-gray-600 block mb-2">
+          Merit increase (optional)
+        </span>
+        <div className="flex flex-wrap gap-4">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="radio"
+              name="salary-increment-kind"
+              className="accent-button-primary"
+              checked={salaryIncrementKind === "percent"}
+              onChange={() => {
+                setSalaryIncrementKind("percent");
+                setSalaryIncrement("");
+              }}
+            />
+            <span>Percent</span>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="radio"
+              name="salary-increment-kind"
+              className="accent-button-primary"
+              checked={salaryIncrementKind === "fixed"}
+              onChange={() => {
+                setSalaryIncrementKind("fixed");
+                setSalaryIncrement("");
+              }}
+            />
+            <span>Fixed amount (USD)</span>
+          </label>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+        <label
+          htmlFor="salary-increment"
+          className="text-sm font-medium text-gray-600 shrink-0 sm:min-w-[12rem]"
+        >
+          {salaryIncrementKind === "percent" ? "Increase (%)" : "Increase ($)"}
+        </label>
+        <input
+          id="salary-increment"
+          type="number"
+          inputMode="decimal"
+          step={salaryIncrementKind === "percent" ? 0.5 : 0.01}
+          min={0}
+          max={salaryIncrementKind === "percent" ? 100 : undefined}
+          value={salaryIncrement}
+          onChange={(e) => setSalaryIncrement(sanitizeSalaryIncrementInput(e.target.value))}
+          onKeyDown={(e) => {
+            if (e.key === "e" || e.key === "E" || e.key === "+" || e.key === "-") {
+              e.preventDefault();
+            }
+          }}
+          className="w-full sm:w-48 max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20"
+          placeholder={salaryIncrementKind === "percent" ? "e.g. 5.0" : "e.g. 5000"}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DirectorDecisionSection({
+  decision,
+  setDecision,
+  comments,
+  setComments,
+  salaryIncrement,
+  salaryIncrementKind,
+  setSalaryIncrement,
+  setSalaryIncrementKind,
+}: Readonly<{
+  decision: DirectorDecision;
+  setDecision: Dispatch<SetStateAction<DirectorDecision>>;
+  comments: string;
+  setComments: Dispatch<SetStateAction<string>>;
+  salaryIncrement: string;
+  salaryIncrementKind: SalaryIncrementType;
+  setSalaryIncrement: Dispatch<SetStateAction<string>>;
+  setSalaryIncrementKind: Dispatch<SetStateAction<SalaryIncrementType>>;
+}>) {
+  return (
+    <section className="border border-gray-100 rounded-lg p-4 space-y-4">
+      <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Your Decision</h3>
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => setDecision("approve")}
+          className={`px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-colors border ${
+            decision === "approve"
+              ? "bg-green-600 text-white border-green-600"
+              : "bg-white border-gray-200 text-gray-700 hover:border-green-400"
+          }`}
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          onClick={() => setDecision("reject")}
+          className={`px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-colors border ${
+            decision === "reject"
+              ? "bg-red-600 text-white border-red-600"
+              : "bg-white border-gray-200 text-gray-700 hover:border-red-400"
+          }`}
+        >
+          Reject
+        </button>
+      </div>
+
+      {decision === "approve" ? (
+        <SalaryIncrementControls
+          salaryIncrement={salaryIncrement}
+          salaryIncrementKind={salaryIncrementKind}
+          setSalaryIncrement={setSalaryIncrement}
+          setSalaryIncrementKind={setSalaryIncrementKind}
+        />
+      ) : null}
+
+      <div className="space-y-1">
+        <label className="text-sm font-medium text-gray-600">
+          Comments {decision === "reject" ? <span className="text-red-500">*</span> : null}
+        </label>
+        <textarea
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
+          rows={3}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20"
+          placeholder={decision === "reject" ? "Reason for rejection (required)" : "Optional comments"}
+        />
+      </div>
+    </section>
+  );
 }
 
 export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDecision }: DirectorApprovalModalProps) => {
@@ -39,9 +252,9 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
   const [comments, setComments] = useState("");
   const [salaryIncrement, setSalaryIncrement] = useState("");
   const [salaryIncrementKind, setSalaryIncrementKind] = useState<SalaryIncrementType>("percent");
-  const [decision, setDecision] = useState<"approve" | "reject" | null>(null);
+  const [decision, setDecision] = useState<DirectorDecision>(null);
 
-  const canDecide = ["manager_review_submitted", "director_approval_due", "director_approval_pending", "director_approval_past_due"].includes(status);
+  const canDecide = canDirectorDecide(status);
 
   useEffect(() => {
     if (isOpen) dialogRef.current?.showModal();
@@ -73,10 +286,10 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
     setSubmitting(true);
     try {
       if (decision === "approve") {
+        const salaryPayload = buildSalaryIncrementPayload(salaryIncrement, salaryIncrementKind);
         await reviewService.approveReview(cycleId, {
           comments: comments || undefined,
-          salaryIncrement: salaryIncrement ? Number.parseFloat(salaryIncrement) : undefined,
-          salaryIncrementType: salaryIncrement ? salaryIncrementKind : undefined,
+          ...salaryPayload,
         });
         toast.success("Review approved!");
       } else {
@@ -87,14 +300,6 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
       onClose();
     } catch { toast.error("Failed to submit decision"); }
     finally { setSubmitting(false); }
-  };
-
-  /** Salary % field: digits and one decimal only (blocks e/E/+/− from keys and paste). */
-  const sanitizeSalaryIncrementInput = (raw: string): string => {
-    const digitsAndDot = raw.replaceAll(/[^0-9.]/g, "");
-    const firstDot = digitsAndDot.indexOf(".");
-    if (firstDot === -1) return digitsAndDot;
-    return digitsAndDot.slice(0, firstDot + 1) + digitsAndDot.slice(firstDot + 1).replaceAll(".", "");
   };
 
   const handleClose = () => {
@@ -145,137 +350,25 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
                 <div className="space-y-6 pb-2">
                   <ReviewEmployeeBioSection cycle={cycle} sectionHeadingId="director-employee-bio-heading" />
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Self Review */}
-                    <section className="bg-blue-50/50 rounded-lg p-4">
-                      <h3 className="text-sm font-semibold text-blue-700 mb-3 uppercase tracking-wide">Employee Self-Review</h3>
-                      {selfReview ? (
-                        <ReviewQuestionResponseList
-                          responses={selfReview.responses ?? []}
-                          questionnaire={reviewSettings?.selfReviewQuestionnaire}
-                        />
-                      ) : (
-                        <p className="text-sm text-gray-400 italic">No self-review submitted</p>
-                      )}
-                    </section>
+                  <DirectorApprovalReviewsGrid
+                    selfReview={selfReview}
+                    managerReview={managerReview}
+                    cycle={cycle}
+                    reviewSettings={reviewSettings}
+                  />
 
-                    {/* Manager Review: original (before viewing self-review) and updated (after viewing) */}
-                    <section className="bg-green-50/50 rounded-lg p-4 space-y-4">
-                      <h3 className="text-sm font-semibold text-green-700 mb-2 uppercase tracking-wide">Manager Review</h3>
-                      <p className="text-xs text-gray-600 mb-3">
-                        <span className="text-secondary">Reviewed by: </span>
-                        <span className="font-semibold text-gray-900">
-                          {personLabelFromReviewRef(cycle?.reviewedByManagerId)}
-                        </span>
-                        {personRoleFromReviewRef(cycle?.reviewedByManagerId) ? (
-                          <span className="text-gray-500">
-                            {" "}
-                            · {personRoleFromReviewRef(cycle?.reviewedByManagerId)}
-                          </span>
-                        ) : null}
-                      </p>
-                      {managerReview ? (
-                        <ManagerReviewResponsesWithHistory
-                          managerReview={managerReview}
-                          questionnaire={reviewSettings?.managerReviewQuestionnaire}
-                          accent="green"
-                        />
-                      ) : (
-                        <p className="text-sm text-gray-400 italic">No manager review submitted</p>
-                      )}
-                    </section>
-                  </div>
-
-                  {canDecide && (
-                    <section className="border border-gray-100 rounded-lg p-4 space-y-4">
-                      <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Your Decision</h3>
-
-                      <div className="flex gap-3">
-                        <button type="button" onClick={() => setDecision("approve")}
-                          className={`px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-colors border ${decision === "approve" ? "bg-green-600 text-white border-green-600" : "bg-white border-gray-200 text-gray-700 hover:border-green-400"
-                            }`}>
-                          Approve
-                        </button>
-                        <button type="button" onClick={() => setDecision("reject")}
-                          className={`px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-colors border ${decision === "reject" ? "bg-red-600 text-white border-red-600" : "bg-white border-gray-200 text-gray-700 hover:border-red-400"
-                            }`}>
-                          Reject
-                        </button>
-                      </div>
-
-                      {decision === "approve" && (
-                        <div className="space-y-3">
-                          <div>
-                            <span className="text-sm font-medium text-gray-600 block mb-2">
-                              Merit increase (optional)
-                            </span>
-                            <div className="flex flex-wrap gap-4">
-                              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                <input
-                                  type="radio"
-                                  name="salary-increment-kind"
-                                  className="accent-button-primary"
-                                  checked={salaryIncrementKind === "percent"}
-                                  onChange={() => {
-                                    setSalaryIncrementKind("percent");
-                                    setSalaryIncrement("");
-                                  }}
-                                />
-                                Percent
-                              </label>
-                              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                <input
-                                  type="radio"
-                                  name="salary-increment-kind"
-                                  className="accent-button-primary"
-                                  checked={salaryIncrementKind === "fixed"}
-                                  onChange={() => {
-                                    setSalaryIncrementKind("fixed");
-                                    setSalaryIncrement("");
-                                  }}
-                                />
-                                Fixed amount (USD)
-                              </label>
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-                            <label
-                              htmlFor="salary-increment"
-                              className="text-sm font-medium text-gray-600 shrink-0 sm:min-w-[12rem]"
-                            >
-                              {salaryIncrementKind === "percent" ? "Increase (%)" : "Increase ($)"}
-                            </label>
-                            <input
-                              id="salary-increment"
-                              type="number"
-                              inputMode="decimal"
-                              step={salaryIncrementKind === "percent" ? 0.5 : 0.01}
-                              min={0}
-                              max={salaryIncrementKind === "percent" ? 100 : undefined}
-                              value={salaryIncrement}
-                              onChange={(e) => setSalaryIncrement(sanitizeSalaryIncrementInput(e.target.value))}
-                              onKeyDown={(e) => {
-                                if (e.key === "e" || e.key === "E" || e.key === "+" || e.key === "-") {
-                                  e.preventDefault();
-                                }
-                              }}
-                              className="w-full sm:w-48 max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20"
-                              placeholder={salaryIncrementKind === "percent" ? "e.g. 5.0" : "e.g. 5000"}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium text-gray-600">
-                          Comments {decision === "reject" && <span className="text-red-500">*</span>}
-                        </label>
-                        <textarea value={comments} onChange={(e) => setComments(e.target.value)} rows={3}
-                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20"
-                          placeholder={decision === "reject" ? "Reason for rejection (required)" : "Optional comments"} />
-                      </div>
-                    </section>
-                  )}
+                  {canDecide ? (
+                    <DirectorDecisionSection
+                      decision={decision}
+                      setDecision={setDecision}
+                      comments={comments}
+                      setComments={setComments}
+                      salaryIncrement={salaryIncrement}
+                      salaryIncrementKind={salaryIncrementKind}
+                      setSalaryIncrement={setSalaryIncrement}
+                      setSalaryIncrementKind={setSalaryIncrementKind}
+                    />
+                  ) : null}
                 </div>
               )}
             </div>
@@ -297,9 +390,7 @@ export const DirectorApprovalModal = ({ isOpen, onClose, cycleId, status, onDeci
                     className={`px-6 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 cursor-pointer ${decision === "approve" ? "bg-green-600" : "bg-red-600"
                       }`}
                   >
-                    {submitting ? "Submitting..." : null}
-                    {!submitting && decision === "approve" ? "Approve Review" : null}
-                    {!submitting && decision === "reject" ? "Reject Review" : null}
+                    {submitDecisionLabel(decision, submitting)}
                   </button>
                 ) : null}
               </div>

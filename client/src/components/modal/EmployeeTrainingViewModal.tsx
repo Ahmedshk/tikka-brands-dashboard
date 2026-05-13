@@ -220,6 +220,74 @@ export const EmployeeTrainingViewModal = ({
   const [loading, setLoading] = useState(false);
   const [modulesExpanded, setModulesExpanded] = useState<Record<number, boolean>>({});
 
+  const toggleModuleExpanded = (idx: number, isExpanded: boolean) => {
+    setModulesExpanded((p) => ({ ...p, [idx]: !isExpanded }));
+  };
+
+  const renderModules = (
+    detail: AssignmentDetail,
+    dateRanges: ModuleDateRange[],
+    handleOpenFile: (publicId: string, resourceType: 'image' | 'raw', filename?: string) => void,
+  ) => {
+    const firstIncomplete =
+      detail.moduleProgress?.findIndex((p) => p.status !== 'completed') ?? 0;
+    const currentModuleIndex =
+      firstIncomplete >= 0 ? firstIncomplete : Math.max(0, detail.training.modules.length - 1);
+    const defaultExpandedIndex = currentModuleIndex;
+
+    return detail.training.modules.map((mod, idx) => {
+      const canExpand = idx <= currentModuleIndex;
+      const hasExplicit = Object.keys(modulesExpanded).length > 0;
+      const isExpanded =
+        canExpand && (hasExplicit ? modulesExpanded[idx] !== false : idx === defaultExpandedIndex);
+      const headerLabel = mod.name?.trim()
+        ? `Module ${idx + 1} – ${mod.name.trim()}`
+        : `Module ${idx + 1}`;
+      const previousCompleted =
+        idx === 0 || detail.moduleProgress?.[idx - 1]?.status === 'completed';
+      return (
+        <li
+          key={`${mod.name}-${idx}`}
+          className="rounded-xl border border-gray-200 bg-white overflow-hidden"
+        >
+          {canExpand ? (
+            <button
+              type="button"
+              onClick={() => toggleModuleExpanded(idx, isExpanded)}
+              className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-primary hover:bg-gray-100/80 transition-colors"
+            >
+              <span>{headerLabel}</span>
+              <span className="text-gray-500 shrink-0" aria-hidden>
+                {isExpanded ? '▼' : '▶'}
+              </span>
+            </button>
+          ) : (
+            <div
+              className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-gray-400 cursor-not-allowed select-none"
+              aria-disabled="true"
+            >
+              <span>{headerLabel}</span>
+              <span className="shrink-0" aria-hidden>
+                ▶
+              </span>
+            </div>
+          )}
+          {isExpanded && (
+            <div className="border-t border-gray-200 p-4 bg-gray-50/50">
+              <ModuleListItem
+                mod={mod}
+                progress={detail.moduleProgress?.[idx]}
+                range={dateRanges[idx]}
+                showDates={previousCompleted}
+                onOpenFile={handleOpenFile}
+              />
+            </div>
+          )}
+        </li>
+      );
+    });
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     const handleEscape = (e: KeyboardEvent) => {
@@ -321,54 +389,7 @@ export const EmployeeTrainingViewModal = ({
                   <section>
                     <h3 className="text-xs font-semibold text-secondary uppercase tracking-wide mb-2">Modules</h3>
                     <ul className="space-y-3">
-                      {(() => {
-                        const firstIncomplete = detail.moduleProgress?.findIndex((p) => p.status !== 'completed') ?? 0;
-                        const currentModuleIndex =
-                          firstIncomplete >= 0 ? firstIncomplete : Math.max(0, detail.training.modules.length - 1);
-                        const defaultExpandedIndex = currentModuleIndex;
-                        return detail.training.modules.map((mod, idx) => {
-                          const canExpand = idx <= currentModuleIndex;
-                          const hasExplicit = Object.keys(modulesExpanded).length > 0;
-                          const isExpanded = canExpand && (hasExplicit ? modulesExpanded[idx] !== false : idx === defaultExpandedIndex);
-                          const headerLabel = mod.name?.trim() ? `Module ${idx + 1} – ${mod.name.trim()}` : `Module ${idx + 1}`;
-                          const previousCompleted = idx === 0 || detail.moduleProgress?.[idx - 1]?.status === 'completed';
-                          return (
-                            <li key={`${mod.name}-${idx}`} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                              {canExpand ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setModulesExpanded((p) => ({ ...p, [idx]: !isExpanded }))}
-                                  className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-primary hover:bg-gray-100/80 transition-colors"
-                                >
-                                  <span>{headerLabel}</span>
-                                  <span className="text-gray-500 shrink-0" aria-hidden>
-                                    {isExpanded ? '▼' : '▶'}
-                                  </span>
-                                </button>
-                              ) : (
-                                <div
-                                  className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-gray-400 cursor-not-allowed select-none"
-                                  aria-disabled="true"
-                                >
-                                  <span>{headerLabel}</span>
-                                  <span className="shrink-0" aria-hidden>▶</span>
-                                </div>
-                              )}
-                              {isExpanded && (
-                                <div className="border-t border-gray-200 p-4 bg-gray-50/50">
-                                  <ModuleListItem
-                                    mod={mod}
-                                    progress={detail.moduleProgress?.[idx]}
-                                    range={dateRanges[idx]}
-                                    showDates={previousCompleted}
-                                    onOpenFile={handleOpenFile}
-                                  />
-                                </div>
-                              )}
-                            </li>
-                          );
-                        });
-                      })()}
+                      {renderModules(detail, dateRanges, handleOpenFile)}
                     </ul>
                   </section>
                 </>

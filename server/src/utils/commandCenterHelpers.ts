@@ -1,8 +1,6 @@
 import type { Response } from "express";
-import {
-  assertCanAccessMetrics,
-  type RolePermissions,
-} from "../config/kpi-metrics.config.js";
+import { assertCanAccessMetrics } from "../config/kpi-metrics.config.js";
+import type { RolePermissions } from "../types/rbac.types.js";
 import {
   COMMAND_CENTER_METRICS,
   PERIODS,
@@ -11,9 +9,6 @@ import {
   type CommandCenterWantFlags,
 } from "../types/commandCenter.types.js";
 import { ForbiddenError } from "./errors.util.js";
-
-export { COMMAND_CENTER_METRICS, PERIODS } from "../types/commandCenter.types.js";
-export type { Period, HourlySalesRow } from "../types/commandCenter.types.js";
 
 export function parsePeriodsQuery(periods: unknown): Period[] | undefined {
   if (periods == null) return undefined;

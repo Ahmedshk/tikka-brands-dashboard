@@ -69,7 +69,7 @@ function mergeRunSchedule(base: IAlertRunSchedule, patch?: Partial<IAlertRunSche
     {
       ...base,
       ...patch,
-      interval: patch.interval != null ? { ...base.interval, ...patch.interval } : base.interval,
+      interval: patch.interval == null ? base.interval : { ...base.interval, ...patch.interval },
       fixedTimesLocal: patch.fixedTimesLocal ?? base.fixedTimesLocal,
     },
     base,
@@ -85,13 +85,14 @@ function metricFromDoc(
     warnInToleranceZone: raw?.warnInToleranceZone ?? defaults.warnInToleranceZone,
     alertBeyondTolerance: raw?.alertBeyondTolerance ?? defaults.alertBeyondTolerance,
   };
+  const runCandidate = raw?.run;
   const hasOwnRun =
-    raw?.run != null &&
-    typeof raw.run === "object" &&
-    (raw.run.scheduleMode === "fixed_times" || raw.run.scheduleMode === "interval");
+    runCandidate != null &&
+    typeof runCandidate === "object" &&
+    (runCandidate.scheduleMode === "fixed_times" || runCandidate.scheduleMode === "interval");
   const runFallback = legacyRun ?? defaults.run;
   const run = hasOwnRun
-    ? normalizeRunSchedule(raw!.run as IAlertRunSchedule, runFallback)
+    ? normalizeRunSchedule(runCandidate, runFallback)
     : normalizeRunSchedule(undefined, runFallback);
   return { ...baseWarn, run };
 }
@@ -148,7 +149,7 @@ function toPlain(doc: {
   scheduleMode?: string;
   fixedTimesLocal?: string[];
   interval?: { hours: number; minutes: number };
-  financialLabor: Record<string, Partial<IAlertMetricToggles> | undefined>;
+  financialLabor?: Partial<IAlertFinancialLaborToggles> | IAlertFinancialLaborToggles;
   inventorySupplyChain: {
     deliveryOverdueNotReceived?: boolean;
     run?: Partial<IAlertRunSchedule>;
@@ -173,10 +174,7 @@ function toPlain(doc: {
 }): IAlertNotificationSettings {
   const legacy = legacyGlobalSchedule(doc);
 
-  const financialLabor = financialFromDoc(
-    doc.financialLabor as Partial<IAlertFinancialLaborToggles> | undefined,
-    legacy,
-  );
+  const financialLabor = financialFromDoc(doc.financialLabor, legacy);
 
   const invRun = normalizeRunSchedule(doc.inventorySupplyChain?.run, legacy ?? DEFAULT_ALERT_RUN_SCHEDULE);
   const lowInvRun = normalizeRunSchedule(
@@ -239,12 +237,10 @@ function toPlain(doc: {
 export class AlertNotificationSettingsService {
   async get(): Promise<IAlertNotificationSettings> {
     let doc = await AlertNotificationSettingsModel.findOne();
-    if (!doc) {
-      doc = await AlertNotificationSettingsModel.create({
-        ...DEFAULT_ALERT_NOTIFICATION_SETTINGS,
-        financialLabor: structuredClone(DEFAULT_ALERT_FINANCIAL_LABOR),
-      });
-    }
+    doc ??= await AlertNotificationSettingsModel.create({
+      ...DEFAULT_ALERT_NOTIFICATION_SETTINGS,
+      financialLabor: structuredClone(DEFAULT_ALERT_FINANCIAL_LABOR),
+    });
     return toPlain(doc.toObject() as Parameters<typeof toPlain>[0]);
   }
 
@@ -271,12 +267,10 @@ export class AlertNotificationSettingsService {
     }>;
   }): Promise<IAlertNotificationSettings> {
     let doc = await AlertNotificationSettingsModel.findOne();
-    if (!doc) {
-      doc = await AlertNotificationSettingsModel.create({
-        ...DEFAULT_ALERT_NOTIFICATION_SETTINGS,
-        financialLabor: structuredClone(DEFAULT_ALERT_FINANCIAL_LABOR),
-      });
-    }
+    doc ??= await AlertNotificationSettingsModel.create({
+      ...DEFAULT_ALERT_NOTIFICATION_SETTINGS,
+      financialLabor: structuredClone(DEFAULT_ALERT_FINANCIAL_LABOR),
+    });
 
     const plainBefore = toPlain(doc.toObject() as Parameters<typeof toPlain>[0]);
 
@@ -346,7 +340,6 @@ export class AlertNotificationSettingsService {
 
     doc.set("scheduleMode", undefined);
     doc.set("fixedTimesLocal", undefined);
-    doc.set("interval", undefined);
     doc.set("interval", undefined);
 
     await doc.save();

@@ -1,25 +1,12 @@
 import { Request, Response, NextFunction } from "express";
 import {
   loadHomebaseTimecardsForMongoRange,
-  loadSquareOrdersForMongoRange,
-  createMongoCatalogBatchRetrieve,
 } from "../services/integrationCacheRead.service.js";
-import { tryGetNetSalesByCategoryFromDailyRollups } from "../services/integrationRollupRead.service.js";
 import { LocationService } from "../services/location.service.js";
 import {
-  getNetSalesByCategoryInRange,
-  type SquareServiceOptions,
-} from "../services/square.service.js";
-import {
-  getSalesTrendPeriodRange,
-  getSalesTrendComparisonRange,
   getStartOfDayUtc,
   getEndOfDayUtc,
   getDatePartsInTz,
-} from "../utils/salesTrendDateRange.util.js";
-import type {
-  GetSalesTrendComparisonRangeOptions,
-  PeriodType,
 } from "../utils/salesTrendDateRange.util.js";
 import {
   parseSalesTrendQuery,
@@ -51,7 +38,6 @@ import {
   computeLaborCostPercentPerHour,
   buildEmptyHourlyBreakdownData,
   parseSalesByCategoryQuery,
-  buildSalesByCategoryResponseData,
   SALES_LABOR_DETAIL_API_LOG,
   type LocationForSalesLabor,
 } from "../utils/salesLaborControllerHelpers.js";
@@ -66,6 +52,7 @@ import {
   buildAllLocationsSalesTrendKpi,
 } from "../utils/salesTrendAllLocations.util.js";
 import { buildSalesByCategoryAllLocations } from "../utils/salesByCategoryAllLocations.util.js";
+import { getSalesByCategoryDataForLocation } from "../utils/salesByCategoryControllerHelpers.util.js";
 
 const locationService = new LocationService();
 
@@ -371,143 +358,7 @@ export const getSalesByCategory = async (
       throw new NotFoundError("Location not found");
     }
     const { location, squareAccessToken } = withCreds;
-    const timezone = location.timezone?.trim() ?? "UTC";
-    const businessStartTime = location.businessStartTime?.trim() ?? "00:00";
-
-    const period = getSalesTrendPeriodRange(
-      params.periodType as Parameters<typeof getSalesTrendPeriodRange>[0],
-      timezone,
-      params.periodStart,
-      params.periodEnd,
-      businessStartTime,
-    );
-    const comparisonOptions: GetSalesTrendComparisonRangeOptions = {
-      businessStartTime,
-    };
-    if (params.comparisonDate !== undefined) comparisonOptions.customComparisonDate = params.comparisonDate;
-    if (params.comparisonStart !== undefined) comparisonOptions.customComparisonStart = params.comparisonStart;
-    if (params.comparisonEnd !== undefined) comparisonOptions.customComparisonEnd = params.comparisonEnd;
-    comparisonOptions.periodType = params.periodType as PeriodType;
-    const comparison = getSalesTrendComparisonRange(
-      params.comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
-      period.startAt,
-      period.endAt,
-      timezone,
-      comparisonOptions,
-    );
-
-    const dataRange = { startAt: period.startAt, endAt: period.endAt };
-    const comparisonRange = comparison
-      ? { startAt: comparison.startAt, endAt: comparison.endAt }
-      : null;
-
-    const squareLocationId = location.squareLocationId?.trim();
-    const squareOptions = { accessToken: squareAccessToken ?? undefined };
-    const mongoId = location._id?.trim();
-    const useCategoryCache = Boolean(mongoId);
-
-    let currentResult = { categories: [] as Array<{ name: string; netSalesCents: number }>, totalNetSalesCents: 0 };
-    let comparisonResult = { categories: [] as Array<{ name: string; netSalesCents: number }>, totalNetSalesCents: 0 };
-
-    if (squareLocationId) {
-      const batchRetrieve =
-        useCategoryCache && mongoId
-          ? createMongoCatalogBatchRetrieve(mongoId)
-          : null;
-      const categoryCatalogToken = squareAccessToken ?? "";
-
-      const [rollupCurrent, rollupComparison] =
-        batchRetrieve != null
-          ? await Promise.all([
-              tryGetNetSalesByCategoryFromDailyRollups(
-                mongoId!,
-                dataRange,
-                timezone,
-                businessStartTime,
-                batchRetrieve,
-                categoryCatalogToken,
-              ),
-              comparisonRange
-                ? tryGetNetSalesByCategoryFromDailyRollups(
-                    mongoId!,
-                    comparisonRange,
-                    timezone,
-                    businessStartTime,
-                    batchRetrieve,
-                    categoryCatalogToken,
-                  )
-                : Promise.resolve(null),
-            ])
-          : [null, null];
-
-      let currentCatOpts: SquareServiceOptions = squareOptions;
-      let comparisonCatOpts: SquareServiceOptions = squareOptions;
-
-      if (useCategoryCache && mongoId && batchRetrieve != null) {
-        const needCurrentOrders = rollupCurrent == null;
-        const needComparisonOrders =
-          comparisonRange != null && rollupComparison == null;
-        const [currentOrders, comparisonOrders] = await Promise.all([
-          needCurrentOrders
-            ? loadSquareOrdersForMongoRange(mongoId, dataRange)
-            : Promise.resolve([]),
-          needComparisonOrders && comparisonRange
-            ? loadSquareOrdersForMongoRange(mongoId, comparisonRange)
-            : Promise.resolve([]),
-        ]);
-        if (needCurrentOrders) {
-          currentCatOpts = {
-            ...squareOptions,
-            ordersOverride: currentOrders,
-            batchRetrieveCatalogOverride: batchRetrieve,
-          };
-        }
-        if (needComparisonOrders) {
-          comparisonCatOpts = {
-            ...squareOptions,
-            ordersOverride: comparisonOrders,
-            batchRetrieveCatalogOverride: batchRetrieve,
-          };
-        }
-      }
-
-      const [current, comp] = await Promise.all([
-        rollupCurrent != null
-          ? Promise.resolve(rollupCurrent)
-          : getNetSalesByCategoryInRange(squareLocationId, dataRange, currentCatOpts),
-        comparisonRange
-          ? rollupComparison != null
-            ? Promise.resolve(rollupComparison)
-            : getNetSalesByCategoryInRange(
-                squareLocationId,
-                comparisonRange,
-                comparisonCatOpts,
-              )
-          : Promise.resolve({ categories: [], totalNetSalesCents: 0 }),
-      ]);
-      currentResult = current;
-      comparisonResult = comp;
-      let comparisonSource: string = "n/a";
-      if (comparisonRange != null) {
-        comparisonSource =
-          rollupComparison != null
-            ? "rollups"
-            : "mongo_orders_getNetSalesByCategoryInRange";
-      }
-      console.log(SALES_LABOR_DETAIL_API_LOG, "GET /sales-labor/sales-by-category", {
-        currentSource:
-          rollupCurrent != null ? "rollups" : "mongo_orders_getNetSalesByCategoryInRange",
-        comparisonSource,
-      });
-    }
-
-    const data = buildSalesByCategoryResponseData(
-      currentResult,
-      comparisonResult,
-      period.startAt,
-      period.endAt,
-      comparisonRange,
-    );
+    const data = await getSalesByCategoryDataForLocation({ params, location, squareAccessToken });
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);

@@ -12,7 +12,10 @@ import {
 } from "../utils/errors.util.js";
 import { sendInvitationEmail } from "./mailer.service.js";
 import { searchTeamMembers } from "./square.service.js";
-import { getEmployeesForLocation } from "./homebase.service.js";
+import {
+  getEmployeesForLocation,
+  type HomebaseEmployee,
+} from "./homebase.service.js";
 import { deleteFromCloudinary } from "../config/cloudinary.js";
 import {
   normalizeTeamMember,
@@ -27,6 +30,10 @@ import {
 import { ReviewCycleModel } from "../models/reviewCycle.model.js";
 import { ReviewCycleService } from "./reviewCycle.service.js";
 import { logger } from "../utils/logger.util.js";
+import {
+  buildUserListRepoFilterParams,
+  type UserListFilterInput,
+} from "../utils/userGetUsersFilters.util.js";
 
 const OWNER_ROLE_NAME = UserRole.OWNER;
 const SALT_ROUNDS = 10;
@@ -194,15 +201,9 @@ export class UserService {
     return roleMap;
   }
 
-  async createUser(
+  private async resolveRoleForCreate(
     payload: CreateUserPayload,
-    options?: { sendInvite?: boolean },
-  ): Promise<IUser> {
-    const existing = await this.userRepository.findByEmail(payload.email);
-    if (existing) {
-      throw new ConflictError("A user with this email already exists.");
-    }
-
+  ): Promise<{ role: string | null; roleId: string | null }> {
     let role: string | null = null;
     let roleId: string | null = null;
     if (payload.roleId) {
@@ -212,6 +213,62 @@ export class UserService {
         roleId = payload.roleId;
       }
     }
+    return { role, roleId };
+  }
+
+  private async sendInvitationForNewUser(doc: UserDocument): Promise<void> {
+    const token = crypto.randomBytes(32).toString("hex");
+    const invitationTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const base = (
+      process.env.CLIENT_URL ??
+      process.env.APP_URL ??
+      process.env.FRONTEND_URL ??
+      ""
+    )
+      .trim()
+      .replace(/\/$/, "");
+    const setPasswordUrl = base
+      ? `${base}/set-password?token=${token}`
+      : `/set-password?token=${token}`;
+    await this.userRepository.updateById(doc._id.toString(), {
+      invitationToken: token,
+      invitationTokenExpiresAt,
+      invitationSentAt: new Date(),
+    });
+    await sendInvitationEmail({
+      to: doc.email,
+      firstName: doc.firstName,
+      setPasswordUrl,
+    });
+  }
+
+  private async startReviewCycleAfterUserCreate(userId: string): Promise<void> {
+    const reviewCycleService = new ReviewCycleService();
+    const cycleResult = await reviewCycleService.startCycleForUser(userId).catch((err) => {
+      logger.warn("Review cycle start after create failed", { userId, err });
+      return {
+        started: false as const,
+        message: err instanceof Error ? err.message : String(err),
+      };
+    });
+    if (!cycleResult.started && cycleResult.message) {
+      logger.info("Review cycle not started after create", {
+        userId,
+        reason: cycleResult.message,
+      });
+    }
+  }
+
+  async createUser(
+    payload: CreateUserPayload,
+    options?: { sendInvite?: boolean },
+  ): Promise<IUser> {
+    const existing = await this.userRepository.findByEmail(payload.email);
+    if (existing) {
+      throw new ConflictError("A user with this email already exists.");
+    }
+
+    const { role, roleId } = await this.resolveRoleForCreate(payload);
 
     const plainPassword = randomPassword();
     const hashedPassword = await bcrypt.hash(plainPassword, SALT_ROUNDS);
@@ -220,7 +277,8 @@ export class UserService {
     const squareId = payload.squareId?.trim();
     const homebaseData = payload.homebaseData;
     const profileImagePublicId = payload.profileImagePublicId?.trim();
-    const startDate = payload.startDate != null ? new Date(payload.startDate) : undefined;
+    const startDate =
+      payload.startDate instanceof Date ? payload.startDate : undefined;
     const doc = await this.userRepository.create({
       email: payload.email.trim().toLowerCase(),
       password: hashedPassword,
@@ -239,45 +297,14 @@ export class UserService {
     });
 
     if (options?.sendInvite) {
-      const token = crypto.randomBytes(32).toString("hex");
-      const invitationTokenExpiresAt = new Date(
-        Date.now() + 24 * 60 * 60 * 1000,
-      );
-      const base = (
-        process.env.CLIENT_URL ??
-        process.env.APP_URL ??
-        process.env.FRONTEND_URL ??
-        ""
-      )
-        .trim()
-        .replace(/\/$/, "");
-      const setPasswordUrl = base
-        ? `${base}/set-password?token=${token}`
-        : `/set-password?token=${token}`;
-      await this.userRepository.updateById(doc._id.toString(), {
-        invitationToken: token,
-        invitationTokenExpiresAt,
-        invitationSentAt: new Date(),
-      });
-      await sendInvitationEmail({
-        to: doc.email,
-        firstName: doc.firstName,
-        setPasswordUrl,
-      });
+      await this.sendInvitationForNewUser(doc);
     }
 
     const finalDoc = options?.sendInvite
       ? await this.userRepository.findById(doc._id.toString())
       : doc;
 
-    const reviewCycleService = new ReviewCycleService();
-    const cycleResult = await reviewCycleService.startCycleForUser(doc._id.toString()).catch((err) => {
-      logger.warn("Review cycle start after create failed", { userId: doc._id.toString(), err });
-      return { started: false as const, message: err instanceof Error ? err.message : String(err) };
-    });
-    if (!cycleResult.started && cycleResult.message) {
-      logger.info("Review cycle not started after create", { userId: doc._id.toString(), reason: cycleResult.message });
-    }
+    await this.startReviewCycleAfterUserCreate(doc._id.toString());
 
     return toIUser(finalDoc ?? doc);
   }
@@ -316,62 +343,70 @@ export class UserService {
     return docs.map(toIUser);
   }
 
-  async getUsers(filters?: {
-    search?: string;
-    roleId?: string;
-    roleIds?: string[];
-    excludeUserIds?: string[];
-    locationId?: string;
-    showArchived?: boolean;
+  private normalizeUsersListPagination(filters?: {
     page?: number;
     pageSize?: number;
-  }): Promise<{
+  }): { page: number; pageSize: number } {
+    const page = Math.max(1, filters?.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, filters?.pageSize ?? 10));
+    return { page, pageSize };
+  }
+
+  private usersPaginatedListResult(
+    users: IUser[],
+    total: number,
+    page: number,
+    pageSize: number,
+  ): {
+    users: IUser[];
+    totalItems: number;
+    totalPages: number;
+    page: number;
+    pageSize: number;
+  } {
+    return {
+      users,
+      totalItems: total,
+      totalPages: Math.ceil(total / pageSize) || 1,
+      page,
+      pageSize,
+    };
+  }
+
+  private async getUsersPaginatedWithoutLocation(
+    filters: UserListFilterInput | undefined,
+    page: number,
+    pageSize: number,
+  ): Promise<{
     users: IUser[];
     totalItems: number;
     totalPages: number;
     page: number;
     pageSize: number;
   }> {
-    const page = Math.max(1, filters?.page ?? 1);
-    const pageSize = Math.min(100, Math.max(1, filters?.pageSize ?? 10));
-
-    if (!filters?.locationId || filters.locationId.trim() === "") {
-      const filterParams: { search?: string; roleId?: string; roleIds?: string[]; excludeUserIds?: string[]; showArchived?: boolean } = {};
-      if (filters?.search !== undefined && filters.search !== "")
-        filterParams.search = filters.search;
-      if (filters?.roleIds && filters.roleIds.length > 0)
-        filterParams.roleIds = filters.roleIds;
-      else if (filters?.roleId !== undefined && filters.roleId !== "")
-        filterParams.roleId = filters.roleId;
-      if (filters?.excludeUserIds && filters.excludeUserIds.length > 0)
-        filterParams.excludeUserIds = filters.excludeUserIds;
-      filterParams.showArchived = filters?.showArchived ?? false;
-      const { docs, total } =
-        await this.userRepository.findWithFiltersPaginated(filterParams, {
-          page,
-          pageSize,
-        });
-      return {
-        users: docs.map(toIUser),
-        totalItems: total,
-        totalPages: Math.ceil(total / pageSize) || 1,
+    const filterParams = buildUserListRepoFilterParams(filters);
+    const { docs, total } =
+      await this.userRepository.findWithFiltersPaginated(filterParams, {
         page,
         pageSize,
-      };
-    }
+      });
+    return this.usersPaginatedListResult(docs.map(toIUser), total, page, pageSize);
+  }
 
-    const listFilterParams: { search?: string; roleId?: string; roleIds?: string[]; excludeUserIds?: string[]; showArchived?: boolean } = {};
-    if (filters?.search !== undefined && filters.search !== "")
-      listFilterParams.search = filters.search;
-    if (filters?.roleIds && filters.roleIds.length > 0)
-      listFilterParams.roleIds = filters.roleIds;
-    else if (filters?.roleId !== undefined && filters.roleId !== "")
-      listFilterParams.roleId = filters.roleId;
-    if (filters?.excludeUserIds && filters.excludeUserIds.length > 0)
-      listFilterParams.excludeUserIds = filters.excludeUserIds;
-    listFilterParams.showArchived = filters?.showArchived ?? false;
+  private async getUsersPaginatedWithLocation(
+    filters: UserListFilterInput | undefined,
+    locationIdTrimmed: string,
+    page: number,
+    pageSize: number,
+  ): Promise<{
+    users: IUser[];
+    totalItems: number;
+    totalPages: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const listFilterParams = buildUserListRepoFilterParams(filters);
     const docs = await this.userRepository.findWithFilters(listFilterParams);
-    const locationId = filters.locationId.trim();
     const roleIdStrings = [
       ...new Set(
         docs
@@ -396,7 +431,7 @@ export class UserService {
       return userHasAccessToLocation(
         r.locationAccess,
         r.locationIdStrings,
-        locationId,
+        locationIdTrimmed,
         docWithOverrides.locationOverrides,
         docWithOverrides.locationRemovals,
       );
@@ -406,13 +441,42 @@ export class UserService {
     const start = (page - 1) * pageSize;
     const paginated = filtered.slice(start, start + pageSize);
 
-    return {
-      users: paginated.map(toIUser),
-      totalItems: total,
-      totalPages: Math.ceil(total / pageSize) || 1,
+    return this.usersPaginatedListResult(
+      paginated.map(toIUser),
+      total,
       page,
       pageSize,
-    };
+    );
+  }
+
+  async getUsers(filters?: {
+    search?: string;
+    roleId?: string;
+    roleIds?: string[];
+    excludeUserIds?: string[];
+    locationId?: string;
+    showArchived?: boolean;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{
+    users: IUser[];
+    totalItems: number;
+    totalPages: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const { page, pageSize } = this.normalizeUsersListPagination(filters);
+
+    if (!filters?.locationId || filters.locationId.trim() === "") {
+      return this.getUsersPaginatedWithoutLocation(filters, page, pageSize);
+    }
+
+    return this.getUsersPaginatedWithLocation(
+      filters,
+      filters.locationId.trim(),
+      page,
+      pageSize,
+    );
   }
 
   /**
@@ -603,7 +667,11 @@ export class UserService {
     return result;
   }
 
-  async syncFromHomebase(locationId: string): Promise<SyncFromHomebaseResult> {
+  /** Loads location Homebase UUID + API key or throws NotFoundError / ForbiddenError. */
+  private async requireHomebaseCredentialsOrThrow(locationId: string): Promise<{
+    homebaseLocationId: string;
+    homebaseApiKey: string;
+  }> {
     const withCreds =
       await this.locationService.getByIdWithCredentials(locationId);
     if (!withCreds) {
@@ -616,6 +684,68 @@ export class UserService {
         "Location does not have Homebase credentials configured.",
       );
     }
+    return { homebaseLocationId, homebaseApiKey };
+  }
+
+  private async syncSingleHomebaseEmployee(
+    emp: HomebaseEmployee,
+    result: SyncFromHomebaseResult,
+  ): Promise<void> {
+    const normalized = normalizeHomebaseEmployee(emp);
+    if (!normalized) {
+      result.skipped++;
+      return;
+    }
+
+    try {
+      const existing = await this.resolveExistingUserForHomebase(normalized);
+      if (existing) {
+        const updatePayload = buildHomebaseSyncUpdatePayload(
+          normalized,
+          existing,
+        );
+        await this.userRepository.updateById(
+          existing._id.toString(),
+          updatePayload,
+        );
+        result.updated++;
+        const reviewCycleService = new ReviewCycleService();
+        await reviewCycleService
+          .startCycleForUser(existing._id.toString())
+          .catch((err) => {
+            logger.warn(
+              "Review cycle start after Homebase update failed",
+              { userId: existing._id.toString(), err },
+            );
+          });
+        return;
+      }
+
+      const hashedPassword = await bcrypt.hash(randomPassword(), SALT_ROUNDS);
+      const created = await this.userRepository.create(
+        buildHomebaseSyncCreatePayload(normalized, hashedPassword),
+      );
+      result.created++;
+      if (created.isTerminated !== true) {
+        const reviewCycleService = new ReviewCycleService();
+        await reviewCycleService
+          .startCycleForUser(created._id.toString())
+          .catch((err) => {
+            logger.warn(
+              "Review cycle start after Homebase create failed",
+              { userId: created._id.toString(), err },
+            );
+          });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      result.errors.push(`${normalized.email}: ${msg}`);
+    }
+  }
+
+  async syncFromHomebase(locationId: string): Promise<SyncFromHomebaseResult> {
+    const { homebaseLocationId, homebaseApiKey } =
+      await this.requireHomebaseCredentialsOrThrow(locationId);
 
     const employees = await getEmployeesForLocation(
       homebaseLocationId,
@@ -630,48 +760,7 @@ export class UserService {
     };
 
     for (const emp of employees) {
-      const normalized = normalizeHomebaseEmployee(emp);
-      if (!normalized) {
-        result.skipped++;
-        continue;
-      }
-
-      try {
-        const existing = await this.resolveExistingUserForHomebase(normalized);
-        if (existing) {
-          const updatePayload = buildHomebaseSyncUpdatePayload(
-            normalized,
-            existing,
-          );
-          await this.userRepository.updateById(
-            existing._id.toString(),
-            updatePayload,
-          );
-          result.updated++;
-          const reviewCycleService = new ReviewCycleService();
-          await reviewCycleService.startCycleForUser(existing._id.toString()).catch((err) => {
-            logger.warn("Review cycle start after Homebase update failed", { userId: existing._id.toString(), err });
-          });
-        } else {
-          const hashedPassword = await bcrypt.hash(
-            randomPassword(),
-            SALT_ROUNDS,
-          );
-          const created = await this.userRepository.create(
-            buildHomebaseSyncCreatePayload(normalized, hashedPassword),
-          );
-          result.created++;
-          if (created.isTerminated !== true) {
-            const reviewCycleService = new ReviewCycleService();
-            await reviewCycleService.startCycleForUser(created._id.toString()).catch((err) => {
-              logger.warn("Review cycle start after Homebase create failed", { userId: created._id.toString(), err });
-            });
-          }
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        result.errors.push(`${normalized.email}: ${msg}`);
-      }
+      await this.syncSingleHomebaseEmployee(emp, result);
     }
 
     return result;

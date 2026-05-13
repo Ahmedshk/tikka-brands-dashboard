@@ -1,4 +1,5 @@
 import type { HomebaseData } from "./userManagement.types";
+import { getStageStatusesFromSnapshotImpl } from "../utils/reviewStageStatusesFromSnapshot";
 
 export const QUESTION_TYPES = ["text", "rating", "multiple_choice", "yes_no"] as const;
 export type QuestionType = (typeof QUESTION_TYPES)[number];
@@ -256,79 +257,13 @@ export interface StageStatuses {
   checkin60: string;
 }
 
-function hasMeaningfulResponses(responses: QuestionResponse[] | undefined): boolean {
-  return Boolean(responses?.some((r) => String(r.answer ?? "").trim().length > 0));
-}
 
 /**
  * Stage badges for past detail when the cycle was superseded (schedule continued).
  * Uses snapshot + cycle fields instead of mapping superseded → all Complete.
  */
 export function getStageStatusesFromSnapshot(snapshot: ReviewCycleSnapshot): StageStatuses {
-  const na = "—";
-  const cycle = snapshot.cycle;
-  const status = cycle.status;
-
-  const selfDone =
-    Boolean(snapshot.selfReview?.submittedAt) || hasMeaningfulResponses(snapshot.selfReview?.responses);
-  const selfReview = selfDone ? "Complete" : "Not started";
-
-  const mgr = snapshot.managerReview;
-  const mgrDone =
-    Boolean(mgr?.submittedAt) ||
-    hasMeaningfulResponses(mgr?.responses) ||
-    Boolean(mgr?.revisionHistory?.some((h) => hasMeaningfulResponses(h.responses)));
-
-  let managerReview: string;
-  if (!selfDone) managerReview = na;
-  else if (mgrDone) managerReview = "Complete";
-  else managerReview = "Not started";
-
-  let directorReview: string = na;
-  if (cycle.directorDecision === "approved") directorReview = "Approved";
-  else if (cycle.directorDecision === "rejected") {
-    if (
-      cycle.status === "manager_review_due" ||
-      cycle.status === "manager_review_pending" ||
-      cycle.status === "manager_review_past_due"
-    ) {
-      directorReview = "Revisions requested";
-    } else {
-      directorReview = "Rejected";
-    }
-  } else if (mgrDone) directorReview = "Due";
-
-  let finalReview: string = na;
-  if (cycle.directorDecision === "approved") {
-    if (
-      status === "completed" ||
-      status === "cycle_complete" ||
-      status === "checkin_30_complete" ||
-      status === "checkin_30_done" ||
-      status === "checkin_60_complete" ||
-      status === "checkin_60_done"
-    ) {
-      finalReview = "Complete";
-    } else if (status === "sharing_due") finalReview = "Due";
-    else if (status === "sharing_pending") finalReview = "Pending";
-    else if (status === "sharing_past_due") finalReview = "Past due";
-    else if (status === "cycle_superseded") finalReview = "Not complete";
-    else if (status === "approved") finalReview = "Due";
-  }
-
-  const checkinForPeriod = (period: "30" | "60"): string => {
-    const ci = snapshot.checkIns?.find((c) => String(c.period) === period);
-    return ci?.submittedAt ? "Complete" : na;
-  };
-
-  return {
-    selfReview,
-    managerReview,
-    directorReview,
-    finalReview,
-    checkin30: checkinForPeriod("30"),
-    checkin60: checkinForPeriod("60"),
-  };
+  return getStageStatusesFromSnapshotImpl(snapshot);
 }
 
 /** Map overall cycle status to a status label for each stage. */
@@ -417,7 +352,6 @@ export function getStageStatuses(status: ReviewCycleStatus): StageStatuses {
       case "checkin_60_complete":
       case "checkin_60_done":
       case "cycle_complete":
-      case "cycle_superseded":
         return complete;
       default: return na;
     }

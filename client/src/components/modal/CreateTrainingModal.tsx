@@ -4,8 +4,6 @@ import UploadIcon from '@assets/icons/upload.svg?react';
 import ViewIcon from '@assets/icons/view.svg?react';
 import {
   trainingService,
-  type TrainingModulePayload,
-  type TrainingModuleFilePayload,
 } from '../../services/training.service';
 import type { Training } from '../../types/trainingReviews.types';
 import {
@@ -15,6 +13,8 @@ import {
   PENDING_UPLOAD_TAG_CLASSNAME,
   openFileInNewTab,
   getDocumentFormatFromFile,
+  removeModuleFileFromTrainingModules,
+  buildTrainingModulePayloadsForCreate,
   type CreateTrainingModuleForm,
   type CreateTrainingModuleFileForm,
 } from '../../utils/createTrainingModalHelpers';
@@ -23,13 +23,6 @@ import { DocumentTypeThumbnail } from './DocumentTypeThumbnail';
 function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
-
-const initialModuleFile = (): CreateTrainingModuleFileForm => ({
-  id: newId('file'),
-  file: null,
-  publicId: null,
-  resourceType: null,
-});
 
 const initialModule = (): CreateTrainingModuleForm => ({
   id: newId('module'),
@@ -42,7 +35,7 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
 
-function FilePreviewThumbnail({ file }: { file: File }) {
+function FilePreviewThumbnail({ file }: Readonly<{ file: File }>) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     const u = URL.createObjectURL(file);
@@ -161,13 +154,7 @@ export const CreateTrainingModal = ({
   };
 
   const removeModuleFile = (moduleId: string, fileId: string) => {
-    setModules((prev) =>
-      prev.map((m) => {
-        if (m.id !== moduleId) return m;
-        const next = m.moduleFiles.filter((f) => f.id !== fileId);
-        return { ...m, moduleFiles: next };
-      })
-    );
+    setModules((prev) => removeModuleFileFromTrainingModules(prev, moduleId, fileId));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -182,31 +169,11 @@ export const CreateTrainingModal = ({
     setSubmitting(true);
     try {
       const trainingNameTrimmed = trainingName.trim();
-      const payloadModules: TrainingModulePayload[] = [];
-
-      for (const mod of modules) {
-        const moduleFiles: TrainingModuleFilePayload[] = [];
-        for (const mf of mod.moduleFiles) {
-          if (mf.file) {
-            const up = await trainingService.uploadDocument(mf.file, trainingNameTrimmed);
-            moduleFiles.push({
-              publicId: up.publicId,
-              resourceType: up.resourceType,
-              ...(up.filename && { filename: up.filename }),
-              ...(up.format && { format: up.format }),
-            });
-          } else if (mf.publicId && mf.resourceType) {
-            moduleFiles.push({
-              publicId: mf.publicId,
-              resourceType: mf.resourceType,
-              ...(mf.filename && { filename: mf.filename }),
-              ...(mf.format && { format: mf.format }),
-            });
-          }
-        }
-        const durationDays = Math.max(1, Number(mod.duration) || 1);
-        payloadModules.push({ name: mod.name.trim(), duration: durationDays, moduleFiles });
-      }
+      const payloadModules = await buildTrainingModulePayloadsForCreate(
+        modules,
+        trainingNameTrimmed,
+        trainingService.uploadDocument,
+      );
 
       const training = await trainingService.create({
         name: trainingNameTrimmed,

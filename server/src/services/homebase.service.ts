@@ -14,6 +14,8 @@ import {
   type SalesTrendGranularity,
 } from "../utils/homebaseOrderedBuckets.util.js";
 import { aggregateTimecardsIntoBuckets } from "../utils/homebaseTimeSeriesHelpers.js";
+import { parseHomebaseEmployeesJsonPayload } from "../utils/homebaseEmployeesPayloadHelpers.util.js";
+import { collectHomebaseEmployeesPages } from "../utils/homebaseEmployeesPaginationHelpers.util.js";
 
 const HOMEBASE_BASE = "https://api.joinhomebase.com";
 /** Origin for public API; use with full path /api/public/... to avoid URL() dropping path. */
@@ -88,9 +90,9 @@ function getApiKey(): string | undefined {
 }
 
 export interface HomebaseServiceOptions {
-  apiKey?: string | undefined;
+  apiKey?: string;
   /** Used for label formatting (same as Square): last52weeks = month+year on all monthly; daily day-name when not today/last52weeks/thisYear */
-  periodType?: string | undefined;
+  periodType?: string;
 }
 
 function resolveApiKey(override?: string): string | undefined {
@@ -216,6 +218,25 @@ async function homebasePublicFetch(
   return res;
 }
 
+async function fetchHomebaseEmployeesOnePage(
+  locationUuid: string,
+  page: number,
+  apiKey: string,
+): Promise<HomebaseEmployee[]> {
+  const res = await homebasePublicFetch(
+    `/locations/${encodeURIComponent(locationUuid)}/employees`,
+    {
+      page: String(page),
+      per_page: String(EMPLOYEES_PER_PAGE),
+      with_archived: "true",
+    },
+    apiKey,
+  );
+  return parseHomebaseEmployeesJsonPayload(
+    await res.json(),
+  ) as HomebaseEmployee[];
+}
+
 /**
  * Fetch all employees for a location (paginated; includes archived).
  * Uses GET /locations/{location_uuid}/employees with page, per_page, with_archived.
@@ -225,50 +246,15 @@ export async function getEmployeesForLocation(
   locationUuid: string,
   apiKey: string,
 ): Promise<HomebaseEmployee[]> {
-  const all: HomebaseEmployee[] = [];
   const uuid = locationUuid.trim();
-  if (!uuid) return all;
+  if (!uuid) return [];
 
-  let page = 1;
-
-  while (true) {
-    const res = await homebasePublicFetch(
-      `/locations/${encodeURIComponent(uuid)}/employees`,
-      {
-        page: String(page),
-        per_page: String(EMPLOYEES_PER_PAGE),
-        with_archived: "true",
-      },
-      apiKey,
-    );
-
-    const raw = (await res.json()) as unknown;
-    let data: HomebaseEmployee[] = [];
-    if (Array.isArray(raw)) {
-      data = raw;
-    } else if (raw && typeof raw === "object") {
-      const obj = raw as Record<string, unknown>;
-      if (Array.isArray(obj.data)) data = obj.data as HomebaseEmployee[];
-      else if (Array.isArray(obj.employees)) data = obj.employees as HomebaseEmployee[];
-      else {
-        const firstArray = Object.values(obj).find((v) => Array.isArray(v));
-        if (firstArray) data = firstArray as HomebaseEmployee[];
-      }
-    }
-
-    if (data.length === 0 && page === 1) {
-      return all;
-    }
-
-    all.push(...data);
-
-    if (data.length < EMPLOYEES_PER_PAGE) {
-      break;
-    }
-    page += 1;
-  }
-
-  return all;
+  return collectHomebaseEmployeesPages(
+    uuid,
+    apiKey,
+    EMPLOYEES_PER_PAGE,
+    fetchHomebaseEmployeesOnePage,
+  );
 }
 
 /**

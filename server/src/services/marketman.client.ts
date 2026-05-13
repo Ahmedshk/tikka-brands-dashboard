@@ -9,6 +9,13 @@ import {
   truncateForExternalApiLog,
 } from '../utils/externalApiCallLog.util.js';
 import { parseMarketManResponse } from '../utils/marketmanClientHelpers.js';
+import {
+  buildMarketManPostPayload,
+  marketManFetchJsonPost,
+  marketManPostOperationPath,
+  resolveMarketManFailedHttpResponse,
+  resolveMarketManRequestUrl,
+} from '../utils/marketmanRequestExecution.util.js';
 
 const MARKETMAN_BASE_URL = 'https://api.marketman.com/v3';
 const TOKEN_PATH = '/buyers/auth/GetToken';
@@ -137,41 +144,22 @@ export async function marketManRequest<T = unknown>(
   body: Record<string, unknown>,
   buyerGuid?: string
 ): Promise<T> {
-  const url = path.startsWith('http') ? path : `${MARKETMAN_BASE_URL}${path}`;
-  const payload = buyerGuid ? { ...body, BuyerGuid: buyerGuid } : body;
+  const url = resolveMarketManRequestUrl(path, MARKETMAN_BASE_URL);
+  const payload = buildMarketManPostPayload(body, buyerGuid);
 
   let token = await getMarketManToken();
   let lastAttempt401 = false;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const opPath = path.startsWith('http') ? new URL(path).pathname : path;
-    const op = `POST ${opPath}`;
+    const op = `POST ${marketManPostOperationPath(path)}`;
     const attemptNum = attempt + 1;
-    const t0 = Date.now();
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          AUTH_TOKEN: token,
-        },
-        body: JSON.stringify(payload),
-      });
-    } catch (err) {
-      const durationMs = Date.now() - t0;
-      const msg = err instanceof Error ? err.message : String(err);
-      logExternalApiResult('MarketMan', op, {
-        outcome: 'error',
-        durationMs,
-        attempt: attemptNum,
-        error: truncateForExternalApiLog(msg),
-      });
-      throw err instanceof Error ? err : new Error(String(err));
-    }
-
-    const durationMs = Date.now() - t0;
-    const text = await res.text();
+    const { res, durationMs, text } = await marketManFetchJsonPost(
+      url,
+      token,
+      payload,
+      op,
+      attemptNum,
+    );
     const data = parseMarketManResponse<T>(text, res.status, path);
 
     if (res.status === 401 && !lastAttempt401) {
@@ -189,30 +177,19 @@ export async function marketManRequest<T = unknown>(
     }
 
     if (!res.ok) {
-      const msg =
-        (data as { ErrorMessage?: string }).ErrorMessage ??
-        `MarketMan ${path}: ${res.status}`;
-      if (res.status >= 500 && attempt < MAX_RETRIES - 1) {
-        logExternalApiResult('MarketMan', op, {
-          outcome: 'error',
-          durationMs,
-          httpStatus: res.status,
-          attempt: attemptNum,
-          willRetry: true,
-          error: truncateForExternalApiLog(msg),
-        });
-        const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
-        await new Promise((r) => setTimeout(r, backoff));
-        continue;
-      }
-      logExternalApiResult('MarketMan', op, {
-        outcome: 'error',
+      const failure = await resolveMarketManFailedHttpResponse(res, data, {
+        path,
+        op,
         durationMs,
-        httpStatus: res.status,
-        attempt: attemptNum,
-        error: truncateForExternalApiLog(msg),
+        attemptNum,
+        attemptIndex: attempt,
+        maxRetries: MAX_RETRIES,
+        initialBackoffMs: INITIAL_BACKOFF_MS,
       });
-      throw new Error(msg);
+      if (failure.retry) continue;
+      const httpErr = failure.error;
+      if (httpErr instanceof Error) throw httpErr;
+      throw new Error(String(httpErr));
     }
 
     logExternalApiResult('MarketMan', op, {
@@ -224,7 +201,7 @@ export async function marketManRequest<T = unknown>(
     return data as T;
   }
 
-  const finalPath = path.startsWith('http') ? new URL(path).pathname : path;
+  const finalPath = marketManPostOperationPath(path);
   logExternalApiResult('MarketMan', `POST ${finalPath}`, {
     outcome: 'error',
     durationMs: 0,

@@ -43,13 +43,13 @@ export const SetPassword = () => {
     validateSetPasswordToken(token)
       .then((res) => {
         if (cancelled) return;
-        if (res.success && res.data) {
+        if (res.success) {
           setValidation({
             status: 'valid',
             email: res.data.email,
             firstName: res.data.firstName,
           });
-        } else if (!res.success && res.expired) {
+        } else if (res.expired) {
           setValidation({ status: 'expired', message: res.message });
         } else {
           setValidation({ status: 'invalid', message: res.message });

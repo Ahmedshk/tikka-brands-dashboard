@@ -96,7 +96,7 @@ export const StaffListModal = ({ isOpen, onClose, rows, onView, onEdit }: StaffL
                     >
                       <td className="py-3 pr-4 pl-2">{row.name}</td>
                       <td className="py-3 pr-4 text-center">{row.role}</td>
-                      <td className="py-3 pr-4 text-center">{row.hireDate}</td>
+                      <td className="py-3 pr-4 text-center">{row.startDate}</td>
                       <td className="py-3 pr-4 text-center">{row.tenure}</td>
                       <td className="py-3 pr-4 text-center">
                         <span className={reviewStatusClass[row.reviewStatus]}>{row.reviewStatus}</span>

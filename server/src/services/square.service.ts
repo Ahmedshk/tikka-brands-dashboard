@@ -23,7 +23,6 @@ import {
 import { normalizeSourcesOfSalesSegmentId } from "../utils/squareSourcesOfSalesMerge.util.js";
 import {
   getOrderedBucketsAndLabels,
-  getBucketKeyForDate,
   type SalesTrendGranularity,
 } from "../utils/homebaseOrderedBuckets.util.js";
 import {
@@ -36,6 +35,15 @@ import {
   normalizeTrendSourceKey,
   segmentKeyToLabel,
 } from "../utils/squareSourcesOfSalesKey.util.js";
+import { squareMoneyAmountIsPresent } from "../utils/squareMoneyAmountPresent.util.js";
+import { fetchSquareOrdersSearchPage } from "../utils/squareOrdersSearchPage.util.js";
+import {
+  aggregateOrdersIntoBySourceAndBucketKeys,
+  aggregateOrdersIntoTimeSeriesBuckets,
+  buildStackedSeriesFromSourceMaps,
+  mergeNormalizedTrendSourceRollupMaps,
+  salesTrendBucketLabelOptsFromSquareOptions,
+} from "../utils/squareOrderTimeSeriesInRangeHelpers.util.js";
 import { generateDistinctColors } from "../utils/colorPalette.util.js";
 import {
   tryGetOrderTimeSeriesBySourceFromRollups,
@@ -43,8 +51,6 @@ import {
 } from "./integrationRollupRead.service.js";
 
 const SQUARE_BASE = "https://connect.squareup.com";
-
-export type { TimeRange } from "../utils/businessHours.util.js";
 
 interface Money {
   amount?: bigint | number | string;
@@ -219,12 +225,6 @@ export interface SquareOrder {
   line_items?: SquareOrderLineItem[];
 }
 
-interface SearchOrdersResponse {
-  orders?: SquareOrder[];
-  cursor?: string;
-  errors?: Array<{ code: string; detail?: string }>;
-}
-
 interface RetrievePaymentResponse {
   payment?: {
     id?: string;
@@ -272,15 +272,15 @@ function getAccessToken(): string {
 }
 
 export interface SquareServiceOptions {
-  accessToken?: string | undefined;
+  accessToken?: string;
   /** Used for label formatting: last52weeks = month+year on all monthly; daily day-name when not today/last52weeks/thisYear */
-  periodType?: string | undefined;
+  periodType?: string;
   /** Skip SearchOrders when provided (e.g. Mongo-backed orders). */
-  ordersOverride?: SquareOrder[] | undefined;
+  ordersOverride?: SquareOrder[];
   /** Resolve catalog chunks from DB or another source instead of Square batch-retrieve. */
   batchRetrieveCatalogOverride?: BatchRetrieveCatalogFn;
   /** Location business open time (HH:mm); aligns daily/weekly/monthly buckets with rollups. */
-  businessStartTime?: string | undefined;
+  businessStartTime?: string;
   /**
    * When set, attempt persisted rollups first for order time series (see ROLLUP_READ_ENABLED).
    * Mongo order load runs only on rollup miss when `ordersOverride` is not pre-provided.
@@ -438,10 +438,10 @@ export async function getPaymentById(
     teamMemberId: payment.team_member_id ?? null,
     createdAt: payment.created_at ?? null,
     updatedAt: payment.updated_at ?? null,
-    ...(payment.amount_money?.amount != null
+    ...(squareMoneyAmountIsPresent(payment.amount_money?.amount)
       ? { amountMoneyCents: moneyToCents(payment.amount_money) }
       : {}),
-    ...(payment.tip_money?.amount != null
+    ...(squareMoneyAmountIsPresent(payment.tip_money?.amount)
       ? { tipMoneyCents: moneyToCents(payment.tip_money) }
       : {}),
     receiptNumber: payment.receipt_number ?? null,
@@ -525,7 +525,7 @@ export async function getTeamMemberById(
     id: member.id,
     givenName: member.given_name ?? null,
     familyName: member.family_name ?? null,
-    ...(jobTitle != null ? { jobTitle } : {}),
+    ...(typeof jobTitle === "string" ? { jobTitle } : {}),
   };
 }
 
@@ -621,11 +621,11 @@ function refundReturnModifierFromSquare(modifier: {
   const qty = modifier.quantity?.trim();
   return {
     name: modifier.name?.trim() || "Add-on",
-    ...(qty !== "" && qty != null ? { quantity: modifier.quantity } : {}),
-    ...(modifier.base_price_money?.amount != null
+    ...(typeof qty === "string" && qty.length > 0 ? { quantity: modifier.quantity } : {}),
+    ...(squareMoneyAmountIsPresent(modifier.base_price_money?.amount)
       ? { unitPriceMoneyCents: moneyToCents(modifier.base_price_money) }
       : {}),
-    ...(modifier.total_price_money?.amount != null
+    ...(squareMoneyAmountIsPresent(modifier.total_price_money?.amount)
       ? { totalPriceMoneyCents: moneyToCents(modifier.total_price_money) }
       : {}),
   };
@@ -650,14 +650,14 @@ function refundReturnLineItemFromSquare(lineItem: {
   return {
     name: lineItem.name?.trim() || "Item",
     ...(variation ? { variationName: variation } : {}),
-    ...(qty !== "" && qty != null ? { quantity: lineItem.quantity } : {}),
-    ...(lineItem.base_price_money?.amount != null
+    ...(typeof qty === "string" && qty.length > 0 ? { quantity: lineItem.quantity } : {}),
+    ...(squareMoneyAmountIsPresent(lineItem.base_price_money?.amount)
       ? { unitPriceMoneyCents: moneyToCents(lineItem.base_price_money) }
       : {}),
-    ...(lineItem.total_money?.amount != null
+    ...(squareMoneyAmountIsPresent(lineItem.total_money?.amount)
       ? { lineTotalMoneyCents: moneyToCents(lineItem.total_money) }
       : {}),
-    ...(lineItem.gross_return_money?.amount != null
+    ...(squareMoneyAmountIsPresent(lineItem.gross_return_money?.amount)
       ? { grossReturnMoneyCents: moneyToCents(lineItem.gross_return_money) }
       : {}),
     modifiers: (lineItem.return_modifiers ?? []).map(refundReturnModifierFromSquare),
@@ -683,14 +683,14 @@ function discountOrderLineItemFromSquare(lineItem: {
   return {
     name: lineItem.name?.trim() || "Item",
     ...(variation ? { variationName: variation } : {}),
-    ...(qty !== "" && qty != null ? { quantity: lineItem.quantity } : {}),
-    ...(lineItem.base_price_money?.amount != null
+    ...(typeof qty === "string" && qty.length > 0 ? { quantity: lineItem.quantity } : {}),
+    ...(squareMoneyAmountIsPresent(lineItem.base_price_money?.amount)
       ? { unitPriceMoneyCents: moneyToCents(lineItem.base_price_money) }
       : {}),
-    ...(lineItem.gross_sales_money?.amount != null
+    ...(squareMoneyAmountIsPresent(lineItem.gross_sales_money?.amount)
       ? { grossSalesMoneyCents: moneyToCents(lineItem.gross_sales_money) }
       : {}),
-    ...(lineItem.total_money?.amount != null
+    ...(squareMoneyAmountIsPresent(lineItem.total_money?.amount)
       ? { totalMoneyCents: moneyToCents(lineItem.total_money) }
       : {}),
     modifiers: (lineItem.modifiers ?? []).map(refundReturnModifierFromSquare),
@@ -751,95 +751,16 @@ export async function fetchOrdersInRange(
   let cursor: string | undefined;
 
   do {
-    const body: {
-      location_ids: string[];
-      query: {
-        filter: {
-          date_time_filter: {
-            created_at: { start_at: string; end_at: string };
-          };
-        };
-        sort: { sort_field: string; sort_order?: string };
-      };
-      limit?: number;
-      cursor?: string;
-    } = {
-      location_ids: [squareLocationId],
-      query: {
-        filter: {
-          date_time_filter: {
-            created_at: { start_at: startAt, end_at: endAt },
-          },
-        },
-        sort: { sort_field: "CREATED_AT", sort_order: "DESC" },
-      },
-      limit: 500,
-    };
-    if (cursor) body.cursor = cursor;
-
-    const op = "POST /v2/orders/search";
-    const t0 = Date.now();
-    let res: Response;
-    try {
-      res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (e) {
-      const durationMs = Date.now() - t0;
-      logExternalApiResult("Square", op, {
-        outcome: "error",
-        durationMs,
-        paginated: Boolean(cursor),
-        source: "fetchOrdersInRange",
-        error: truncateForExternalApiLog(
-          e instanceof Error ? e.message : String(e),
-        ),
-      });
-      throw e;
-    }
-    const durationMs = Date.now() - t0;
-
-    if (!res.ok) {
-      const errText = await res.text();
-      logExternalApiResult("Square", op, {
-        outcome: "error",
-        durationMs,
-        httpStatus: res.status,
-        paginated: Boolean(cursor),
-        source: "fetchOrdersInRange",
-        error: truncateForExternalApiLog(errText),
-      });
-      throw new Error(`Square API error ${res.status}: ${errText}`);
-    }
-
-    const data = (await res.json()) as SearchOrdersResponse;
-    if (data.errors && data.errors.length > 0) {
-      const errMsg = data.errors.map((e) => e.detail ?? e.code).join("; ");
-      logExternalApiResult("Square", op, {
-        outcome: "error",
-        durationMs,
-        httpStatus: res.status,
-        paginated: Boolean(cursor),
-        source: "fetchOrdersInRange",
-        error: truncateForExternalApiLog(errMsg),
-      });
-      throw new Error(errMsg);
-    }
-    logExternalApiResult("Square", op, {
-      outcome: "ok",
-      durationMs,
-      httpStatus: res.status,
-      paginated: Boolean(cursor),
-      source: "fetchOrdersInRange",
+    const data = await fetchSquareOrdersSearchPage({
+      squareLocationId,
+      startAt,
+      endAt,
+      cursor,
+      token,
+      logSource: "fetchOrdersInRange",
     });
-
     const orders = data.orders ?? [];
-    all.push(...orders);
+    all.push(...(orders as SquareOrder[]));
     cursor = data.cursor;
   } while (cursor);
 
@@ -866,19 +787,19 @@ export function squareOrdersToWithDiscounts(
         ...new Set([...(order.payment_ids ?? []), ...tenderPaymentIds]),
       ];
       let orderLevelDiscountCents: number | undefined;
-      if (order.net_amounts?.discount_money?.amount != null) {
-        orderLevelDiscountCents = moneyToCents(order.net_amounts.discount_money);
-      } else if (order.total_discount_money?.amount != null) {
+      if (squareMoneyAmountIsPresent(order.net_amounts?.discount_money?.amount)) {
+        orderLevelDiscountCents = moneyToCents(order.net_amounts?.discount_money);
+      } else if (squareMoneyAmountIsPresent(order.total_discount_money?.amount)) {
         orderLevelDiscountCents = moneyToCents(order.total_discount_money);
       }
       const discounts: SquareOrderDiscount[] = (order.discounts ?? []).map(
         (discount) => {
           const amountMoneyCents =
             orderLevelDiscountCents ??
-            (discount.amount_money?.amount == null &&
-            discount.applied_money?.amount == null
-              ? undefined
-              : moneyToCents(discount.amount_money ?? discount.applied_money));
+            (squareMoneyAmountIsPresent(discount.amount_money?.amount) ||
+            squareMoneyAmountIsPresent(discount.applied_money?.amount)
+              ? moneyToCents(discount.amount_money ?? discount.applied_money)
+              : undefined);
           const d: SquareOrderDiscount = {};
           if (discount.name != null) {
             d.name = discount.name;
@@ -894,23 +815,23 @@ export function squareOrdersToWithDiscounts(
       );
       const lineItems = (order.line_items ?? []).map(discountOrderLineItemFromSquare);
       const orderTotals: SquareOrderWithDiscount["orderTotals"] = {
-        ...(order.net_amounts?.total_money?.amount != null
-          ? { totalMoneyCents: moneyToCents(order.net_amounts.total_money) }
+        ...(squareMoneyAmountIsPresent(order.net_amounts?.total_money?.amount)
+          ? { totalMoneyCents: moneyToCents(order.net_amounts?.total_money) }
           : {}),
-        ...(order.net_amounts?.tax_money?.amount != null
-          ? { taxMoneyCents: moneyToCents(order.net_amounts.tax_money) }
+        ...(squareMoneyAmountIsPresent(order.net_amounts?.tax_money?.amount)
+          ? { taxMoneyCents: moneyToCents(order.net_amounts?.tax_money) }
           : {}),
-        ...(order.net_amounts?.tip_money?.amount != null
-          ? { tipMoneyCents: moneyToCents(order.net_amounts.tip_money) }
+        ...(squareMoneyAmountIsPresent(order.net_amounts?.tip_money?.amount)
+          ? { tipMoneyCents: moneyToCents(order.net_amounts?.tip_money) }
           : {}),
-        ...(order.net_amounts?.service_charge_money?.amount != null
+        ...(squareMoneyAmountIsPresent(order.net_amounts?.service_charge_money?.amount)
           ? {
               serviceChargeMoneyCents: moneyToCents(
-                order.net_amounts.service_charge_money,
+                order.net_amounts?.service_charge_money,
               ),
             }
           : {}),
-        ...(orderLevelDiscountCents != null
+        ...(typeof orderLevelDiscountCents === "number"
           ? { discountMoneyCents: orderLevelDiscountCents }
           : {}),
       };
@@ -923,31 +844,33 @@ export function squareOrdersToWithDiscounts(
           lineItems: (returnEntry.return_line_items ?? []).map(
             refundReturnLineItemFromSquare,
           ),
-          ...(returnEntry.return_amounts?.total_money?.amount != null
+          ...(squareMoneyAmountIsPresent(returnEntry.return_amounts?.total_money?.amount)
             ? {
                 refundAmountMoneyCents: moneyToCents(
-                  returnEntry.return_amounts.total_money,
+                  returnEntry.return_amounts?.total_money,
                 ),
               }
             : {}),
-          ...(returnEntry.return_amounts?.tax_money?.amount != null
+          ...(squareMoneyAmountIsPresent(returnEntry.return_amounts?.tax_money?.amount)
             ? {
                 taxMoneyCents: moneyToCents(
-                  returnEntry.return_amounts.tax_money,
+                  returnEntry.return_amounts?.tax_money,
                 ),
               }
             : {}),
-          ...(returnEntry.return_amounts?.tip_money?.amount != null
+          ...(squareMoneyAmountIsPresent(returnEntry.return_amounts?.tip_money?.amount)
             ? {
                 tipMoneyCents: moneyToCents(
-                  returnEntry.return_amounts.tip_money,
+                  returnEntry.return_amounts?.tip_money,
                 ),
               }
             : {}),
-          ...(returnEntry.return_amounts?.service_charge_money?.amount != null
+          ...(squareMoneyAmountIsPresent(
+            returnEntry.return_amounts?.service_charge_money?.amount,
+          )
             ? {
                 serviceChargeMoneyCents: moneyToCents(
-                  returnEntry.return_amounts.service_charge_money,
+                  returnEntry.return_amounts?.service_charge_money,
                 ),
               }
             : {}),
@@ -1099,97 +1022,19 @@ export async function getNetSalesInRange(
   let cursor: string | undefined;
 
   do {
-    const body: {
-      location_ids: string[];
-      query: {
-        filter: {
-          date_time_filter: {
-            created_at: { start_at: string; end_at: string };
-          };
-        };
-        sort: { sort_field: string; sort_order?: string };
-      };
-      limit?: number;
-      cursor?: string;
-    } = {
-      location_ids: [squareLocationId],
-      query: {
-        filter: {
-          date_time_filter: {
-            created_at: { start_at: startAt, end_at: endAt },
-          },
-        },
-        sort: { sort_field: "CREATED_AT", sort_order: "DESC" },
-      },
-      limit: 500,
-    };
-    if (cursor) body.cursor = cursor;
-
-    const op = "POST /v2/orders/search";
-    const t0 = Date.now();
-    let res: Response;
-    try {
-      res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (e) {
-      const durationMs = Date.now() - t0;
-      logExternalApiResult("Square", op, {
-        outcome: "error",
-        durationMs,
-        paginated: Boolean(cursor),
-        source: "getNetSalesInRange",
-        error: truncateForExternalApiLog(
-          e instanceof Error ? e.message : String(e),
-        ),
-      });
-      throw e;
-    }
-    const durationMs = Date.now() - t0;
-
-    if (!res.ok) {
-      const errText = await res.text();
-      logExternalApiResult("Square", op, {
-        outcome: "error",
-        durationMs,
-        httpStatus: res.status,
-        paginated: Boolean(cursor),
-        source: "getNetSalesInRange",
-        error: truncateForExternalApiLog(errText),
-      });
-      throw new Error(`Square API error ${res.status}: ${errText}`);
-    }
-
-    const data = (await res.json()) as SearchOrdersResponse;
-    if (data.errors && data.errors.length > 0) {
-      const errMsg = data.errors.map((e) => e.detail ?? e.code).join("; ");
-      logExternalApiResult("Square", op, {
-        outcome: "error",
-        durationMs,
-        httpStatus: res.status,
-        paginated: Boolean(cursor),
-        source: "getNetSalesInRange",
-        error: truncateForExternalApiLog(errMsg),
-      });
-      throw new Error(errMsg);
-    }
-    logExternalApiResult("Square", op, {
-      outcome: "ok",
-      durationMs,
-      httpStatus: res.status,
-      paginated: Boolean(cursor),
-      source: "getNetSalesInRange",
+    const data = await fetchSquareOrdersSearchPage({
+      squareLocationId,
+      startAt,
+      endAt,
+      cursor,
+      token,
+      logSource: "getNetSalesInRange",
     });
-
     const orders = data.orders ?? [];
     for (const order of orders) {
-      if (!isOrderCountedForNetSales(order)) continue;
-      totalCents += orderNetSalesCents(order);
+      const o = order as SquareOrder;
+      if (!isOrderCountedForNetSales(o)) continue;
+      totalCents += orderNetSalesCents(o);
     }
 
     cursor = data.cursor;
@@ -1198,7 +1043,6 @@ export async function getNetSalesInRange(
   return totalCents / 100;
 }
 
-export type { OrderInRange } from "../utils/squareOrderSearchHelpers.js";
 
 /**
  * Fetch all paid orders in the given time range with created_at and net sales (cents).
@@ -1216,93 +1060,14 @@ export async function searchOrdersInRange(
   let cursor: string | undefined;
 
   do {
-    const body: {
-      location_ids: string[];
-      query: {
-        filter: {
-          date_time_filter: {
-            created_at: { start_at: string; end_at: string };
-          };
-        };
-        sort: { sort_field: string; sort_order?: string };
-      };
-      limit?: number;
-      cursor?: string;
-    } = {
-      location_ids: [squareLocationId],
-      query: {
-        filter: {
-          date_time_filter: {
-            created_at: { start_at: startAt, end_at: endAt },
-          },
-        },
-        sort: { sort_field: "CREATED_AT", sort_order: "DESC" },
-      },
-      limit: 500,
-    };
-    if (cursor) body.cursor = cursor;
-
-    const op = "POST /v2/orders/search";
-    const t0 = Date.now();
-    let res: Response;
-    try {
-      res = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (e) {
-      const durationMs = Date.now() - t0;
-      logExternalApiResult("Square", op, {
-        outcome: "error",
-        durationMs,
-        paginated: Boolean(cursor),
-        source: "searchOrdersInRange",
-        error: truncateForExternalApiLog(
-          e instanceof Error ? e.message : String(e),
-        ),
-      });
-      throw e;
-    }
-    const durationMs = Date.now() - t0;
-
-    if (!res.ok) {
-      const errText = await res.text();
-      logExternalApiResult("Square", op, {
-        outcome: "error",
-        durationMs,
-        httpStatus: res.status,
-        paginated: Boolean(cursor),
-        source: "searchOrdersInRange",
-        error: truncateForExternalApiLog(errText),
-      });
-      throw new Error(`Square API error ${res.status}: ${errText}`);
-    }
-
-    const data = (await res.json()) as SearchOrdersResponse;
-    if (data.errors && data.errors.length > 0) {
-      const errMsg = data.errors.map((e) => e.detail ?? e.code).join("; ");
-      logExternalApiResult("Square", op, {
-        outcome: "error",
-        durationMs,
-        httpStatus: res.status,
-        paginated: Boolean(cursor),
-        source: "searchOrdersInRange",
-        error: truncateForExternalApiLog(errMsg),
-      });
-      throw new Error(errMsg);
-    }
-    logExternalApiResult("Square", op, {
-      outcome: "ok",
-      durationMs,
-      httpStatus: res.status,
-      paginated: Boolean(cursor),
-      source: "searchOrdersInRange",
+    const data = await fetchSquareOrdersSearchPage({
+      squareLocationId,
+      startAt,
+      endAt,
+      cursor,
+      token,
+      logSource: "searchOrdersInRange",
     });
-
     const pageOrders = ordersFromSearchPage(
       data.orders ?? [],
       isOrderCountedForNetSales as (o: unknown) => boolean,
@@ -1451,7 +1216,6 @@ async function batchRetrieveCatalog(
   return data;
 }
 
-export type { NetSalesByCategoryResult } from "../utils/squareNetSalesByCategoryHelpers.js";
 
 const UNCATEGORIZED_LABEL = "Uncategorized";
 
@@ -1534,7 +1298,6 @@ export async function getNetSalesByCategoryInRange(
   return { categories, totalNetSalesCents };
 }
 
-export type { SalesTrendGranularity, GetOrderedBucketsAndLabelsOptions } from "../utils/homebaseOrderedBuckets.util.js";
 export { getOrderedBucketsAndLabels } from "../utils/homebaseOrderedBuckets.util.js";
 
 export interface OrderTimeSeriesResult {
@@ -1547,8 +1310,8 @@ export interface OrderTimeSeriesResult {
 async function resolveDashboardOrdersForRange(
   squareLocationId: string,
   range: TimeRange,
-  options?: SquareServiceOptions,
   context: string,
+  options?: SquareServiceOptions,
 ): Promise<SquareOrder[]> {
   const t0 = performance.now();
   let raw: SquareOrder[];
@@ -1586,6 +1349,49 @@ async function resolveDashboardOrdersForRange(
   return filtered;
 }
 
+async function tryResolveOrderTimeSeriesFromRollups(params: {
+  rr: NonNullable<SquareServiceOptions["rollupRead"]>;
+  range: TimeRange;
+  granularity: SalesTrendGranularity;
+  keys: string[];
+  labels: string[];
+}): Promise<OrderTimeSeriesResult | null> {
+  const { rr, range, granularity, keys, labels } = params;
+  const tRollup = performance.now();
+  const rolled = await tryGetOrderTimeSeriesFromRollups(
+    rr.locationMongoId,
+    range,
+    rr.timezone,
+    rr.businessStartTime,
+    granularity,
+    keys,
+  );
+  const rollupAttemptMs = Math.round(performance.now() - tRollup);
+  if (rolled.hit) {
+    logger.info("[sales-trend] getOrderTimeSeriesInRange: ROLLUPS", {
+      granularity,
+      bucketCount: keys.length,
+      rollupAttemptMs,
+      locationMongoId: rr.locationMongoId,
+    });
+    return {
+      labels,
+      netSales: rolled.netSales,
+      transactionCount: rolled.transactionCount,
+    };
+  }
+  logger.info("[sales-trend] getOrderTimeSeriesInRange: rollup miss → orders", {
+    granularity,
+    bucketCount: keys.length,
+    rollupAttemptMs,
+    locationMongoId: rr.locationMongoId,
+    rollupMissCode: rolled.code,
+    rollupMissReason: rolled.reason,
+    rollupMissDetail: rolled.detail,
+  });
+  return null;
+}
+
 /**
  * Fetch orders in range and aggregate by bucket (hour/day/week) in location TZ.
  * Returns labels and arrays aligned for chart x-axis.
@@ -1597,94 +1403,55 @@ export async function getOrderTimeSeriesInRange(
   granularity: SalesTrendGranularity,
   options?: SquareServiceOptions,
 ): Promise<OrderTimeSeriesResult> {
-  const bucketLabelOpts =
-    options?.periodType == null && options?.businessStartTime == null
-      ? undefined
-      : {
-          periodType: options?.periodType,
-          businessStartTime: options?.businessStartTime,
-        };
+  const bucketLabelOpts = salesTrendBucketLabelOptsFromSquareOptions(options);
   const { keys, labels } = getOrderedBucketsAndLabels(
     range,
     timezone,
     granularity,
     bucketLabelOpts,
   );
-  const netSalesByKey: Record<string, number> = {};
-  const countByKey: Record<string, number> = {};
-  for (const k of keys) {
-    netSalesByKey[k] = 0;
-    countByKey[k] = 0;
-  }
 
   const rr = options?.rollupRead;
   if (rr) {
-    const tRollup = performance.now();
-    const rolled = await tryGetOrderTimeSeriesFromRollups(
-      rr.locationMongoId,
+    const rollupHit = await tryResolveOrderTimeSeriesFromRollups({
+      rr,
       range,
-      rr.timezone,
-      rr.businessStartTime,
       granularity,
       keys,
-    );
-    const rollupAttemptMs = Math.round(performance.now() - tRollup);
-    if (rolled.hit) {
-      logger.info("[sales-trend] getOrderTimeSeriesInRange: ROLLUPS", {
-        granularity,
-        bucketCount: keys.length,
-        rollupAttemptMs,
-        locationMongoId: rr.locationMongoId,
-      });
-      return {
-        labels,
-        netSales: rolled.netSales,
-        transactionCount: rolled.transactionCount,
-      };
-    }
-    logger.info("[sales-trend] getOrderTimeSeriesInRange: rollup miss → orders", {
-      granularity,
-      bucketCount: keys.length,
-      rollupAttemptMs,
-      locationMongoId: rr.locationMongoId,
-      rollupMissCode: rolled.code,
-      rollupMissReason: rolled.reason,
-      rollupMissDetail: rolled.detail,
+      labels,
     });
+    if (rollupHit) return rollupHit;
   } else {
     logger.info("[sales-trend] getOrderTimeSeriesInRange: no rollupRead", {
       granularity,
       bucketCount: keys.length,
-      willUseOrders:
-        options?.ordersOverride != null ? "ordersOverride" : "square_api",
+      willUseOrders: Array.isArray(options?.ordersOverride)
+        ? "ordersOverride"
+        : "square_api",
     });
   }
 
+  const businessStartTimeOpt = options?.businessStartTime;
   const bucketOpts =
-    options?.businessStartTime != null
-      ? { businessStartTime: options.businessStartTime }
+    typeof businessStartTimeOpt === "string"
+      ? { businessStartTime: businessStartTimeOpt }
       : undefined;
   const tAggStart = performance.now();
   const orders = await resolveDashboardOrdersForRange(
     squareLocationId,
     range,
-    options,
     "getOrderTimeSeriesInRange",
+    options,
   );
-  for (const order of orders) {
-    if (!isOrderCountedForNetSales(order)) continue;
-    const netCents = orderNetSalesCents(order);
-    const key = getBucketKeyForDate(
-      new Date(order.created_at ?? ""),
-      timezone,
-      granularity,
-      bucketOpts,
-    );
-    if (!key || netSalesByKey[key] === undefined) continue;
-    netSalesByKey[key] = (netSalesByKey[key] ?? 0) + netCents / 100;
-    // Transaction count = orders with positive net sales (matches Square "Net sales" order count).
-    if (netCents > 0) countByKey[key] = (countByKey[key] ?? 0) + 1;
-  }
+  const { netSalesByKey, countByKey } = aggregateOrdersIntoTimeSeriesBuckets(
+    orders,
+    keys,
+    timezone,
+    granularity,
+    bucketOpts,
+    isOrderCountedForNetSales,
+    orderNetSalesCents,
+  );
 
   const netSales = keys.map((k) => netSalesByKey[k] ?? 0);
   const transactionCount = keys.map((k) => countByKey[k] ?? 0);
@@ -1709,6 +1476,63 @@ export interface OrderTimeSeriesBySourceResult {
   series: OrderTimeSeriesBySourceSeries[];
 }
 
+async function tryResolveOrderTimeSeriesBySourceFromRollups(params: {
+  rr: NonNullable<SquareServiceOptions["rollupRead"]>;
+  range: TimeRange;
+  granularity: SalesTrendGranularity;
+  keys: string[];
+  labels: string[];
+}): Promise<OrderTimeSeriesBySourceResult | null> {
+  const { rr, range, granularity, keys, labels } = params;
+  const tSrc = performance.now();
+  const fromRollup = await tryGetOrderTimeSeriesBySourceFromRollups(
+    rr.locationMongoId,
+    range,
+    rr.timezone,
+    rr.businessStartTime,
+    granularity,
+    keys,
+  );
+  const rollupMs = Math.round(performance.now() - tSrc);
+  if (fromRollup) {
+    const mergedFromRollup = mergeNormalizedTrendSourceRollupMaps(
+      fromRollup,
+      normalizeTrendSourceKey,
+    );
+    const sourceKeys = Object.keys(mergedFromRollup).sort((a, b) =>
+      a.localeCompare(b),
+    );
+    logger.info("[sales-trend] getOrderTimeSeriesBySourceInRange: ROLLUPS", {
+      granularity,
+      bucketCount: keys.length,
+      sourceSeriesCount: sourceKeys.length,
+      rollupAttemptMs: rollupMs,
+      locationMongoId: rr.locationMongoId,
+      dataSource: "rollups",
+    });
+    const series = buildStackedSeriesFromSourceMaps(
+      mergedFromRollup,
+      keys,
+      segmentKeyToLabel,
+      generateDistinctColors,
+    );
+    return { labels, series };
+  }
+  logger.info(
+    "[sales-trend] getOrderTimeSeriesBySourceInRange: rollup miss → orders",
+    {
+      granularity,
+      bucketCount: keys.length,
+      rollupAttemptMs: rollupMs,
+      locationMongoId: rr.locationMongoId,
+      dataSource: "mongo_orders_fallback",
+      detail:
+        "tryGetOrderTimeSeriesBySourceFromRollups returned null (missing/incomplete rollup rows, ROLLUP_READ_ENABLED off, or strict hourly pair mismatch)",
+    },
+  );
+  return null;
+}
+
 /**
  * Fetch orders in range and aggregate net sales by bucket and by source.
  * Returns labels and one series per source (In-Store, DoorDash, etc.) for stacked area chart.
@@ -1720,140 +1544,73 @@ export async function getOrderTimeSeriesBySourceInRange(
   granularity: SalesTrendGranularity,
   options?: SquareServiceOptions,
 ): Promise<OrderTimeSeriesBySourceResult> {
-  const bucketLabelOpts =
-    options?.periodType == null && options?.businessStartTime == null
-      ? undefined
-      : {
-          periodType: options?.periodType,
-          businessStartTime: options?.businessStartTime,
-        };
+  const bucketLabelOpts = salesTrendBucketLabelOptsFromSquareOptions(options);
   const { keys, labels } = getOrderedBucketsAndLabels(
     range,
     timezone,
     granularity,
     bucketLabelOpts,
   );
-  const bySourceAndKey: Record<string, Record<string, number>> = {};
 
   const rr = options?.rollupRead;
   if (rr) {
-    const tSrc = performance.now();
-    const fromRollup = await tryGetOrderTimeSeriesBySourceFromRollups(
-      rr.locationMongoId,
+    const rollupHit = await tryResolveOrderTimeSeriesBySourceFromRollups({
+      rr,
       range,
-      rr.timezone,
-      rr.businessStartTime,
       granularity,
       keys,
-    );
-    const rollupMs = Math.round(performance.now() - tSrc);
-    if (fromRollup) {
-      // Merge keys for trend display (e.g. In-Store + Pickup => Register).
-      const mergedFromRollup: Record<string, Record<string, number>> = {};
-      for (const [rawKey, record] of Object.entries(fromRollup)) {
-        const key = normalizeTrendSourceKey(rawKey);
-        mergedFromRollup[key] ??= {};
-        for (const [bucketKey, value] of Object.entries(record ?? {})) {
-          mergedFromRollup[key]![bucketKey] =
-            (mergedFromRollup[key]![bucketKey] ?? 0) + (value ?? 0);
-        }
-      }
-      const sourceKeys = Object.keys(mergedFromRollup).sort((a, b) =>
-        a.localeCompare(b),
-      );
-      logger.info("[sales-trend] getOrderTimeSeriesBySourceInRange: ROLLUPS", {
-        granularity,
-        bucketCount: keys.length,
-        sourceSeriesCount: sourceKeys.length,
-        rollupAttemptMs: rollupMs,
-        locationMongoId: rr.locationMongoId,
-        dataSource: "rollups",
-      });
-      const colors = generateDistinctColors(sourceKeys.length, {
-        nonAdjacent: true,
-      });
-      const series: OrderTimeSeriesBySourceSeries[] = sourceKeys.map(
-        (sourceKey, index) => ({
-          id: sourceKey,
-          label: segmentKeyToLabel(sourceKey),
-          data: keys.map((k) => mergedFromRollup[sourceKey]?.[k] ?? 0),
-          color: colors[index] ?? "#6D6D6D",
-        }),
-      );
-      return { labels, series };
-    }
-    logger.info(
-      "[sales-trend] getOrderTimeSeriesBySourceInRange: rollup miss → orders",
-      {
-        granularity,
-        bucketCount: keys.length,
-        rollupAttemptMs: rollupMs,
-        locationMongoId: rr.locationMongoId,
-        dataSource: "mongo_orders_fallback",
-        detail:
-          "tryGetOrderTimeSeriesBySourceFromRollups returned null (missing/incomplete rollup rows, ROLLUP_READ_ENABLED off, or strict hourly pair mismatch)",
-      },
-    );
-  } else if (!rr) {
+      labels,
+    });
+    if (rollupHit) return rollupHit;
+  } else {
     logger.info("[sales-trend] getOrderTimeSeriesBySourceInRange: no rollupRead", {
       granularity,
       bucketCount: keys.length,
       dataSource: "orders_only",
-      willUseOrders:
-        options?.ordersOverride != null ? "ordersOverride" : "square_api",
+      willUseOrders: Array.isArray(options?.ordersOverride)
+        ? "ordersOverride"
+        : "square_api",
     });
   }
 
+  const businessStartTimeOpt = options?.businessStartTime;
   const bucketOpts =
-    options?.businessStartTime != null
-      ? { businessStartTime: options.businessStartTime }
+    typeof businessStartTimeOpt === "string"
+      ? { businessStartTime: businessStartTimeOpt }
       : undefined;
   const tBySourceAgg = performance.now();
   const orders = await resolveDashboardOrdersForRange(
     squareLocationId,
     range,
-    options,
     "getOrderTimeSeriesBySourceInRange",
+    options,
   );
-  for (const order of orders) {
-    if (!isOrderCountedForNetSales(order)) continue;
-    const cents = orderNetSalesCents(order);
-    if (cents <= 0) continue;
-    const sourceKey = normalizeTrendSourceKey(deriveSquareSourcesOfSalesKey(order));
-    const bucketKey = getBucketKeyForDate(
-      new Date(order.created_at ?? ""),
-      timezone,
-      granularity,
-      bucketOpts,
-    );
-    if (!bucketKey || !keys.includes(bucketKey)) continue;
-    bySourceAndKey[sourceKey] ??= {};
-    const keyRecord = bySourceAndKey[sourceKey];
-    keyRecord[bucketKey] = (keyRecord[bucketKey] ?? 0) + cents / 100;
-  }
-
-  const sourceKeys = Object.keys(bySourceAndKey).sort((a, b) =>
-    a.localeCompare(b),
-  );
-  const colors = generateDistinctColors(sourceKeys.length, {
-    nonAdjacent: true,
+  const bySourceAndKey = aggregateOrdersIntoBySourceAndBucketKeys(orders, {
+    chartBucketKeys: keys,
+    timezone,
+    granularity,
+    bucketOpts,
+    isOrderCountedForNetSales,
+    orderNetSalesCents,
+    normalizedSourceKeyForOrder: (order) =>
+      normalizeTrendSourceKey(deriveSquareSourcesOfSalesKey(order)),
   });
-  const series: OrderTimeSeriesBySourceSeries[] = sourceKeys.map(
-    (sourceKey, index) => ({
-      id: sourceKey,
-      label: segmentKeyToLabel(sourceKey),
-      data: keys.map((k) => bySourceAndKey[sourceKey]?.[k] ?? 0),
-      color: colors[index] ?? "#6D6D6D",
-    }),
+
+  const series = buildStackedSeriesFromSourceMaps(
+    bySourceAndKey,
+    keys,
+    segmentKeyToLabel,
+    generateDistinctColors,
   );
 
+  const sourceSeriesCount = series.length;
   logger.info(
     "[sales-trend] getOrderTimeSeriesBySourceInRange: aggregation done",
     {
       granularity,
       bucketCount: keys.length,
       ordersUsed: orders.length,
-      sourceSeriesCount: sourceKeys.length,
+      sourceSeriesCount,
       aggregateTotalMs: Math.round(performance.now() - tBySourceAgg),
       dataSource: rr ? "mongo_orders_fallback" : "orders_only",
     },

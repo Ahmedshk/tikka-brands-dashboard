@@ -177,7 +177,10 @@ async function fetchSalesByCategoryForLocation(params: {
     };
   }
 
-  const squareOptions = { accessToken: squareAccessToken ?? undefined };
+  const squareOptions: SquareServiceOptions =
+    squareAccessToken != null && String(squareAccessToken).trim() !== ""
+      ? { accessToken: String(squareAccessToken).trim() }
+      : {};
   const mongoId = location._id?.trim();
   const useCategoryCache = Boolean(mongoId);
 

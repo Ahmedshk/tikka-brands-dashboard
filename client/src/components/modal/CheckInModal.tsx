@@ -33,7 +33,7 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith("image/");
 }
 
-function FilePreviewThumbnail({ file }: { file: File }) {
+function FilePreviewThumbnail({ file }: Readonly<{ file: File }>) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     const u = URL.createObjectURL(file);
@@ -279,7 +279,7 @@ export const CheckInModal = ({ isOpen, onClose, cycleId, period, status, onSubmi
             <section>
               <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Check-in Questions</h3>
               <div className="space-y-4">
-                {questions.toSorted((a, b) => a.order - b.order).map((q) => (
+                {[...questions].sort((a: Question, b: Question) => a.order - b.order).map((q: Question) => (
                   <div key={q.id} className="space-y-1">
                     <label className="text-sm font-medium text-primary">
                       {q.text} {q.required && <span className="text-red-500">*</span>}

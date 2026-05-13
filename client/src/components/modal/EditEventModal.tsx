@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { addDays, format, isValid, parse } from 'date-fns';
+import { isValid, parse } from 'date-fns';
 import toast from 'react-hot-toast';
 import { AnalogDatePickerField } from '../common/AnalogDatePickerField';
 import { Dropdown } from '../common/Dropdown';
@@ -19,8 +19,8 @@ import { calendarService } from '../../services/calendar.service';
 import type { CalendarEventDto, CalendarEventTypeDto } from '../../types/calendar.types';
 import {
   combineDateTimeInTimezone,
+  computeAddEventModalRangeAdjustmentsOnOpen,
   defaultEventRange,
-  nextWallYmd,
   quarterHoursOnOrAfterNowOnWallDate,
   splitInstantToLocationWallForForm,
   wallYmdMax,
@@ -189,57 +189,19 @@ export const EditEventModal = ({
 
   useLayoutEffect(() => {
     if (!isOpen) return;
-    const tz = effectiveTz;
-    const todayY = zonedWallTodayYmd(tz);
-    const sd = startDate.trim();
-    const ed = endDate.trim();
+    const adj = computeAddEventModalRangeAdjustmentsOnOpen({
+      timeZone: effectiveTz,
+      startDate,
+      startTime,
+      endDate,
+      endTime,
+    });
+    if (adj === null) return;
 
-    if (sd) {
-      const startSlots = quarterHoursOnOrAfterNowOnWallDate(sd, tz);
-      if (sd === todayY && startSlots.length === 0) {
-        setStartDate(nextWallYmd(todayY));
-        setStartTime('00:00');
-        return;
-      }
-      if (sd === todayY && startTime.trim() && startSlots.length > 0 && !startSlots.includes(startTime.trim())) {
-        setStartTime(startSlots[0]!);
-        return;
-      }
-    }
-
-    if (!sd || !ed) return;
-    if (ed < sd) {
-      setEndDate(sd);
-      return;
-    }
-    if (sd === ed && startTime.trim()) {
-      let validEnd = QUARTER_HOUR_HH_MM.filter((hm) => hm >= startTime);
-      if (ed === todayY) {
-        const nowSlots = new Set(quarterHoursOnOrAfterNowOnWallDate(ed, tz));
-        validEnd = validEnd.filter((hm) => nowSlots.has(hm));
-      }
-      if (validEnd.length === 0) {
-        const p = parse(sd, 'yyyy-MM-dd', new Date());
-        if (isValid(p)) {
-          setEndDate(format(addDays(p, 1), 'yyyy-MM-dd'));
-          setEndTime('00:00');
-        }
-        return;
-      }
-      if (endTime.trim() && !validEnd.includes(endTime)) {
-        setEndTime(validEnd[0]!);
-      }
-    } else if (sd !== ed && ed === todayY) {
-      const endSlots = quarterHoursOnOrAfterNowOnWallDate(ed, tz);
-      if (endSlots.length === 0) {
-        setEndDate(nextWallYmd(ed));
-        setEndTime('00:00');
-        return;
-      }
-      if (endTime.trim() && !endSlots.includes(endTime)) {
-        setEndTime(endSlots[0]!);
-      }
-    }
+    if (adj.startDate !== undefined) setStartDate(adj.startDate);
+    if (adj.startTime !== undefined) setStartTime(adj.startTime);
+    if (adj.endDate !== undefined) setEndDate(adj.endDate);
+    if (adj.endTime !== undefined) setEndTime(adj.endTime);
   }, [isOpen, effectiveTz, startDate, endDate, startTime, endTime]);
 
   const eventTypeOptions = useMemo(

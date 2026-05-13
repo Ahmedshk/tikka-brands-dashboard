@@ -37,7 +37,7 @@ export class RoleService {
     return docs.map((d) => ({
       id: d._id.toString(),
       name: d.name,
-      reportsTo: d.reportsTo != null ? d.reportsTo.toString() : null,
+      reportsTo: d.reportsTo?.toString() ?? null,
     }));
   }
 

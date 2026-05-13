@@ -19,6 +19,12 @@ import {
   formatShortEventStart,
 } from "../utils/calendarEmailTemplate.util.js";
 import type { CalendarNotifyKind } from "../utils/calendarNotificationSchedule.util.js";
+import type { ICalendarRoleEventBinding } from "../types/calendar.types.js";
+import {
+  buildHourBeforeNotificationCopy,
+  computeMinutesUntilEventStart,
+  formatCalendarLocationLine,
+} from "../utils/calendarNotificationDispatchHelpers.util.js";
 
 const settingsService = new CalendarNotificationSettingsService();
 const notificationService = new NotificationService();
@@ -114,23 +120,46 @@ async function sendCalendarNotificationWithLogRollback(params: {
   return "delivered";
 }
 
-/**
- * Send calendar notifications for one event, one kind, one fireKey (Agenda calendar:notify-one).
- */
-export async function dispatchCalendarNotificationForEvent(params: {
+type CalendarDispatchEventLean = {
+  _id: mongoose.Types.ObjectId;
+  title: string;
+  start: Date;
+  end: Date;
+  description?: unknown;
+  timeZone?: string;
+  locationId: mongoose.Types.ObjectId;
+  eventTypeId: mongoose.Types.ObjectId;
+};
+
+type CalendarDispatchContext = {
+  kind: CalendarNotifyKind;
+  fireKey: string;
+  now: Date;
+  ev: CalendarDispatchEventLean;
+  locationId: string;
+  eventTypeId: string;
+  eventId: string;
+  bindings: ICalendarRoleEventBinding[];
+  detailFields: Record<string, unknown>;
+  calendarUrl: string;
+  startShort: string;
+  tz: string | undefined;
+};
+
+async function loadCalendarDispatchContext(params: {
   calendarEventId: string;
   kind: CalendarNotifyKind;
   fireKey: string;
-}): Promise<void> {
-  const { calendarEventId, kind, fireKey } = params;
-  const now = new Date();
-
-  const ev = await CalendarEventModel.findById(calendarEventId).lean();
-  if (!ev) {
+  now: Date;
+}): Promise<CalendarDispatchContext | null> {
+  const { calendarEventId, kind, fireKey, now } = params;
+  const raw = await CalendarEventModel.findById(calendarEventId).lean();
+  if (!raw) {
     logger.debug("calendar:notify-one skip (event deleted)", { calendarEventId, kind, fireKey });
-    return;
+    return null;
   }
 
+  const ev = raw as unknown as CalendarDispatchEventLean;
   const eventStart = ev.start instanceof Date ? ev.start : new Date(ev.start);
   const tzForDay = typeof ev.timeZone === "string" ? ev.timeZone : undefined;
   const todayYmd = calendarWallYmd(now, tzForDay);
@@ -144,11 +173,13 @@ export async function dispatchCalendarNotificationForEvent(params: {
       todayYmd,
       timeZone: tzForDay ?? null,
     });
-    return;
+    return null;
   }
 
   const settings = await settingsService.get();
-  if (!settings.roleEventBindings?.length) return;
+  if (!settings.roleEventBindings?.length) {
+    return null;
+  }
 
   const locationId = ev.locationId.toString();
   const eventTypeId = ev.eventTypeId.toString();
@@ -157,16 +188,17 @@ export async function dispatchCalendarNotificationForEvent(params: {
   const bindings = settings.roleEventBindings.filter(
     (b) => String(b.eventTypeId) === eventTypeId,
   );
-  if (bindings.length === 0) return;
+  if (bindings.length === 0) {
+    return null;
+  }
 
   const typeDoc = await CalendarEventTypeModel.findById(ev.eventTypeId).lean();
-
   const tz = ev.timeZone;
+  const tzForIntl = typeof tz === "string" ? tz : "UTC";
   const locationDoc = await LocationModel.findById(ev.locationId).select("storeName address").lean();
-  const parts = locationDoc
-    ? [locationDoc.storeName, locationDoc.address].filter(Boolean)
-    : [];
-  const locationLine = parts.length ? parts.join(" · ") : "—";
+  const locationLine = formatCalendarLocationLine(
+    locationDoc as { storeName?: string; address?: string } | null,
+  );
 
   const eventTypeName = typeDoc?.name ?? "Calendar event";
   const eventTypeColorHex = typeDoc?.colorHex ?? "#6B7280";
@@ -176,140 +208,198 @@ export async function dispatchCalendarNotificationForEvent(params: {
       description: typeof ev.description === "string" ? ev.description : "",
       start: ev.start,
       end: ev.end,
-      timeZone: tz,
+      timeZone: tzForIntl,
     },
     eventTypeName,
     eventTypeColorHex,
     locationLine,
   });
 
-  const calendarUrl = getDashboardCalendarUrl();
-  const startShort = formatShortEventStart(ev.start, tz);
+  return {
+    kind,
+    fireKey,
+    now,
+    ev,
+    locationId,
+    eventTypeId,
+    eventId,
+    bindings,
+    detailFields,
+    calendarUrl: getDashboardCalendarUrl(),
+    startShort: formatShortEventStart(ev.start, tzForIntl),
+    tz,
+  };
+}
 
-  for (const b of bindings) {
-    const roleId = String(b.roleId);
-    const userIds = await listUserIdsForRoleAtLocation(roleId, locationId);
-    const chans = channelsToList(normalizeRoleBindingChannels(b.channels));
-    if (chans.length === 0) continue;
+async function sendCalendarReminderBatch(params: {
+  ctx: CalendarDispatchContext;
+  userIds: string[];
+  chans: NotificationChannel[];
+  firstNameById: Map<string, string>;
+}): Promise<void> {
+  const { ctx, userIds, chans, firstNameById } = params;
+  const title = "Upcoming calendar event";
+  const message = `Reminder: "${ctx.ev.title}" — ${ctx.startShort} (${ctx.tz}).`;
+  for (const uid of userIds) {
+    await sendCalendarNotificationWithLogRollback({
+      calendarEventId: ctx.eventId,
+      userId: uid,
+      kind: "reminder",
+      fireKey: ctx.fireKey,
+      sendOptions: {
+        recipientId: uid,
+        type: "calendar_event_reminder",
+        title,
+        message,
+        data: { calendarEventId: ctx.eventId, locationId: ctx.locationId, eventTypeId: ctx.eventTypeId },
+        channels: chans,
+        emailSubject: title,
+        emailTemplateFile: "calendar-event-reminder-email.ejs",
+        emailTemplateData: {
+          ...ctx.detailFields,
+          headline: "Reminder: upcoming event",
+          summaryMessage: `This is a heads-up for an event on your calendar: "${ctx.ev.title}" at ${ctx.startShort}.`,
+          firstName: firstNameById.get(uid) ?? "",
+        },
+        actionUrl: ctx.calendarUrl,
+        emailButtonText: "Open calendar",
+        smsBody: message.slice(0, 300),
+      },
+    });
+  }
+}
 
-    const willSendReminder = Boolean(b.notifyReminders && kind === "reminder");
-    const willSendHourBefore = Boolean(b.notifyReminders && kind === "hour_before");
-    const willSendStart = Boolean(b.notifyOnStart && kind === "start");
-    if (!willSendReminder && !willSendHourBefore && !willSendStart) continue;
+async function sendCalendarHourBeforeBatch(params: {
+  ctx: CalendarDispatchContext;
+  userIds: string[];
+  chans: NotificationChannel[];
+  firstNameById: Map<string, string>;
+}): Promise<void> {
+  const { ctx, userIds, chans, firstNameById } = params;
+  const minsUntil = computeMinutesUntilEventStart(ctx.ev.start, ctx.now);
+  const copy = buildHourBeforeNotificationCopy({
+    evTitle: ctx.ev.title,
+    tz: ctx.tz,
+    minsUntil,
+    startShort: ctx.startShort,
+  });
+  for (const uid of userIds) {
+    await sendCalendarNotificationWithLogRollback({
+      calendarEventId: ctx.eventId,
+      userId: uid,
+      kind: "hour_before",
+      fireKey: ctx.fireKey,
+      sendOptions: {
+        recipientId: uid,
+        type: "calendar_event_hour_before",
+        title: copy.title,
+        message: copy.message,
+        data: { calendarEventId: ctx.eventId, locationId: ctx.locationId, eventTypeId: ctx.eventTypeId },
+        channels: chans,
+        emailSubject: copy.title,
+        emailTemplateFile: "calendar-event-hour-before-email.ejs",
+        emailTemplateData: {
+          ...ctx.detailFields,
+          urgencyLine: copy.urgencyLine,
+          countdownLine: copy.countdownLine,
+          summaryMessage: copy.message,
+          firstName: firstNameById.get(uid) ?? "",
+        },
+        actionUrl: ctx.calendarUrl,
+        emailButtonText: "Open calendar",
+        smsBody: copy.message.slice(0, 300),
+      },
+    });
+  }
+}
 
-    const firstNameById =
-      chans.includes("email") && userIds.length > 0
-        ? await loadFirstNamesByUserId(userIds)
-        : new Map<string, string>();
+async function sendCalendarStartBatch(params: {
+  ctx: CalendarDispatchContext;
+  userIds: string[];
+  chans: NotificationChannel[];
+  firstNameById: Map<string, string>;
+}): Promise<void> {
+  const { ctx, userIds, chans, firstNameById } = params;
+  const title = "Event starting now";
+  const message = `"${ctx.ev.title}" is scheduled to start now (${ctx.startShort}, ${ctx.tz}).`;
+  for (const uid of userIds) {
+    await sendCalendarNotificationWithLogRollback({
+      calendarEventId: ctx.eventId,
+      userId: uid,
+      kind: "start",
+      fireKey: ctx.fireKey,
+      sendOptions: {
+        recipientId: uid,
+        type: "calendar_event_start",
+        title,
+        message,
+        data: { calendarEventId: ctx.eventId, locationId: ctx.locationId, eventTypeId: ctx.eventTypeId },
+        channels: chans,
+        emailSubject: title,
+        emailTemplateFile: "calendar-event-start-email.ejs",
+        emailTemplateData: {
+          ...ctx.detailFields,
+          headline: `"${ctx.ev.title}" is scheduled to start now.`,
+          summaryMessage: `The scheduled start time was ${ctx.startShort} (${ctx.tz}).`,
+          firstName: firstNameById.get(uid) ?? "",
+        },
+        actionUrl: ctx.calendarUrl,
+        emailButtonText: "Open calendar",
+        smsBody: message.slice(0, 300),
+      },
+    });
+  }
+}
 
-    if (willSendReminder) {
-      const title = "Upcoming calendar event";
-      const message = `Reminder: "${ev.title}" — ${startShort} (${tz}).`;
-      for (const uid of userIds) {
-        await sendCalendarNotificationWithLogRollback({
-          calendarEventId: eventId,
-          userId: uid,
-          kind: "reminder",
-          fireKey,
-          sendOptions: {
-            recipientId: uid,
-            type: "calendar_event_reminder",
-            title,
-            message,
-            data: { calendarEventId: eventId, locationId, eventTypeId },
-            channels: chans,
-            emailSubject: title,
-            emailTemplateFile: "calendar-event-reminder-email.ejs",
-            emailTemplateData: {
-              ...detailFields,
-              headline: "Reminder: upcoming event",
-              summaryMessage: `This is a heads-up for an event on your calendar: "${ev.title}" at ${startShort}.`,
-              firstName: firstNameById.get(uid) ?? "",
-            },
-            actionUrl: calendarUrl,
-            emailButtonText: "Open calendar",
-            smsBody: message.slice(0, 300),
-          },
-        });
-      }
-    }
+async function dispatchCalendarNotificationsForBinding(
+  ctx: CalendarDispatchContext,
+  binding: ICalendarRoleEventBinding,
+): Promise<void> {
+  const roleId = String(binding.roleId);
+  const userIds = await listUserIdsForRoleAtLocation(roleId, ctx.locationId);
+  const chans = channelsToList(normalizeRoleBindingChannels(binding.channels));
+  if (chans.length === 0) {
+    return;
+  }
 
-    if (willSendHourBefore) {
-      const minsUntil = Math.max(
-        1,
-        Math.round((ev.start.getTime() - now.getTime()) / 60_000),
-      );
-      const title =
-        minsUntil >= 55 && minsUntil <= 65 ? "Calendar event in about 1 hour" : "Upcoming calendar event";
-      const message =
-        minsUntil >= 55 && minsUntil <= 65
-          ? `${ev.title} starts in about 1 hour (${tz}).`
-          : `${ev.title} starts in ${minsUntil} minute${minsUntil === 1 ? "" : "s"} (${tz}).`;
-      const urgencyLine =
-        minsUntil >= 55 && minsUntil <= 65
-          ? "This event starts in about 1 hour."
-          : `This event starts in ${minsUntil} minute${minsUntil === 1 ? "" : "s"}.`;
-      const countdownLine = `${ev.title} · ${startShort}`;
-      for (const uid of userIds) {
-        await sendCalendarNotificationWithLogRollback({
-          calendarEventId: eventId,
-          userId: uid,
-          kind: "hour_before",
-          fireKey,
-          sendOptions: {
-            recipientId: uid,
-            type: "calendar_event_hour_before",
-            title,
-            message,
-            data: { calendarEventId: eventId, locationId, eventTypeId },
-            channels: chans,
-            emailSubject: title,
-            emailTemplateFile: "calendar-event-hour-before-email.ejs",
-            emailTemplateData: {
-              ...detailFields,
-              urgencyLine,
-              countdownLine,
-              summaryMessage: message,
-              firstName: firstNameById.get(uid) ?? "",
-            },
-            actionUrl: calendarUrl,
-            emailButtonText: "Open calendar",
-            smsBody: message.slice(0, 300),
-          },
-        });
-      }
-    }
+  const willSendReminder = Boolean(binding.notifyReminders && ctx.kind === "reminder");
+  const willSendHourBefore = Boolean(binding.notifyReminders && ctx.kind === "hour_before");
+  const willSendStart = Boolean(binding.notifyOnStart && ctx.kind === "start");
+  if (!willSendReminder && !willSendHourBefore && !willSendStart) {
+    return;
+  }
 
-    if (willSendStart) {
-      const title = "Event starting now";
-      const message = `"${ev.title}" is scheduled to start now (${startShort}, ${tz}).`;
-      for (const uid of userIds) {
-        await sendCalendarNotificationWithLogRollback({
-          calendarEventId: eventId,
-          userId: uid,
-          kind: "start",
-          fireKey,
-          sendOptions: {
-            recipientId: uid,
-            type: "calendar_event_start",
-            title,
-            message,
-            data: { calendarEventId: eventId, locationId, eventTypeId },
-            channels: chans,
-            emailSubject: title,
-            emailTemplateFile: "calendar-event-start-email.ejs",
-            emailTemplateData: {
-              ...detailFields,
-              headline: `"${ev.title}" is scheduled to start now.`,
-              summaryMessage: `The scheduled start time was ${startShort} (${tz}).`,
-              firstName: firstNameById.get(uid) ?? "",
-            },
-            actionUrl: calendarUrl,
-            emailButtonText: "Open calendar",
-            smsBody: message.slice(0, 300),
-          },
-        });
-      }
-    }
+  const firstNameById =
+    chans.includes("email") && userIds.length > 0
+      ? await loadFirstNamesByUserId(userIds)
+      : new Map<string, string>();
+
+  if (willSendReminder) {
+    await sendCalendarReminderBatch({ ctx, userIds, chans, firstNameById });
+  }
+  if (willSendHourBefore) {
+    await sendCalendarHourBeforeBatch({ ctx, userIds, chans, firstNameById });
+  }
+  if (willSendStart) {
+    await sendCalendarStartBatch({ ctx, userIds, chans, firstNameById });
+  }
+}
+
+/**
+ * Send calendar notifications for one event, one kind, one fireKey (Agenda calendar:notify-one).
+ */
+export async function dispatchCalendarNotificationForEvent(params: {
+  calendarEventId: string;
+  kind: CalendarNotifyKind;
+  fireKey: string;
+}): Promise<void> {
+  const now = new Date();
+  const ctx = await loadCalendarDispatchContext({ ...params, now });
+  if (!ctx) {
+    return;
+  }
+
+  for (const binding of ctx.bindings) {
+    await dispatchCalendarNotificationsForBinding(ctx, binding);
   }
 }

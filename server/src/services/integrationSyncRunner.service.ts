@@ -4,11 +4,8 @@ import {
   listPaymentsInRange,
   searchCatalogObjects,
 } from "./squareIngest.service.js";
-import {
-  fetchOrdersInRange,
-  searchTeamMembers,
-  type TimeRange,
-} from "./square.service.js";
+import { fetchOrdersInRange, searchTeamMembers } from "./square.service.js";
+import type { TimeRange } from "../utils/businessHours.util.js";
 import { getTimecardsForDateRange } from "./homebase.service.js";
 import {
   getValidCountDates,
@@ -26,6 +23,7 @@ import {
   upsertMarketManValidCountDates,
   upsertMarketManOrder,
 } from "./integrationCacheWrite.service.js";
+import { fetchAndUpsertMarketManOrdersForWindow } from "../utils/marketmanOrderSyncUpsertHelpers.util.js";
 import { logger } from "../utils/logger.util.js";
 import { getZonedCalendarDayUtcBounds } from "../utils/integrationSyncZonedDayBounds.util.js";
 import type { IntegrationSyncResource } from "../models/integrationSyncLog.model.js";
@@ -253,51 +251,190 @@ export async function syncMarketManOrdersInUtcRangeForLocation(
     kind === "marketman_orders_both" || kind === "marketman_orders_sent";
 
   if (runDelivery) {
-    try {
-      const delivery = await getOrdersByDeliveryDate(
-        buyerGuid,
-        dateTimeFromUTC,
-        dateTimeToUTC,
-      );
-      for (const o of delivery) {
-        await upsertMarketManOrder(
-          locationId,
-          buyerGuid,
-          "delivery",
-          dateTimeFromUTC,
-          dateTimeToUTC,
-          o as unknown as Record<string, unknown>,
-        );
-        upserted += 1;
-      }
-    } catch (e) {
-      errors.push(`delivery: ${e instanceof Error ? e.message : String(e)}`);
-    }
+    const r = await fetchAndUpsertMarketManOrdersForWindow(
+      locationId,
+      buyerGuid,
+      "delivery",
+      dateTimeFromUTC,
+      dateTimeToUTC,
+      () =>
+        getOrdersByDeliveryDate(buyerGuid, dateTimeFromUTC, dateTimeToUTC),
+    );
+    upserted += r.upserted;
+    if (r.error) errors.push(r.error);
   }
   if (runSent) {
-    try {
-      const sent = await getOrdersBySentDate(
-        buyerGuid,
-        dateTimeFromUTC,
-        dateTimeToUTC,
-      );
-      for (const o of sent) {
-        await upsertMarketManOrder(
-          locationId,
-          buyerGuid,
-          "sent",
-          dateTimeFromUTC,
-          dateTimeToUTC,
-          o as unknown as Record<string, unknown>,
-        );
-        upserted += 1;
-      }
-    } catch (e) {
-      errors.push(`sent: ${e instanceof Error ? e.message : String(e)}`);
+    const r = await fetchAndUpsertMarketManOrdersForWindow(
+      locationId,
+      buyerGuid,
+      "sent",
+      dateTimeFromUTC,
+      dateTimeToUTC,
+      () => getOrdersBySentDate(buyerGuid, dateTimeFromUTC, dateTimeToUTC),
+    );
+    upserted += r.upserted;
+    if (r.error) errors.push(r.error);
+  }
+  return { upserted, errors };
+}
+
+interface LocationSyncDoc {
+  _id: unknown;
+  timezone?: string | null;
+  marketManBuyerGuid?: string | null;
+}
+
+type SyncOptionDates = { startDate?: string; endDate?: string };
+
+type LocationSyncKindHandler = (
+  locationId: string,
+  doc: LocationSyncDoc,
+  options?: SyncOptionDates,
+) => Promise<SyncCounts>;
+
+async function syncCountsSquarePaymentsRange(
+  locationId: string,
+  options?: SyncOptionDates,
+): Promise<SyncCounts> {
+  if (!options?.startDate || !options?.endDate) {
+    return { upserted: 0, errors: ["startDate and endDate required"] };
+  }
+  return syncSquarePaymentsForLocation(
+    locationId,
+    new Date(options.startDate),
+    new Date(options.endDate),
+  );
+}
+
+async function syncCountsSquareOrdersRange(
+  locationId: string,
+  options?: SyncOptionDates,
+): Promise<SyncCounts> {
+  if (!options?.startDate || !options?.endDate) {
+    return { upserted: 0, errors: ["startDate and endDate required"] };
+  }
+  return syncSquareOrdersForLocation(locationId, {
+    startAt: new Date(options.startDate).toISOString(),
+    endAt: new Date(options.endDate).toISOString(),
+  });
+}
+
+async function syncCountsHomebaseTimecardsWindow(
+  locationId: string,
+  options?: SyncOptionDates,
+): Promise<SyncCounts> {
+  const win =
+    options?.startDate && options?.endDate
+      ? {
+          startAt: new Date(options.startDate).toISOString(),
+          endAt: new Date(options.endDate).toISOString(),
+        }
+      : homebaseSlidingWindowIso();
+  return syncHomebaseTimecardsForLocation(
+    locationId,
+    win.startAt,
+    win.endAt,
+  );
+}
+
+async function syncMarketManOrdersPartialTodaySingleKind(
+  locationId: string,
+  timezone: string,
+  buyerGuid: string,
+  apiKind: "delivery" | "sent",
+): Promise<SyncCounts> {
+  const { ranges } = getOrderTrackerRanges("today", timezone);
+  let upserted = 0;
+  const errors: string[] = [];
+  for (const r of ranges) {
+    const fetchOrders =
+      apiKind === "delivery"
+        ? () =>
+            getOrdersByDeliveryDate(
+              buyerGuid,
+              r.dateTimeFromUTC,
+              r.dateTimeToUTC,
+            )
+        : () =>
+            getOrdersBySentDate(
+              buyerGuid,
+              r.dateTimeFromUTC,
+              r.dateTimeToUTC,
+            );
+    const batch = await fetchAndUpsertMarketManOrdersForWindow(
+      locationId,
+      buyerGuid,
+      apiKind,
+      r.dateTimeFromUTC,
+      r.dateTimeToUTC,
+      fetchOrders,
+    );
+    upserted += batch.upserted;
+    if (batch.error) {
+      errors.push(batch.error.replace(/^[^:]+:\s*/, ""));
     }
   }
   return { upserted, errors };
 }
+
+async function syncCountsMarketManOrdersForKind(
+  locationId: string,
+  doc: LocationSyncDoc,
+  options: SyncOptionDates | undefined,
+  kind:
+    | "marketman_orders_both"
+    | "marketman_orders_sent"
+    | "marketman_orders_delivery",
+): Promise<SyncCounts> {
+  const tz = doc.timezone ?? "America/Denver";
+  const bg = doc.marketManBuyerGuid?.trim();
+  if (!bg) {
+    return { upserted: 0, errors: ["No buyer GUID"] };
+  }
+  if (options?.startDate && options?.endDate) {
+    const dateTimeFromUTC = formatMarketManDateUtc(new Date(options.startDate));
+    const dateTimeToUTC = formatMarketManDateUtc(new Date(options.endDate));
+    return syncMarketManOrdersInUtcRangeForLocation(
+      locationId,
+      bg,
+      kind,
+      dateTimeFromUTC,
+      dateTimeToUTC,
+    );
+  }
+  if (kind === "marketman_orders_both") {
+    return syncMarketManOrdersTodayForLocation(locationId, tz, bg);
+  }
+  return syncMarketManOrdersPartialTodaySingleKind(
+    locationId,
+    tz,
+    bg,
+    kind === "marketman_orders_delivery" ? "delivery" : "sent",
+  );
+}
+
+const SYNC_LOCATION_HANDLERS: Record<string, LocationSyncKindHandler> = {
+  square_payments: (id, _doc, opts) =>
+    syncCountsSquarePaymentsRange(id, opts),
+  square_orders: (id, _doc, opts) => syncCountsSquareOrdersRange(id, opts),
+  square_catalog: (id) => syncSquareCatalogForLocation(id),
+  square_team_members: (id) => syncSquareTeamMembersForLocation(id),
+  homebase_timecards: (id, _doc, opts) =>
+    syncCountsHomebaseTimecardsWindow(id, opts),
+  marketman_valid_count_dates: (id) =>
+    syncMarketManValidCountDatesForLocation(id),
+  marketman_orders_both: (id, doc, opts) =>
+    syncCountsMarketManOrdersForKind(id, doc, opts, "marketman_orders_both"),
+  marketman_orders_sent: (id, doc, opts) =>
+    syncCountsMarketManOrdersForKind(id, doc, opts, "marketman_orders_sent"),
+  marketman_orders_delivery: (id, doc, opts) =>
+    syncCountsMarketManOrdersForKind(
+      id,
+      doc,
+      opts,
+      "marketman_orders_delivery",
+    ),
+};
 
 export async function runSyncForAllLocations(
   kind: string,
@@ -305,139 +442,20 @@ export async function runSyncForAllLocations(
 ): Promise<{ totalUpserted: number; byLocation: Record<string, SyncCounts> }> {
   let docs = await locationRepository.findAll();
   if (options?.locationIds?.length) {
-    const allow = new Set(options.locationIds.map((x) => String(x)));
+    const allow = new Set(options.locationIds.map(String));
     docs = docs.filter((d) => allow.has(String(d._id)));
   }
   const byLocation: Record<string, SyncCounts> = {};
   let totalUpserted = 0;
 
+  const handler = SYNC_LOCATION_HANDLERS[kind];
+
   for (const doc of docs) {
     const id = String(doc._id);
     try {
-      let c: SyncCounts = { upserted: 0, errors: [] };
-      switch (kind) {
-        case "square_payments": {
-          if (!options?.startDate || !options?.endDate) {
-            c = { upserted: 0, errors: ["startDate and endDate required"] };
-            break;
-          }
-          c = await syncSquarePaymentsForLocation(
-            id,
-            new Date(options.startDate),
-            new Date(options.endDate),
-          );
-          break;
-        }
-        case "square_orders": {
-          if (!options?.startDate || !options?.endDate) {
-            c = { upserted: 0, errors: ["startDate and endDate required"] };
-            break;
-          }
-          c = await syncSquareOrdersForLocation(id, {
-            startAt: new Date(options.startDate).toISOString(),
-            endAt: new Date(options.endDate).toISOString(),
-          });
-          break;
-        }
-        case "square_catalog":
-          c = await syncSquareCatalogForLocation(id);
-          break;
-        case "square_team_members":
-          c = await syncSquareTeamMembersForLocation(id);
-          break;
-        case "homebase_timecards": {
-          const win =
-            options?.startDate && options?.endDate
-              ? {
-                  startAt: new Date(options.startDate).toISOString(),
-                  endAt: new Date(options.endDate).toISOString(),
-                }
-              : homebaseSlidingWindowIso();
-          c = await syncHomebaseTimecardsForLocation(
-            id,
-            win.startAt,
-            win.endAt,
-          );
-          break;
-        }
-        case "marketman_valid_count_dates":
-          c = await syncMarketManValidCountDatesForLocation(id);
-          break;
-        case "marketman_orders_both":
-        case "marketman_orders_sent":
-        case "marketman_orders_delivery": {
-          const tz = doc.timezone ?? "America/Denver";
-          const bg = doc.marketManBuyerGuid?.trim();
-          if (!bg) {
-            c = { upserted: 0, errors: ["No buyer GUID"] };
-            break;
-          }
-          if (options?.startDate && options?.endDate) {
-            const from = new Date(options.startDate);
-            const to = new Date(options.endDate);
-            const dateTimeFromUTC = formatMarketManDateUtc(from);
-            const dateTimeToUTC = formatMarketManDateUtc(to);
-            c = await syncMarketManOrdersInUtcRangeForLocation(
-              id,
-              bg,
-              kind,
-              dateTimeFromUTC,
-              dateTimeToUTC,
-            );
-          } else if (kind === "marketman_orders_both") {
-            c = await syncMarketManOrdersTodayForLocation(id, tz, bg);
-          } else {
-            const { ranges } = getOrderTrackerRanges("today", tz);
-            let u = 0;
-            const errs: string[] = [];
-            for (const r of ranges) {
-              try {
-                if (kind === "marketman_orders_delivery") {
-                  const orders = await getOrdersByDeliveryDate(
-                    bg,
-                    r.dateTimeFromUTC,
-                    r.dateTimeToUTC,
-                  );
-                  for (const o of orders) {
-                    await upsertMarketManOrder(
-                      id,
-                      bg,
-                      "delivery",
-                      r.dateTimeFromUTC,
-                      r.dateTimeToUTC,
-                      o as unknown as Record<string, unknown>,
-                    );
-                    u += 1;
-                  }
-                } else {
-                  const orders = await getOrdersBySentDate(
-                    bg,
-                    r.dateTimeFromUTC,
-                    r.dateTimeToUTC,
-                  );
-                  for (const o of orders) {
-                    await upsertMarketManOrder(
-                      id,
-                      bg,
-                      "sent",
-                      r.dateTimeFromUTC,
-                      r.dateTimeToUTC,
-                      o as unknown as Record<string, unknown>,
-                    );
-                    u += 1;
-                  }
-                }
-              } catch (e) {
-                errs.push(e instanceof Error ? e.message : String(e));
-              }
-            }
-            c = { upserted: u, errors: errs };
-          }
-          break;
-        }
-        default:
-          c = { upserted: 0, errors: [`Unknown kind ${kind}`] };
-      }
+      const c = handler
+        ? await handler(id, doc as LocationSyncDoc, options)
+        : { upserted: 0, errors: [`Unknown kind ${kind}`] };
       byLocation[id] = c;
       totalUpserted += c.upserted;
     } catch (e) {

@@ -10,7 +10,7 @@ const FORMAT_STYLES: Record<string, { label: string; bg: string; text: string }>
 };
 
 function getStyle(format: string): { label: string; bg: string; text: string } {
-  const key = format.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const key = format.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
   return (
     FORMAT_STYLES[key] ?? {
       label: key ? key.toUpperCase().slice(0, 4) : 'FILE',
@@ -22,8 +22,8 @@ function getStyle(format: string): { label: string; bg: string; text: string } {
 
 export interface DocumentTypeThumbnailProps {
   /** File format/extension (e.g. pdf, docx, xlsx). */
-  format: string;
-  className?: string;
+  readonly format: string;
+  readonly className?: string;
 }
 
 export function DocumentTypeThumbnail({ format, className = '' }: DocumentTypeThumbnailProps) {

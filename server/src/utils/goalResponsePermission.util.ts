@@ -90,7 +90,7 @@ export function getAllowedGoalMetricKeys(req: Request): GoalMetricKey[] | null {
     req.user?.permissionOverrides ?? null,
   );
 
-  if (effective == null || effective.components == null || effective.components.length === 0) {
+  if (!effective?.components?.length) {
     return [];
   }
 
@@ -128,9 +128,8 @@ export function sanitizeGoalValues(
 
 export function sanitizeGoalDocument(goal: IGoal, allowed: GoalMetricKey[] | null): IGoal {
   if (allowed == null) return goal;
-  const out = { ...goal } as Record<string, unknown>;
-  stripGoalValuesInPlace(out, allowed);
-  return out as IGoal;
+  const out = { ...goal };
+  return stripGoalValuesInPlace(out, allowed);
 }
 
 export function sanitizeGoalSetting(setting: IGoalSetting, allowed: GoalMetricKey[] | null): IGoalSetting {
@@ -145,7 +144,7 @@ export function sanitizeGoalSetting(setting: IGoalSetting, allowed: GoalMetricKe
     days: Object.fromEntries(
       Object.entries(w.days).map(([d, v]) => [
         d,
-        v != null ? sanitizeGoalValues(v, allowed) : v,
+        v == null ? v : sanitizeGoalValues(v, allowed),
       ]),
     ) as IFutureWeekGoals["days"],
   }));
@@ -159,7 +158,7 @@ export function sanitizeGoalSetting(setting: IGoalSetting, allowed: GoalMetricKe
     default: sanitizeGoalValues(setting.default, allowed),
     weekly,
     futureWeeks,
-    ...(defaultHistory != null ? { defaultHistory } : {}),
+    ...(defaultHistory == null ? {} : { defaultHistory }),
   };
 }
 

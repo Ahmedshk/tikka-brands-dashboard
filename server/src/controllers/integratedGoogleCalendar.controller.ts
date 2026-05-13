@@ -99,7 +99,11 @@ export async function updateIntegratedGoogleCalendar(
   try {
     const id = routeParamId(req, "id");
     const { name, description } = req.body as { name?: string; description?: string };
-    const integration = await integrationService.updateById(id, { name, description });
+    const patch: Partial<{ name: string; description: string }> = {
+      ...(name == null ? {} : { name }),
+      ...(description == null ? {} : { description }),
+    };
+    const integration = await integrationService.updateById(id, patch);
     res.json({ success: true, data: { integration } });
   } catch (err) {
     next(err);

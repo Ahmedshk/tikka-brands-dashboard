@@ -3,6 +3,7 @@
  * All functions operate on in-memory arrays -- no DB calls.
  */
 
+import { Types } from "mongoose";
 import { SYSTEM_ROLE_NAME } from "../types/rbac.types.js";
 
 export interface HierarchyRole {
@@ -160,6 +161,33 @@ export function isAncestorOf(
 ): boolean {
   const ancestors = getAncestorRoleIds(targetRoleId, roles);
   return ancestors.includes(actorRoleId);
+}
+
+/**
+ * Normalize role `reportsTo` from DB (null, id scalar, ObjectId, or populated `{ _id }`) to parent role id string or null.
+ */
+export function reportsToValueToParentIdString(reportsToVal: unknown): string | null {
+  if (reportsToVal == null) {
+    return null;
+  }
+  if (
+    typeof reportsToVal === "object" &&
+    reportsToVal !== null &&
+    "_id" in reportsToVal
+  ) {
+    return String((reportsToVal as { _id: unknown })._id);
+  }
+  if (reportsToVal instanceof Types.ObjectId) {
+    return reportsToVal.toString();
+  }
+  if (
+    typeof reportsToVal === "string" ||
+    typeof reportsToVal === "number" ||
+    typeof reportsToVal === "bigint"
+  ) {
+    return String(reportsToVal);
+  }
+  return "";
 }
 
 /**

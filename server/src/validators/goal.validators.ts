@@ -55,14 +55,14 @@ export const getGoalDailyActualsQuerySchema = z.object({
           .filter(Boolean);
         if (parts.length === 0) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             message: "At least one date is required",
           });
           return;
         }
         if (parts.length > 14) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: "custom",
             message: "At most 14 dates allowed",
           });
           return;
@@ -70,7 +70,7 @@ export const getGoalDailyActualsQuerySchema = z.object({
         for (const p of parts) {
           if (!ymdRegex.test(p)) {
             ctx.addIssue({
-              code: z.ZodIssueCode.custom,
+              code: "custom",
               message: `Invalid date: ${p} (expected YYYY-MM-DD)`,
             });
             return;

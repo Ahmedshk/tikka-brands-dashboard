@@ -39,6 +39,63 @@ export interface CreateTrainingFormState {
   modules: CreateTrainingModuleForm[];
 }
 
+export function removeModuleFileFromTrainingModules(
+  modules: CreateTrainingModuleForm[],
+  moduleId: string,
+  fileId: string,
+): CreateTrainingModuleForm[] {
+  return modules.map((m) => {
+    if (m.id !== moduleId) return m;
+    return { ...m, moduleFiles: m.moduleFiles.filter((f) => f.id !== fileId) };
+  });
+}
+
+type UploadedTrainingModuleFile = {
+  publicId: string;
+  resourceType: 'image' | 'raw';
+  filename?: string;
+  format?: string;
+};
+
+export async function buildTrainingModulePayloadsForCreate(
+  modules: CreateTrainingModuleForm[],
+  trainingName: string,
+  uploadDocument: (file: File, trainingName: string) => Promise<UploadedTrainingModuleFile>,
+): Promise<import('../services/training.service').TrainingModulePayload[]> {
+  const payloadModules: import('../services/training.service').TrainingModulePayload[] = [];
+
+  for (const mod of modules) {
+    const moduleFiles: import('../services/training.service').TrainingModuleFilePayload[] = [];
+
+    for (const mf of mod.moduleFiles) {
+      if (mf.file) {
+        const up = await uploadDocument(mf.file, trainingName);
+        moduleFiles.push({
+          publicId: up.publicId,
+          resourceType: up.resourceType,
+          ...(up.filename && { filename: up.filename }),
+          ...(up.format && { format: up.format }),
+        });
+        continue;
+      }
+
+      if (mf.publicId && mf.resourceType) {
+        moduleFiles.push({
+          publicId: mf.publicId,
+          resourceType: mf.resourceType,
+          ...(mf.filename && { filename: mf.filename }),
+          ...(mf.format && { format: mf.format }),
+        });
+      }
+    }
+
+    const durationDays = Math.max(1, Number(mod.duration) || 1);
+    payloadModules.push({ name: mod.name.trim(), duration: durationDays, moduleFiles });
+  }
+
+  return payloadModules;
+}
+
 export interface CreateTrainingValidation {
   valid: boolean;
   trainingNameError?: string;

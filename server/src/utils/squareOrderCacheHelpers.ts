@@ -6,32 +6,17 @@
  *
  * Square's field is `created_at`; `createdAt` here is only a camelCase alias if present inside `raw`.
  */
+import {
+  coerceSquareOrderCreatedAtCandidateToUnixMs,
+  pickCreatedAtCandidateFromSquareOrderRaw,
+} from "./squareOrderCacheCreatedAtFromRawHelpers.util.js";
+
 export function getSquareOrderCreatedAtMsFromRaw(
   raw: Record<string, unknown>,
 ): number | null {
-  const v =
-    raw.created_at ??
-    raw.createdAt ??
-    (typeof raw.order === "object" &&
-    raw.order != null &&
-    !Array.isArray(raw.order)
-      ? (raw.order as Record<string, unknown>).created_at ??
-        (raw.order as Record<string, unknown>).createdAt
-      : undefined);
-  if (v == null) return null;
-  if (v instanceof Date) {
-    const t = v.getTime();
-    return Number.isFinite(t) ? t : null;
-  }
-  if (typeof v === "number" && Number.isFinite(v)) {
-    const t = v > 1e12 ? v : v * 1000;
-    return Number.isFinite(t) ? t : null;
-  }
-  if (typeof v === "string" && v.trim() !== "") {
-    const t = new Date(v).getTime();
-    return Number.isFinite(t) ? t : null;
-  }
-  return null;
+  return coerceSquareOrderCreatedAtCandidateToUnixMs(
+    pickCreatedAtCandidateFromSquareOrderRaw(raw),
+  );
 }
 
 /**
@@ -45,7 +30,11 @@ export function getSquareOrderStateFromPayload(payload: unknown): string | undef
   const pick = (obj: Record<string, unknown>): string | undefined => {
     const s = obj.state;
     if (s == null) return undefined;
-    if (typeof s === "string") return s.trim() !== "" ? s : undefined;
+    if (typeof s === "string") {
+      const trimmed = s.trim();
+      if (trimmed === "") return undefined;
+      return s;
+    }
     if (typeof s === "number" || typeof s === "boolean") return String(s);
     return undefined;
   };

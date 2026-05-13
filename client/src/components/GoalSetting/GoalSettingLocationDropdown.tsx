@@ -1,4 +1,3 @@
-import React from 'react';
 import { Dropdown } from '../common/Dropdown';
 import { Spinner } from '../common/Spinner';
 import LocationIcon from '@assets/icons/location.svg?react';

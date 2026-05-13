@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseModuleProgressCompletedAtInput } from '../utils/trainingAssignmentValidatorsHelpers.util.js';
 
 const extraFileSchema = z.object({
   publicId: z.string().min(1),
@@ -8,7 +9,10 @@ const extraFileSchema = z.object({
 });
 
 const moduleProgressEntrySchema = z.object({
-  completedAt: z.union([z.date(), z.string(), z.null()]).nullable().transform((v) => (v == null || v === '' ? null : v instanceof Date ? v : new Date(v))),
+  completedAt: z
+    .union([z.date(), z.string(), z.null()])
+    .nullable()
+    .transform((v) => parseModuleProgressCompletedAtInput(v)),
   status: z.enum(['not_started', 'in_progress', 'completed']),
   managerNotes: z.string().max(2000).optional(),
   extraFiles: z.array(extraFileSchema).optional(),

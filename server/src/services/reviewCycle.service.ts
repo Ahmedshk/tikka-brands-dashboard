@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { Types } from "mongoose";
-import { ReviewCycleModel } from "../models/reviewCycle.model.js";
+import { ReviewCycleModel, type ReviewCycleDocument } from "../models/reviewCycle.model.js";
 import { SelfReviewModel } from "../models/selfReview.model.js";
 import { ManagerReviewModel } from "../models/managerReview.model.js";
 import { ActionPlanModel } from "../models/actionPlan.model.js";
@@ -17,12 +17,20 @@ import {
   CYCLE_LENGTH, getNotifyBeforeDue, FORM_BEFORE_DUE, NEXT_CYCLE_OFFSET, isTestMode,
   TEST_MODE_DUE_MINUTES_FROM_NOW,
 } from "../utils/reviewTimings.js";
+import { findSelfReviewAttachmentInQuestionnaire } from "../utils/reviewCycleSelfReviewAttachment.util.js";
+import { applyDirectorApprovalSalaryFields } from "../utils/reviewCycleDirectorApprovalSalary.util.js";
+import {
+  buildReviewCycleListStatusFilter,
+  resolveReviewCycleListEmployeeIds,
+} from "../utils/reviewCycleGetCyclesQuery.util.js";
+import { employeeIdStringFromCyclePopulateLean } from "../utils/reviewCycleGetCycleSnapshotHelpers.util.js";
+import {
+  repairMissingCycleChainForEmployee,
+  type RepairMissingChainStartupCycle,
+} from "../utils/reviewCycleRepairMissingChainStartup.util.js";
 import type { HierarchyRole } from "../utils/roleHierarchy.util.js";
 import type { ReviewCycleStatus, QuestionResponse } from "../types/reviewCycle.types.js";
-import {
-  REVIEW_CYCLE_TERMINAL_FOR_NEW_CYCLE,
-  REVIEW_CYCLE_PAST_STATUSES,
-} from "../types/reviewCycle.types.js";
+import { REVIEW_CYCLE_TERMINAL_FOR_NEW_CYCLE } from "../types/reviewCycle.types.js";
 const notificationService = new NotificationService();
 const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
 
@@ -54,7 +62,7 @@ async function loadReviewCycleRoleDocsCached(): Promise<ReviewCycleRoleLean[]> {
 }
 
 function escapeRegexForEmployeeNameSearch(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return s.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
 /** Token expiry: 14 units after due date (14 days in prod, 14 min in test). */
@@ -123,8 +131,20 @@ export class ReviewCycleService {
     const expiresAt = useStalledExpiry
       ? addPeriod(now, SELF_REVIEW_TOKEN_STALLED_UNITS)
       : addPeriod(cycle.dueDate90, SELF_REVIEW_TOKEN_VALID_UNITS);
+
+    let cycleId: Types.ObjectId | null = null;
+    if (cycle._id instanceof Types.ObjectId) {
+      cycleId = cycle._id;
+    } else {
+      const rawId = String(cycle._id);
+      if (Types.ObjectId.isValid(rawId)) {
+        cycleId = new Types.ObjectId(rawId);
+      }
+    }
+    if (!cycleId) throw new Error("Invalid review cycle _id");
+
     await ReviewCycleModel.updateOne(
-      { _id: cycle._id },
+      { _id: cycleId },
       { $set: { selfReviewToken: token, selfReviewTokenExpiresAt: expiresAt } },
     );
     return token;
@@ -183,10 +203,21 @@ export class ReviewCycleService {
   } | null> {
     const validated = await this.validateSelfReviewToken(token);
     if (!validated) return null;
-    const cycleId = (validated.cycle._id as { toString(): string }).toString();
+    let cycleIdObj: Types.ObjectId | null = null;
+    if (validated.cycle._id instanceof Types.ObjectId) {
+      cycleIdObj = validated.cycle._id;
+    } else {
+      const rawCycleId = String(validated.cycle._id);
+      if (Types.ObjectId.isValid(rawCycleId)) {
+        cycleIdObj = new Types.ObjectId(rawCycleId);
+      }
+    }
+    if (!cycleIdObj) throw new Error("Invalid review cycle _id");
+
+    const cycleId = cycleIdObj.toString();
     const settings = await ReviewSettingsModel.findOne().select("selfReviewQuestionnaire").lean();
     const questionnaire = settings?.selfReviewQuestionnaire ?? [];
-    const existing = await SelfReviewModel.findOne({ reviewCycleId: validated.cycle._id }).lean();
+    const existing = await SelfReviewModel.findOne({ reviewCycleId: cycleIdObj }).lean();
     return {
       cycleId,
       questionnaire: questionnaire.map((q: {
@@ -197,20 +228,24 @@ export class ReviewCycleService {
         order: number;
         options?: string[];
         attachments?: Array<{ publicId: string; resourceType: "image" | "raw"; filename?: string; format?: string }>;
-      }) => ({
-        id: q.id,
-        text: q.text,
-        type: q.type,
-        required: q.required,
-        order: q.order,
-        options: q.options,
-        attachments: (q.attachments ?? []).map((a) => ({
+      }) => {
+        const attachments = (q.attachments ?? []).map((a) => ({
           publicId: a.publicId,
           resourceType: a.resourceType,
-          filename: a.filename,
-          format: a.format,
-        })),
-      })),
+          ...(a.filename ? { filename: a.filename } : {}),
+          ...(a.format ? { format: a.format } : {}),
+        }));
+
+        return {
+          id: q.id,
+          text: q.text,
+          type: q.type,
+          required: q.required,
+          order: q.order,
+          ...(q.options ? { options: q.options } : {}),
+          ...(attachments.length ? { attachments } : {}),
+        };
+      }),
       employeeName: [validated.employee.firstName, validated.employee.lastName].filter(Boolean).join(" ") || "Employee",
       alreadySubmitted: !!existing,
     };
@@ -225,23 +260,19 @@ export class ReviewCycleService {
   ): Promise<{ resourceType: "image" | "raw"; filename?: string; format?: string } | null> {
     const validated = await this.validateSelfReviewToken(token);
     if (!validated) return null;
-    const target = publicId.trim();
-    if (!target) return null;
     const settings = await ReviewSettingsModel.findOne().select("selfReviewQuestionnaire").lean();
     const questionnaire = settings?.selfReviewQuestionnaire ?? [];
-    for (const q of questionnaire) {
-      const attachments = (q as { attachments?: Array<{ publicId: string; resourceType: "image" | "raw"; filename?: string; format?: string }> }).attachments;
-      for (const a of attachments ?? []) {
-        if (a.publicId === target) {
-          return {
-            resourceType: a.resourceType,
-            filename: a.filename,
-            format: a.format,
-          };
-        }
-      }
-    }
-    return null;
+    return findSelfReviewAttachmentInQuestionnaire(
+      questionnaire as Array<{
+        attachments?: Array<{
+          publicId: string;
+          resourceType: "image" | "raw";
+          filename?: string;
+          format?: string;
+        }>;
+      }>,
+      publicId,
+    );
   }
 
   /**
@@ -250,7 +281,18 @@ export class ReviewCycleService {
   async submitSelfReviewByToken(token: string, responses: QuestionResponse[]): Promise<{ success: true }> {
     const validated = await this.validateSelfReviewToken(token);
     if (!validated) throw new AppError("Invalid or expired link. Please use the latest link from your email.", 400);
-    const cycleId = (validated.cycle._id as { toString(): string }).toString();
+    let cycleIdObj: Types.ObjectId | null = null;
+    if (validated.cycle._id instanceof Types.ObjectId) {
+      cycleIdObj = validated.cycle._id;
+    } else {
+      const rawCycleId = String(validated.cycle._id);
+      if (Types.ObjectId.isValid(rawCycleId)) {
+        cycleIdObj = new Types.ObjectId(rawCycleId);
+      }
+    }
+    if (!cycleIdObj) throw new AppError("Invalid cycle", 400);
+
+    const cycleId = cycleIdObj.toString();
     const empRef = validated.cycle.employeeId as { _id?: { toString(): string } } | undefined;
     const employeeId = empRef && typeof empRef === "object" && "_id" in empRef
       ? (empRef._id as { toString(): string }).toString()
@@ -258,7 +300,7 @@ export class ReviewCycleService {
     if (!employeeId) throw new AppError("Invalid cycle", 400);
     await this.submitSelfReview(cycleId, employeeId, responses);
     await ReviewCycleModel.updateOne(
-      { _id: validated.cycle._id },
+      { _id: cycleIdObj },
       { $unset: { selfReviewToken: 1, selfReviewTokenExpiresAt: 1 } },
     );
     return { success: true };
@@ -425,7 +467,7 @@ export class ReviewCycleService {
     if (!user?.roleId) return "all";
 
     const role = await RoleModel.findById(user.roleId).select("locationAccess locationIds").lean();
-    if (!role || role.locationAccess !== "specific" || !role.locationIds?.length) {
+    if (role?.locationAccess !== "specific" || !role?.locationIds?.length) {
       return "all";
     }
 
@@ -474,7 +516,7 @@ export class ReviewCycleService {
       role,
     );
     if (empLocs === "all" || empLocs.length === 0) return undefined;
-    return [...empLocs].sort()[0];
+    return [...empLocs].sort((a, b) => a.localeCompare(b))[0];
   }
 
   private async mergeReviewNotificationData(
@@ -505,7 +547,17 @@ export class ReviewCycleService {
     for (const emp of users) {
       const empRole = roleCache.get(emp.roleId?.toString() ?? "");
       if (!empRole) continue;
-      const empLocs = this.resolveEmployeeLocations(emp, empRole as { locationAccess?: string; locationIds?: unknown[] });
+      const empLocs = this.resolveEmployeeLocations(
+        {
+          ...(Array.isArray(emp.locationOverrides)
+            ? { locationOverrides: emp.locationOverrides }
+            : {}),
+          ...(Array.isArray(emp.locationRemovals)
+            ? { locationRemovals: emp.locationRemovals }
+            : {}),
+        },
+        empRole as { locationAccess?: string; locationIds?: unknown[] },
+      );
       if (empLocs === "all" || empLocs.includes(loc)) {
         out.push(emp._id.toString());
       }
@@ -529,7 +581,7 @@ export class ReviewCycleService {
     const allRoles = await loadReviewCycleRoleDocsCached();
     const hierarchyRoles: HierarchyRole[] = allRoles.map((r) => ({
       _id: r._id.toString(),
-      name: r.name,
+      name: r.name ?? "",
       reportsTo: r.reportsTo?.toString() ?? null,
     }));
 
@@ -555,7 +607,17 @@ export class ReviewCycleService {
       const empRole = roleCache.get(emp.roleId?.toString() ?? "");
       if (!empRole) return false;
 
-      const empLocs = this.resolveEmployeeLocations(emp, empRole as { locationAccess?: string; locationIds?: unknown[] });
+      const empLocs = this.resolveEmployeeLocations(
+        {
+          ...(Array.isArray(emp.locationOverrides)
+            ? { locationOverrides: emp.locationOverrides }
+            : {}),
+          ...(Array.isArray(emp.locationRemovals)
+            ? { locationRemovals: emp.locationRemovals }
+            : {}),
+        },
+        empRole as { locationAccess?: string; locationIds?: unknown[] },
+      );
       if (empLocs === "all") return true;
       return empLocs.some((loc) => actorLocSet.has(loc));
     }).map((e) => e._id.toString());
@@ -673,7 +735,8 @@ export class ReviewCycleService {
 
     const managerId = await this.getManagerForEmployee(employeeId);
     if (managerId) {
-      cycle.reviewedByManagerId = managerId as unknown as typeof cycle.reviewedByManagerId;
+      if (!Types.ObjectId.isValid(managerId)) throw new AppError("Invalid manager id", 500);
+      cycle.reviewedByManagerId = new Types.ObjectId(managerId);
       cycle.status = "manager_review_due";
       await cycle.save();
 
@@ -723,7 +786,8 @@ export class ReviewCycleService {
     });
 
     cycle.managerReviewId = managerReview._id;
-    cycle.reviewedByManagerId = managerId as unknown as typeof cycle.reviewedByManagerId;
+    if (!Types.ObjectId.isValid(managerId)) throw new AppError("Invalid manager id", 400);
+    cycle.reviewedByManagerId = new Types.ObjectId(managerId);
     await cycle.save();
 
     return managerReview;
@@ -745,8 +809,9 @@ export class ReviewCycleService {
 
     const directorId = await this.getDirectorForEmployee(cycle.employeeId.toString());
     if (!directorId) return;
+    if (!Types.ObjectId.isValid(directorId)) return;
 
-    cycle.approvedByDirectorId = directorId as unknown as typeof cycle.approvedByDirectorId;
+    cycle.approvedByDirectorId = new Types.ObjectId(directorId);
     cycle.status = "director_approval_due";
     cycle.directorApprovalStartedAt = new Date();
     await cycle.save();
@@ -817,8 +882,8 @@ export class ReviewCycleService {
     await review.save();
 
     cycle.directorDecision = null;
-    cycle.directorComments = undefined;
-    cycle.directorRejectedAt = undefined;
+    delete cycle.directorComments;
+    delete cycle.directorRejectedAt;
     cycle.status = "manager_review_submitted";
     await cycle.save();
 
@@ -861,6 +926,32 @@ export class ReviewCycleService {
     return review;
   }
 
+  private async notifyManagerReviewApprovedSharingDue(
+    cycle: ReviewCycleDocument,
+    cycleId: string,
+    managerObjectId: Types.ObjectId,
+  ): Promise<void> {
+    cycle.status = "sharing_due";
+    await cycle.save();
+
+    const mgrId = managerObjectId.toString();
+    const mgrUser = await UserModel.findById(mgrId).select("firstName").lean();
+    const mgrFirstName = (mgrUser as { firstName?: string } | null)?.firstName ?? "";
+    const dashboardUrl = `${CLIENT_URL}/dashboard/reviews-management`;
+    await notificationService.send({
+      recipientId: mgrId,
+      type: "review_approved",
+      title: "Review Approved by Director",
+      message: "The director has approved the review. Please share with the employee and create an action plan.",
+      data: await this.mergeReviewNotificationData(cycle.employeeId.toString(), { reviewCycleId: cycleId }),
+      channels: ["all"],
+      actionUrl: dashboardUrl,
+      emailTemplateFile: "review-email.ejs",
+      emailTemplateData: { actionUrl: dashboardUrl, firstName: mgrFirstName },
+      emailButtonText: "View",
+    });
+  }
+
   async approveReview(
     cycleId: string,
     directorId: string,
@@ -876,61 +967,22 @@ export class ReviewCycleService {
       throw new AppError(`Cannot approve in status: ${cycle.status}`, 400);
     }
 
-    const hasIncrement =
-      salaryIncrement !== undefined &&
-      salaryIncrement !== null &&
-      Number.isFinite(salaryIncrement);
-
-    if (hasIncrement) {
-      const kind: "percent" | "fixed" = salaryIncrementType === "fixed" ? "fixed" : "percent";
-      if (kind === "percent") {
-        if (salaryIncrement! < 0 || salaryIncrement! > 100) {
-          throw new AppError("Salary increment must be between 0 and 100 percent", 400);
-        }
-        cycle.salaryIncrement = salaryIncrement;
-        cycle.salaryIncrementType = "percent";
-      } else {
-        if (salaryIncrement! < 0) {
-          throw new AppError("Fixed salary increment must be non-negative", 400);
-        }
-        if (salaryIncrement! > 50_000_000) {
-          throw new AppError("Fixed salary increment is too large", 400);
-        }
-        cycle.salaryIncrement = salaryIncrement;
-        cycle.salaryIncrementType = "fixed";
-      }
-    } else {
-      cycle.salaryIncrement = undefined;
-      cycle.salaryIncrementType = undefined;
-    }
+    applyDirectorApprovalSalaryFields(cycle, salaryIncrement, salaryIncrementType);
 
     cycle.directorDecision = "approved";
-    cycle.directorComments = comments;
-    cycle.directorRejectedAt = undefined;
-    cycle.approvedByDirectorId = directorId as unknown as typeof cycle.approvedByDirectorId;
+    if (comments !== undefined && comments !== "") {
+      cycle.directorComments = comments;
+    } else {
+      delete cycle.directorComments;
+    }
+    delete cycle.directorRejectedAt;
+    if (!Types.ObjectId.isValid(directorId)) throw new AppError("Invalid director id", 400);
+    cycle.approvedByDirectorId = new Types.ObjectId(directorId);
     cycle.status = "approved";
     await cycle.save();
 
     if (cycle.reviewedByManagerId) {
-      cycle.status = "sharing_due";
-      await cycle.save();
-
-      const mgrId = cycle.reviewedByManagerId.toString();
-      const mgrUser = await UserModel.findById(mgrId).select("firstName").lean();
-      const mgrFirstName = (mgrUser as { firstName?: string } | null)?.firstName ?? "";
-      const dashboardUrl = `${CLIENT_URL}/dashboard/reviews-management`;
-      await notificationService.send({
-        recipientId: mgrId,
-        type: "review_approved",
-        title: "Review Approved by Director",
-        message: "The director has approved the review. Please share with the employee and create an action plan.",
-        data: await this.mergeReviewNotificationData(cycle.employeeId.toString(), { reviewCycleId: cycleId }),
-        channels: ["all"],
-        actionUrl: dashboardUrl,
-        emailTemplateFile: "review-email.ejs",
-        emailTemplateData: { actionUrl: dashboardUrl, firstName: mgrFirstName },
-        emailButtonText: "View",
-      });
+      await this.notifyManagerReviewApprovedSharingDue(cycle, cycleId, cycle.reviewedByManagerId);
     }
 
     return cycle;
@@ -947,10 +999,11 @@ export class ReviewCycleService {
 
     cycle.directorDecision = "rejected";
     cycle.directorComments = comments;
-    cycle.approvedByDirectorId = directorId as unknown as typeof cycle.approvedByDirectorId;
-    cycle.directorApprovalStartedAt = undefined;
-    cycle.salaryIncrement = undefined;
-    cycle.salaryIncrementType = undefined;
+    if (!Types.ObjectId.isValid(directorId)) throw new AppError("Invalid director id", 400);
+    cycle.approvedByDirectorId = new Types.ObjectId(directorId);
+    delete cycle.directorApprovalStartedAt;
+    delete cycle.salaryIncrement;
+    delete cycle.salaryIncrementType;
     cycle.directorRejectedAt = new Date();
     cycle.status = "manager_review_pending";
     await cycle.save();
@@ -1009,6 +1062,13 @@ export class ReviewCycleService {
       throw new AppError(`Cannot complete in status: ${cycle.status}`, 400);
     }
 
+    if (
+      cycle.reviewedByManagerId &&
+      cycle.reviewedByManagerId.toString() !== managerId
+    ) {
+      throw new AppError("Not your review cycle to complete", 403);
+    }
+
     cycle.status = "completed";
     cycle.completedAt = new Date();
     await cycle.save();
@@ -1039,14 +1099,16 @@ export class ReviewCycleService {
     const cycle = await ReviewCycleModel.findById(cycleId);
     if (!cycle) throw new AppError("Review cycle not found", 404);
 
+    if (!Types.ObjectId.isValid(managerId)) throw new AppError("Invalid manager id", 400);
+
     const checkIn = await CheckInModel.create({
       reviewCycleId: cycle._id,
       period,
-      managerId,
+      managerId: new Types.ObjectId(managerId),
       employeeId: cycle.employeeId,
       responses: data.responses,
-      managerComments: data.managerComments,
-      actionPlanProgress: data.actionPlanProgress,
+      ...(data.managerComments === undefined ? {} : { managerComments: data.managerComments }),
+      ...(data.actionPlanProgress === undefined ? {} : { actionPlanProgress: data.actionPlanProgress }),
       actionItemProgress: data.actionItemProgress ?? [],
       submittedAt: new Date(),
     });
@@ -1114,60 +1176,22 @@ export class ReviewCycleService {
     employeeNameSearch?: string;
   }) {
     const { page = 1, limit = 20 } = query;
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = {
+      ...buildReviewCycleListStatusFilter(query),
+    };
 
-    if (query.pastOnly) filter.status = { $in: REVIEW_CYCLE_PAST_STATUSES };
-    else if (query.status) filter.status = query.status;
-    else if (query.activeOnly) filter.status = { $nin: REVIEW_CYCLE_PAST_STATUSES };
-
-    const locationId = query.locationId?.trim();
-
-    let employeeIdFilter: string[] | null = null;
-
-    if (query.userId) {
-      employeeIdFilter = [query.userId];
-    } else {
-      employeeIdFilter = await this.getVisibleEmployeeIds(query.actorUserId ?? null);
-    }
-
-    if (locationId) {
-      if (employeeIdFilter !== null) {
-        if (employeeIdFilter.length === 0) {
-          return { cycles: [], total: 0 };
-        }
-        employeeIdFilter = await this.filterEmployeeIdsByNavbarLocation(employeeIdFilter, locationId);
-      } else {
-        const distinctRaw = await ReviewCycleModel.distinct("employeeId", { ...filter });
-        const distinctIds = distinctRaw.map((id) => String(id));
-        employeeIdFilter = await this.filterEmployeeIdsByNavbarLocation(distinctIds, locationId);
-      }
-      if (employeeIdFilter.length === 0) {
-        return { cycles: [], total: 0 };
-      }
-    }
-
-    const nameSearch = query.employeeNameSearch?.trim();
-    if (nameSearch) {
-      const rx = new RegExp(escapeRegexForEmployeeNameSearch(nameSearch), "i");
-      const matchingUsers = await UserModel.find({
-        $or: [{ firstName: rx }, { lastName: rx }],
-      })
-        .select("_id")
-        .lean();
-      const nameMatchIds = matchingUsers.map((u) => String(u._id));
-      if (nameMatchIds.length === 0) {
-        return { cycles: [], total: 0 };
-      }
-      const nameSet = new Set(nameMatchIds);
-      if (employeeIdFilter !== null) {
-        employeeIdFilter = employeeIdFilter.filter((id) => nameSet.has(id));
-      } else {
-        employeeIdFilter = nameMatchIds;
-      }
-      if (employeeIdFilter.length === 0) {
-        return { cycles: [], total: 0 };
-      }
-    }
+    const { employeeIdFilter, empty } = await resolveReviewCycleListEmployeeIds({
+      userId: query.userId,
+      actorUserId: query.actorUserId,
+      locationId: query.locationId,
+      employeeNameSearch: query.employeeNameSearch,
+      filter,
+      escapeRegex: escapeRegexForEmployeeNameSearch,
+      getVisibleEmployeeIds: (actorUserId) => this.getVisibleEmployeeIds(actorUserId),
+      filterEmployeeIdsByNavbarLocation: (employeeIds, locationId) =>
+        this.filterEmployeeIdsByNavbarLocation(employeeIds, locationId),
+    });
+    if (empty) return { cycles: [], total: 0 };
 
     if (employeeIdFilter !== null) {
       filter.employeeId = { $in: employeeIdFilter };
@@ -1209,11 +1233,7 @@ export class ReviewCycleService {
       .lean();
     if (!cycle) throw new AppError("Cycle not found", 404);
 
-    const rawEmp = cycle.employeeId as { _id?: { toString(): string } } | string | null;
-    const employeeIdStr =
-      typeof rawEmp === "object" && rawEmp !== null && "_id" in rawEmp && rawEmp._id
-        ? rawEmp._id.toString()
-        : String(rawEmp ?? "");
+    const employeeIdStr = employeeIdStringFromCyclePopulateLean(cycle.employeeId);
 
     const visibleIds = await this.getVisibleEmployeeIds(actorUserId ?? null);
     if (visibleIds !== null && !visibleIds.includes(employeeIdStr)) {
@@ -1232,7 +1252,7 @@ export class ReviewCycleService {
       selfReview: selfReview as Record<string, unknown> | null,
       managerReview: managerReview as Record<string, unknown> | null,
       actionPlan: actionPlan as Record<string, unknown> | null,
-      checkIns: checkIns as Record<string, unknown>[],
+      checkIns: checkIns as unknown as Record<string, unknown>[],
     };
   }
 
@@ -1324,21 +1344,13 @@ export class ReviewCycleService {
       errors: 0,
     };
 
-    type StartupCycle = {
-      _id: unknown;
-      employeeId: { toString(): string } | string;
-      cycleNumber: number;
-      referenceDate: Date;
-      dueDate90: Date;
-      scheduledNextCycleReferenceDate?: Date;
-      status: ReviewCycleStatus;
-    };
-
-    const latestPerEmployee = await ReviewCycleModel.aggregate<{ latest: StartupCycle }>([
-      { $sort: { employeeId: 1, cycleNumber: -1 } },
-      { $group: { _id: "$employeeId", latest: { $first: "$$ROOT" } } },
-      { $project: { _id: 0, latest: 1 } },
-    ]);
+    const latestPerEmployee = await ReviewCycleModel.aggregate<{ latest: RepairMissingChainStartupCycle }>(
+      [
+        { $sort: { employeeId: 1, cycleNumber: -1 } },
+        { $group: { _id: "$employeeId", latest: { $first: "$$ROOT" } } },
+        { $project: { _id: 0, latest: 1 } },
+      ],
+    );
 
     for (const row of latestPerEmployee) {
       const latest = row.latest;
@@ -1350,94 +1362,18 @@ export class ReviewCycleService {
         continue;
       }
 
-      let current = latest;
-      let expectedReference = current.scheduledNextCycleReferenceDate
-        ? new Date(current.scheduledNextCycleReferenceDate)
-        : addPeriod(new Date(current.referenceDate), NEXT_CYCLE_OFFSET);
-      let expectedCycleNumber = current.cycleNumber + 1;
-      let iterations = 0;
+      const partial = await repairMissingCycleChainForEmployee({
+        employeeId,
+        latest,
+        now,
+        createCycleForEmployee: (eid, ref, num, opts) =>
+          this.createCycleForEmployee(eid, ref, num, opts),
+      });
 
-      while (expectedReference <= now) {
-        iterations += 1;
-        if (iterations > 200) {
-          metrics.errors += 1;
-          logger.warn("Review cycle startup repair: max iteration safeguard reached", {
-            employeeId,
-            currentCycleId: current._id,
-            expectedCycleNumber,
-            expectedReference,
-          });
-          break;
-        }
-
-        const existing = await ReviewCycleModel.findOne({
-          employeeId,
-          $or: [{ cycleNumber: expectedCycleNumber }, { dueDate90: expectedReference }],
-        })
-          .select("_id employeeId cycleNumber referenceDate dueDate90 scheduledNextCycleReferenceDate status")
-          .lean() as StartupCycle | null;
-
-        if (existing) {
-          current = existing;
-          expectedReference = current.scheduledNextCycleReferenceDate
-            ? new Date(current.scheduledNextCycleReferenceDate)
-            : addPeriod(new Date(current.referenceDate), NEXT_CYCLE_OFFSET);
-          expectedCycleNumber = current.cycleNumber + 1;
-          continue;
-        }
-
-        try {
-          await this.createCycleForEmployee(
-            employeeId,
-            new Date(expectedReference),
-            expectedCycleNumber,
-            { suppressNotifications: true },
-          );
-          metrics.cyclesCreated += 1;
-        } catch (err) {
-          metrics.errors += 1;
-          logger.error("Review cycle startup repair: failed creating missing cycle", {
-            employeeId,
-            expectedCycleNumber,
-            expectedReference,
-            err,
-          });
-          break;
-        }
-
-        const created = await ReviewCycleModel.findOne({ employeeId, cycleNumber: expectedCycleNumber })
-          .select("_id employeeId cycleNumber referenceDate dueDate90 scheduledNextCycleReferenceDate status")
-          .lean() as StartupCycle | null;
-        if (!created) {
-          metrics.errors += 1;
-          logger.warn("Review cycle startup repair: cycle create reported success but record not found", {
-            employeeId,
-            expectedCycleNumber,
-          });
-          break;
-        }
-
-        const createdNextReference = created.scheduledNextCycleReferenceDate
-          ? new Date(created.scheduledNextCycleReferenceDate)
-          : addPeriod(new Date(created.referenceDate), NEXT_CYCLE_OFFSET);
-
-        if (createdNextReference <= now) {
-          if (created.status !== "cycle_superseded") {
-            await ReviewCycleModel.updateOne(
-              { _id: created._id as string },
-              { $set: { status: "cycle_superseded" as ReviewCycleStatus } },
-            );
-            metrics.cyclesSuperseded += 1;
-          }
-          current = { ...created, status: "cycle_superseded" };
-          expectedReference = createdNextReference;
-          expectedCycleNumber = created.cycleNumber + 1;
-          continue;
-        }
-
-        metrics.activeCyclesCreated += 1;
-        break;
-      }
+      metrics.cyclesCreated += partial.cyclesCreated;
+      metrics.cyclesSuperseded += partial.cyclesSuperseded;
+      metrics.activeCyclesCreated += partial.activeCyclesCreated;
+      metrics.errors += partial.errors;
     }
 
     return metrics;

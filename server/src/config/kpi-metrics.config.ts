@@ -6,8 +6,6 @@
 import type { RolePermissions } from "../types/rbac.types.js";
 import { ForbiddenError } from "../utils/errors.util.js";
 
-export type { RolePermissions } from "../types/rbac.types.js";
-
 /** Parse metrics query (comma-separated string or array) to string[]. */
 export function parseMetricsQuery(query: unknown): string[] | undefined {
   if (query == null) return undefined;

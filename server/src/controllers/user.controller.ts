@@ -114,7 +114,11 @@ export const listUsers = async (
       (await ReviewCycleModel.distinct('employeeId', { status: { $nin: ['cycle_complete', 'cycle_superseded'] } })).map(String)
     );
     const dtos = result.users.map((u) => {
-      const id = u._id == null ? '' : typeof u._id === 'string' ? u._id : (u._id as { toString(): string }).toString();
+      let id = '';
+      if (u._id != null) {
+        if (typeof u._id === 'string') id = u._id;
+        else id = (u._id as { toString(): string }).toString();
+      }
       return { ...toUserDTO(req, u), hasActiveReviewCycle: activeCycleEmployeeIds.has(id) };
     });
     res.status(200).json({
@@ -224,15 +228,15 @@ export const updateUser = async (
       locationRemovals,
       startDate: startDateRaw,
     } = req.body;
-    const startDate =
-      startDateRaw === null || (typeof startDateRaw === 'string' && startDateRaw.trim() === '')
-        ? null
-        : typeof startDateRaw === 'string'
-          ? (() => {
-              const d = new Date(startDateRaw.trim());
-              return Number.isFinite(d.getTime()) ? d : undefined;
-            })()
-          : undefined;
+    let startDate: Date | null | undefined;
+    if (startDateRaw === null || (typeof startDateRaw === 'string' && startDateRaw.trim() === '')) {
+      startDate = null;
+    } else if (typeof startDateRaw === 'string') {
+      const d = new Date(startDateRaw.trim());
+      startDate = Number.isFinite(d.getTime()) ? d : undefined;
+    } else {
+      startDate = undefined;
+    }
     const user = await userService.updateUser(id, {
       firstName,
       lastName,

@@ -57,8 +57,9 @@ function ActualValueLine({
   const color = trendToDisplayColor(trend);
   const pct = percentDiffVsGoalTarget(goalKey, goalValues, actuals);
   const valueText = formatActualForGoalField(goalKey, actuals);
-  const pctText = pct != null ? formatSignedPercentDiff(pct) : null;
-  const showPct = pctText != null && valueText !== '—';
+  const pctText = pct === null || pct === undefined ? null : formatSignedPercentDiff(pct);
+  const showPct = pctText !== null && valueText !== '—';
+  const hasColor = color !== null;
 
   return (
     <span className="text-xs inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 min-h-[1.25rem]">
@@ -67,8 +68,8 @@ function ActualValueLine({
         <Spinner size="sm" className="text-primary/60" />
       ) : (
         <span
-          className={color != null ? undefined : 'text-primary/70'}
-          style={color != null ? { color } : undefined}
+          className={hasColor ? undefined : 'text-primary/70'}
+          style={hasColor ? { color } : undefined}
         >
           <span className="font-medium">{valueText}</span>
           {showPct ? <span className="ml-2 font-medium">({pctText})</span> : null}

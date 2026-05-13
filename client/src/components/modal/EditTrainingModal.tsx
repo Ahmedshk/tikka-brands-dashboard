@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import UploadIcon from '@assets/icons/upload.svg?react';
@@ -7,8 +7,6 @@ import {
   trainingService,
   getDocumentProxyUrl,
   openDocumentProxyInNewTab,
-  type TrainingModulePayload,
-  type TrainingModuleFilePayload,
 } from '../../services/training.service';
 import type { Training } from '../../types/trainingReviews.types';
 import {
@@ -24,6 +22,8 @@ import {
   PENDING_LOCAL_FILE_ROW_CLASSNAME,
   PENDING_UPLOAD_TAG_CLASSNAME,
   SAVED_REMOTE_FILE_ROW_CLASSNAME,
+  removeModuleFileFromTrainingModules,
+  buildTrainingModulePayloadsForCreate,
   type CreateTrainingModuleForm,
   type CreateTrainingModuleFileForm,
 } from '../../utils/createTrainingModalHelpers';
@@ -34,7 +34,7 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
 
-function FilePreviewThumbnail({ file }: { file: File }) {
+function FilePreviewThumbnail({ file }: Readonly<{ file: File }>) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     const u = URL.createObjectURL(file);
@@ -52,7 +52,7 @@ function FilePreviewThumbnail({ file }: { file: File }) {
 }
 
 /** Shows shimmer until the proxy image loads, then the image. */
-function ExistingImagePreview({ src }: { src: string }) {
+function ExistingImagePreview({ src }: Readonly<{ src: string }>) {
   const [loaded, setLoaded] = useState(false);
   return (
     <div className="w-12 h-12 rounded border border-gray-200 flex-shrink-0 overflow-hidden bg-gray-100 relative">
@@ -95,6 +95,17 @@ export const EditTrainingModal = ({
   const [error, setError] = useState('');
   const [validation, setValidation] = useState<ReturnType<typeof validateCreateTrainingForm> | null>(null);
 
+  const handleViewRemoteFile = async (mf: CreateTrainingModuleFileForm) => {
+    if (!mf.publicId || !mf.resourceType) return;
+    const suggestedName =
+      mf.resourceType === 'raw' ? getDocumentDownloadFilename(mf) : undefined;
+    try {
+      await openDocumentProxyInNewTab(mf.publicId, mf.resourceType, suggestedName);
+    } catch {
+      toast.error('Failed to open file. You may need to sign in again.');
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     const handleEscape = (e: KeyboardEvent) => {
@@ -121,7 +132,8 @@ export const EditTrainingModal = ({
             const state = trainingDetailToFormState(detail);
             setTrainingName(state.trainingName);
             setModules(state.modules);
-            setModulesExpanded(state.modules.length > 0 ? { [state.modules[0].id]: true } : {});
+            const firstModule = state.modules.at(0);
+            setModulesExpanded(firstModule ? { [firstModule.id]: true } : {});
           })
           .catch(() => setError('Failed to load training'))
           .finally(() => setLoading(false));
@@ -195,13 +207,7 @@ export const EditTrainingModal = ({
   };
 
   const removeModuleFile = (moduleId: string, fileId: string) => {
-    setModules((prev) =>
-      prev.map((m) => {
-        if (m.id !== moduleId) return m;
-        const next = m.moduleFiles.filter((f) => f.id !== fileId);
-        return { ...m, moduleFiles: next };
-      })
-    );
+    setModules((prev) => removeModuleFileFromTrainingModules(prev, moduleId, fileId));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -217,31 +223,11 @@ export const EditTrainingModal = ({
     setSubmitting(true);
     try {
       const trainingNameTrimmed = trainingName.trim();
-      const payloadModules: TrainingModulePayload[] = [];
-
-      for (const mod of modules) {
-        const moduleFiles: TrainingModuleFilePayload[] = [];
-        for (const mf of mod.moduleFiles) {
-          if (mf.file) {
-            const up = await trainingService.uploadDocument(mf.file, trainingNameTrimmed);
-            moduleFiles.push({
-              publicId: up.publicId,
-              resourceType: up.resourceType,
-              ...(up.filename && { filename: up.filename }),
-              ...(up.format && { format: up.format }),
-            });
-          } else if (mf.publicId && mf.resourceType) {
-            moduleFiles.push({
-              publicId: mf.publicId,
-              resourceType: mf.resourceType,
-              ...(mf.filename && { filename: mf.filename }),
-              ...(mf.format && { format: mf.format }),
-            });
-          }
-        }
-        const durationDays = Math.max(1, Number(mod.duration) || 1);
-        payloadModules.push({ name: mod.name.trim(), duration: durationDays, moduleFiles });
-      }
+      const payloadModules = await buildTrainingModulePayloadsForCreate(
+        modules,
+        trainingNameTrimmed,
+        trainingService.uploadDocument,
+      );
 
       const training = await trainingService.update(trainingId, {
         name: trainingNameTrimmed,
@@ -427,23 +413,50 @@ export const EditTrainingModal = ({
                                 </div>
                                 {mod.moduleFiles.length > 0 ? (
                                   <ul className="space-y-2">
-                                    {mod.moduleFiles.map((mf) => (
-                                      <li
-                                        key={mf.id}
-                                        className={
-                                          mf.file ? PENDING_LOCAL_FILE_ROW_CLASSNAME : SAVED_REMOTE_FILE_ROW_CLASSNAME
+                                    {mod.moduleFiles.map((mf) => {
+                                      let localPreview: ReactNode | null = null;
+                                      if (mf.file) {
+                                        if (isImageFile(mf.file)) {
+                                          localPreview = <FilePreviewThumbnail file={mf.file} />;
+                                        } else {
+                                          localPreview = (
+                                            <DocumentTypeThumbnail
+                                              format={getDocumentFormatFromFile(mf.file)}
+                                            />
+                                          );
                                         }
-                                      >
-                                        {mf.file ? (
+                                      }
+
+                                      let remotePreview: ReactNode | null = null;
+                                      if (mf.publicId && mf.resourceType) {
+                                        if (mf.resourceType === 'image') {
+                                          remotePreview = (
+                                            <ExistingImagePreview
+                                              src={getDocumentProxyUrl(mf.publicId, 'image')}
+                                            />
+                                          );
+                                        } else {
+                                          remotePreview = (
+                                            <DocumentTypeThumbnail
+                                              format={getDocumentFormatFromModuleFile(mf)}
+                                            />
+                                          );
+                                        }
+                                      }
+
+                                      let rowContent: ReactNode | null = null;
+                                      if (mf.file) {
+                                        rowContent = (
                                           <>
-                                            {isImageFile(mf.file) ? (
-                                              <FilePreviewThumbnail file={mf.file} />
-                                            ) : (
-                                              <DocumentTypeThumbnail format={getDocumentFormatFromFile(mf.file)} />
-                                            )}
-                                            <span className="text-sm text-primary truncate min-w-0 flex-1" title={mf.file.name}>
+                                            {localPreview}
+                                            <span
+                                              className="text-sm text-primary truncate min-w-0 flex-1"
+                                              title={mf.file.name}
+                                            >
                                               {mf.file.name}
-                                              <span className={PENDING_UPLOAD_TAG_CLASSNAME}>(pending upload)</span>
+                                              <span className={PENDING_UPLOAD_TAG_CLASSNAME}>
+                                                (pending upload)
+                                              </span>
                                             </span>
                                             <div className="flex items-center gap-1 shrink-0">
                                               <button
@@ -461,19 +474,17 @@ export const EditTrainingModal = ({
                                                 className="p-1.5 text-red-600 hover:bg-red-50 rounded shrink-0"
                                                 aria-label="Remove file"
                                               >
-                                                <span className="text-lg leading-none" aria-hidden>×</span>
+                                                <span className="text-lg leading-none" aria-hidden>
+                                                  ×
+                                                </span>
                                               </button>
                                             </div>
                                           </>
-                                        ) : mf.publicId && mf.resourceType ? (
+                                        );
+                                      } else if (mf.publicId && mf.resourceType) {
+                                        rowContent = (
                                           <>
-                                            {mf.resourceType === 'image' ? (
-                                              <ExistingImagePreview
-                                                src={getDocumentProxyUrl(mf.publicId, 'image')}
-                                              />
-                                            ) : (
-                                              <DocumentTypeThumbnail format={getDocumentFormatFromModuleFile(mf)} />
-                                            )}
+                                            {remotePreview}
                                             <span
                                               className="text-sm text-primary truncate min-w-0 flex-1"
                                               title={getModuleFileDisplayName(mf)}
@@ -483,19 +494,7 @@ export const EditTrainingModal = ({
                                             <div className="flex items-center gap-1 shrink-0">
                                               <button
                                                 type="button"
-                                                onClick={() => {
-                                                  const suggestedName =
-                                                    mf.resourceType === 'raw'
-                                                      ? getDocumentDownloadFilename(mf)
-                                                      : undefined;
-                                                  openDocumentProxyInNewTab(
-                                                    mf.publicId,
-                                                    mf.resourceType,
-                                                    suggestedName
-                                                  ).catch(() => {
-                                                    toast.error('Failed to open file. You may need to sign in again.');
-                                                  });
-                                                }}
+                                                onClick={() => void handleViewRemoteFile(mf)}
                                                 className="p-1.5 text-primary hover:bg-gray-100 rounded"
                                                 aria-label="View file"
                                                 title="View file"
@@ -508,13 +507,28 @@ export const EditTrainingModal = ({
                                                 className="p-1.5 text-red-600 hover:bg-red-50 rounded"
                                                 aria-label="Remove file"
                                               >
-                                                <span className="text-lg leading-none" aria-hidden>×</span>
+                                                <span className="text-lg leading-none" aria-hidden>
+                                                  ×
+                                                </span>
                                               </button>
                                             </div>
                                           </>
-                                        ) : null}
-                                      </li>
-                                    ))}
+                                        );
+                                      }
+
+                                      return (
+                                        <li
+                                          key={mf.id}
+                                          className={
+                                            mf.file
+                                              ? PENDING_LOCAL_FILE_ROW_CLASSNAME
+                                              : SAVED_REMOTE_FILE_ROW_CLASSNAME
+                                          }
+                                        >
+                                          {rowContent}
+                                        </li>
+                                      );
+                                    })}
                                   </ul>
                                 ) : null}
                               </div>

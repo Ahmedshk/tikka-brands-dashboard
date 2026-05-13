@@ -9,7 +9,7 @@ import type {
 } from "../types/alertNotification.types.js";
 import { normalizeRoleBindingChannels } from "../utils/calendarRoleBindingChannels.util.js";
 import { getAgenda } from "../config/agenda.js";
-import { queueAlertReschedule } from "../jobs/alerts.jobs.js";
+import { queueAlertReschedule } from "../services/alertAgendaSchedule.service.js";
 
 const service = new AlertNotificationSettingsService();
 

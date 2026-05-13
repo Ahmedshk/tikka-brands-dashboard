@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { format } from "date-fns";
+import type { Modifier } from "@popperjs/core";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
@@ -7,12 +8,12 @@ import { renderTimeViewClock } from "@mui/x-date-pickers/timeViewRenderers";
 import { parseBusinessStartToDate } from "../../utils/locationModalHelpers";
 
 /** Same horizontal centering as location modal TimePicker (Popper vs modal card). */
-function locationModalPanelXAlignModifier(panelEl: HTMLElement) {
+function locationModalPanelXAlignModifier(panelEl: HTMLElement): Partial<Modifier<any, any>> {
   return {
     name: "locationModalPanelXAlign",
     enabled: true,
     phase: "main" as const,
-    requires: ["popperOffsets"] as const,
+    requires: ["popperOffsets"] as string[],
     fn({
       state,
     }: {

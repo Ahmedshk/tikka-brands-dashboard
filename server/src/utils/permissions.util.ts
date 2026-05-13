@@ -1,5 +1,69 @@
 import type { RolePermissions, PagePermission } from '../types/rbac.types.js';
 
+type RemovalSubtractResult =
+  | { kind: 'page_removed' }
+  | { kind: 'ok'; toRemove: Set<string>; fallbackLabel?: string };
+
+function removalSubtractResultForPage(
+  permissionRemovals: RolePermissions | null | undefined,
+  pageId: string,
+): RemovalSubtractResult {
+  const removalPages =
+    permissionRemovals?.type === 'custom' ? permissionRemovals.pages ?? [] : [];
+  const removalEntry = removalPages.find((p) => p.pageId === pageId);
+  if (
+    removalEntry != null &&
+    (removalEntry.components == null || removalEntry.components.length === 0)
+  ) {
+    return { kind: 'page_removed' };
+  }
+  const toRemove = new Set(removalEntry?.components ?? []);
+  const pageLabelFromRemoval = removalEntry?.pageLabel;
+  return {
+    kind: 'ok',
+    toRemove,
+    ...(pageLabelFromRemoval == null ? {} : { fallbackLabel: pageLabelFromRemoval }),
+  };
+}
+
+function resolveBaseForAllPermissions(
+  permissionOverrides: RolePermissions | null | undefined,
+  pageId: string,
+  allComponentIdsForPage: string[],
+  pageLabel: string | undefined,
+  fallbackLabelFromRemoval: string | undefined,
+): { baseComponents: string[]; label: string } {
+  let label = pageLabel ?? fallbackLabelFromRemoval ?? pageId;
+  const overridePage =
+    permissionOverrides?.type === 'custom'
+      ? permissionOverrides.pages?.find((p) => p.pageId === pageId)
+      : undefined;
+  const baseComponents =
+    overridePage?.components?.length != null && overridePage.components.length > 0
+      ? [...overridePage.components]
+      : [...allComponentIdsForPage];
+  if (overridePage?.pageLabel) label = overridePage.pageLabel;
+  return { baseComponents, label };
+}
+
+function resolveBaseForCustomPermissions(
+  permissions: Extract<RolePermissions, { type: 'custom' }>,
+  pageId: string,
+  allComponentIdsForPage: string[],
+  pageLabel: string | undefined,
+  fallbackLabelFromRemoval: string | undefined,
+): { baseComponents: string[]; label: string } | null {
+  let label = pageLabel ?? fallbackLabelFromRemoval ?? pageId;
+  const page = permissions.pages?.find((p) => p.pageId === pageId);
+  if (!page) return null;
+  const baseComponents =
+    page.components == null || page.components.length === 0
+      ? [...allComponentIdsForPage]
+      : [...page.components];
+  if (page.pageLabel) label = page.pageLabel;
+  return { baseComponents, label };
+}
+
 /**
  * Returns effective page permission after applying removals, or null if the page is fully removed.
  * - Fully removed: removal entry for pageId with no components (empty or undefined).
@@ -14,35 +78,30 @@ export function getEffectivePagePermission(
   pageLabel?: string,
   permissionOverrides?: RolePermissions | null
 ): PagePermission | null {
-  const removalPages = permissionRemovals?.type === 'custom' ? permissionRemovals.pages ?? [] : [];
-  const removalEntry = removalPages.find((p) => p.pageId === pageId);
-  if (removalEntry != null && (removalEntry.components == null || removalEntry.components.length === 0)) {
-    return null;
-  }
-  const toRemove = new Set(removalEntry?.components ?? []);
+  const removal = removalSubtractResultForPage(permissionRemovals, pageId);
+  if (removal.kind === 'page_removed') return null;
 
-  let baseComponents: string[];
-  let label = pageLabel ?? removalEntry?.pageLabel ?? pageId;
+  const base =
+    permissions.type === 'all'
+      ? resolveBaseForAllPermissions(
+          permissionOverrides,
+          pageId,
+          allComponentIdsForPage,
+          pageLabel,
+          removal.fallbackLabel,
+        )
+      : resolveBaseForCustomPermissions(
+          permissions,
+          pageId,
+          allComponentIdsForPage,
+          pageLabel,
+          removal.fallbackLabel,
+        );
 
-  if (permissions.type === 'all') {
-    const overridePage = permissionOverrides?.type === 'custom'
-      ? permissionOverrides.pages?.find((p) => p.pageId === pageId)
-      : undefined;
-    baseComponents = (overridePage?.components?.length ? [...overridePage.components] : [...allComponentIdsForPage]);
-    if (overridePage?.pageLabel) label = overridePage.pageLabel;
-  } else {
-    const page = permissions.pages?.find((p) => p.pageId === pageId);
-    if (!page) return null;
-    if (page.components == null || page.components.length === 0) {
-      baseComponents = [...allComponentIdsForPage];
-    } else {
-      baseComponents = [...page.components];
-    }
-    if (page.pageLabel) label = page.pageLabel;
-  }
+  if (!base) return null;
 
-  const effective = baseComponents.filter((c) => !toRemove.has(c));
-  return { pageId, pageLabel: label, components: effective };
+  const effective = base.baseComponents.filter((c) => !removal.toRemove.has(c));
+  return { pageId, pageLabel: base.label, components: effective };
 }
 
 function toPageEntry(

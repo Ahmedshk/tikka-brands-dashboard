@@ -25,7 +25,7 @@ function getFromNumber(): string {
  * Handles common US patterns: 10-digit, +1-prefixed, (xxx) xxx-xxxx, etc.
  */
 export function normalizePhoneNumber(phone: string): string | null {
-  const digits = phone.replace(/\D/g, "");
+  const digits = phone.replaceAll(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   if (digits.length >= 10 && digits.length <= 15) return `+${digits}`;

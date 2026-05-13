@@ -72,7 +72,7 @@ export function resolveDefaultForDate(
       if (c !== 0) return c;
       return a.idx - b.idx;
     });
-  const best = candidates.length > 0 ? candidates[candidates.length - 1]!.row : null;
+  const best = candidates.at(-1)?.row ?? null;
   if (best != null) {
     return {
       values: { ...defaultGoalValues, ...best.values },
@@ -145,7 +145,9 @@ export class GoalService {
     return {
       goals: this.valuesToGoal(locationId, resolved.values),
       source: "default",
-      defaultSnapshotEffectiveFrom: resolved.snapshotEffectiveFrom,
+      ...(resolved.snapshotEffectiveFrom === undefined
+        ? {}
+        : { defaultSnapshotEffectiveFrom: resolved.snapshotEffectiveFrom }),
     };
   }
 
@@ -171,9 +173,9 @@ export class GoalService {
       : { ...defaultGoalValues };
 
     const mergedDefault =
-      data.default !== undefined
-        ? { ...defaultGoalValues, ...data.default }
-        : previousMergedDefault;
+      data.default === undefined
+        ? previousMergedDefault
+        : { ...defaultGoalValues, ...data.default };
 
     let appendDefaultHistory: IDefaultGoalHistoryEntry[] | undefined;
     if (
@@ -184,21 +186,22 @@ export class GoalService {
     ) {
       const effectiveFrom = options.defaultEffectiveFrom.trim();
       const history = existing?.defaultHistory ?? [];
-      const last = history[history.length - 1];
+      const last = history.at(-1);
       const duplicateSameDay =
-        last != null &&
-        last.effectiveFrom === effectiveFrom &&
+        last?.effectiveFrom === effectiveFrom &&
         goalValuesEqual(last.values, mergedDefault);
       if (!duplicateSameDay) {
         const pushes: IDefaultGoalHistoryEntry[] = [];
         if (existing == null) {
           pushes.push({ effectiveFrom, values: { ...mergedDefault } });
         } else if (history.length === 0) {
-          pushes.push({
-            effectiveFrom: BASELINE_HISTORY_FROM,
-            values: { ...previousMergedDefault },
-          });
-          pushes.push({ effectiveFrom, values: { ...mergedDefault } });
+          pushes.push(
+            {
+              effectiveFrom: BASELINE_HISTORY_FROM,
+              values: { ...previousMergedDefault },
+            },
+            { effectiveFrom, values: { ...mergedDefault } },
+          );
         } else {
           pushes.push({ effectiveFrom, values: { ...mergedDefault } });
         }

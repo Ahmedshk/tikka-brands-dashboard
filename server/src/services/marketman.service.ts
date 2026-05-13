@@ -33,6 +33,9 @@ import {
 import { isExternalDataCacheReadEnabled } from "../config/externalDataCache.config.js";
 import { upsertMarketManActualTheoSnapshot } from "./integrationCacheWrite.service.js";
 
+/** MarketMan JSON may encode IDs / product codes as string or number. */
+export type MarketManStringOrNumberOrNull = string | number | null;
+
 export interface VarianceItem {
   label: string;
   varianceCost: number;
@@ -94,7 +97,7 @@ export interface MarketManCatalogItem {
   PacksPerCase?: number | null;
   UOMName?: string;
   UOMID?: number | null;
-  ProductCode?: string | number | null;
+  ProductCode?: MarketManStringOrNumberOrNull;
   TaxLevelID?: number | null;
   TaxValue?: number | null;
   CatalogItemCode?: number | null;
@@ -115,7 +118,7 @@ export interface MarketManInventoryItemPurchaseItem {
   PacksPerCase?: number | null;
   UOMName?: string | null;
   UOMID?: number | null;
-  ProductCode?: string | number | null;
+  ProductCode?: MarketManStringOrNumberOrNull;
   Price?: number | null;
   MinOrderQty?: number | null;
   PriceType?: string | null;
@@ -132,7 +135,7 @@ export interface MarketManInventoryItemPurchaseItem {
 }
 
 export interface MarketManInventoryItem {
-  ID?: string | number | null;
+  ID?: MarketManStringOrNumberOrNull;
   Name?: string | null;
   AboutTheItem?: string | null;
   UpdateDate?: string | null;
@@ -359,20 +362,22 @@ export async function getInventoryKPIs(
         actualTheoFetchers,
       )
     : Promise.resolve(null);
-  const pendingOrdersPromise = needPendingOrders
-    ? useCache && cacheLocationMongoId
-      ? fetchPendingOrdersDeliveryFromCache(
-          cacheLocationMongoId.trim(),
-          buyerGuid,
-          timezone,
-          pendingOrdersPeriod,
-        )
-      : fetchPendingOrdersByDeliveryDate(
-          buyerGuid,
-          timezone,
-          pendingOrdersPeriod,
-        )
-    : Promise.resolve(null);
+  const pendingOrdersPromise = (() => {
+    if (!needPendingOrders) return Promise.resolve(null);
+    if (useCache && cacheLocationMongoId) {
+      return fetchPendingOrdersDeliveryFromCache(
+        cacheLocationMongoId.trim(),
+        buyerGuid,
+        timezone,
+        pendingOrdersPeriod,
+      );
+    }
+    return fetchPendingOrdersByDeliveryDate(
+      buyerGuid,
+      timezone,
+      pendingOrdersPeriod,
+    );
+  })();
 
   const [actualTheoResult, pendingOrdersResult] = await Promise.allSettled([
     actualTheoPromise,
@@ -487,7 +492,7 @@ async function findActualTheoSnapshotForCountPeriod(
       marketManUtcDatePrefix(c.startDateUTC) === startNorm &&
       marketManUtcDatePrefix(c.endDateUTC) === endNorm
     ) {
-      return { raw: c.raw as Record<string, unknown> };
+      return { raw: c.raw };
     }
   }
   return null;
@@ -982,7 +987,7 @@ export async function getMarketManCatalogItems(
   );
   if (!data.IsSuccess) {
     throw new Error(
-      (data.ErrorMessage && data.ErrorMessage.trim()) || "GetCatalogItems failed",
+      data.ErrorMessage?.trim() || "GetCatalogItems failed",
     );
   }
   return Array.isArray(data.CatalogItems) ? data.CatalogItems : [];
@@ -996,7 +1001,7 @@ export async function getInventoryItems(buyerGuid: string): Promise<MarketManInv
   );
   if (data.IsSuccess === false) {
     throw new Error(
-      (data.ErrorMessage && data.ErrorMessage.trim()) || "GetInventoryItems failed",
+      data.ErrorMessage?.trim() || "GetInventoryItems failed",
     );
   }
   return Array.isArray(data.Items) ? data.Items : [];

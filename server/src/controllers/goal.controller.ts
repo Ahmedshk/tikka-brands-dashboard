@@ -176,7 +176,7 @@ export const upsertGoals = async (
         weekly,
         futureWeeks,
       },
-      { defaultEffectiveFrom },
+      defaultEffectiveFrom ? { defaultEffectiveFrom } : undefined,
     );
     const allowedKeys = getAllowedGoalMetricKeys(req);
     res.status(200).json({

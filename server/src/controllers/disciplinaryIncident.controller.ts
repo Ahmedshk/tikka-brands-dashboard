@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { DisciplinaryIncidentService } from "../services/disciplinaryIncident.service.js";
-import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "../utils/locationScope.js";
+import { getEmployeesForRequest } from "../utils/disciplinaryIncidentEmployeesControllerHelpers.util.js";
 
 const service = new DisciplinaryIncidentService();
 
@@ -10,78 +10,14 @@ export async function getEmployees(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const {
-      locationId,
-      page: pageRaw,
-      limit: limitRaw,
-      search,
-    } = req.query as {
-      locationId: string;
-      page?: string;
-      limit?: string;
-      search?: string;
-    };
     const actorUserId = (req as unknown as { user: { userId: string } }).user
       .userId;
-    const page = Number.parseInt(pageRaw ?? "1", 10);
-    const limit = Number.parseInt(limitRaw ?? "10", 10);
-
-    if (isAllLocationsId(locationId)) {
-      const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
-      const results = await Promise.all(
-        effectiveIds.map((id) =>
-          service.getEmployeesForLocation(actorUserId, id, {
-            page: 1,
-            limit: 10_000,
-            search,
-          }),
-        ),
-      );
-      const byId = new Map<string, (typeof results)[number]["items"][number]>();
-      for (const r of results) {
-        for (const item of r.items) {
-          if (!byId.has(item.id)) byId.set(item.id, item);
-        }
-      }
-      const all = Array.from(byId.values());
-      const total = all.length;
-      const safeLimit = Number.isNaN(limit) ? 10 : limit;
-      const totalPages = Math.max(1, Math.ceil(total / safeLimit));
-      const safePage = Math.min(Math.max(1, Number.isNaN(page) ? 1 : page), totalPages);
-      const start = (safePage - 1) * safeLimit;
-      const items = all.slice(start, start + safeLimit);
-
-      const criticalCount = all.filter((e) => e.status === "Critical").length;
-      const pendingCount = all.reduce(
-        (sum, e) => sum + (e.eSignStatus.type === "pending" ? e.eSignStatus.count : 0),
-        0,
-      );
-      res.json({
-        success: true,
-        data: items,
-        meta: {
-          total,
-          page: safePage,
-          limit: safeLimit,
-          totalPages,
-          criticalCount,
-          pendingCount,
-          totalActive: total,
-        },
-      });
+    const result = await getEmployeesForRequest({ req, actorUserId, service });
+    if (result.kind === "bad_request") {
+      res.status(400).json({ success: false, message: result.message });
       return;
     }
-
-    const result = await service.getEmployeesForLocation(
-      actorUserId,
-      locationId,
-      {
-        page: Number.isNaN(page) ? 1 : page,
-        limit: Number.isNaN(limit) ? 10 : limit,
-        search,
-      },
-    );
-    res.json({ success: true, data: result.items, meta: result.meta });
+    res.json({ success: true, data: result.result.items, meta: result.result.meta });
   } catch (err) {
     next(err);
   }

@@ -42,13 +42,13 @@ function utcCalendarYmd(d: Date): { y: number; m: number; d: number } {
 export type SalesTrendGranularity = "hourly" | "daily" | "weekly" | "monthly";
 
 export interface GetOrderedBucketsAndLabelsOptions {
-  periodType?: string | undefined;
+  periodType?: string;
   /** When set, daily/weekly/monthly keys follow business-day semantics (opening calendar date in TZ). */
-  businessStartTime?: string | undefined;
+  businessStartTime?: string;
 }
 
 export interface GetBucketKeyForDateOptions {
-  businessStartTime?: string | undefined;
+  businessStartTime?: string;
 }
 
 /** Get bucket key for a date in TZ (same format as Square for alignment). */
@@ -189,7 +189,7 @@ function buildDailyBuckets(
   range: TimeRange,
   tz: string,
   periodType: string | undefined,
-  businessStartTime?: string | undefined,
+  businessStartTime?: string,
 ): { keys: string[]; labels: string[] } {
   const bst = businessStartTime?.trim();
   if (bst) {
@@ -278,7 +278,7 @@ function buildDailyBuckets(
 function buildWeeklyBuckets(
   range: TimeRange,
   tz: string,
-  businessStartTime?: string | undefined,
+  businessStartTime?: string,
 ): { keys: string[]; labels: string[] } {
   const bst = businessStartTime?.trim();
   if (bst) {
@@ -335,84 +335,124 @@ function buildWeeklyBuckets(
   return { keys, labels };
 }
 
-function buildMonthlyBuckets(
-  range: TimeRange,
-  tz: string,
-  periodType: string | undefined,
-  businessStartTime?: string | undefined,
-): { keys: string[]; labels: string[] } {
-  const bst = businessStartTime?.trim();
-  if (bst) {
-    const intersecting = businessDateKeysIntersectingUtcRange(
-      range.startAt,
-      range.endAt,
-      tz,
-      bst,
-    );
-    const keys: string[] = [];
-    const seen = new Set<string>();
-    for (const dkey of intersecting) {
-      const mk = dkey.slice(0, 7);
-      if (!seen.has(mk)) {
-        seen.add(mk);
-        keys.push(mk);
-      }
-    }
-    const last52weeksAllYear = periodType === "last52weeks";
-    const labelF = new Intl.DateTimeFormat("en-US", {
+type MonthlyBucketLabelFormatters = {
+  shortMonth: Intl.DateTimeFormat;
+  monthWithYear: Intl.DateTimeFormat;
+  monthShort2DigitYear: Intl.DateTimeFormat;
+};
+
+function createMonthlyBucketLabelFormatters(tz: string): MonthlyBucketLabelFormatters {
+  return {
+    shortMonth: new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
       month: "short",
-    });
-    const labelFWithYear = new Intl.DateTimeFormat("en-US", {
+    }),
+    monthWithYear: new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
       month: "short",
       year: "numeric",
-    });
-    const labelFShortYear = new Intl.DateTimeFormat("en-US", {
+    }),
+    monthShort2DigitYear: new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
       month: "short",
       year: "2-digit",
-    });
-    const startYear =
-      keys.length > 0
-        ? Number.parseInt(keys[0]!.slice(0, 4), 10)
-        : new Date().getUTCFullYear();
-    const labels = keys.map((mk) => {
-      const m = /^(\d{4})-(\d{2})$/.exec(mk);
-      if (!m) return mk;
-      const y = Number.parseInt(m[1] ?? "0", 10);
-      const month0 = Number.parseInt(m[2] ?? "0", 10) - 1;
-      const cursor = getStartOfDayUtc(y, month0, 1, tz);
-      if (last52weeksAllYear) {
-        let label = labelFShortYear.format(cursor);
-        label = label.replace(/\s*(\d{2})$/, ", $1");
-        return label;
-      }
-      return y === startYear ? labelF.format(cursor) : labelFWithYear.format(cursor);
-    });
-    return { keys, labels };
-  }
+    }),
+  };
+}
 
+function formatMonthlyBucketLabelShort2DigitYear(
+  cursor: Date,
+  fmt: MonthlyBucketLabelFormatters,
+): string {
+  let label = fmt.monthShort2DigitYear.format(cursor);
+  label = label.replace(/\s*(\d{2})$/, ", $1");
+  return label;
+}
+
+function formatMonthlyBucketLabelByYearContext(
+  cursor: Date,
+  year: number,
+  startYear: number,
+  last52weeksAllYear: boolean,
+  fmt: MonthlyBucketLabelFormatters,
+): string {
+  if (last52weeksAllYear) {
+    return formatMonthlyBucketLabelShort2DigitYear(cursor, fmt);
+  }
+  return year === startYear
+    ? fmt.shortMonth.format(cursor)
+    : fmt.monthWithYear.format(cursor);
+}
+
+function uniqueMonthKeysFromBusinessDateKeys(intersecting: string[]): string[] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  for (const dkey of intersecting) {
+    const mk = dkey.slice(0, 7);
+    if (seen.has(mk)) continue;
+    seen.add(mk);
+    keys.push(mk);
+  }
+  return keys;
+}
+
+function labelsForMonthKeys(
+  keys: string[],
+  tz: string,
+  last52weeksAllYear: boolean,
+  fmt: MonthlyBucketLabelFormatters,
+): string[] {
+  const startYear =
+    keys.length > 0
+      ? Number.parseInt(keys[0]!.slice(0, 4), 10)
+      : new Date().getUTCFullYear();
+  return keys.map((mk) => {
+    const m = /^(\d{4})-(\d{2})$/.exec(mk);
+    if (!m) return mk;
+    const y = Number.parseInt(m[1] ?? "0", 10);
+    const month0 = Number.parseInt(m[2] ?? "0", 10) - 1;
+    const cursor = getStartOfDayUtc(y, month0, 1, tz);
+    return formatMonthlyBucketLabelByYearContext(
+      cursor,
+      y,
+      startYear,
+      last52weeksAllYear,
+      fmt,
+    );
+  });
+}
+
+function buildMonthlyBucketsWithBusinessStart(
+  range: TimeRange,
+  tz: string,
+  periodType: string | undefined,
+  bst: string,
+): { keys: string[]; labels: string[] } {
+  const intersecting = businessDateKeysIntersectingUtcRange(
+    range.startAt,
+    range.endAt,
+    tz,
+    bst,
+  );
+  const keys = uniqueMonthKeysFromBusinessDateKeys(intersecting);
+  const last52weeksAllYear = periodType === "last52weeks";
+  const fmt = createMonthlyBucketLabelFormatters(tz);
+  const labels = labelsForMonthKeys(keys, tz, last52weeksAllYear, fmt);
+  return { keys, labels };
+}
+
+function buildMonthlyBucketsCivilCalendar(
+  range: TimeRange,
+  tz: string,
+  periodType: string | undefined,
+): { keys: string[]; labels: string[] } {
   const keys: string[] = [];
   const labels: string[] = [];
   const seen = new Set<string>();
   const start = new Date(range.startAt);
   const end = new Date(range.endAt);
   const last52weeksAllYear = periodType === "last52weeks";
-  const labelF = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    month: "short",
-  });
-  const labelFWithYear = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    month: "short",
-    year: "numeric",
-  });
-  const labelFShortYear = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    month: "short",
-    year: "2-digit",
-  });
+  const fmt = createMonthlyBucketLabelFormatters(tz);
   const startParts = getDatePartsInTz(start, tz);
   const endParts = getDatePartsInTz(end, tz);
   const startYear = startParts.y;
@@ -424,15 +464,15 @@ function buildMonthlyBuckets(
     if (key && !seen.has(key)) {
       seen.add(key);
       keys.push(key);
-      let label: string;
-      if (last52weeksAllYear) {
-        label = labelFShortYear.format(cursor);
-        label = label.replace(/\s*(\d{2})$/, ", $1");
-      } else {
-        label =
-          y === startYear ? labelF.format(cursor) : labelFWithYear.format(cursor);
-      }
-      labels.push(label);
+      labels.push(
+        formatMonthlyBucketLabelByYearContext(
+          cursor,
+          y,
+          startYear,
+          last52weeksAllYear,
+          fmt,
+        ),
+      );
     }
     month0 += 1;
     if (month0 > 11) {
@@ -441,6 +481,19 @@ function buildMonthlyBuckets(
     }
   }
   return { keys, labels };
+}
+
+function buildMonthlyBuckets(
+  range: TimeRange,
+  tz: string,
+  periodType: string | undefined,
+  businessStartTime?: string,
+): { keys: string[]; labels: string[] } {
+  const bst = businessStartTime?.trim();
+  if (bst) {
+    return buildMonthlyBucketsWithBusinessStart(range, tz, periodType, bst);
+  }
+  return buildMonthlyBucketsCivilCalendar(range, tz, periodType);
 }
 
 /** Generate ordered bucket keys and labels for a range (same as Square for alignment). */

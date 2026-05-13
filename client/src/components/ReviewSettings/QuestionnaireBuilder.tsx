@@ -17,6 +17,7 @@ import {
 import { isImageFile, newQuestionnairePendingFileId } from "../../utils/reviewQuestionnaireHelpers";
 import { openDocumentProxyInNewTab } from "../../services/training.service";
 import { reviewService } from "../../services/review.service";
+import { getStableOptionKey, removeAt, replaceAt } from "../../utils/questionnaireBuilderHelpers";
 
 export interface QuestionnaireBuilderHandle {
   /** Upload all pending files and merge into `attachments`; clears pending state. Returns the latest questions for saving (parent state may lag `onChange`). */
@@ -240,8 +241,14 @@ export const QuestionnaireBuilder = forwardRef<QuestionnaireBuilderHandle, Quest
                 {expandedId === q.id && (
                   <div className="px-3 sm:px-4 pb-4 border-t border-gray-100 pt-3 space-y-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Question Text</label>
+                      <label
+                        htmlFor={`question-text-${q.id}`}
+                        className="block text-xs font-medium text-gray-500 mb-1"
+                      >
+                        Question Text
+                      </label>
                       <input
+                        id={`question-text-${q.id}`}
                         type="text"
                         value={q.text}
                         onChange={(e) => updateQuestion(q.id, { text: e.target.value })}
@@ -252,8 +259,14 @@ export const QuestionnaireBuilder = forwardRef<QuestionnaireBuilderHandle, Quest
 
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-6">
                       <div className="w-full sm:w-auto sm:max-w-xs sm:shrink-0">
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+                        <label
+                          htmlFor={`question-type-${q.id}`}
+                          className="block text-xs font-medium text-gray-500 mb-1"
+                        >
+                          Type
+                        </label>
                         <select
+                          id={`question-type-${q.id}`}
                           value={q.type}
                           onChange={(e) => {
                             const newType = e.target.value as QuestionType;
@@ -291,27 +304,25 @@ export const QuestionnaireBuilder = forwardRef<QuestionnaireBuilderHandle, Quest
                     </div>
 
                     {q.type === "multiple_choice" && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Options</label>
+                      <fieldset>
+                        <legend className="block text-xs font-medium text-gray-500 mb-1">Options</legend>
                         <div className="space-y-2">
                           {(q.options ?? []).map((opt, oi) => (
-                            <div key={oi} className="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <div
+                              key={getStableOptionKey(q.id, q.options ?? [], opt, oi)}
+                              className="flex flex-col sm:flex-row sm:items-center gap-2"
+                            >
                               <input
                                 type="text"
                                 value={opt}
-                                onChange={(e) => {
-                                  const newOpts = [...(q.options ?? [])];
-                                  newOpts[oi] = e.target.value;
-                                  updateQuestion(q.id, { options: newOpts });
-                                }}
+                                onChange={(e) =>
+                                  updateQuestion(q.id, { options: replaceAt(q.options ?? [], oi, e.target.value) })
+                                }
                                 className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-button-primary/20 focus:border-button-primary"
                               />
                               <button
                                 type="button"
-                                onClick={() => {
-                                  const newOpts = (q.options ?? []).filter((_, i) => i !== oi);
-                                  updateQuestion(q.id, { options: newOpts });
-                                }}
+                                onClick={() => updateQuestion(q.id, { options: removeAt(q.options ?? [], oi) })}
                                 className="self-end sm:self-auto text-red-400 hover:text-red-600 text-sm cursor-pointer"
                               >
                                 ✕
@@ -320,17 +331,17 @@ export const QuestionnaireBuilder = forwardRef<QuestionnaireBuilderHandle, Quest
                           ))}
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={() =>
                               updateQuestion(q.id, {
                                 options: [...(q.options ?? []), `Option ${(q.options?.length ?? 0) + 1}`],
-                              });
-                            }}
+                              })
+                            }
                             className="text-xs text-button-primary hover:underline cursor-pointer"
                           >
                             + Add option
                           </button>
                         </div>
-                      </div>
+                      </fieldset>
                     )}
 
                     <div>

@@ -110,6 +110,81 @@ export function applyPriceTotalWithVatIfMissing(line: Record<string, unknown>): 
   line.PriceTotalWithVat = computed;
 }
 
+function isOrderLineRecord(raw: unknown): raw is Record<string, unknown> {
+  return raw != null && typeof raw === "object" && !Array.isArray(raw);
+}
+
+function forEachOrderLine(
+  items: unknown[],
+  fn: (line: Record<string, unknown>) => void,
+): void {
+  for (const raw of items) {
+    if (isOrderLineRecord(raw)) fn(raw);
+  }
+}
+
+function orderLinesNeedCatalogFetch(items: unknown[]): boolean {
+  return items.some(
+    (it) => isOrderLineRecord(it) && lineNeedsGetCatalogItems(it),
+  );
+}
+
+function mergeCatalogIntoLinesNeedingFetch(
+  items: unknown[],
+  bySku: Map<string, MarketManCatalogItem>,
+): boolean {
+  let enrichmentPartial = false;
+  for (const raw of items) {
+    if (!isOrderLineRecord(raw)) continue;
+    if (!lineNeedsGetCatalogItems(raw)) continue;
+    const sku = normalizeMarketManProductCodeForMatch(raw.SKU);
+    if (!sku) {
+      enrichmentPartial = true;
+      continue;
+    }
+    const cat = bySku.get(sku);
+    if (!cat) {
+      enrichmentPartial = true;
+      continue;
+    }
+    mergeCatalogRowIntoLineItem(raw, cat);
+  }
+  return enrichmentPartial;
+}
+
+async function tryEnrichLinesFromMarketManCatalog(
+  cloned: Record<string, unknown>,
+  items: unknown[],
+  buyerGuid: string,
+): Promise<boolean> {
+  if (!orderLinesNeedCatalogFetch(items)) return false;
+
+  const vendorGuid =
+    typeof cloned.VendorGuid === "string" ? cloned.VendorGuid.trim() : "";
+
+  if (!vendorGuid) {
+    logger.warn("marketman webhook enrich: VendorGuid missing; cannot call GetCatalogItems", {
+      buyerGuid,
+      orderNumber: cloned.OrderNumber,
+    });
+    return true;
+  }
+
+  try {
+    const catalog = await getMarketManCatalogItems(buyerGuid, vendorGuid);
+    const bySku = buildCatalogByProductCode(catalog);
+    return mergeCatalogIntoLinesNeedingFetch(items, bySku);
+  } catch (err) {
+    logger.error("marketman webhook enrich: GetCatalogItems failed", {
+      buyerGuid,
+      vendorGuid,
+      orderNumber: cloned.OrderNumber,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return true;
+  }
+}
+
 /**
  * Deep-clones the order, normalizes line catalog ids, optionally fetches GetCatalogItems,
  * merges missing pack/UOM/tax fields, then derives line PriceTotalWithVat when missing.
@@ -127,67 +202,15 @@ export async function enrichMarketManWebhookOrder(
   }
 
   const items = itemsUnknown as unknown[];
-  for (const raw of items) {
-    if (raw != null && typeof raw === "object" && !Array.isArray(raw)) {
-      normalizeWebhookLineCatalogIds(raw as Record<string, unknown>);
-    }
-  }
+  forEachOrderLine(items, normalizeWebhookLineCatalogIds);
 
-  const needsCatalog = items.some(
-    (it) =>
-      it != null &&
-      typeof it === "object" &&
-      !Array.isArray(it) &&
-      lineNeedsGetCatalogItems(it as Record<string, unknown>),
+  const enrichmentPartial = await tryEnrichLinesFromMarketManCatalog(
+    cloned,
+    items,
+    buyerGuid,
   );
 
-  let enrichmentPartial = false;
-  const vendorGuid =
-    typeof cloned.VendorGuid === "string" ? cloned.VendorGuid.trim() : "";
-
-  if (needsCatalog) {
-    if (!vendorGuid) {
-      enrichmentPartial = true;
-      logger.warn("marketman webhook enrich: VendorGuid missing; cannot call GetCatalogItems", {
-        buyerGuid,
-        orderNumber: cloned.OrderNumber,
-      });
-    } else {
-      try {
-        const catalog = await getMarketManCatalogItems(buyerGuid, vendorGuid);
-        const bySku = buildCatalogByProductCode(catalog);
-        for (const raw of items) {
-          if (raw == null || typeof raw !== "object" || Array.isArray(raw)) continue;
-          const line = raw as Record<string, unknown>;
-          if (!lineNeedsGetCatalogItems(line)) continue;
-          const sku = normalizeMarketManProductCodeForMatch(line.SKU);
-          if (!sku) {
-            enrichmentPartial = true;
-            continue;
-          }
-          const cat = bySku.get(sku);
-          if (!cat) {
-            enrichmentPartial = true;
-            continue;
-          }
-          mergeCatalogRowIntoLineItem(line, cat);
-        }
-      } catch (err) {
-        enrichmentPartial = true;
-        logger.error("marketman webhook enrich: GetCatalogItems failed", {
-          buyerGuid,
-          vendorGuid,
-          orderNumber: cloned.OrderNumber,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-  }
-
-  for (const raw of items) {
-    if (raw == null || typeof raw !== "object" || Array.isArray(raw)) continue;
-    applyPriceTotalWithVatIfMissing(raw as Record<string, unknown>);
-  }
+  forEachOrderLine(items, applyPriceTotalWithVatIfMissing);
 
   return { order: cloned, enrichmentPartial };
 }

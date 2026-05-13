@@ -40,6 +40,12 @@ import {
   tryGetOrderStatsAndSourcesFromDailyRollups,
 } from "./integrationRollupRead.service.js";
 import { logger } from "../utils/logger.util.js";
+import { squareRawIdAsString } from "../utils/squareRawIdString.util.js";
+
+/** Square Payment `amount_money` / `tip_money` shape from cached `raw`. */
+type SquarePaymentMoneyField =
+  | { amount?: bigint | number | string }
+  | undefined;
 
 export async function loadSquareOrdersForMongoRange(
   locationMongoId: string,
@@ -402,10 +408,10 @@ export async function getSquarePaymentDetailsFromCache(
     .lean()
     .exec();
   if (!doc?.raw) return null;
-  const p = doc.raw as Record<string, unknown>;
-  const amountMoney = p.amount_money as { amount?: bigint | number | string } | undefined;
-  const tipMoney = p.tip_money as { amount?: bigint | number | string } | undefined;
-  const toCents = (m: { amount?: bigint | number | string } | undefined): number | undefined => {
+  const p = doc.raw;
+  const amountMoney = p.amount_money as SquarePaymentMoneyField;
+  const tipMoney = p.tip_money as SquarePaymentMoneyField;
+  const toCents = (m: SquarePaymentMoneyField): number | undefined => {
     const a = m?.amount;
     if (a == null) return undefined;
     if (typeof a === "bigint") return Number(a);
@@ -427,7 +433,7 @@ export async function getSquarePaymentDetailsFromCache(
     receiptUrl: string | null;
     deviceName: string | null;
   } = {
-    id: String(p.id ?? paymentId),
+    id: squareRawIdAsString(p.id, paymentId),
     employeeId: (p.employee_id as string | null | undefined) ?? null,
     teamMemberId: (p.team_member_id as string | null | undefined) ?? null,
     createdAt: (p.created_at as string | null | undefined) ?? null,
@@ -457,7 +463,7 @@ export async function getSquareTeamMemberRawFromCache(
     .lean()
     .exec();
   if (!doc?.raw) return null;
-  const m = doc.raw as Record<string, unknown>;
+  const m = doc.raw;
   const wage = m.wage_setting as
     | { job_assignments?: Array<{ job_title?: string }> }
     | undefined;
@@ -465,10 +471,10 @@ export async function getSquareTeamMemberRawFromCache(
   const jobTitle =
     jobTitleRaw && jobTitleRaw.length > 0 ? jobTitleRaw : undefined;
   return {
-    id: String(m.id ?? teamMemberId),
+    id: squareRawIdAsString(m.id, teamMemberId),
     givenName: (m.given_name as string | null | undefined) ?? null,
     familyName: (m.family_name as string | null | undefined) ?? null,
-    ...(jobTitle != null ? { jobTitle } : {}),
+    ...(jobTitle === undefined ? {} : { jobTitle }),
   };
 }
 

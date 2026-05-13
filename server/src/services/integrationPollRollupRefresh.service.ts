@@ -1,4 +1,7 @@
-import { businessDateKeyForInstant } from "../utils/businessDayUtcRange.util.js";
+import {
+  businessDateKeyForInstant,
+  businessDateKeysIntersectingUtcRange,
+} from "../utils/businessDayUtcRange.util.js";
 import { homebaseSlidingWindowIso } from "./integrationSyncRunner.service.js";
 import {
   buildHomebaseRollupForDay,
@@ -12,7 +15,6 @@ import {
   distinctBuyerGuidsForMarketManRollup,
   type LocationRollupContext,
 } from "../utils/rollupLocations.util.js";
-import { businessDateKeysIntersectingUtcRange } from "../utils/businessDayUtcRange.util.js";
 import { logger } from "../utils/logger.util.js";
 import type { IntegrationSyncResource } from "../models/integrationSyncLog.model.js";
 import type { MarketManOrderApiKind } from "../models/marketmanOrderCache.model.js";
@@ -22,7 +24,7 @@ function filterLocationsByIds(
   locationIds?: string[],
 ): LocationRollupContext[] {
   if (!locationIds?.length) return locs;
-  const allow = new Set(locationIds.map((x) => String(x)));
+  const allow = new Set(locationIds.map(String));
   return locs.filter((l) => allow.has(String(l._id)));
 }
 

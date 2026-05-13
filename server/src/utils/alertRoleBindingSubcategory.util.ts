@@ -16,7 +16,7 @@ export function isValidRoleBindingSubcategory(
 ): boolean {
   if (subcategory == null || subcategory === "") return true;
   const list = ALERT_ROLE_SUBCATEGORIES[category];
-  return (list as readonly string[]).includes(subcategory);
+  return list.includes(subcategory);
 }
 
 /** Legacy bindings omit `subcategory` and apply to every alert in the category. */
@@ -24,6 +24,6 @@ export function roleBindingMatchesSubcategory(
   binding: Pick<IAlertRoleBinding, "subcategory">,
   alertSubcategory: string,
 ): boolean {
-  if (binding.subcategory == null || binding.subcategory === "") return true;
+  if (binding.subcategory == null) return true;
   return binding.subcategory === alertSubcategory;
 }

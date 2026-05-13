@@ -48,8 +48,8 @@ export function assignmentHasOverdueModule(
       const notStarted = !prog || prog.status === "not_started";
       if (notStarted) {
         // gray — not overdue by segment rules
-      } else {
-        if (compareDateOnly(today, endDate) > 0) return true;
+      } else if (compareDateOnly(today, endDate) > 0) {
+        return true;
       }
     }
   }

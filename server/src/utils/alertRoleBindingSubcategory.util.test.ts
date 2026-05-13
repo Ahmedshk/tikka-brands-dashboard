@@ -7,7 +7,8 @@ import {
 
 test("roleBindingMatchesSubcategory: missing subcategory matches any alert subcategory", () => {
   assert.equal(roleBindingMatchesSubcategory({}, "sales"), true);
-  assert.equal(roleBindingMatchesSubcategory({ subcategory: undefined }, "delivery_overdue"), true);
+  // Under exactOptionalPropertyTypes, `{}` is the correct shape for “no subcategory” (omit key; do not pass `undefined`).
+  assert.equal(roleBindingMatchesSubcategory({}, "delivery_overdue"), true);
 });
 
 test("roleBindingMatchesSubcategory: explicit subcategory matches only that key", () => {
