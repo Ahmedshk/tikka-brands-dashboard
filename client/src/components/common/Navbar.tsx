@@ -33,6 +33,7 @@ import {
   shouldOfferAllLocationsOption,
   shouldShowAllLocationsOption,
 } from '../../utils/locationScope';
+import { getUserProfileProxyImageUrl } from '../../utils/employeeBioHelpers';
 import toast from 'react-hot-toast';
 import { Spinner } from './Spinner';
 import { Dropdown } from './Dropdown';
@@ -530,6 +531,17 @@ export const Navbar = () => {
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
+  const profileAvatarUrl =
+    user?._id && user.profileImagePublicId
+      ? getUserProfileProxyImageUrl(user._id, user.profileImagePublicId)
+      : null;
+
+  const goToProfile = () => {
+    setUserDropdownOpen(false);
+    closeMobileMenu();
+    navigate('/dashboard/profile');
+  };
+
   const locationPlaceholder = getLocationPlaceholder(locationsLoading, locations.length);
 
   return (
@@ -649,8 +661,12 @@ export const Navbar = () => {
               onClick={() => setUserDropdownOpen(!userDropdownOpen)}
               className="flex items-center gap-3 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors cursor-pointer"
             >
-              <div className="w-10 h-10 rounded-full bg-button-primary flex items-center justify-center text-white text-sm font-semibold">
-                {getUserInitials()}
+              <div className="w-10 h-10 rounded-full bg-button-primary flex items-center justify-center text-white text-sm font-semibold overflow-hidden shrink-0">
+                {profileAvatarUrl ? (
+                  <img src={profileAvatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  getUserInitials()
+                )}
               </div>
               <div className="text-left">
                 <div className="text-sm font-medium text-primary">{getUserDisplayName()}</div>
@@ -661,8 +677,13 @@ export const Navbar = () => {
             {userDropdownOpen && (
               <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
                 <div className="py-2">
-                  <button type="button" className="w-full text-left px-4 py-2 text-sm text-primary hover:bg-gray-50 transition-colors cursor-pointer">Profile</button>
-                  <button type="button" className="w-full text-left px-4 py-2 text-sm text-primary hover:bg-gray-50 transition-colors cursor-pointer">Settings</button>
+                  <button
+                    type="button"
+                    onClick={goToProfile}
+                    className="w-full text-left px-4 py-2 text-sm text-primary hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    Profile
+                  </button>
                   <div className="border-t border-gray-200 my-1" />
                   <button
                     type="button"
@@ -704,8 +725,12 @@ export const Navbar = () => {
         <div className="px-4 pb-4 pt-2 border-t border-gray-100 bg-card-background flex flex-col items-center gap-3 w-full relative z-10">
           {/* User profile card: light grey background, avatar + name + orange bell centered */}
           <div className="relative flex items-center justify-center gap-3 w-full max-w-sm px-4 py-3 bg-button-secondary rounded-xl">
-            <div className="w-12 h-12 rounded-full bg-button-primary flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
-              {getUserInitials()}
+            <div className="w-12 h-12 rounded-full bg-button-primary flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 overflow-hidden">
+              {profileAvatarUrl ? (
+                <img src={profileAvatarUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                getUserInitials()
+              )}
             </div>
             <div className="min-w-0 text-center">
               <div className="text-sm font-medium text-primary truncate">{getUserDisplayName()}</div>
@@ -753,17 +778,10 @@ export const Navbar = () => {
           {/* Action buttons: centered, light border */}
           <button
             type="button"
-            onClick={closeMobileMenu}
+            onClick={goToProfile}
             className="w-full max-w-sm flex items-center justify-center gap-3 px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer"
           >
             Profile
-          </button>
-          <button
-            type="button"
-            onClick={closeMobileMenu}
-            className="w-full max-w-sm flex items-center justify-center gap-3 px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer"
-          >
-            Settings
           </button>
           <button
             type="button"

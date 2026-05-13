@@ -26,6 +26,7 @@ import { DataSyncSettings } from './pages/dashboard/DataSyncSettings';
 import { KitchenPerformance } from './pages/dashboard/KitchenPerformance';
 import { KitchenPerformanceDetails } from './pages/dashboard/KitchenPerformanceDetails';
 import { ActivityLog } from './pages/dashboard/ActivityLog';
+import { Profile } from './pages/dashboard/Profile';
 import { NoAccess } from './pages/dashboard/NoAccess';
 import { ErrorPage } from './pages/ErrorPage';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -339,6 +340,17 @@ export const router = createBrowserRouter([
       <ErrorBoundary>
         <ProtectedRoute>
           <ActivityLog />
+        </ProtectedRoute>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/dashboard/profile',
+    element: (
+      <ErrorBoundary>
+        <ProtectedRoute>
+          <Profile />
         </ProtectedRoute>
       </ErrorBoundary>
     ),

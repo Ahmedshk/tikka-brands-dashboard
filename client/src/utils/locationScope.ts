@@ -29,6 +29,7 @@ export function shouldOfferAllLocationsOption(pathname: string, locationCount: n
 const LOCATION_SELECTOR_HIDE_PATHS: readonly string[] = [
   '/dashboard/location-management',
   '/dashboard/user-management',
+  '/dashboard/profile',
   '/dashboard/goal-setting',
   '/dashboard/training-settings',
   '/dashboard/review-settings',

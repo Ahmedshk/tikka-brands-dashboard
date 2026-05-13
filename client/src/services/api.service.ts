@@ -70,6 +70,7 @@ api.interceptors.response.use(
     }
     const originalRequest = error.config as InternalAxiosRequestConfig & {
       _retry?: boolean;
+      skipGlobalErrorToast?: boolean;
     };
 
     if (
@@ -98,7 +99,9 @@ api.interceptors.response.use(
       }
     }
 
-    toast.error(getErrorMessage(error));
+    if (!originalRequest?.skipGlobalErrorToast) {
+      toast.error(getErrorMessage(error));
+    }
     throw error;
   }
 );

@@ -10,6 +10,7 @@ import roleRoutes from "./role.routes.js";
 import userRoutes from "./user.routes.js";
 import trainingRoutes from "./training.routes.js";
 import notificationRoutes from "./notification.routes.js";
+import profileRoutes from "./profile.routes.js";
 import reviewSettingsRoutes from "./reviewSettings.routes.js";
 import reviewCycleRoutes from "./reviewCycle.routes.js";
 import disciplinarySettingsRoutes from "./disciplinarySettings.routes.js";
@@ -79,6 +80,9 @@ router.use("/trainings", trainingRoutes);
 
 // Notifications (auth required, no specific page permission)
 router.use("/notifications", notificationRoutes);
+
+// Current user profile (auth required, no page permission)
+router.use("/profile", profileRoutes);
 
 // Review settings (auth required; GET allowed for all, PUT requires review-settings permission)
 router.use("/reviews/settings", reviewSettingsRoutes);

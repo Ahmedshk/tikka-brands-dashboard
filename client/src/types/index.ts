@@ -27,6 +27,7 @@ export interface User {
   /** Location IDs removed for this user (narrower than role's locations). */
   locationRemovals?: string[] | null;
   isActive: boolean;
+  profileImagePublicId?: string | null;
   createdAt: string;
   updatedAt: string;
 }

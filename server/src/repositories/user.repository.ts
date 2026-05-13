@@ -12,6 +12,10 @@ export class UserRepository {
     return await UserModel.findById(id).lean().exec() as UserDocument | null;
   }
 
+  async findByIdWithPassword(id: string): Promise<UserDocument | null> {
+    return (await UserModel.findById(id).select('+password').lean().exec()) as UserDocument | null;
+  }
+
   async findByIds(ids: string[]): Promise<UserDocument[]> {
     if (ids.length === 0) return [];
     const unique = [...new Set(ids.filter((id) => id?.trim()))];

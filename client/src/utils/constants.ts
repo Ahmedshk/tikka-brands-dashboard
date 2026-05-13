@@ -60,6 +60,7 @@ export const API_ENDPOINTS = {
   },
   ROLES: "/roles",
   USERS: "/users",
+  PROFILE: "/profile",
   TRAININGS: "/trainings",
   NOTIFICATIONS: "/notifications",
   REVIEWS: {

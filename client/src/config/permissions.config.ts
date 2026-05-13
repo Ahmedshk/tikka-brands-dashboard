@@ -248,6 +248,7 @@ export function canAccessPage(
   if (!permissions) return true;
   if (permissions.type === 'all') return true;
   if (pageId === 'no-access') return true;
+  if (pageId === 'profile') return true;
   return permissions.pages?.some((p) => p.pageId === pageId) ?? false;
 }
 

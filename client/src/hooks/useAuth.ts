@@ -16,6 +16,13 @@ interface LoginCredentials {
   password: string;
 }
 
+export interface LogoutOptions {
+  replace?: boolean;
+  loginState?: { message?: string };
+  /** Omit for default success toast; `null` skips toast */
+  toastMessage?: string | null;
+}
+
 export const useAuth = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
@@ -59,7 +66,7 @@ export const useAuth = () => {
     }
   };
 
-  const logout = async (): Promise<void> => {
+  const logout = async (options?: LogoutOptions): Promise<void> => {
     try {
       await api.post(API_ENDPOINTS.AUTH.LOGOUT);
     } catch (error) {
@@ -71,8 +78,21 @@ export const useAuth = () => {
       dispatch(setCurrentLocation(null));
       dispatch(setLocationListHydrated(false));
       dispatch(clearNotifications());
-      toast.success("Logged out successfully");
-      navigate("/login");
+      const toastMsg = options?.toastMessage;
+      if (toastMsg !== null) {
+        if (typeof toastMsg === "string" && toastMsg.trim() !== "") {
+          toast.success(toastMsg);
+        } else if (toastMsg === undefined) {
+          toast.success("Logged out successfully");
+        }
+      }
+      const navigateOpts: { replace: boolean; state?: { message?: string } } = {
+        replace: options?.replace === true,
+      };
+      if (options?.loginState) {
+        navigateOpts.state = options.loginState;
+      }
+      navigate("/login", navigateOpts);
     }
   };
 
