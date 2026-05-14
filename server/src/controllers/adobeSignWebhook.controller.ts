@@ -6,6 +6,7 @@ import { getDisciplinaryFolder } from "../config/upload.config.js";
 import { NotificationService } from "../services/notification.service.js";
 import { getIO } from "../config/socket.js";
 import { logger } from "../utils/logger.util.js";
+import { logWebhookReceived } from "../utils/webhookLog.util.js";
 import type { SigningStatus } from "../types/disciplinary.types.js";
 import { DisciplinaryIncidentModel } from "../models/disciplinaryIncident.model.js";
 
@@ -46,6 +47,12 @@ export function handleAdobeSignWebhookVerification(
   res: Response,
 ): void {
   const clientId = readAdobeSignWebhookClientId(req);
+  logWebhookReceived("Adobe Sign", {
+    stage: "verification",
+    method: req.method,
+    hasClientId: Boolean(clientId),
+    ip: req.ip ?? null,
+  });
   if (!clientId) {
     res.status(403).json({ message: "Missing X-AdobeSign-ClientId" });
     return;
@@ -215,6 +222,17 @@ export async function handleAdobeSignWebhook(
   _next: NextFunction,
 ): Promise<void> {
   const clientId = readAdobeSignWebhookClientId(req);
+  const rawEventEarly = (req.body as Record<string, unknown> | undefined)?.event;
+  logWebhookReceived("Adobe Sign", {
+    stage: "event",
+    method: req.method,
+    hasClientId: Boolean(clientId),
+    event: typeof rawEventEarly === "string" ? rawEventEarly : null,
+    agreementId: agreementIdFromWebhookBody(
+      (req.body as Record<string, unknown> | undefined) ?? {},
+    ),
+    ip: req.ip ?? null,
+  });
   if (!clientId) {
     res.status(403).json({ message: "Missing X-AdobeSign-ClientId" });
     return;

@@ -16,6 +16,7 @@ import { rebuildSquareOrderDerivedRollupsForBusinessDay } from "../services/squa
 import { getSquarePaymentMongoIndexFields } from "./squarePaymentMongoIndexFields.util.js";
 import { getSquareOrderMongoIndexFields } from "./squareOrderMongoIndexFields.util.js";
 import { logger } from "./logger.util.js";
+import { logWebhookReceived } from "./webhookLog.util.js";
 import type { LocationRepository } from "../repositories/location.repository.js";
 import type { LocationService } from "../services/location.service.js";
 
@@ -235,6 +236,12 @@ export async function runSquareWebhookHandler(args: {
   const sig = req.get("x-square-hmacsha256-signature");
   const notificationUrl = notificationUrlFromEnv();
 
+  logWebhookReceived("Square", {
+    hasSignature: Boolean(sig),
+    contentLength: rawBody.length,
+    ip: req.ip ?? null,
+  });
+
   let signatureKeys: string[];
   try {
     signatureKeys = await loadSignatureKeys(locationService);
@@ -273,6 +280,13 @@ export async function runSquareWebhookHandler(args: {
   const merchantId = asTrimmedString(parsed.body.merchant_id);
   const data = parsed.body.data as Record<string, unknown> | undefined;
   const obj = data?.object as Record<string, unknown> | undefined;
+
+  logWebhookReceived("Square", {
+    stage: "parsed",
+    type: type || null,
+    merchantId: merchantId || null,
+    eventId: firstNonEmptyString([parsed.body.event_id, parsed.body.id]) || null,
+  });
 
   try {
     const ignoredType = await dispatchWebhookEvent({ type, merchantId, obj, locationRepository });
