@@ -9,6 +9,7 @@ import {
   postIntegrationSyncRunAllTodaySchema,
 } from "../validators/integrationSync.validators.js";
 import {
+  getIntegrationSyncActive,
   getIntegrationSyncLogs,
   postIntegrationSync,
   postIntegrationSyncRunAllToday,
@@ -29,5 +30,6 @@ router.post(
   postIntegrationSyncRunAllToday,
 );
 router.get("/logs", validate(getIntegrationSyncLogsSchema), getIntegrationSyncLogs);
+router.get("/active", getIntegrationSyncActive);
 
 export default router;

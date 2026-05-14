@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import TextField from "@mui/material/TextField";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -17,11 +17,18 @@ import {
   integrationSyncLogResourceLabel,
   integrationSyncLogStatusClassName,
 } from "../../utils/integrationSyncLogDisplayHelpers";
+import {
+  computeProgressPercent,
+  formatProgressLabel,
+  formatStartedAgo,
+} from "../../utils/dataSyncProgressHelpers";
 import { SyncLogDetailCell } from "../../components/dataSync/SyncLogDetailCell";
 import { Pagination } from "../../components/common/Pagination";
 import AdminAndSettingsIcon from "@assets/icons/admin_and_settings.svg?react";
 
 const RECENT_RUNS_PAGE_SIZE = 10;
+const ACTIVE_POLL_INTERVAL_MS = 3000;
+const STARTED_AGO_TICK_MS = 5000;
 
 const GREY_FOCUS_FIELD_SX = {
   "& .MuiOutlinedInput-root": {
@@ -56,8 +63,8 @@ function formatLogWhen(iso: string): string {
 
 export const DataSyncSettings = () => {
   const [logsLoading, setLogsLoading] = useState(true);
-  const [runLoading, setRunLoading] = useState(false);
-  const [runAllTodayLoading, setRunAllTodayLoading] = useState(false);
+  const [runStarting, setRunStarting] = useState(false);
+  const [runAllTodayStarting, setRunAllTodayStarting] = useState(false);
   const [logs, setLogs] = useState<IntegrationSyncLogRow[]>([]);
   const [logsPage, setLogsPage] = useState(1);
   const [logsTotal, setLogsTotal] = useState(0);
@@ -66,6 +73,9 @@ export const DataSyncSettings = () => {
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
+  const [activeSyncs, setActiveSyncs] = useState<IntegrationSyncLogRow[]>([]);
+  const [nowTick, setNowTick] = useState(0);
+  const activeIdsRef = useRef<Set<string>>(new Set());
 
   const resourceMeta = useMemo(
     () => DATA_SYNC_RESOURCE_OPTIONS.find((o) => o.value === resource),
@@ -126,6 +136,55 @@ export const DataSyncSettings = () => {
 
   const logsTotalPages = Math.max(1, Math.ceil(logsTotal / RECENT_RUNS_PAGE_SIZE));
 
+  const fetchActive = useCallback(async (): Promise<IntegrationSyncLogRow[]> => {
+    try {
+      const res = await integrationSyncService.getActive();
+      const next = res.active;
+      const previousIds = activeIdsRef.current;
+      const nextIds = new Set(next.map((row) => row._id));
+
+      const finishedIds: string[] = [];
+      previousIds.forEach((id) => {
+        if (!nextIds.has(id)) finishedIds.push(id);
+      });
+
+      activeIdsRef.current = nextIds;
+      setActiveSyncs(next);
+
+      if (finishedIds.length > 0) {
+        toast.success(
+          finishedIds.length === 1
+            ? "A sync finished — see Recent runs for details"
+            : `${finishedIds.length} syncs finished — see Recent runs for details`,
+        );
+        void fetchLogsForPage(logsPage);
+      }
+      return next;
+    } catch {
+      return [];
+    }
+  }, [fetchLogsForPage, logsPage]);
+
+  useEffect(() => {
+    void fetchActive();
+    const interval = globalThis.setInterval(() => {
+      void fetchActive();
+    }, ACTIVE_POLL_INTERVAL_MS);
+    return () => {
+      globalThis.clearInterval(interval);
+    };
+  }, [fetchActive]);
+
+  useEffect(() => {
+    if (activeSyncs.length === 0) return;
+    const tick = globalThis.setInterval(() => {
+      setNowTick((n) => n + 1);
+    }, STARTED_AGO_TICK_MS);
+    return () => {
+      globalThis.clearInterval(tick);
+    };
+  }, [activeSyncs.length]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -153,7 +212,7 @@ export const DataSyncSettings = () => {
       toast.error("Start and end date are required for this resource");
       return;
     }
-    setRunLoading(true);
+    setRunStarting(true);
     try {
       const body = {
         resource,
@@ -161,41 +220,26 @@ export const DataSyncSettings = () => {
         ...(startDate ? { startDate: startDate.toISOString() } : {}),
         ...(endDate ? { endDate: endDate.toISOString() } : {}),
       };
-      const res = await integrationSyncService.run(body);
-      if (res.ok) {
-        toast.success(`Sync finished — ${res.totalUpserted} upserted`);
-      } else {
-        toast.error("Sync completed with errors (see history)");
-      }
-      if (logsPage === 1) await fetchLogsForPage(1);
-      else goToLogsPage(1);
+      await integrationSyncService.run(body);
+      toast.success("Sync started — progress will appear below");
+      await fetchActive();
     } catch {
       toast.error("Sync request failed");
     } finally {
-      setRunLoading(false);
+      setRunStarting(false);
     }
   };
 
   const handleRunAllToday = async () => {
-    setRunAllTodayLoading(true);
+    setRunAllTodayStarting(true);
     try {
-      const res = await integrationSyncService.runAllToday();
-      if (res.ok) {
-        toast.success(
-          `Full sync finished — ${res.totalUpserted} total upserts across ${res.steps.length} resources`,
-        );
-      } else {
-        const failed = res.steps.filter((s) => !s.ok).map((s) => s.resource);
-        toast.error(
-          `Sync finished with errors in: ${failed.length ? failed.join(", ") : "unknown"}`,
-        );
-      }
-      if (logsPage === 1) await fetchLogsForPage(1);
-      else goToLogsPage(1);
+      await integrationSyncService.runAllToday();
+      toast.success("Full sync started — progress will appear below");
+      await fetchActive();
     } catch {
       toast.error("Full sync request failed");
     } finally {
-      setRunAllTodayLoading(false);
+      setRunAllTodayStarting(false);
     }
   };
 
@@ -323,11 +367,11 @@ export const DataSyncSettings = () => {
                   <div>
                     <button
                       type="button"
-                      disabled={runLoading || runAllTodayLoading}
+                      disabled={runStarting}
                       onClick={() => void handleRun()}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-button-primary text-white text-xs md:text-sm rounded-lg hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {runLoading ? "Running…" : "Run sync"}
+                      {runStarting ? "Starting…" : "Run sync"}
                     </button>
                   </div>
 
@@ -343,11 +387,11 @@ export const DataSyncSettings = () => {
                     <div>
                       <button
                         type="button"
-                        disabled={runLoading || runAllTodayLoading}
+                        disabled={runAllTodayStarting}
                         onClick={() => void handleRunAllToday()}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-button-primary border border-button-primary text-xs md:text-sm rounded-lg hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {runAllTodayLoading ? "Syncing all…" : "Sync all for today"}
+                        {runAllTodayStarting ? "Starting…" : "Sync all for today"}
                       </button>
                     </div>
                   </div>
@@ -355,6 +399,57 @@ export const DataSyncSettings = () => {
               </div>
 
               <hr className="border-gray-200" />
+
+              {activeSyncs.length > 0 && (
+                <div data-tick={nowTick}>
+                  <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-primary">
+                    In-progress syncs
+                  </h3>
+                  <p className="text-xs text-tertiary mt-1 max-w-2xl">
+                    Active syncs persist on the server, so this list keeps updating even if you
+                    leave the page and come back.
+                  </p>
+                  <div className={`mt-3 ${nestedPanelClass}`}>
+                    <ul className="divide-y divide-gray-200">
+                      {activeSyncs.map((row) => {
+                        const pct = computeProgressPercent(row.progress);
+                        return (
+                          <li key={row._id} className="p-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-primary truncate">
+                                  {integrationSyncLogResourceLabel(row.resource)}
+                                </p>
+                                <p className="text-[11px] text-tertiary mt-0.5">
+                                  {formatStartedAgo(row.createdAt)}
+                                  {row.locationIds.length > 0
+                                    ? ` · ${row.locationIds.length} location(s)`
+                                    : ""}
+                                </p>
+                              </div>
+                              <span className="text-xs font-mono text-secondary shrink-0">
+                                {pct}%
+                              </span>
+                            </div>
+                            <progress
+                              value={pct}
+                              max={100}
+                              className="mt-2 block w-full h-2 [&::-webkit-progress-bar]:bg-gray-200 [&::-webkit-progress-bar]:rounded [&::-webkit-progress-value]:bg-button-primary [&::-webkit-progress-value]:rounded [&::-moz-progress-bar]:bg-button-primary [&::-moz-progress-bar]:rounded"
+                              aria-label={`Sync progress for ${integrationSyncLogResourceLabel(row.resource)}`}
+                            />
+
+                            <p className="mt-2 text-[11px] text-secondary break-words">
+                              {formatProgressLabel(row.progress)}
+                            </p>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {activeSyncs.length > 0 && <hr className="border-gray-200" />}
 
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">

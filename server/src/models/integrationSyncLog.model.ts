@@ -20,6 +20,12 @@ export type IntegrationSyncLogResource =
 
 export type IntegrationSyncStatus = "started" | "success" | "failed";
 
+export interface IntegrationSyncProgress {
+  current: number;
+  total: number;
+  label?: string;
+}
+
 export interface IntegrationSyncLogDocument extends Document {
   _id: Types.ObjectId;
   triggeredByUserId?: Types.ObjectId;
@@ -30,6 +36,7 @@ export interface IntegrationSyncLogDocument extends Document {
   status: IntegrationSyncStatus;
   message?: string;
   counts?: Record<string, number>;
+  progress?: IntegrationSyncProgress;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,6 +55,7 @@ const integrationSyncLogSchema = new Schema<IntegrationSyncLogDocument>(
     },
     message: { type: String, required: false },
     counts: { type: Schema.Types.Mixed, required: false },
+    progress: { type: Schema.Types.Mixed, required: false },
   },
   { timestamps: true },
 );

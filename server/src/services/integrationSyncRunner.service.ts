@@ -280,9 +280,20 @@ export async function syncMarketManOrdersInUtcRangeForLocation(
 
 interface LocationSyncDoc {
   _id: unknown;
+  storeName?: string | null;
   timezone?: string | null;
   marketManBuyerGuid?: string | null;
 }
+
+export interface SyncProgressInfo {
+  current: number;
+  total: number;
+  label?: string;
+}
+
+export type SyncProgressCallback = (
+  progress: SyncProgressInfo,
+) => Promise<void> | void;
 
 type SyncOptionDates = { startDate?: string; endDate?: string };
 
@@ -438,7 +449,12 @@ const SYNC_LOCATION_HANDLERS: Record<string, LocationSyncKindHandler> = {
 
 export async function runSyncForAllLocations(
   kind: string,
-  options?: { startDate?: string; endDate?: string; locationIds?: string[] },
+  options?: {
+    startDate?: string;
+    endDate?: string;
+    locationIds?: string[];
+    onProgress?: SyncProgressCallback;
+  },
 ): Promise<{ totalUpserted: number; byLocation: Record<string, SyncCounts> }> {
   let docs = await locationRepository.findAll();
   if (options?.locationIds?.length) {
@@ -449,9 +465,18 @@ export async function runSyncForAllLocations(
   let totalUpserted = 0;
 
   const handler = SYNC_LOCATION_HANDLERS[kind];
+  const total = docs.length;
+  const onProgress = options?.onProgress;
 
-  for (const doc of docs) {
+  if (onProgress) {
+    await onProgress({ current: 0, total, label: "Starting" });
+  }
+
+  for (let i = 0; i < docs.length; i += 1) {
+    const doc = docs[i]!;
     const id = String(doc._id);
+    const label =
+      (doc as LocationSyncDoc).storeName?.trim() || `Location ${i + 1}`;
     try {
       const c = handler
         ? await handler(id, doc as LocationSyncDoc, options)
@@ -468,6 +493,9 @@ export async function runSyncForAllLocations(
         upserted: 0,
         errors: [e instanceof Error ? e.message : String(e)],
       };
+    }
+    if (onProgress) {
+      await onProgress({ current: i + 1, total, label });
     }
   }
 
@@ -596,15 +624,27 @@ export interface AllTodaySyncStepResult {
  * location's calendar "today" in that location's timezone; MarketMan order syncs use
  * existing "today" behavior (no explicit date range). Order matches the Data Sync UI.
  */
-export async function runSyncAllResourcesForToday(): Promise<{
+export async function runSyncAllResourcesForToday(options?: {
+  onProgress?: SyncProgressCallback;
+}): Promise<{
   steps: AllTodaySyncStepResult[];
   totalUpserted: number;
   allOk: boolean;
 }> {
   const steps: AllTodaySyncStepResult[] = [];
   let totalUpserted = 0;
+  const onProgress = options?.onProgress;
+  const totalSteps = ALL_TODAY_SYNC_ORDER.length;
 
-  for (const resource of ALL_TODAY_SYNC_ORDER) {
+  if (onProgress) {
+    await onProgress({ current: 0, total: totalSteps, label: "Starting" });
+  }
+
+  for (let i = 0; i < ALL_TODAY_SYNC_ORDER.length; i += 1) {
+    const resource = ALL_TODAY_SYNC_ORDER[i]!;
+    if (onProgress) {
+      await onProgress({ current: i, total: totalSteps, label: resource });
+    }
     let total = 0;
     let byLocation: Record<string, SyncCounts> = {};
 
@@ -629,6 +669,13 @@ export async function runSyncAllResourcesForToday(): Promise<{
     totalUpserted += total;
     const ok = syncCountsStepOk(byLocation);
     steps.push({ resource, totalUpserted: total, byLocation, ok });
+    if (onProgress) {
+      await onProgress({
+        current: i + 1,
+        total: totalSteps,
+        label: resource,
+      });
+    }
   }
 
   const allOk = steps.every((s) => s.ok);

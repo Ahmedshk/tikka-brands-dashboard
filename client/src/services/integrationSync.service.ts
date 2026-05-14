@@ -19,6 +19,12 @@ export type IntegrationSyncLogResource =
   | "marketman_actual_theo"
   | "marketman_waste";
 
+export interface IntegrationSyncProgress {
+  current: number;
+  total: number;
+  label?: string;
+}
+
 export interface RunIntegrationSyncBody {
   resource: IntegrationSyncResource;
   locationIds?: string[];
@@ -26,27 +32,9 @@ export interface RunIntegrationSyncBody {
   endDate?: string;
 }
 
-export interface RunIntegrationSyncResponse {
-  ok: boolean;
+export interface StartIntegrationSyncResponse {
   logId: string;
-  totalUpserted: number;
-  byLocation: Record<
-    string,
-    { upserted: number; errors: string[] }
-  >;
-}
-
-export interface RunAllTodayStepResponse {
-  resource: IntegrationSyncResource;
-  totalUpserted: number;
-  ok: boolean;
-}
-
-export interface RunAllTodaySyncResponse {
-  ok: boolean;
-  logId: string;
-  totalUpserted: number;
-  steps: RunAllTodayStepResponse[];
+  started: true;
 }
 
 export interface IntegrationSyncLogRow {
@@ -58,23 +46,31 @@ export interface IntegrationSyncLogRow {
   status: string;
   message?: string;
   counts?: Record<string, number>;
+  progress?: IntegrationSyncProgress;
   createdAt: string;
   updatedAt: string;
 }
 
 export const integrationSyncService = {
-  async run(body: RunIntegrationSyncBody): Promise<RunIntegrationSyncResponse> {
-    const { data } = await api.post<RunIntegrationSyncResponse>(
+  async run(body: RunIntegrationSyncBody): Promise<StartIntegrationSyncResponse> {
+    const { data } = await api.post<StartIntegrationSyncResponse>(
       API_ENDPOINTS.INTEGRATION_SYNC.RUN,
       body,
     );
     return data;
   },
 
-  async runAllToday(): Promise<RunAllTodaySyncResponse> {
-    const { data } = await api.post<RunAllTodaySyncResponse>(
+  async runAllToday(): Promise<StartIntegrationSyncResponse> {
+    const { data } = await api.post<StartIntegrationSyncResponse>(
       API_ENDPOINTS.INTEGRATION_SYNC.RUN_ALL_TODAY,
       {},
+    );
+    return data;
+  },
+
+  async getActive(): Promise<{ active: IntegrationSyncLogRow[] }> {
+    const { data } = await api.get<{ active: IntegrationSyncLogRow[] }>(
+      API_ENDPOINTS.INTEGRATION_SYNC.ACTIVE,
     );
     return data;
   },

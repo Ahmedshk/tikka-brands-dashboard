@@ -72,5 +72,6 @@ export const API_ENDPOINTS = {
     RUN: "/integration-sync/run",
     RUN_ALL_TODAY: "/integration-sync/run-all-today",
     LOGS: "/integration-sync/logs",
+    ACTIVE: "/integration-sync/active",
   },
 } as const;
