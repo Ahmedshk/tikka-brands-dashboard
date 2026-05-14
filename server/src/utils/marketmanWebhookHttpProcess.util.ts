@@ -106,7 +106,10 @@ export async function runMarketManWebhookOrderPipeline(
   }
 
   let rollupUpdated = false;
-  const businessDateAt = getMarketManOrderBusinessDateAt(enrichedOrder, apiKind);
+  const businessDateAt = getMarketManOrderBusinessDateAt(
+    enrichedOrder,
+    apiKind,
+  );
   if (businessDateAt) {
     const businessDateKey = marketManBusinessDateKeyFromUtcDate(
       businessDateAt,
@@ -145,11 +148,14 @@ export async function runMarketManWebhookOrderPipeline(
       apiKind,
       orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
     });
-    console.log(`[${ts}] MarketMan webhook: rollup skipped (no businessDateAt)`, {
-      buyerGuid,
-      orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-      apiKind,
-    });
+    console.log(
+      `[${ts}] MarketMan webhook: rollup skipped (no businessDateAt)`,
+      {
+        buyerGuid,
+        orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
+        apiKind,
+      },
+    );
   }
 
   const orderNumberFinal = marketManOrderNumberStringFromRaw(enrichedOrder);

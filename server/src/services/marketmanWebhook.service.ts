@@ -52,7 +52,9 @@ export async function processMarketManWebhookHttp(
 ): Promise<void> {
   const b = marketManWebhookBodyAsRecord(req.body);
   if (!b) {
-    console.warn(`[${mmWebhookTs()}] MarketMan webhook: invalid body (expected JSON object)`);
+    console.warn(
+      `[${mmWebhookTs()}] MarketMan webhook: invalid body (expected JSON object)`,
+    );
     res.status(400).json({ message: "Expected JSON object body" });
     return;
   }
@@ -61,7 +63,9 @@ export async function processMarketManWebhookHttp(
   const { eventName, buyerGuid, order, explicitApiKind } = extracted;
 
   const hoodEventId = marketManWebhookHoodEventIdFromBody(b);
-  const orderNumberEarly = order ? marketManOrderNumberStringFromRaw(order) : "";
+  const orderNumberEarly = order
+    ? marketManOrderNumberStringFromRaw(order)
+    : "";
 
   console.log(`[${mmWebhookTs()}] MarketMan webhook: received`, {
     buyerGuid: buyerGuid ?? null,
@@ -83,7 +87,9 @@ export async function processMarketManWebhookHttp(
       buyerGuid,
       orderNumber: orderNumberEarly || null,
     });
-    res.status(200).json({ received: true, ignored: true, reason: "event_not_allowed" });
+    res
+      .status(200)
+      .json({ received: true, ignored: true, reason: "event_not_allowed" });
     return;
   }
 
@@ -130,11 +136,14 @@ export async function processMarketManWebhookHttp(
   const apiKind = resolveApiKind(order, explicitApiKind);
   const window = marketManOrderWebhookSyncWindowUtc(order, apiKind);
   if (!window) {
-    logger.warn("marketman webhook: could not derive sync window from order dates", {
-      buyerGuid,
-      eventName,
-      apiKind,
-    });
+    logger.warn(
+      "marketman webhook: could not derive sync window from order dates",
+      {
+        buyerGuid,
+        eventName,
+        apiKind,
+      },
+    );
     console.warn(`[${mmWebhookTs()}] MarketMan webhook: response`, {
       success: true,
       httpStatus: 200,

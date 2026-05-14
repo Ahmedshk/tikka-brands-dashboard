@@ -8,9 +8,9 @@ import type { VarianceChartItem } from '../InventoryFoodCost/VarianceChartCard';
 
 const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
 
-/** Right margin so the last bar’s 3-line label is not clipped */
-const desktopMargin = { top: 10, right: 10, bottom: 10, left: 0 };
-const mobileMargin = { top: 4, right: 10, bottom: 10, left: 0 };
+/** Left margin + yAxis.width so Y tick labels are not ellipsized */
+const desktopMargin = { top: 10, right: 10, bottom: 10, left: 8 };
+const mobileMargin = { top: 4, right: 10, bottom: 10, left: 8 };
 
 /** Shorter lines so labels stay within band and don’t overlap on laptop */
 const MAX_CHARS_PER_LINE = 12;
@@ -140,6 +140,9 @@ const defaultTheme = createTheme({
   palette: { mode: 'light' },
 });
 
+const varianceAxisTickFormatter = (v: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+
 export interface VarianceChartModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -241,8 +244,13 @@ export const VarianceChartModal = ({ isOpen, onClose, items, barBandWidth: barBa
                     yAxis={[
                       {
                         label: 'Variance ($)',
-                        tickLabelStyle: { ...LABEL_FONT, fontSize: isDesktop ? 10 : 9 },
-                        valueFormatter: (v: number) => `$${v}`,
+                        width: isDesktop ? 88 : 76,
+                        tickLabelStyle: {
+                          ...LABEL_FONT,
+                          fontSize: isDesktop ? 10 : 9,
+                          overflow: 'visible' as const,
+                        },
+                        valueFormatter: varianceAxisTickFormatter,
                         colorMap: {
                           type: 'piecewise',
                           thresholds: [0],

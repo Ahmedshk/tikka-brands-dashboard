@@ -8,9 +8,9 @@ import { Spinner } from '../common/Spinner';
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
 const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
 
-/** Right margin so the last bar’s 3-line label is not clipped */
-const desktopMargin = { top: 10, right: 10, bottom: 0, left: 0 };
-const mobileMargin = { top: 4, right: 10, bottom: 0, left: 0 };
+/** Left margin + yAxis.width so Y tick labels (e.g. -$2,382) are not ellipsized */
+const desktopMargin = { top: 10, right: 10, bottom: 0, left: 8 };
+const mobileMargin = { top: 4, right: 10, bottom: 0, left: 8 };
 
 /** Bar band width (px) used for mobile; also passed to modal when opening from mobile */
 const BAR_BAND_WIDTH = 120;
@@ -100,7 +100,7 @@ export const VarianceChartCard = ({ items, timePeriod = null, loading = false, o
     const el = chartContainerRef.current;
     if (el) {
       const containerWidth = el.offsetWidth;
-      const marginH = 15 + 15;
+      const marginH = desktopMargin.left + desktopMargin.right;
       const plotWidth = Math.max(0, containerWidth - marginH);
       onViewAll(plotWidth / 5);
     } else {
@@ -164,8 +164,9 @@ export const VarianceChartCard = ({ items, timePeriod = null, loading = false, o
                 yAxis={[
                   {
                     label: 'Variance ($)',
-                    tickLabelStyle: { ...LABEL_FONT, fontSize: 11 },
-                    valueFormatter: (v: number) => `$${v}`,
+                    width: isDesktop ? 88 : 76,
+                    tickLabelStyle: { ...LABEL_FONT, fontSize: 11, overflow: 'visible' as const },
+                    valueFormatter: (v: number) => currencyFormatter(v),
                     colorMap: {
                       type: 'piecewise',
                       thresholds: [0],

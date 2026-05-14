@@ -187,7 +187,7 @@ export const DataSyncSettings = () => {
 
   useEffect(() => {
     let cancelled = false;
-    let timeoutId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let consecutiveFailures = 0;
 
     const isHidden = (): boolean =>
