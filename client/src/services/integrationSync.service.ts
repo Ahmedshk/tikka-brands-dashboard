@@ -25,6 +25,11 @@ export interface IntegrationSyncProgress {
   label?: string;
 }
 
+export interface IntegrationSyncLocationResult {
+  upserted: number;
+  errors: string[];
+}
+
 export interface RunIntegrationSyncBody {
   resource: IntegrationSyncResource;
   locationIds?: string[];
@@ -47,6 +52,7 @@ export interface IntegrationSyncLogRow {
   message?: string;
   counts?: Record<string, number>;
   progress?: IntegrationSyncProgress;
+  byLocation?: Record<string, IntegrationSyncLocationResult>;
   createdAt: string;
   updatedAt: string;
 }

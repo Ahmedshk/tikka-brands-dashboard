@@ -26,6 +26,11 @@ export interface IntegrationSyncProgress {
   label?: string;
 }
 
+export interface IntegrationSyncLocationResult {
+  upserted: number;
+  errors: string[];
+}
+
 export interface IntegrationSyncLogDocument extends Document {
   _id: Types.ObjectId;
   triggeredByUserId?: Types.ObjectId;
@@ -37,6 +42,7 @@ export interface IntegrationSyncLogDocument extends Document {
   message?: string;
   counts?: Record<string, number>;
   progress?: IntegrationSyncProgress;
+  byLocation?: Record<string, IntegrationSyncLocationResult>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,6 +62,7 @@ const integrationSyncLogSchema = new Schema<IntegrationSyncLogDocument>(
     message: { type: String, required: false },
     counts: { type: Schema.Types.Mixed, required: false },
     progress: { type: Schema.Types.Mixed, required: false },
+    byLocation: { type: Schema.Types.Mixed, required: false },
   },
   { timestamps: true },
 );

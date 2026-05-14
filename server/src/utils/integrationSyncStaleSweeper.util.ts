@@ -1,9 +1,9 @@
 import { IntegrationSyncLogModel } from "../models/integrationSyncLog.model.js";
 import { logger } from "./logger.util.js";
 
-const STALE_AFTER_MS = 10 * 60 * 1000;
+const STALE_AFTER_MS = 60 * 60 * 1000;
 const STALE_MESSAGE =
-  "Sync timed out (no progress updates for 10 minutes — server may have restarted)";
+  "Sync timed out (no progress updates for 60 minutes — server may have restarted)";
 
 /**
  * Marks any IntegrationSyncLog rows that have been stuck in `started` with no

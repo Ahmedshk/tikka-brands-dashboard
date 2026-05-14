@@ -123,6 +123,7 @@ export async function runManualIntegrationSyncBackground(args: {
         totalUpserted: result.totalUpserted,
         locations: Object.keys(result.byLocation).length,
       },
+      byLocation: result.byLocation,
     }).exec();
 
     if (!anyErrors) {

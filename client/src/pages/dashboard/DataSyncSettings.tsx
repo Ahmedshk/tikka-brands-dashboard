@@ -13,7 +13,7 @@ import { locationService } from "../../services/location.service";
 import type { LocationListItem } from "../../types";
 import { DATA_SYNC_RESOURCE_OPTIONS } from "../../utils/dataSyncResourceOptions";
 import {
-  formatIntegrationSyncLogDetails,
+  formatIntegrationSyncLogDetailsWithLocations,
   integrationSyncLogResourceLabel,
   integrationSyncLogStatusClassName,
 } from "../../utils/integrationSyncLogDisplayHelpers";
@@ -22,6 +22,11 @@ import {
   formatElapsed,
   formatStartedAtClock,
 } from "../../utils/dataSyncProgressHelpers";
+import {
+  buildRetryBody,
+  canRetryLog,
+  getFailedLocationIds,
+} from "../../utils/dataSyncRetryHelpers";
 import { SyncLogDetailCell } from "../../components/dataSync/SyncLogDetailCell";
 import { Pagination } from "../../components/common/Pagination";
 import AdminAndSettingsIcon from "@assets/icons/admin_and_settings.svg?react";
@@ -75,7 +80,16 @@ export const DataSyncSettings = () => {
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
   const [activeSyncs, setActiveSyncs] = useState<IntegrationSyncLogRow[]>([]);
   const [nowTick, setNowTick] = useState(0);
+  const [retryingLogId, setRetryingLogId] = useState<string | null>(null);
   const activeIdsRef = useRef<Set<string>>(new Set());
+
+  const locationNameById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const loc of locations) {
+      map[loc._id] = loc.storeName;
+    }
+    return map;
+  }, [locations]);
 
   const resourceMeta = useMemo(
     () => DATA_SYNC_RESOURCE_OPTIONS.find((o) => o.value === resource),
@@ -240,6 +254,24 @@ export const DataSyncSettings = () => {
       toast.error("Full sync request failed");
     } finally {
       setRunAllTodayStarting(false);
+    }
+  };
+
+  const handleRetry = async (row: IntegrationSyncLogRow) => {
+    const body = buildRetryBody(row);
+    if (!body) {
+      toast.error("This run is not retryable");
+      return;
+    }
+    setRetryingLogId(row._id);
+    try {
+      await integrationSyncService.run(body);
+      toast.success("Retry started — progress will appear above");
+      await fetchActive();
+    } catch {
+      toast.error("Retry request failed");
+    } finally {
+      setRetryingLogId(null);
     }
   };
 
@@ -527,8 +559,23 @@ export const DataSyncSettings = () => {
                               </td>
                               <td className="px-4 lg:px-6 py-3 lg:py-4 align-top min-w-0">
                                 <SyncLogDetailCell
-                                  detailText={formatIntegrationSyncLogDetails(row)}
+                                  detailText={formatIntegrationSyncLogDetailsWithLocations(
+                                    row,
+                                    locationNameById,
+                                  )}
                                 />
+                                {canRetryLog(row) && (
+                                  <button
+                                    type="button"
+                                    disabled={retryingLogId === row._id}
+                                    onClick={() => void handleRetry(row)}
+                                    className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-button-primary text-white text-[11px] rounded-md hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {retryingLogId === row._id
+                                      ? "Starting…"
+                                      : `Retry failed locations (${getFailedLocationIds(row).length})`}
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -561,11 +608,28 @@ export const DataSyncSettings = () => {
                                   <span className="text-secondary shrink-0">Detail:</span>
                                   <div className="min-w-0 flex-1">
                                     <SyncLogDetailCell
-                                      detailText={formatIntegrationSyncLogDetails(row)}
+                                      detailText={formatIntegrationSyncLogDetailsWithLocations(
+                                        row,
+                                        locationNameById,
+                                      )}
                                       textClassName="text-primary"
                                     />
                                   </div>
                                 </div>
+                                {canRetryLog(row) && (
+                                  <div>
+                                    <button
+                                      type="button"
+                                      disabled={retryingLogId === row._id}
+                                      onClick={() => void handleRetry(row)}
+                                      className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 bg-button-primary text-white text-[11px] rounded-md hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                      {retryingLogId === row._id
+                                        ? "Starting…"
+                                        : `Retry failed locations (${getFailedLocationIds(row).length})`}
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           ))}
