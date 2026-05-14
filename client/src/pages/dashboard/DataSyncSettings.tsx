@@ -18,9 +18,9 @@ import {
   integrationSyncLogStatusClassName,
 } from "../../utils/integrationSyncLogDisplayHelpers";
 import {
-  computeProgressPercent,
-  formatProgressLabel,
-  formatStartedAgo,
+  formatCurrentStep,
+  formatElapsed,
+  formatStartedAtClock,
 } from "../../utils/dataSyncProgressHelpers";
 import { SyncLogDetailCell } from "../../components/dataSync/SyncLogDetailCell";
 import { Pagination } from "../../components/common/Pagination";
@@ -28,7 +28,7 @@ import AdminAndSettingsIcon from "@assets/icons/admin_and_settings.svg?react";
 
 const RECENT_RUNS_PAGE_SIZE = 10;
 const ACTIVE_POLL_INTERVAL_MS = 3000;
-const STARTED_AGO_TICK_MS = 5000;
+const ELAPSED_TICK_MS = 1000;
 
 const GREY_FOCUS_FIELD_SX = {
   "& .MuiOutlinedInput-root": {
@@ -179,7 +179,7 @@ export const DataSyncSettings = () => {
     if (activeSyncs.length === 0) return;
     const tick = globalThis.setInterval(() => {
       setNowTick((n) => n + 1);
-    }, STARTED_AGO_TICK_MS);
+    }, ELAPSED_TICK_MS);
     return () => {
       globalThis.clearInterval(tick);
     };
@@ -411,39 +411,49 @@ export const DataSyncSettings = () => {
                   </p>
                   <div className={`mt-3 ${nestedPanelClass}`}>
                     <ul className="divide-y divide-gray-200">
-                      {activeSyncs.map((row) => {
-                        const pct = computeProgressPercent(row.progress);
-                        return (
-                          <li key={row._id} className="p-4">
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-primary truncate">
-                                  {integrationSyncLogResourceLabel(row.resource)}
-                                </p>
-                                <p className="text-[11px] text-tertiary mt-0.5">
-                                  {formatStartedAgo(row.createdAt)}
-                                  {row.locationIds.length > 0
-                                    ? ` · ${row.locationIds.length} location(s)`
-                                    : ""}
-                                </p>
-                              </div>
-                              <span className="text-xs font-mono text-secondary shrink-0">
-                                {pct}%
-                              </span>
+                      {activeSyncs.map((row) => (
+                        <li key={row._id} className="p-4">
+                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-primary truncate">
+                                {integrationSyncLogResourceLabel(row.resource)}
+                              </p>
+                              <p className="text-[11px] text-secondary break-words mt-1">
+                                {formatCurrentStep(row.progress)}
+                              </p>
                             </div>
-                            <progress
-                              value={pct}
-                              max={100}
-                              className="mt-2 block w-full h-2 [&::-webkit-progress-bar]:bg-gray-200 [&::-webkit-progress-bar]:rounded [&::-webkit-progress-value]:bg-button-primary [&::-webkit-progress-value]:rounded [&::-moz-progress-bar]:bg-button-primary [&::-moz-progress-bar]:rounded"
-                              aria-label={`Sync progress for ${integrationSyncLogResourceLabel(row.resource)}`}
-                            />
-
-                            <p className="mt-2 text-[11px] text-secondary break-words">
-                              {formatProgressLabel(row.progress)}
-                            </p>
-                          </li>
-                        );
-                      })}
+                            <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-button-primary/10 text-button-primary text-[11px] font-medium self-start shrink-0">
+                              <span className="relative flex h-2 w-2" aria-hidden>
+                                <span className="absolute inline-flex h-full w-full rounded-full bg-button-primary opacity-60 animate-ping" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-button-primary" />
+                              </span>
+                              <span>Running</span>
+                            </span>
+                          </div>
+                          <dl className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-[11px]">
+                            <div className="flex gap-1">
+                              <dt className="text-tertiary">Started:</dt>
+                              <dd className="text-primary font-medium">
+                                {formatStartedAtClock(row.createdAt)}
+                              </dd>
+                            </div>
+                            <div className="flex gap-1">
+                              <dt className="text-tertiary">Running for:</dt>
+                              <dd className="text-primary font-medium font-mono">
+                                {formatElapsed(row.createdAt)}
+                              </dd>
+                            </div>
+                            {row.locationIds.length > 0 && (
+                              <div className="flex gap-1">
+                                <dt className="text-tertiary">Locations:</dt>
+                                <dd className="text-primary font-medium">
+                                  {row.locationIds.length}
+                                </dd>
+                              </div>
+                            )}
+                          </dl>
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 </div>
