@@ -77,6 +77,7 @@ export const integrationSyncService = {
   async getActive(): Promise<{ active: IntegrationSyncLogRow[] }> {
     const { data } = await api.get<{ active: IntegrationSyncLogRow[] }>(
       API_ENDPOINTS.INTEGRATION_SYNC.ACTIVE,
+      { skipGlobalErrorToast: true },
     );
     return data;
   },

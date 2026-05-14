@@ -32,7 +32,8 @@ import { Pagination } from "../../components/common/Pagination";
 import AdminAndSettingsIcon from "@assets/icons/admin_and_settings.svg?react";
 
 const RECENT_RUNS_PAGE_SIZE = 10;
-const ACTIVE_POLL_INTERVAL_MS = 3000;
+/** Polling backoff schedule (ms) indexed by consecutive failure count. */
+const ACTIVE_POLL_BACKOFF_MS = [3000, 9000, 15000, 30000];
 const ELAPSED_TICK_MS = 1000;
 
 const GREY_FOCUS_FIELD_SX = {
@@ -150,7 +151,7 @@ export const DataSyncSettings = () => {
 
   const logsTotalPages = Math.max(1, Math.ceil(logsTotal / RECENT_RUNS_PAGE_SIZE));
 
-  const fetchActive = useCallback(async (): Promise<IntegrationSyncLogRow[]> => {
+  const fetchActive = useCallback(async (): Promise<{ ok: boolean }> => {
     try {
       const res = await integrationSyncService.getActive();
       const next = res.active;
@@ -173,21 +174,76 @@ export const DataSyncSettings = () => {
         );
         void fetchLogsForPage(logsPage);
       }
-      return next;
+      return { ok: true };
     } catch {
-      return [];
+      return { ok: false };
     }
   }, [fetchLogsForPage, logsPage]);
 
+  const fetchActiveRef = useRef(fetchActive);
   useEffect(() => {
-    void fetchActive();
-    const interval = globalThis.setInterval(() => {
-      void fetchActive();
-    }, ACTIVE_POLL_INTERVAL_MS);
-    return () => {
-      globalThis.clearInterval(interval);
-    };
+    fetchActiveRef.current = fetchActive;
   }, [fetchActive]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    let consecutiveFailures = 0;
+
+    const isHidden = (): boolean =>
+      typeof document !== "undefined" &&
+      document.visibilityState === "hidden";
+
+    const cancelTimer = (): void => {
+      if (timeoutId != null) {
+        globalThis.clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    const nextDelayMs = (): number => {
+      const idx = Math.min(
+        consecutiveFailures,
+        ACTIVE_POLL_BACKOFF_MS.length - 1,
+      );
+      return ACTIVE_POLL_BACKOFF_MS[idx]!;
+    };
+
+    const schedule = (delay: number): void => {
+      cancelTimer();
+      if (cancelled || isHidden()) return;
+      timeoutId = globalThis.setTimeout(() => {
+        timeoutId = null;
+        void runPoll();
+      }, delay);
+    };
+
+    const runPoll = async (): Promise<void> => {
+      if (cancelled || isHidden()) return;
+      const { ok } = await fetchActiveRef.current();
+      if (cancelled) return;
+      consecutiveFailures = ok ? 0 : consecutiveFailures + 1;
+      schedule(nextDelayMs());
+    };
+
+    const onVisibilityChange = (): void => {
+      if (isHidden()) {
+        cancelTimer();
+      } else {
+        consecutiveFailures = 0;
+        void runPoll();
+      }
+    };
+
+    void runPoll();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      cancelTimer();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (activeSyncs.length === 0) return;
