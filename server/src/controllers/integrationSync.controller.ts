@@ -1,20 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
-import {
-  runSyncAllResourcesForToday,
-} from "../services/integrationSyncRunner.service.js";
-import {
-  refreshDailyRollupsAfterRunAllToday,
-} from "../services/integrationPollRollupRefresh.service.js";
 import { IntegrationSyncLogModel } from "../models/integrationSyncLog.model.js";
 import type { IntegrationSyncResource } from "../models/integrationSyncLog.model.js";
-import { logger } from "../utils/logger.util.js";
-import {
-  startManualIntegrationSync,
-  runManualIntegrationSyncBackground,
-} from "../utils/integrationSyncControllerHelpers.util.js";
-import { updateSyncLogProgress } from "../utils/integrationSyncProgress.util.js";
+import { startManualIntegrationSync } from "../utils/integrationSyncControllerHelpers.util.js";
 import { sweepStaleStartedLogs } from "../utils/integrationSyncStaleSweeper.util.js";
+import { spawnIntegrationSyncWorker } from "../workers/spawnIntegrationSyncWorker.util.js";
 
 export const postIntegrationSync = async (
   req: Request,
@@ -33,52 +23,21 @@ export const postIntegrationSync = async (
       body,
     });
 
-    setImmediate(() => {
-      void runManualIntegrationSyncBackground({ logId, body });
-    });
+    const result = spawnIntegrationSyncWorker({ kind: "manual", logId, body });
+    if (!result.spawned) {
+      res.status(429).json({
+        logId,
+        started: false,
+        message: result.reason ?? "Too many concurrent syncs",
+      });
+      return;
+    }
 
     res.status(202).json({ logId, started: true });
   } catch (e) {
     next(e);
   }
 };
-
-async function runAllTodayBackground(logId: string): Promise<void> {
-  try {
-    const { steps, totalUpserted, allOk } = await runSyncAllResourcesForToday({
-      onProgress: (p) => updateSyncLogProgress(logId, p),
-    });
-    try {
-      await refreshDailyRollupsAfterRunAllToday();
-    } catch (err) {
-      logger.error("runAllTodayBackground: rollup refresh failed", { err });
-    }
-    const failed = steps.filter((s) => !s.ok).map((s) => s.resource);
-    await IntegrationSyncLogModel.findByIdAndUpdate(logId, {
-      status: allOk ? "success" : "failed",
-      message:
-        failed.length > 0 ? `Failed steps: ${failed.join(", ")}` : undefined,
-      counts: {
-        totalUpserted,
-        steps: steps.length,
-        failedSteps: failed.length,
-      },
-    }).exec();
-  } catch (err) {
-    logger.error("runAllTodayBackground failed", { err, logId });
-    try {
-      await IntegrationSyncLogModel.findByIdAndUpdate(logId, {
-        status: "failed",
-        message: err instanceof Error ? err.message : String(err),
-      }).exec();
-    } catch (updateErr) {
-      logger.error("runAllTodayBackground: log status update failed", {
-        err: updateErr,
-        logId,
-      });
-    }
-  }
-}
 
 export const postIntegrationSyncRunAllToday = async (
   req: Request,
@@ -103,9 +62,15 @@ export const postIntegrationSyncRunAllToday = async (
     const log = await IntegrationSyncLogModel.create(logDoc);
     const logId = String(log._id);
 
-    setImmediate(() => {
-      void runAllTodayBackground(logId);
-    });
+    const result = spawnIntegrationSyncWorker({ kind: "all-today", logId });
+    if (!result.spawned) {
+      res.status(429).json({
+        logId,
+        started: false,
+        message: result.reason ?? "Too many concurrent syncs",
+      });
+      return;
+    }
 
     res.status(202).json({ logId, started: true });
   } catch (e) {

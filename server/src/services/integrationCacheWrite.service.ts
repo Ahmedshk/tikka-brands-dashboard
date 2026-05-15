@@ -19,10 +19,19 @@ import { catalogObjectVersionFromUnknown } from "../utils/squareCatalogObjectVer
 import { getHomebaseTimecardClockInAt } from "../utils/homebaseTimecardIndexFields.util.js";
 import { getMarketManOrderBusinessDateAt } from "../utils/marketmanOrderIndexFields.util.js";
 import { marketManOrderNumberAsString } from "../utils/marketManOrderNumberString.util.js";
+import { yieldEventLoop } from "../utils/eventLoopYield.util.js";
 
 function toObjectId(id: string): mongoose.Types.ObjectId {
   return new mongoose.Types.ObjectId(id);
 }
+
+/**
+ * Maximum number of upsert operations per Mongo `bulkWrite` call. 500 keeps
+ * the BSON command well below Mongo's 16MB document limit even for raw
+ * Square/Homebase/MarketMan payloads, and is large enough that round-trip
+ * overhead is amortised.
+ */
+const BULK_BATCH_SIZE = 500;
 
 export async function upsertSquarePayment(
   locationId: string,
@@ -238,4 +247,246 @@ export async function tryRecordSquareWebhookEvent(eventId: string): Promise<bool
   } catch {
     return false;
   }
+}
+
+// -------------------------------------------------------------------------
+// Bulk upsert helpers
+// -------------------------------------------------------------------------
+// Used by the integration sync runner instead of N x findOneAndUpdate to
+// avoid pinning the event loop for minutes during wide-range syncs. Each
+// helper batches at BULK_BATCH_SIZE and yields between batches so /healthz
+// and /api/integration-sync/active stay responsive on the same event loop.
+// All ops use `ordered: false` so a single bad doc does not abort the batch.
+
+interface BulkUpsertOp<TFilter, TUpdate> {
+  updateOne: {
+    filter: TFilter;
+    update: TUpdate;
+    upsert: true;
+  };
+}
+
+async function flushBulkBatches<TOp>(
+  model: { bulkWrite: (ops: TOp[], options: { ordered: false }) => Promise<unknown> },
+  ops: TOp[],
+): Promise<number> {
+  if (ops.length === 0) return 0;
+  let processed = 0;
+  for (let i = 0; i < ops.length; i += BULK_BATCH_SIZE) {
+    const batch = ops.slice(i, i + BULK_BATCH_SIZE);
+    await model.bulkWrite(batch, { ordered: false });
+    processed += batch.length;
+    await yieldEventLoop();
+  }
+  return processed;
+}
+
+export async function bulkUpsertSquarePayments(
+  locationId: string,
+  payments: Record<string, unknown>[],
+): Promise<number> {
+  const locOid = toObjectId(locationId);
+  type Filter = { squareId: string };
+  type Update = {
+    squareId: string;
+    locationId: mongoose.Types.ObjectId;
+    raw: Record<string, unknown>;
+    paymentCreatedAt: ReturnType<typeof getSquarePaymentMongoIndexFields>["paymentCreatedAt"];
+    paymentStatus: ReturnType<typeof getSquarePaymentMongoIndexFields>["paymentStatus"];
+  };
+  const ops: BulkUpsertOp<Filter, Update>[] = [];
+  for (const payment of payments) {
+    const squareId = squareRawIdAsString(payment.id, "");
+    if (!squareId) continue;
+    const idx = getSquarePaymentMongoIndexFields(payment);
+    ops.push({
+      updateOne: {
+        filter: { squareId },
+        update: {
+          squareId,
+          locationId: locOid,
+          raw: payment,
+          paymentCreatedAt: idx.paymentCreatedAt,
+          paymentStatus: idx.paymentStatus,
+        },
+        upsert: true,
+      },
+    });
+  }
+  return flushBulkBatches(SquarePaymentModel, ops);
+}
+
+export async function bulkUpsertSquareOrders(
+  locationId: string,
+  orders: Record<string, unknown>[],
+): Promise<number> {
+  const locOid = toObjectId(locationId);
+  type Filter = { squareId: string };
+  type Update = {
+    squareId: string;
+    locationId: mongoose.Types.ObjectId;
+    raw: Record<string, unknown>;
+    squareCreatedAt: ReturnType<typeof getSquareOrderMongoIndexFields>["squareCreatedAt"];
+    excludedFromDashboard: ReturnType<typeof getSquareOrderMongoIndexFields>["excludedFromDashboard"];
+  };
+  const ops: BulkUpsertOp<Filter, Update>[] = [];
+  for (const order of orders) {
+    const squareId = squareRawIdAsString(order.id, "");
+    if (!squareId) continue;
+    const idx = getSquareOrderMongoIndexFields(order);
+    ops.push({
+      updateOne: {
+        filter: { squareId },
+        update: {
+          squareId,
+          locationId: locOid,
+          raw: order,
+          squareCreatedAt: idx.squareCreatedAt,
+          excludedFromDashboard: idx.excludedFromDashboard,
+        },
+        upsert: true,
+      },
+    });
+  }
+  return flushBulkBatches(SquareOrderModel, ops);
+}
+
+export async function bulkUpsertSquareCatalogObjects(
+  locationId: string,
+  objects: Record<string, unknown>[],
+): Promise<number> {
+  const locOid = toObjectId(locationId);
+  type Filter = { objectId: string; locationId: mongoose.Types.ObjectId };
+  type Update = {
+    objectId: string;
+    locationId: mongoose.Types.ObjectId;
+    raw: Record<string, unknown>;
+    version?: number;
+  };
+  const ops: BulkUpsertOp<Filter, Update>[] = [];
+  for (const obj of objects) {
+    const objectId = squareRawIdAsString(obj.id, "");
+    if (!objectId) continue;
+    const version = catalogObjectVersionFromUnknown(obj.version);
+    const update: Update = {
+      objectId,
+      locationId: locOid,
+      raw: obj,
+    };
+    if (version != null && Number.isFinite(version)) update.version = version;
+    ops.push({
+      updateOne: {
+        filter: { objectId, locationId: locOid },
+        update,
+        upsert: true,
+      },
+    });
+  }
+  return flushBulkBatches(SquareCatalogObjectModel, ops);
+}
+
+export async function bulkUpsertSquareTeamMembers(
+  locationId: string,
+  members: Record<string, unknown>[],
+): Promise<number> {
+  const locOid = toObjectId(locationId);
+  type Filter = { squareId: string; locationId: mongoose.Types.ObjectId };
+  type Update = {
+    squareId: string;
+    locationId: mongoose.Types.ObjectId;
+    raw: Record<string, unknown>;
+  };
+  const ops: BulkUpsertOp<Filter, Update>[] = [];
+  for (const member of members) {
+    const squareId = squareRawIdAsString(member.id, "");
+    if (!squareId) continue;
+    ops.push({
+      updateOne: {
+        filter: { squareId, locationId: locOid },
+        update: { squareId, locationId: locOid, raw: member },
+        upsert: true,
+      },
+    });
+  }
+  return flushBulkBatches(SquareTeamMemberModel, ops);
+}
+
+export async function bulkUpsertHomebaseTimecards(
+  locationId: string,
+  cards: Record<string, unknown>[],
+): Promise<number> {
+  const locOid = toObjectId(locationId);
+  type Filter = { homebaseId: number; locationId: mongoose.Types.ObjectId };
+  type Update = {
+    homebaseId: number;
+    locationId: mongoose.Types.ObjectId;
+    raw: Record<string, unknown>;
+    clockInAt: ReturnType<typeof getHomebaseTimecardClockInAt>;
+  };
+  const ops: BulkUpsertOp<Filter, Update>[] = [];
+  for (const card of cards) {
+    const id = card.id;
+    const homebaseId = typeof id === "number" ? id : Number(id);
+    if (!Number.isFinite(homebaseId)) continue;
+    ops.push({
+      updateOne: {
+        filter: { homebaseId, locationId: locOid },
+        update: {
+          homebaseId,
+          locationId: locOid,
+          raw: card,
+          clockInAt: getHomebaseTimecardClockInAt(card),
+        },
+        upsert: true,
+      },
+    });
+  }
+  return flushBulkBatches(HomebaseTimecardModel, ops);
+}
+
+export async function bulkUpsertMarketManOrders(
+  locationId: string,
+  buyerGuid: string,
+  apiKind: MarketManOrderApiKind,
+  dateTimeFromUTC: string,
+  dateTimeToUTC: string,
+  orders: Record<string, unknown>[],
+): Promise<number> {
+  const locOid = toObjectId(locationId);
+  const fetchedAt = new Date();
+  type Filter = { buyerGuid: string; apiKind: MarketManOrderApiKind; orderNumber: string };
+  type Update = {
+    locationId: mongoose.Types.ObjectId;
+    buyerGuid: string;
+    apiKind: MarketManOrderApiKind;
+    orderNumber: string;
+    raw: Record<string, unknown>;
+    dateTimeFromUTC: string;
+    dateTimeToUTC: string;
+    fetchedAt: Date;
+    businessDateAt: ReturnType<typeof getMarketManOrderBusinessDateAt>;
+  };
+  const ops: BulkUpsertOp<Filter, Update>[] = [];
+  for (const order of orders) {
+    const orderNumber = marketManOrderNumberAsString(order.OrderNumber);
+    if (!orderNumber) continue;
+    ops.push({
+      updateOne: {
+        filter: { buyerGuid, apiKind, orderNumber },
+        update: {
+          locationId: locOid,
+          buyerGuid,
+          apiKind,
+          orderNumber,
+          raw: order,
+          dateTimeFromUTC,
+          dateTimeToUTC,
+          fetchedAt,
+          businessDateAt: getMarketManOrderBusinessDateAt(order, apiKind),
+        },
+        upsert: true,
+      },
+    });
+  }
+  return flushBulkBatches(MarketManOrderCacheModel, ops);
 }

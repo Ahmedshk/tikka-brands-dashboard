@@ -12,6 +12,7 @@ import { RoleService } from './services/role.service.js';
 import { ReviewCycleService } from './services/reviewCycle.service.js';
 import { logger } from './utils/logger.util.js';
 import { bootstrapGoogleCalendarIntegrations } from './utils/googleCalendarBootstrap.util.js';
+import { terminateAllSyncWorkers } from './workers/spawnIntegrationSyncWorker.util.js';
 
 // Load environment variables from server directory (so correct .env is used regardless of cwd)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -56,6 +57,7 @@ const startServer = async (): Promise<void> => {
     // Graceful shutdown
     process.on('SIGTERM', async () => {
       logger.info('SIGTERM signal received: closing HTTP server');
+      await terminateAllSyncWorkers();
       await shutdownAgenda();
       httpServer.close(() => {
         logger.info('HTTP server closed');

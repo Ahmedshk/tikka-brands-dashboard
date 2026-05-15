@@ -9,6 +9,14 @@ import squareWebhookRoutes from './routes/squareWebhook.routes.js';
 
 const app: Application = express();
 
+// Azure Health Check probe target. Intentionally mounted before every other
+// middleware (cors, body parsers, request logger, auth, routes) so the probe
+// returns in microseconds even when downstream code is busy. Do NOT add Mongo
+// calls or any I/O here - any latency here causes worker recycles.
+app.get('/healthz', (_req, res) => {
+  res.status(200).end('ok');
+});
+
 // Middleware
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:5173',

@@ -15,16 +15,17 @@ import {
 } from "./marketman.service.js";
 import { formatMarketManDateUtc } from "./marketman.client.js";
 import {
-  upsertSquarePayment,
-  upsertSquareOrder,
-  upsertSquareCatalogObject,
-  upsertSquareTeamMember,
-  upsertHomebaseTimecard,
+  bulkUpsertSquarePayments,
+  bulkUpsertSquareOrders,
+  bulkUpsertSquareCatalogObjects,
+  bulkUpsertSquareTeamMembers,
+  bulkUpsertHomebaseTimecards,
+  bulkUpsertMarketManOrders,
   upsertMarketManValidCountDates,
-  upsertMarketManOrder,
 } from "./integrationCacheWrite.service.js";
 import { fetchAndUpsertMarketManOrdersForWindow } from "../utils/marketmanOrderSyncUpsertHelpers.util.js";
 import { logger } from "../utils/logger.util.js";
+import { yieldEventLoop } from "../utils/eventLoopYield.util.js";
 import { getZonedCalendarDayUtcBounds } from "../utils/integrationSyncZonedDayBounds.util.js";
 import type { IntegrationSyncResource } from "../models/integrationSyncLog.model.js";
 
@@ -52,12 +53,11 @@ export async function syncSquarePaymentsForLocation(
     begin.toISOString(),
     end.toISOString(),
   );
-  let n = 0;
-  for (const p of payments) {
-    await upsertSquarePayment(locationId, p as Record<string, unknown>);
-    n += 1;
-  }
-  return { upserted: n, errors: [] };
+  const upserted = await bulkUpsertSquarePayments(
+    locationId,
+    payments as Record<string, unknown>[],
+  );
+  return { upserted, errors: [] };
 }
 
 export async function syncSquareOrdersForLocation(
@@ -73,15 +73,11 @@ export async function syncSquareOrdersForLocation(
     range,
     creds.squareAccessToken,
   );
-  let n = 0;
-  for (const o of orders) {
-    await upsertSquareOrder(
-      locationId,
-      o as unknown as Record<string, unknown>,
-    );
-    n += 1;
-  }
-  return { upserted: n, errors: [] };
+  const upserted = await bulkUpsertSquareOrders(
+    locationId,
+    orders as unknown as Record<string, unknown>[],
+  );
+  return { upserted, errors: [] };
 }
 
 export async function syncSquareCatalogForLocation(
@@ -92,12 +88,8 @@ export async function syncSquareCatalogForLocation(
     return { upserted: 0, errors: ["No Square token"] };
   }
   const objects = await searchCatalogObjects(creds.squareAccessToken);
-  let n = 0;
-  for (const obj of objects) {
-    await upsertSquareCatalogObject(locationId, obj);
-    n += 1;
-  }
-  return { upserted: n, errors: [] };
+  const upserted = await bulkUpsertSquareCatalogObjects(locationId, objects);
+  return { upserted, errors: [] };
 }
 
 export async function syncSquareTeamMembersForLocation(
@@ -110,15 +102,11 @@ export async function syncSquareTeamMembersForLocation(
   const members = await searchTeamMembers(creds.location.squareLocationId, {
     accessToken: creds.squareAccessToken,
   });
-  let n = 0;
-  for (const m of members) {
-    await upsertSquareTeamMember(
-      locationId,
-      m as unknown as Record<string, unknown>,
-    );
-    n += 1;
-  }
-  return { upserted: n, errors: [] };
+  const upserted = await bulkUpsertSquareTeamMembers(
+    locationId,
+    members as unknown as Record<string, unknown>[],
+  );
+  return { upserted, errors: [] };
 }
 
 export async function syncHomebaseTimecardsForLocation(
@@ -137,15 +125,11 @@ export async function syncHomebaseTimecardsForLocation(
   const cards = await getTimecardsForDateRange(homebaseUuid, startAt, endAt, {
     apiKey: creds.homebaseApiKey,
   });
-  let n = 0;
-  for (const c of cards) {
-    await upsertHomebaseTimecard(
-      locationId,
-      c as unknown as Record<string, unknown>,
-    );
-    n += 1;
-  }
-  return { upserted: n, errors: [] };
+  const upserted = await bulkUpsertHomebaseTimecards(
+    locationId,
+    cards as unknown as Record<string, unknown>[],
+  );
+  return { upserted, errors: [] };
 }
 
 /** Sliding window for recurring job: last 72h clock-in. */
@@ -186,42 +170,36 @@ export async function syncMarketManOrdersTodayForLocation(
   const { ranges } = getOrderTrackerRanges("today", timezone);
   for (const r of ranges) {
     try {
-      const delivery = await getOrdersByDeliveryDate(
+      const delivery = (await getOrdersByDeliveryDate(
         buyerGuid,
         r.dateTimeFromUTC,
         r.dateTimeToUTC,
+      )) as unknown as Record<string, unknown>[];
+      upserted += await bulkUpsertMarketManOrders(
+        locationId,
+        buyerGuid,
+        "delivery",
+        r.dateTimeFromUTC,
+        r.dateTimeToUTC,
+        delivery,
       );
-      for (const o of delivery) {
-        await upsertMarketManOrder(
-          locationId,
-          buyerGuid,
-          "delivery",
-          r.dateTimeFromUTC,
-          r.dateTimeToUTC,
-          o as unknown as Record<string, unknown>,
-        );
-        upserted += 1;
-      }
     } catch (e) {
       errors.push(`delivery: ${e instanceof Error ? e.message : String(e)}`);
     }
     try {
-      const sent = await getOrdersBySentDate(
+      const sent = (await getOrdersBySentDate(
         buyerGuid,
         r.dateTimeFromUTC,
         r.dateTimeToUTC,
+      )) as unknown as Record<string, unknown>[];
+      upserted += await bulkUpsertMarketManOrders(
+        locationId,
+        buyerGuid,
+        "sent",
+        r.dateTimeFromUTC,
+        r.dateTimeToUTC,
+        sent,
       );
-      for (const o of sent) {
-        await upsertMarketManOrder(
-          locationId,
-          buyerGuid,
-          "sent",
-          r.dateTimeFromUTC,
-          r.dateTimeToUTC,
-          o as unknown as Record<string, unknown>,
-        );
-        upserted += 1;
-      }
     } catch (e) {
       errors.push(`sent: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -497,6 +475,9 @@ export async function runSyncForAllLocations(
     if (onProgress) {
       await onProgress({ current: i + 1, total, label });
     }
+    // Hand the event loop back between locations so HTTP handlers
+    // (/healthz, /api/integration-sync/active, etc.) can run.
+    await yieldEventLoop();
   }
 
   return { totalUpserted, byLocation };
@@ -543,6 +524,7 @@ async function runSquarePaymentsLocalTodayAllLocations(): Promise<{
         errors: [e instanceof Error ? e.message : String(e)],
       };
     }
+    await yieldEventLoop();
   }
   return { totalUpserted, byLocation };
 }
@@ -575,6 +557,7 @@ async function runSquareOrdersLocalTodayAllLocations(): Promise<{
         errors: [e instanceof Error ? e.message : String(e)],
       };
     }
+    await yieldEventLoop();
   }
   return { totalUpserted, byLocation };
 }
@@ -608,6 +591,7 @@ async function runHomebaseTimecardsLocalTodayAllLocations(): Promise<{
         errors: [e instanceof Error ? e.message : String(e)],
       };
     }
+    await yieldEventLoop();
   }
   return { totalUpserted, byLocation };
 }

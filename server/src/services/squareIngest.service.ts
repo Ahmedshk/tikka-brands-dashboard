@@ -6,6 +6,7 @@ import {
   logExternalApiResult,
   truncateForExternalApiLog,
 } from "../utils/externalApiCallLog.util.js";
+import { yieldEventLoop } from "../utils/eventLoopYield.util.js";
 
 const SQUARE_BASE = "https://connect.squareup.com";
 
@@ -107,6 +108,9 @@ export async function listPaymentsInRange(
     });
     if (data.payments?.length) all.push(...data.payments);
     cursor = data.cursor;
+    // Synchronous JSON.parse + push can pin the event loop on large pages;
+    // yield so /healthz, /active, and other handlers get a turn between pages.
+    await yieldEventLoop();
   } while (cursor);
 
   return all;
@@ -198,6 +202,7 @@ export async function searchCatalogObjects(
     });
     if (data.objects?.length) all.push(...data.objects);
     cursor = data.cursor;
+    await yieldEventLoop();
   } while (cursor);
 
   return all;

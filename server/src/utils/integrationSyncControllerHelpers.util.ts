@@ -15,7 +15,7 @@ const RESOURCES_REQUIRING_DATE_RANGE = new Set<IntegrationSyncResource>([
   "marketman_orders_delivery",
 ]);
 
-type ManualSyncBody = {
+export type ManualSyncBody = {
   resource: IntegrationSyncResource;
   locationIds?: string[];
   startDate?: string;
