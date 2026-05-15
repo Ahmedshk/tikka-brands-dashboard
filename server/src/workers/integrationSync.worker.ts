@@ -1,5 +1,4 @@
 import { workerData, parentPort } from "node:worker_threads";
-import mongoose from "mongoose";
 import { connectDatabase } from "../config/database.js";
 import { runManualIntegrationSyncBackground } from "../utils/integrationSyncControllerHelpers.util.js";
 import { runAllTodayBackground } from "./runAllTodayBackground.js";
@@ -41,13 +40,12 @@ async function main(): Promise<void> {
       message: err instanceof Error ? err.message : String(err),
     });
   } finally {
-    try {
-      await mongoose.disconnect();
-    } catch (err) {
-      logger.warn("integrationSync worker: mongoose disconnect failed", {
-        err,
-      });
-    }
+    // process.exit terminates this worker isolate; the OS closes its
+    // sockets and the Mongo driver on the server side reaps them.
+    // Awaiting mongoose.disconnect() here has been seen to hang
+    // (winston file transport timers, mongoose heartbeat scheduler,
+    // etc.), which keeps the worker alive forever and starves the
+    // spawnIntegrationSyncWorker concurrency cap.
     process.exit(0);
   }
 }

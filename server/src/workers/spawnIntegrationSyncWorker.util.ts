@@ -14,6 +14,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  */
 const MAX_CONCURRENT_WORKERS = 2;
 
+/**
+ * Backstop in case a worker stops responding (process.exit not reached,
+ * deadlock, etc). Force-terminates and frees its slot in `liveWorkers`.
+ * 90 minutes is comfortably longer than any real sync we have observed.
+ */
+const HARD_TIMEOUT_MS = 90 * 60 * 1000;
+
 const liveWorkers = new Set<Worker>();
 
 export function getActiveSyncWorkerCount(): number {
@@ -65,6 +72,24 @@ export function spawnIntegrationSyncWorker(
   const worker = new Worker(workerPath, { workerData: message });
   liveWorkers.add(worker);
 
+  // Belt-and-braces: if a worker ever fails to fire `exit` (e.g. deadlock
+  // in cleanup, hung native module), force-terminate it after a generous
+  // timeout so the concurrency cap recovers on its own. `.unref()` keeps
+  // this timer from holding the process open during graceful shutdown.
+  const hardKill = setTimeout(() => {
+    logger.warn("integrationSync worker hard-terminated by timeout", {
+      logId: message.logId,
+      timeoutMs: HARD_TIMEOUT_MS,
+    });
+    void worker.terminate();
+  }, HARD_TIMEOUT_MS);
+  hardKill.unref();
+
+  const releaseSlot = (): void => {
+    liveWorkers.delete(worker);
+    clearTimeout(hardKill);
+  };
+
   worker.on("error", (err: Error) => {
     logger.error("integrationSync worker error", { err, logId: message.logId });
     void IntegrationSyncLogModel.findByIdAndUpdate(message.logId, {
@@ -78,10 +103,13 @@ export function spawnIntegrationSyncWorker(
           logId: message.logId,
         });
       });
+    // Some failure modes emit `error` without a clean `exit`; release the
+    // slot eagerly so the cap doesn't accumulate ghost workers.
+    releaseSlot();
   });
 
   worker.on("exit", (code) => {
-    liveWorkers.delete(worker);
+    releaseSlot();
     if (code !== 0) {
       logger.warn("integrationSync worker exit", {
         code,
