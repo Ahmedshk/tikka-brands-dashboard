@@ -17,6 +17,12 @@ import { getSquarePaymentMongoIndexFields } from "./squarePaymentMongoIndexField
 import { getSquareOrderMongoIndexFields } from "./squareOrderMongoIndexFields.util.js";
 import { logger } from "./logger.util.js";
 import { logWebhookReceived } from "./webhookLog.util.js";
+import {
+  getSquareLocationIdFromWebhookWrapper,
+  getSquareOrderIdFromWebhookWrapper,
+  pickSquareOrderWebhookWrapper,
+} from "./squareWebhookOrderWrapper.util.js";
+import { fetchSquareOrderById } from "./squareOrderRetrieve.util.js";
 import type { LocationRepository } from "../repositories/location.repository.js";
 import type { LocationService } from "../services/location.service.js";
 
@@ -135,24 +141,66 @@ async function handlePaymentEvent(args: {
 async function handleOrderEvent(args: {
   type: string;
   merchantId: string;
+  eventId: string;
   obj: Record<string, unknown> | undefined;
   locationRepository: LocationRepository;
+  locationService: LocationService;
 }): Promise<void> {
-  const { type, merchantId, obj, locationRepository } = args;
-  const order = (obj?.order ?? obj) as Record<string, unknown> | undefined;
-  const squareLocationId = firstNonEmptyString([order?.location_id, order?.locationId]);
+  const { type, merchantId, eventId, obj, locationRepository, locationService } = args;
+
+  const wrapper = pickSquareOrderWebhookWrapper(obj);
+  const squareLocationId = getSquareLocationIdFromWebhookWrapper(wrapper);
+  const squareOrderId = getSquareOrderIdFromWebhookWrapper(wrapper);
   const locationId = await resolveWebhookLocationId({ merchantId, squareLocationId });
 
-  if (!locationId || !order?.id) {
-    logger.warn("Square webhook order: unknown location or id", { type, merchantId, squareLocationId });
+  if (!locationId || !squareOrderId) {
+    logger.warn("Square webhook order: unknown location or id", {
+      type,
+      merchantId,
+      squareLocationId,
+      squareOrderId,
+      eventId,
+    });
     return;
   }
 
-  await upsertSquareOrder(locationId, order);
+  const withCreds = await locationService.getByIdWithCredentials(locationId);
+  const squareAccessToken = withCreds?.squareAccessToken?.trim() ?? "";
+  if (!squareAccessToken) {
+    logger.warn("Square webhook order: missing access token", { type, locationId, squareOrderId });
+    return;
+  }
+
+  let fullOrder: Record<string, unknown> | null;
+  try {
+    fullOrder = await fetchSquareOrderById({
+      orderId: squareOrderId,
+      token: squareAccessToken,
+      logSource: "squareWebhookOrder",
+    });
+  } catch (error) {
+    logger.error("Square webhook order: retrieve failed", {
+      err: error,
+      type,
+      locationId,
+      squareOrderId,
+    });
+    return;
+  }
+  if (!fullOrder) {
+    logger.error("Square webhook order: retrieve returned no order", {
+      type,
+      locationId,
+      squareOrderId,
+    });
+    return;
+  }
+
+  await upsertSquareOrder(locationId, fullOrder);
   const { timezone, businessStartTime } = await getTimezoneAndBusinessStartTime({ locationRepository, locationId });
-  const { squareCreatedAt } = getSquareOrderMongoIndexFields(order);
+  const { squareCreatedAt } = getSquareOrderMongoIndexFields(fullOrder);
   if (!squareCreatedAt) {
-    logger.warn("Square webhook order: skip rollup (no created_at)", { type, locationId });
+    logger.warn("Square webhook order: skip rollup (no created_at)", { type, locationId, squareOrderId });
     return;
   }
 
@@ -201,17 +249,19 @@ function isCatalogEvent(type: string): boolean {
 async function dispatchWebhookEvent(args: {
   type: string;
   merchantId: string;
+  eventId: string;
   obj: Record<string, unknown> | undefined;
   locationRepository: LocationRepository;
+  locationService: LocationService;
 }): Promise<string | null> {
-  const { type, merchantId, obj, locationRepository } = args;
+  const { type, merchantId, eventId, obj, locationRepository, locationService } = args;
 
   if (type.startsWith("payment.")) {
     await handlePaymentEvent({ type, merchantId, obj, locationRepository });
     return null;
   }
   if (type.startsWith("order.")) {
-    await handleOrderEvent({ type, merchantId, obj, locationRepository });
+    await handleOrderEvent({ type, merchantId, eventId, obj, locationRepository, locationService });
     return null;
   }
   if (type.startsWith("team_member.")) {
@@ -278,6 +328,7 @@ export async function runSquareWebhookHandler(args: {
 
   const type = asTrimmedString(parsed.body.type);
   const merchantId = asTrimmedString(parsed.body.merchant_id);
+  const eventId = firstNonEmptyString([parsed.body.event_id, parsed.body.id]);
   const data = parsed.body.data as Record<string, unknown> | undefined;
   const obj = data?.object as Record<string, unknown> | undefined;
 
@@ -285,11 +336,18 @@ export async function runSquareWebhookHandler(args: {
     stage: "parsed",
     type: type || null,
     merchantId: merchantId || null,
-    eventId: firstNonEmptyString([parsed.body.event_id, parsed.body.id]) || null,
+    eventId: eventId || null,
   });
 
   try {
-    const ignoredType = await dispatchWebhookEvent({ type, merchantId, obj, locationRepository });
+    const ignoredType = await dispatchWebhookEvent({
+      type,
+      merchantId,
+      eventId,
+      obj,
+      locationRepository,
+      locationService,
+    });
     responseReceived(res, ignoredType ? { ignored: ignoredType } : undefined);
   } catch (error) {
     logger.error("Square webhook handler error", { err: error, type });
