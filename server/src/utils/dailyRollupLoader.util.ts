@@ -22,6 +22,11 @@ import {
   type SquareOrderDailyRollupLean,
   type HomebaseTimecardDailyRollupLean,
 } from "./dailyRollupCaches.util.js";
+import { dedupInflight } from "./inflightDedup.util.js";
+
+function dedupKey(prefix: string, ids: readonly string[], dates: readonly string[]): string {
+  return `${prefix}|${[...ids].sort().join(",")}|${[...dates].sort().join(",")}`;
+}
 
 export async function loadSquareOrderDailyRollupsForDates(
   locationMongoId: string,
@@ -114,6 +119,17 @@ export async function bulkPrefetchSquareOrderDailyRollups(params: {
 }): Promise<void> {
   const { locationMongoIds, businessDateKeys } = params;
   if (locationMongoIds.length === 0 || businessDateKeys.length === 0) return;
+  return dedupInflight(
+    dedupKey("squareOrderDailyRollups", locationMongoIds, businessDateKeys),
+    () => bulkPrefetchSquareOrderDailyRollupsImpl(params),
+  );
+}
+
+async function bulkPrefetchSquareOrderDailyRollupsImpl(params: {
+  locationMongoIds: readonly string[];
+  businessDateKeys: readonly string[];
+}): Promise<void> {
+  const { locationMongoIds, businessDateKeys } = params;
   const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
   const docs = (await SquareOrderDailyRollupModel.find({
     locationId: { $in: oids },
@@ -162,6 +178,17 @@ export async function bulkPrefetchHomebaseTimecardDailyRollups(params: {
 }): Promise<void> {
   const { locationMongoIds, businessDateKeys } = params;
   if (locationMongoIds.length === 0 || businessDateKeys.length === 0) return;
+  return dedupInflight(
+    dedupKey("homebaseTimecardDailyRollups", locationMongoIds, businessDateKeys),
+    () => bulkPrefetchHomebaseTimecardDailyRollupsImpl(params),
+  );
+}
+
+async function bulkPrefetchHomebaseTimecardDailyRollupsImpl(params: {
+  locationMongoIds: readonly string[];
+  businessDateKeys: readonly string[];
+}): Promise<void> {
+  const { locationMongoIds, businessDateKeys } = params;
   const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
   const docs = (await HomebaseTimecardDailyRollupModel.find({
     locationId: { $in: oids },

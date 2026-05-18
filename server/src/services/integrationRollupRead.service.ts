@@ -48,6 +48,7 @@ import {
   loadSquareOrderDailyRollupsForDates,
 } from "../utils/dailyRollupLoader.util.js";
 import { loadSquareOrderHourlyRollupsForDates } from "../utils/hourlyRollupLoader.util.js";
+import { dedupInflight } from "../utils/inflightDedup.util.js";
 import { computeRollupUncoveredSubRanges } from "../utils/rollupSplitRange.util.js";
 
 const ROLLUP_READ_ENABLED =
@@ -826,6 +827,15 @@ export async function bulkPrefetchHourlyRollupExistsByDate(params: {
   const { locationMongoIds, businessDateKeys } = params;
   if (locationMongoIds.length === 0 || businessDateKeys.length === 0) return;
   if (!ROLLUP_READ_ENABLED) return;
+  const key = `hourlyRollupExistsByDate|${[...locationMongoIds].sort().join(",")}|${[...businessDateKeys].sort().join(",")}`;
+  return dedupInflight(key, () => bulkPrefetchHourlyRollupExistsByDateImpl(params));
+}
+
+async function bulkPrefetchHourlyRollupExistsByDateImpl(params: {
+  locationMongoIds: readonly string[];
+  businessDateKeys: readonly string[];
+}): Promise<void> {
+  const { locationMongoIds, businessDateKeys } = params;
   const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
   const groups = (await SquareOrderHourlyRollupModel.aggregate([
     {
@@ -912,15 +922,12 @@ export async function tryGetOrderTimeSeriesFromHourlyRollupsForKeys(
       slotIndex: c.slotIndex,
     });
   }
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
   const distinctBusinessDateKeys = Array.from(
     new Set([...uniquePairs.values()].map((p) => p.businessDateKey)),
   );
-  // First, consult the in-process bulk-prefetch cache: if every requested
-  // business date key has already been confirmed empty for this location
-  // (via the all-locations prefetch step), skip the Mongo `exists()` entirely.
-  // Per-query latency to Atlas dominates the read path; this collapses the
-  // 9 × 2 = 18 round-trips on an all-locations page load into 0.
+  // Short-circuit when the bulk-prefetch cache has already confirmed every
+  // requested date is empty for this location. Saves the loader round-trip
+  // entirely.
   const everyDateKnownEmpty = distinctBusinessDateKeys.every(
     (k) => readRollupExistsByDate(locationMongoId, k) === false,
   );
@@ -937,22 +944,32 @@ export async function tryGetOrderTimeSeriesFromHourlyRollupsForKeys(
     writeRollupNegativeCache(negKey, m);
     return m;
   }
-  // Cheap existence pre-check: avoids composing the expensive $or scan when
-  // there are no hourly rollup rows at all for the requested business dates.
-  // Index (locationId, businessDateKey) makes `exists` ~1-5 ms.
-  const anyExists = await SquareOrderHourlyRollupModel.exists({
-    locationId: oid,
-    businessDateKey: { $in: distinctBusinessDateKeys },
-  });
-  if (!anyExists) {
-    // Seed the per-date cache so future calls for any subset of these dates
-    // short-circuit through the bulk-prefetch path above.
+  // Load all slot rows for the requested business dates. The loader consults
+  // the hourly-rollup row cache primed by the all-locations prefetch; any
+  // dates not in cache trigger a single batched `find`. We no longer issue a
+  // separate `exists()` pre-check — on the all-locations hot path the cache
+  // is primed and that pre-check was an unnecessary per-(location, range)
+  // round-trip (9 × 2 = 18 extra round-trips per page load).
+  const hourlyByDate = await loadSquareOrderHourlyRollupsForDates(
+    locationMongoId,
+    distinctBusinessDateKeys,
+  );
+  // If the loader confirms no rows for any date, seed the existence cache
+  // for future calls and return miss.
+  let anyRows = false;
+  for (const rows of hourlyByDate.values()) {
+    if (rows.length > 0) {
+      anyRows = true;
+      break;
+    }
+  }
+  if (!anyRows) {
     for (const k of distinctBusinessDateKeys) {
       writeRollupExistsByDate(locationMongoId, k, false);
     }
     const m = miss(
       "HOURLY_NO_ROWS_FOR_DATES",
-      `No hourly rollup rows exist for the requested business dates (existence pre-check)`,
+      `No hourly rollup rows exist for the requested business dates`,
       {
         distinctBusinessDateCount: distinctBusinessDateKeys.length,
         sampleBusinessDateKeys: distinctBusinessDateKeys.slice(0, 5),
@@ -961,14 +978,6 @@ export async function tryGetOrderTimeSeriesFromHourlyRollupsForKeys(
     writeRollupNegativeCache(negKey, m);
     return m;
   }
-  // Load all slot rows for the requested business dates (consults the
-  // hourly-rollup row cache primed by the all-locations prefetch, then falls
-  // back to Mongo for any uncached dates), and project the requested (date,
-  // slot) pairs into the map the existing code expects.
-  const hourlyByDate = await loadSquareOrderHourlyRollupsForDates(
-    locationMongoId,
-    distinctBusinessDateKeys,
-  );
   const byPair = new Map<string, { netSalesCents: number; transactionCount: number }>();
   for (const pair of uniquePairs.values()) {
     const rows = hourlyByDate.get(pair.businessDateKey);

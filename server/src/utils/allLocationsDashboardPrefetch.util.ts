@@ -26,10 +26,6 @@
  * Mongo queries; they're called less often and aren't the bottleneck today.
  */
 import type { TimeRange } from "./businessHours.util.js";
-import {
-  bulkPrefetchSquareOrdersForLocations,
-  bulkPrefetchHomebaseTimecardsForLocations,
-} from "../services/integrationCacheRead.service.js";
 import { bulkPrefetchHourlyRollupExistsByDate } from "../services/integrationRollupRead.service.js";
 import {
   bulkPrefetchSquareOrderDailyRollups,
@@ -37,6 +33,8 @@ import {
 } from "./dailyRollupLoader.util.js";
 import { bulkPrefetchSquareOrderHourlyRollups } from "./hourlyRollupLoader.util.js";
 import { businessDateKeysIntersectingUtcRange } from "./businessDayUtcRange.util.js";
+import { logger } from "./logger.util.js";
+import { performance } from "node:perf_hooks";
 import {
   getSalesTrendPeriodRange,
   getSalesTrendComparisonRange,
@@ -144,18 +142,9 @@ export async function prefetchAllLocationsDashboardData(
   inputs: ReadonlyArray<AllLocationsPrefetchInput>,
 ): Promise<void> {
   if (inputs.length === 0) return;
-  const unionRange = unionRangeOf(inputs);
-  if (!unionRange) return;
+  if (unionRangeOf(inputs) == null) return;
 
   const locationMongoIds = inputs.map((p) => p.locationMongoId);
-
-  // (location, range) prime targets for the orders + timecards caches.
-  const primeRanges: Array<{ locationMongoId: string; range: TimeRange }> = [];
-  for (const p of inputs) {
-    for (const r of p.ranges) {
-      primeRanges.push({ locationMongoId: p.locationMongoId, range: r });
-    }
-  }
 
   // Business date keys (per location, in its TZ) the rollup readers will ask
   // about. Bulk readers receive the full union; each (location, date) pair
@@ -175,32 +164,59 @@ export async function prefetchAllLocationsDashboardData(
   }
 
   const businessDateKeysArr = Array.from(allDateKeys);
+  const t0 = performance.now();
+  const phaseTimes: Record<string, number> = {};
+  function timed<T>(label: string, p: Promise<T>): Promise<T> {
+    const start = performance.now();
+    return p.finally(() => {
+      phaseTimes[label] = Math.round(performance.now() - start);
+    });
+  }
+  // The raw-orders and raw-timecards bulk prefetches are intentionally omitted
+  // here: they transfer the full SquareOrder / HomebaseTimecard payloads
+  // (potentially hundreds of KB per location-day) and are only useful if a
+  // location's daily/hourly rollup is *missing*, which is the exception in
+  // production. The per-location `loadSquareOrdersForMongoRange` /
+  // `loadHomebaseTimecardsForMongoRange` paths still fall through to Mongo on
+  // demand when needed.
+  //
+  // The four prefetches below transfer compact rollup rows only (~tens of KB
+  // for 9 locations × 2 dates) and seed the caches the rollup readers actually
+  // consult on the hot path.
   await Promise.all([
-    bulkPrefetchSquareOrdersForLocations({
-      locationMongoIds,
-      unionRange,
-      primeRanges,
-    }),
-    bulkPrefetchHomebaseTimecardsForLocations({
-      locationMongoIds,
-      unionRange,
-      primeRanges,
-    }),
-    bulkPrefetchHourlyRollupExistsByDate({
-      locationMongoIds,
-      businessDateKeys: businessDateKeysArr,
-    }),
-    bulkPrefetchSquareOrderDailyRollups({
-      locationMongoIds,
-      businessDateKeys: businessDateKeysArr,
-    }),
-    bulkPrefetchHomebaseTimecardDailyRollups({
-      locationMongoIds,
-      businessDateKeys: businessDateKeysArr,
-    }),
-    bulkPrefetchSquareOrderHourlyRollups({
-      locationMongoIds,
-      businessDateKeys: businessDateKeysArr,
-    }),
+    timed(
+      "rollupExistsByDate",
+      bulkPrefetchHourlyRollupExistsByDate({
+        locationMongoIds,
+        businessDateKeys: businessDateKeysArr,
+      }),
+    ),
+    timed(
+      "squareOrderDailyRollups",
+      bulkPrefetchSquareOrderDailyRollups({
+        locationMongoIds,
+        businessDateKeys: businessDateKeysArr,
+      }),
+    ),
+    timed(
+      "homebaseTimecardDailyRollups",
+      bulkPrefetchHomebaseTimecardDailyRollups({
+        locationMongoIds,
+        businessDateKeys: businessDateKeysArr,
+      }),
+    ),
+    timed(
+      "squareOrderHourlyRollups",
+      bulkPrefetchSquareOrderHourlyRollups({
+        locationMongoIds,
+        businessDateKeys: businessDateKeysArr,
+      }),
+    ),
   ]);
+  logger.info("[all-locations] prefetch done", {
+    locationCount: locationMongoIds.length,
+    dateKeyCount: businessDateKeysArr.length,
+    totalMs: Math.round(performance.now() - t0),
+    phaseTimes,
+  });
 }

@@ -13,6 +13,7 @@ import {
   type SquareOrderHourlyRollupLean,
 } from "./hourlyRollupCache.util.js";
 import { writeRollupExistsByDate } from "./rollupExistsByDateCache.util.js";
+import { dedupInflight } from "./inflightDedup.util.js";
 
 const SELECT_FIELDS = {
   businessDateKey: 1,
@@ -80,6 +81,15 @@ export async function bulkPrefetchSquareOrderHourlyRollups(params: {
 }): Promise<void> {
   const { locationMongoIds, businessDateKeys } = params;
   if (locationMongoIds.length === 0 || businessDateKeys.length === 0) return;
+  const key = `squareOrderHourlyRollups|${[...locationMongoIds].sort().join(",")}|${[...businessDateKeys].sort().join(",")}`;
+  return dedupInflight(key, () => bulkPrefetchSquareOrderHourlyRollupsImpl(params));
+}
+
+async function bulkPrefetchSquareOrderHourlyRollupsImpl(params: {
+  locationMongoIds: readonly string[];
+  businessDateKeys: readonly string[];
+}): Promise<void> {
+  const { locationMongoIds, businessDateKeys } = params;
   const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
   const docs = (await SquareOrderHourlyRollupModel.find({
     locationId: { $in: oids },
