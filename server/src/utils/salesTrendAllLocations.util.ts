@@ -25,6 +25,7 @@ import {
   type AllLocationsPrefetchInput,
   type AllLocationsPrefetchQueryDateFields,
 } from './allLocationsDashboardPrefetch.util.js';
+import { logger } from './logger.util.js';
 import { performance } from 'node:perf_hooks';
 
 async function prefetchForSalesTrend(params: {
@@ -244,11 +245,21 @@ export async function buildAllLocationsSalesTrendKpi(params: {
   }
   const tHandler = performance.now();
   await prefetchForSalesTrend({ req, ids, query, locationService });
+  const tAfterPrefetch = performance.now();
+  logger.info('[sales-trend-kpi] prefetch awaited, fanout starting', {
+    locationCount: ids.length,
+    concurrency: getLocationFanoutConcurrency(),
+    prefetchMs: Math.round(tAfterPrefetch - tHandler),
+  });
   const perLocationMs: number[] = [];
   const settled = await mapWithConcurrency(
     ids,
     getLocationFanoutConcurrency(),
     async (id): Promise<Awaited<ReturnType<typeof getSalesTrendKpiData>> | null> => {
+      logger.info('[sales-trend-kpi] worker start', {
+        locationMongoId: id,
+        elapsedMs: Math.round(performance.now() - tAfterPrefetch),
+      });
       const { value, ms } = await timedPerLocation<
         Awaited<ReturnType<typeof getSalesTrendKpiData>> | null
       >(async () => {
@@ -263,6 +274,10 @@ export async function buildAllLocationsSalesTrendKpi(params: {
         return getSalesTrendKpiData(ctx, { ...query, locationId: id });
       });
       perLocationMs.push(ms);
+      logger.info('[sales-trend-kpi] worker done', {
+        locationMongoId: id,
+        workerMs: ms,
+      });
       return value;
     },
   );

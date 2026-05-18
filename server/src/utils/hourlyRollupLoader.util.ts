@@ -7,6 +7,7 @@
  * cache and filter in memory.
  */
 import mongoose from "mongoose";
+import { performance } from "node:perf_hooks";
 import { SquareOrderHourlyRollupModel } from "../models/squareOrderHourlyRollup.model.js";
 import {
   squareOrderHourlyRollupCache,
@@ -14,6 +15,7 @@ import {
 } from "./hourlyRollupCache.util.js";
 import { writeRollupExistsByDate } from "./rollupExistsByDateCache.util.js";
 import { dedupInflight } from "./inflightDedup.util.js";
+import { logger } from "./logger.util.js";
 
 const SELECT_FIELDS = {
   businessDateKey: 1,
@@ -32,6 +34,7 @@ export async function loadSquareOrderHourlyRollupsForDates(
   locationMongoId: string,
   businessDateKeys: readonly string[],
 ): Promise<Map<string, SquareOrderHourlyRollupLean[]>> {
+  const t0 = performance.now();
   const out = new Map<string, SquareOrderHourlyRollupLean[]>();
   const missing: string[] = [];
   for (const k of businessDateKeys) {
@@ -42,7 +45,21 @@ export async function loadSquareOrderHourlyRollupsForDates(
       out.set(k, cached ?? []);
     }
   }
-  if (missing.length === 0) return out;
+  if (missing.length === 0) {
+    logger.info("[hourly-rollup-loader] cache hit", {
+      locationMongoId,
+      dateCount: businessDateKeys.length,
+      cacheCheckMs: Math.round(performance.now() - t0),
+    });
+    return out;
+  }
+  logger.info("[hourly-rollup-loader] cache miss → mongo", {
+    locationMongoId,
+    requestedDates: businessDateKeys,
+    cachedDates: [...out.keys()],
+    missingDates: missing,
+  });
+  const tMongo = performance.now();
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   const docs = (await SquareOrderHourlyRollupModel.find({
     locationId: oid,
@@ -51,6 +68,12 @@ export async function loadSquareOrderHourlyRollupsForDates(
     .select(SELECT_FIELDS)
     .lean()
     .exec()) as SquareOrderHourlyRollupLean[];
+  logger.info("[hourly-rollup-loader] mongo find done", {
+    locationMongoId,
+    missingDates: missing,
+    docCount: docs.length,
+    mongoMs: Math.round(performance.now() - tMongo),
+  });
   const byDate = new Map<string, SquareOrderHourlyRollupLean[]>();
   for (const d of docs) {
     let arr = byDate.get(d.businessDateKey);
