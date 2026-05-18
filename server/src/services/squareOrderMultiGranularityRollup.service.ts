@@ -23,6 +23,8 @@ import {
   invalidateRollupNegativeCacheForLocation,
 } from "../utils/rollupReadCache.util.js";
 import { invalidateRollupExistsByDateForLocation } from "../utils/rollupExistsByDateCache.util.js";
+import { squareOrderDailyRollupCache } from "../utils/dailyRollupCaches.util.js";
+import { squareOrderHourlyRollupCache } from "../utils/hourlyRollupCache.util.js";
 import {
   businessDateKeysForMonthPeriod,
   businessDateKeysForWeekPeriod,
@@ -216,4 +218,6 @@ export async function rebuildSquareOrderDerivedRollupsForBusinessDay(
   invalidateRollupNegativeCacheForLocation(locationMongoId);
   invalidateOrdersEmptyCacheForLocation(locationMongoId);
   invalidateRollupExistsByDateForLocation(locationMongoId);
+  squareOrderDailyRollupCache.invalidateForLocation(locationMongoId);
+  squareOrderHourlyRollupCache.invalidateForLocation(locationMongoId);
 }

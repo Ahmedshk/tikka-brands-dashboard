@@ -31,6 +31,11 @@ import {
   bulkPrefetchHomebaseTimecardsForLocations,
 } from "../services/integrationCacheRead.service.js";
 import { bulkPrefetchHourlyRollupExistsByDate } from "../services/integrationRollupRead.service.js";
+import {
+  bulkPrefetchSquareOrderDailyRollups,
+  bulkPrefetchHomebaseTimecardDailyRollups,
+} from "./dailyRollupLoader.util.js";
+import { bulkPrefetchSquareOrderHourlyRollups } from "./hourlyRollupLoader.util.js";
 import { businessDateKeysIntersectingUtcRange } from "./businessDayUtcRange.util.js";
 import {
   getSalesTrendPeriodRange,
@@ -83,12 +88,15 @@ export function buildPrefetchInputForLocation(params: {
     timezone,
     comparisonOptions,
   );
+  const ranges: TimeRange[] = [
+    { startAt: period.startAt, endAt: period.endAt },
+  ];
+  if (comparison) {
+    ranges.push({ startAt: comparison.startAt, endAt: comparison.endAt });
+  }
   return {
     locationMongoId,
-    dataRange: { startAt: period.startAt, endAt: period.endAt },
-    comparisonRange: comparison
-      ? { startAt: comparison.startAt, endAt: comparison.endAt }
-      : null,
+    ranges,
     timezone,
     businessStartTime,
   };
@@ -96,10 +104,16 @@ export function buildPrefetchInputForLocation(params: {
 
 export interface AllLocationsPrefetchInput {
   locationMongoId: string;
-  /** Current period range, in absolute ISO UTC strings. */
-  dataRange: TimeRange;
-  /** Comparison period range, in absolute ISO UTC strings (or null). */
-  comparisonRange: TimeRange | null;
+  /**
+   * One or more absolute time ranges this location will be queried for. Each
+   * range becomes a cache prime target for orders/timecards; their union (per
+   * location) is what the bulk Mongo `find` covers.
+   *
+   * Examples:
+   *  - sales-trend: `[dataRange]` or `[dataRange, comparisonRange]`.
+   *  - command-center KPIs: `[rangeToday, rangeWeekToDate]`.
+   */
+  ranges: ReadonlyArray<TimeRange>;
   /** IANA TZ for this location, used to derive business date keys. */
   timezone: string;
   /** `HH:mm` business start in local time, used to derive business date keys. */
@@ -112,7 +126,7 @@ function unionRangeOf(
   let startAt: string | null = null;
   let endAt: string | null = null;
   for (const p of inputs) {
-    for (const r of p.comparisonRange ? [p.dataRange, p.comparisonRange] : [p.dataRange]) {
+    for (const r of p.ranges) {
       if (startAt == null || r.startAt < startAt) startAt = r.startAt;
       if (endAt == null || r.endAt > endAt) endAt = r.endAt;
     }
@@ -138,22 +152,17 @@ export async function prefetchAllLocationsDashboardData(
   // (location, range) prime targets for the orders + timecards caches.
   const primeRanges: Array<{ locationMongoId: string; range: TimeRange }> = [];
   for (const p of inputs) {
-    primeRanges.push({ locationMongoId: p.locationMongoId, range: p.dataRange });
-    if (p.comparisonRange) {
-      primeRanges.push({
-        locationMongoId: p.locationMongoId,
-        range: p.comparisonRange,
-      });
+    for (const r of p.ranges) {
+      primeRanges.push({ locationMongoId: p.locationMongoId, range: r });
     }
   }
 
-  // Business date keys (per location, in its TZ) the hourly rollup probe will
-  // ask about. We pass the union to the bulk aggregate; each (location, date)
-  // pair gets a per-location verdict.
+  // Business date keys (per location, in its TZ) the rollup readers will ask
+  // about. Bulk readers receive the full union; each (location, date) pair
+  // gets a per-location verdict from the seeded caches.
   const allDateKeys = new Set<string>();
   for (const p of inputs) {
-    const ranges = p.comparisonRange ? [p.dataRange, p.comparisonRange] : [p.dataRange];
-    for (const r of ranges) {
+    for (const r of p.ranges) {
       for (const k of businessDateKeysIntersectingUtcRange(
         r.startAt,
         r.endAt,
@@ -165,6 +174,7 @@ export async function prefetchAllLocationsDashboardData(
     }
   }
 
+  const businessDateKeysArr = Array.from(allDateKeys);
   await Promise.all([
     bulkPrefetchSquareOrdersForLocations({
       locationMongoIds,
@@ -178,7 +188,19 @@ export async function prefetchAllLocationsDashboardData(
     }),
     bulkPrefetchHourlyRollupExistsByDate({
       locationMongoIds,
-      businessDateKeys: Array.from(allDateKeys),
+      businessDateKeys: businessDateKeysArr,
+    }),
+    bulkPrefetchSquareOrderDailyRollups({
+      locationMongoIds,
+      businessDateKeys: businessDateKeysArr,
+    }),
+    bulkPrefetchHomebaseTimecardDailyRollups({
+      locationMongoIds,
+      businessDateKeys: businessDateKeysArr,
+    }),
+    bulkPrefetchSquareOrderHourlyRollups({
+      locationMongoIds,
+      businessDateKeys: businessDateKeysArr,
     }),
   ]);
 }

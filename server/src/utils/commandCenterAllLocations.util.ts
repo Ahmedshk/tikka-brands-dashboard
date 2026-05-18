@@ -31,6 +31,10 @@ import {
   summarizeAllLocationsTimings,
   timedPerLocation,
 } from './allLocationsTiming.util.js';
+import {
+  prefetchAllLocationsDashboardData,
+  type AllLocationsPrefetchInput,
+} from './allLocationsDashboardPrefetch.util.js';
 import { performance } from 'node:perf_hooks';
 
 function sumNullable(vals: Array<number | null | undefined>): number | null {
@@ -157,6 +161,27 @@ export async function buildAllLocationsCommandCenterKpis(params: {
 
   const avgGoal = wantLaborCost ? average(perLoc.map((p) => p.laborCostGoal)) : 0;
   const avgTol = wantLaborCost ? average(perLoc.map((p) => p.laborCostGoalTolerance)) : 0;
+
+  // Up-front bulk prefetch: each per-location worker below pulls from daily
+  // rollups (SquareOrderDailyRollup, HomebaseTimecardDailyRollup) plus a
+  // raw-orders / timecards fallback. The default per-location pattern issues
+  // multiple Mongo round-trips, each ~240ms RTT, which dominates at 9
+  // locations. The prefetch collapses those into a handful of bulk queries
+  // that seed the in-process caches the readers consult.
+  const prefetchInputs: AllLocationsPrefetchInput[] = perLoc.map((p) => {
+    const ranges = wantWeekToDate
+      ? [getRangeToday(p.loc), getRangeWeekToDate(p.loc)]
+      : [getRangeToday(p.loc)];
+    return {
+      locationMongoId: p.locationMongoId,
+      ranges,
+      timezone: p.loc.timezone ?? 'UTC',
+      businessStartTime: p.loc.businessStartTime ?? '00:00',
+    };
+  });
+  if (prefetchInputs.length > 0) {
+    await prefetchAllLocationsDashboardData(prefetchInputs);
+  }
 
   if (wantWeekToDate) {
     const rangeByLoc = perLoc.map((p) => ({

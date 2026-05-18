@@ -24,6 +24,11 @@ import { invalidateOrderRangeCacheForLocation } from "../utils/orderRangeCache.u
 import { invalidateOrdersEmptyCacheForLocation } from "../utils/rollupReadCache.util.js";
 import { invalidateRollupExistsByDateForLocation } from "../utils/rollupExistsByDateCache.util.js";
 import { invalidateTimecardRangeCacheForLocation } from "../utils/timecardRangeCache.util.js";
+import {
+  squareOrderDailyRollupCache,
+  homebaseTimecardDailyRollupCache,
+} from "../utils/dailyRollupCaches.util.js";
+import { squareOrderHourlyRollupCache } from "../utils/hourlyRollupCache.util.js";
 
 function toObjectId(id: string): mongoose.Types.ObjectId {
   return new mongoose.Types.ObjectId(id);
@@ -79,6 +84,8 @@ export async function upsertSquareOrder(
   invalidateOrderRangeCacheForLocation(locationId);
   invalidateOrdersEmptyCacheForLocation(locationId);
   invalidateRollupExistsByDateForLocation(locationId);
+  squareOrderDailyRollupCache.invalidateForLocation(locationId);
+  squareOrderHourlyRollupCache.invalidateForLocation(locationId);
 }
 
 export async function upsertSquareCatalogObject(
@@ -144,6 +151,7 @@ export async function upsertHomebaseTimecard(
     { upsert: true, new: true },
   ).exec();
   invalidateTimecardRangeCacheForLocation(locationId);
+  homebaseTimecardDailyRollupCache.invalidateForLocation(locationId);
 }
 
 export async function upsertMarketManValidCountDates(

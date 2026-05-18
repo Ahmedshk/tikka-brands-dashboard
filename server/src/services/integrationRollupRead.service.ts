@@ -2,10 +2,8 @@
  * Rollup-first reads for Square order aggregates (daily + hourly + period).
  */
 import mongoose from "mongoose";
-import { SquareOrderDailyRollupModel } from "../models/squareOrderDailyRollup.model.js";
 import { SquareOrderHourlyRollupModel } from "../models/squareOrderHourlyRollup.model.js";
 import { SquareOrderPeriodRollupModel } from "../models/squareOrderPeriodRollup.model.js";
-import { HomebaseTimecardDailyRollupModel } from "../models/homebaseTimecardDailyRollup.model.js";
 import {
   businessDateKeysIntersectingUtcRange,
   businessDayUtcRangeIsoStrings,
@@ -45,6 +43,11 @@ import {
   readRollupExistsByDate,
   writeRollupExistsByDate,
 } from "../utils/rollupExistsByDateCache.util.js";
+import {
+  loadHomebaseTimecardDailyRollupsForDates,
+  loadSquareOrderDailyRollupsForDates,
+} from "../utils/dailyRollupLoader.util.js";
+import { loadSquareOrderHourlyRollupsForDates } from "../utils/hourlyRollupLoader.util.js";
 import { computeRollupUncoveredSubRanges } from "../utils/rollupSplitRange.util.js";
 
 const ROLLUP_READ_ENABLED =
@@ -134,13 +137,7 @@ export async function tryGetOrderStatsAndSourcesFromDailyRollups(
     businessStartTime,
   );
   if (keys.length === 0) return null;
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
-  const dailies = await SquareOrderDailyRollupModel.find({
-    locationId: oid,
-    businessDateKey: { $in: keys },
-  })
-    .lean()
-    .exec();
+  const dailies = await loadSquareOrderDailyRollupsForDates(locationMongoId, keys);
   if (dailies.length !== keys.length) {
     logger.debug("rollup read: missing daily square order rollup rows", {
       locationMongoId,
@@ -194,13 +191,7 @@ export async function tryGetLaborTotalsFromDailyRollups(
     businessStartTime,
   );
   if (keys.length === 0) return null;
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
-  const dailies = await HomebaseTimecardDailyRollupModel.find({
-    locationId: oid,
-    businessDateKey: { $in: keys },
-  })
-    .lean()
-    .exec();
+  const dailies = await loadHomebaseTimecardDailyRollupsForDates(locationMongoId, keys);
   if (dailies.length !== keys.length) {
     logger.debug("rollup read: missing daily homebase timecard rollup rows", {
       locationMongoId,
@@ -269,13 +260,7 @@ export async function tryGetOrderStatsAndSourcesFromDailyRollupsSplit(
     businessStartTime,
   );
   if (keys.length === 0) return null;
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
-  const dailies = await SquareOrderDailyRollupModel.find({
-    locationId: oid,
-    businessDateKey: { $in: keys },
-  })
-    .lean()
-    .exec();
+  const dailies = await loadSquareOrderDailyRollupsForDates(locationMongoId, keys);
   if (dailies.length === 0) return null;
   const presentKeys = new Set(dailies.map((d) => d.businessDateKey));
   let rollupNetSalesCents = 0;
@@ -334,13 +319,7 @@ export async function tryGetLaborTotalsFromDailyRollupsSplit(
     businessStartTime,
   );
   if (keys.length === 0) return null;
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
-  const dailies = await HomebaseTimecardDailyRollupModel.find({
-    locationId: oid,
-    businessDateKey: { $in: keys },
-  })
-    .lean()
-    .exec();
+  const dailies = await loadHomebaseTimecardDailyRollupsForDates(locationMongoId, keys);
   if (dailies.length === 0) return null;
   const presentKeys = new Set(dailies.map((d) => d.businessDateKey));
   let rollupTotalLaborCost = 0;
@@ -409,13 +388,7 @@ export async function tryGetNetSalesByCategoryFromDailyRollups(
     if (rolled) return rolled;
   }
 
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
-  const dailies = await SquareOrderDailyRollupModel.find({
-    locationId: oid,
-    businessDateKey: { $in: keys },
-  })
-    .lean()
-    .exec();
+  const dailies = await loadSquareOrderDailyRollupsForDates(locationMongoId, keys);
   if (dailies.length !== keys.length) {
     logger.debug("rollup read: missing daily rows for sales-by-category", {
       locationMongoId,
@@ -617,13 +590,7 @@ export async function tryGetOrderTimeSeriesFromDailyRollups(
     }
     return validationMiss;
   }
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
-  const dailies = await SquareOrderDailyRollupModel.find({
-    locationId: oid,
-    businessDateKey: { $in: keys },
-  })
-    .lean()
-    .exec();
+  const dailies = await loadSquareOrderDailyRollupsForDates(locationMongoId, keys);
   const byKey = new Map(dailies.map((d) => [d.businessDateKey, d]));
   const missingBusinessDateKeys = keys.filter((k) => !byKey.has(k));
   if (missingBusinessDateKeys.length > 0) {
@@ -719,13 +686,7 @@ export async function tryGetOrderTimeSeriesFromDailyRollupsPair(
     comparison && comparison.keys.length > 0
       ? Array.from(new Set([...current.keys, ...comparison.keys]))
       : current.keys;
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
-  const dailies = await SquareOrderDailyRollupModel.find({
-    locationId: oid,
-    businessDateKey: { $in: unionKeys },
-  })
-    .lean()
-    .exec();
+  const dailies = await loadSquareOrderDailyRollupsForDates(locationMongoId, unionKeys);
   const byKey = new Map(dailies.map((d) => [d.businessDateKey, d]));
 
   return {
@@ -1000,20 +961,23 @@ export async function tryGetOrderTimeSeriesFromHourlyRollupsForKeys(
     writeRollupNegativeCache(negKey, m);
     return m;
   }
-  const orClause = [...uniquePairs.values()].map((p) => ({
-    locationId: oid,
-    businessDateKey: p.businessDateKey,
-    slotIndex: p.slotIndex,
-  }));
-  const docs = await SquareOrderHourlyRollupModel.find({ $or: orClause })
-    .lean()
-    .exec();
+  // Load all slot rows for the requested business dates (consults the
+  // hourly-rollup row cache primed by the all-locations prefetch, then falls
+  // back to Mongo for any uncached dates), and project the requested (date,
+  // slot) pairs into the map the existing code expects.
+  const hourlyByDate = await loadSquareOrderHourlyRollupsForDates(
+    locationMongoId,
+    distinctBusinessDateKeys,
+  );
   const byPair = new Map<string, { netSalesCents: number; transactionCount: number }>();
-  for (const d of docs) {
-    const k = `${d.businessDateKey}\t${d.slotIndex}`;
-    byPair.set(k, {
-      netSalesCents: d.netSalesCents ?? 0,
-      transactionCount: d.transactionCount ?? 0,
+  for (const pair of uniquePairs.values()) {
+    const rows = hourlyByDate.get(pair.businessDateKey);
+    if (!rows) continue;
+    const row = rows.find((r) => r.slotIndex === pair.slotIndex);
+    if (!row) continue;
+    byPair.set(`${pair.businessDateKey}\t${pair.slotIndex}`, {
+      netSalesCents: row.netSalesCents ?? 0,
+      transactionCount: row.transactionCount ?? 0,
     });
   }
   if (byPair.size !== uniquePairs.size) {
@@ -1102,19 +1066,13 @@ async function tryOrderTimeSeriesBySourceFromDailyRollupsForKeys(
   businessStartTime: string,
   bucketKeys: string[],
 ): Promise<Record<string, Record<string, number>> | null> {
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
   for (const k of bucketKeys) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return null;
     if (!dailyBusinessKeyFullyInRange(k, range, timezone, businessStartTime)) {
       return null;
     }
   }
-  const dailies = await SquareOrderDailyRollupModel.find({
-    locationId: oid,
-    businessDateKey: { $in: bucketKeys },
-  })
-    .lean()
-    .exec();
+  const dailies = await loadSquareOrderDailyRollupsForDates(locationMongoId, bucketKeys);
   const byKey = new Map(dailies.map((d) => [d.businessDateKey, d]));
   const bySourceAndKey = aggregateSourcesOfSalesBySourceAndBucketKeys(
     bucketKeys,

@@ -9,6 +9,7 @@ import mongoose from "mongoose";
 import { SquareOrderDailyRollupModel } from "../models/squareOrderDailyRollup.model.js";
 import { SquarePaymentDailyRollupModel } from "../models/squarePaymentDailyRollup.model.js";
 import { HomebaseTimecardDailyRollupModel } from "../models/homebaseTimecardDailyRollup.model.js";
+import { homebaseTimecardDailyRollupCache } from "../utils/dailyRollupCaches.util.js";
 import { MarketManOrderCacheModel } from "../models/marketmanOrderCache.model.js";
 import { MarketManOrderDailyRollupModel } from "../models/marketmanOrderDailyRollup.model.js";
 import { SquarePaymentModel } from "../models/squarePayment.model.js";
@@ -209,6 +210,7 @@ export async function buildHomebaseRollupForDay(
     },
     { upsert: true },
   ).exec();
+  homebaseTimecardDailyRollupCache.invalidateForLocation(locationMongoId);
 }
 
 export async function countMarketManOrdersForBusinessDay(
