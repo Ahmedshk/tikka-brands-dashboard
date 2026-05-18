@@ -30,7 +30,8 @@
     "rollup-square-order-periods": "tsx src/scripts/rollup-square-order-periods.ts",
     "test:rollup-period-keys": "tsx --test src/utils/rollupPeriodKeys.util.test.ts",
     "test:sales-trend-comparison": "tsx --test src/utils/salesTrendDateRange.comparison.test.ts",
-    "verify-daily-rollup-parity": "tsx src/scripts/verify-daily-rollup-parity.ts"
+    "verify-daily-rollup-parity": "tsx src/scripts/verify-daily-rollup-parity.ts",
+    "diagnose-rollup-probe-perf": "tsx src/scripts/diagnose-rollup-probe-perf.ts"
   },
   "keywords": [],
   "author": "",

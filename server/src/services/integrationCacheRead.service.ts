@@ -42,7 +42,14 @@ import {
 } from "./integrationRollupRead.service.js";
 import { logger } from "../utils/logger.util.js";
 import { squareRawIdAsString } from "../utils/squareRawIdString.util.js";
-import { loadSquareOrdersForMongoRangeCached } from "../utils/orderRangeCache.util.js";
+import {
+  loadSquareOrdersForMongoRangeCached,
+  primeOrderRangeCache,
+} from "../utils/orderRangeCache.util.js";
+import {
+  loadHomebaseTimecardsForMongoRangeCached,
+  primeTimecardRangeCache,
+} from "../utils/timecardRangeCache.util.js";
 import {
   sumLaborCostAcrossSubRanges,
   sumNetSalesCentsAcrossSubRanges,
@@ -85,6 +92,79 @@ export async function loadSquareOrdersForMongoRange(
       return docs.map((d) => d.raw as SquareOrder);
     },
   );
+}
+
+/**
+ * Bulk variant of {@link loadSquareOrdersForMongoRange}.
+ *
+ * Issues a single Mongo `find` covering all `locationMongoIds` × the union
+ * `range`, then buckets results per location and primes the
+ * {@link primeOrderRangeCache | order range cache} for **each provided
+ * sub-range** so subsequent per-location `loadSquareOrdersForMongoRange`
+ * calls become in-process cache hits.
+ *
+ * Why bulk: per-query latency to Atlas dominates the read path (~240ms on
+ * M10) while server-side `IXSCAN` cost is ~0ms. Collapsing 9 round-trips
+ * into 1 is a 9x latency win when there's nothing else to overlap with.
+ */
+export async function bulkPrefetchSquareOrdersForLocations(params: {
+  locationMongoIds: readonly string[];
+  unionRange: TimeRange;
+  primeRanges: ReadonlyArray<{
+    locationMongoId: string;
+    range: TimeRange;
+  }>;
+}): Promise<void> {
+  const { locationMongoIds, unionRange, primeRanges } = params;
+  if (locationMongoIds.length === 0) return;
+  const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
+  const unionStartD = new Date(unionRange.startAt);
+  const unionEndD = new Date(unionRange.endAt);
+  const docs = await SquareOrderModel.find({
+    locationId: { $in: oids },
+    excludedFromDashboard: false,
+    squareCreatedAt: { $gte: unionStartD, $lte: unionEndD },
+  })
+    .select({ raw: 1, locationId: 1, squareCreatedAt: 1 })
+    .lean()
+    .exec();
+  // Bucket per location, keeping `squareCreatedAt` alongside `raw` so we can
+  // filter to sub-ranges without re-parsing the raw payload.
+  type Indexed = { raw: SquareOrder; ts: number };
+  const byLocation = new Map<string, Indexed[]>();
+  for (const id of locationMongoIds) byLocation.set(id, []);
+  for (const d of docs) {
+    const typed = d as {
+      raw: SquareOrder;
+      locationId: mongoose.Types.ObjectId;
+      squareCreatedAt: Date | null;
+    };
+    const lid = typed.locationId.toString();
+    const bucket = byLocation.get(lid);
+    if (!bucket) continue;
+    const ts = typed.squareCreatedAt ? typed.squareCreatedAt.getTime() : Number.NaN;
+    bucket.push({ raw: typed.raw, ts });
+  }
+  // For each requested (location, range), slice the prefetch to that range
+  // and prime the cache. Same predicate Mongo used, so the cached array is
+  // identical to what a per-range query would return.
+  for (const { locationMongoId, range } of primeRanges) {
+    const all = byLocation.get(locationMongoId) ?? [];
+    const rangeStartMs = new Date(range.startAt).getTime();
+    const rangeEndMs = new Date(range.endAt).getTime();
+    const filtered =
+      rangeStartMs === unionStartD.getTime() &&
+      rangeEndMs === unionEndD.getTime()
+        ? all.map((i) => i.raw)
+        : all
+            .filter((i) => i.ts >= rangeStartMs && i.ts <= rangeEndMs)
+            .map((i) => i.raw);
+    primeOrderRangeCache(
+      locationMongoId,
+      { startAt: range.startAt, endAt: range.endAt },
+      filtered,
+    );
+  }
 }
 
 export interface RollupReadContext {
@@ -264,17 +344,83 @@ export async function loadHomebaseTimecardsForMongoRange(
   locationMongoId: string,
   range: TimeRange,
 ): Promise<HomebaseTimecard[]> {
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
-  const startD = new Date(range.startAt);
-  const endD = new Date(range.endAt);
+  return loadHomebaseTimecardsForMongoRangeCached(
+    locationMongoId,
+    { startAt: range.startAt, endAt: range.endAt },
+    async () => {
+      const oid = new mongoose.Types.ObjectId(locationMongoId);
+      const startD = new Date(range.startAt);
+      const endD = new Date(range.endAt);
+      const docs = await HomebaseTimecardModel.find({
+        locationId: oid,
+        clockInAt: { $gte: startD, $lte: endD },
+      })
+        .select({ raw: 1 })
+        .lean()
+        .exec();
+      return docs.map((d) => d.raw as HomebaseTimecard);
+    },
+  );
+}
+
+/**
+ * Bulk variant of {@link loadHomebaseTimecardsForMongoRange}: one Mongo
+ * `find` over (locationIds × union range), bucketed per location and
+ * primed into the timecard range cache for each requested sub-range.
+ * Mirrors {@link bulkPrefetchSquareOrdersForLocations}.
+ */
+export async function bulkPrefetchHomebaseTimecardsForLocations(params: {
+  locationMongoIds: readonly string[];
+  unionRange: TimeRange;
+  primeRanges: ReadonlyArray<{
+    locationMongoId: string;
+    range: TimeRange;
+  }>;
+}): Promise<void> {
+  const { locationMongoIds, unionRange, primeRanges } = params;
+  if (locationMongoIds.length === 0) return;
+  const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
+  const unionStartD = new Date(unionRange.startAt);
+  const unionEndD = new Date(unionRange.endAt);
   const docs = await HomebaseTimecardModel.find({
-    locationId: oid,
-    clockInAt: { $gte: startD, $lte: endD },
+    locationId: { $in: oids },
+    clockInAt: { $gte: unionStartD, $lte: unionEndD },
   })
-    .select({ raw: 1 })
+    .select({ raw: 1, locationId: 1, clockInAt: 1 })
     .lean()
     .exec();
-  return docs.map((d) => d.raw as HomebaseTimecard);
+  type Indexed = { raw: HomebaseTimecard; ts: number };
+  const byLocation = new Map<string, Indexed[]>();
+  for (const id of locationMongoIds) byLocation.set(id, []);
+  for (const d of docs) {
+    const typed = d as unknown as {
+      raw: HomebaseTimecard;
+      locationId: mongoose.Types.ObjectId;
+      clockInAt: Date | null;
+    };
+    const lid = typed.locationId.toString();
+    const bucket = byLocation.get(lid);
+    if (!bucket) continue;
+    const ts = typed.clockInAt ? typed.clockInAt.getTime() : Number.NaN;
+    bucket.push({ raw: typed.raw, ts });
+  }
+  for (const { locationMongoId, range } of primeRanges) {
+    const all = byLocation.get(locationMongoId) ?? [];
+    const rangeStartMs = new Date(range.startAt).getTime();
+    const rangeEndMs = new Date(range.endAt).getTime();
+    const filtered =
+      rangeStartMs === unionStartD.getTime() &&
+      rangeEndMs === unionEndD.getTime()
+        ? all.map((i) => i.raw)
+        : all
+            .filter((i) => i.ts >= rangeStartMs && i.ts <= rangeEndMs)
+            .map((i) => i.raw);
+    primeTimecardRangeCache(
+      locationMongoId,
+      { startAt: range.startAt, endAt: range.endAt },
+      filtered,
+    );
+  }
 }
 
 export async function getOrderStatsAndSourcesFromCache(

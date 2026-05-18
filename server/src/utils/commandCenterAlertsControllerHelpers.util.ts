@@ -15,7 +15,7 @@ import {
 } from "./commandCenterAlertsCollect.util.js";
 import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "./locationScope.js";
 import {
-  DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+  getLocationFanoutConcurrency,
   mapWithConcurrency,
 } from "./boundedConcurrency.util.js";
 import { getByIdCached } from "./perRequestCache.util.js";
@@ -204,7 +204,7 @@ export async function getAlertsBucketsForRequest(args: {
 
     const perLoc = await mapWithConcurrency(
       effectiveIds,
-      DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+      getLocationFanoutConcurrency(),
       async (lid) => {
         const { value, ms } = await timedPerLocation(async () => {
           const location = await getByIdCached(req, locationService, lid);
@@ -316,7 +316,7 @@ export async function getAlertHistoryForRequest(args: {
 
     const perLoc = await mapWithConcurrency(
       effectiveIds,
-      DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+      getLocationFanoutConcurrency(),
       async (lid) => {
         const { value, ms } = await timedPerLocation(async () => {
           const location = await getByIdCached(req, locationService, lid);

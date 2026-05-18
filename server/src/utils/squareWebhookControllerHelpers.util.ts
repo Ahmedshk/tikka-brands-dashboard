@@ -15,8 +15,7 @@ import {
 import { rebuildSquareOrderDerivedRollupsForBusinessDay } from "../services/squareOrderMultiGranularityRollup.service.js";
 import { getSquarePaymentMongoIndexFields } from "./squarePaymentMongoIndexFields.util.js";
 import { getSquareOrderMongoIndexFields } from "./squareOrderMongoIndexFields.util.js";
-import { logger } from "./logger.util.js";
-import { logWebhookReceived } from "./webhookLog.util.js";
+import { logWebhookError, logWebhookReceived, logWebhookWarn } from "./webhookLog.util.js";
 import {
   getSquareLocationIdFromWebhookWrapper,
   getSquareOrderIdFromWebhookWrapper,
@@ -110,15 +109,21 @@ async function handlePaymentEvent(args: {
   type: string;
   merchantId: string;
   obj: Record<string, unknown> | undefined;
+  webhookBody: Record<string, unknown>;
   locationRepository: LocationRepository;
 }): Promise<void> {
-  const { type, merchantId, obj, locationRepository } = args;
+  const { type, merchantId, obj, webhookBody, locationRepository } = args;
   const payment = (obj?.payment ?? obj) as Record<string, unknown> | undefined;
   const squareLocationId = firstNonEmptyString([payment?.location_id, payment?.locationId]);
   const locationId = await resolveWebhookLocationId({ merchantId, squareLocationId });
 
   if (!locationId || !payment?.id) {
-    logger.warn("Square webhook payment: unknown location or id", { type, merchantId, squareLocationId });
+    logWebhookWarn(
+      "Square",
+      "payment: unknown location or id",
+      { type, merchantId, squareLocationId },
+      webhookBody,
+    );
     return;
   }
 
@@ -126,7 +131,12 @@ async function handlePaymentEvent(args: {
   const { timezone, businessStartTime } = await getTimezoneAndBusinessStartTime({ locationRepository, locationId });
   const { paymentCreatedAt } = getSquarePaymentMongoIndexFields(payment);
   if (!paymentCreatedAt) {
-    logger.warn("Square webhook payment: skip rollup (no created_at)", { type, locationId });
+    logWebhookWarn(
+      "Square",
+      "payment: skip rollup (no created_at)",
+      { type, locationId },
+      webhookBody,
+    );
     return;
   }
 
@@ -134,7 +144,12 @@ async function handlePaymentEvent(args: {
   try {
     await buildSquarePaymentRollupForDay(locationId, businessDateKey, timezone, businessStartTime);
   } catch (error) {
-    logger.error("Square webhook payment: rollup failed", { err: error, locationId, businessDateKey });
+    logWebhookError(
+      "Square",
+      "payment: rollup failed",
+      { err: error, locationId, businessDateKey },
+      webhookBody,
+    );
   }
 }
 
@@ -143,10 +158,11 @@ async function handleOrderEvent(args: {
   merchantId: string;
   eventId: string;
   obj: Record<string, unknown> | undefined;
+  webhookBody: Record<string, unknown>;
   locationRepository: LocationRepository;
   locationService: LocationService;
 }): Promise<void> {
-  const { type, merchantId, eventId, obj, locationRepository, locationService } = args;
+  const { type, merchantId, eventId, obj, webhookBody, locationRepository, locationService } = args;
 
   const wrapper = pickSquareOrderWebhookWrapper(obj);
   const squareLocationId = getSquareLocationIdFromWebhookWrapper(wrapper);
@@ -154,20 +170,24 @@ async function handleOrderEvent(args: {
   const locationId = await resolveWebhookLocationId({ merchantId, squareLocationId });
 
   if (!locationId || !squareOrderId) {
-    logger.warn("Square webhook order: unknown location or id", {
-      type,
-      merchantId,
-      squareLocationId,
-      squareOrderId,
-      eventId,
-    });
+    logWebhookWarn(
+      "Square",
+      "order: unknown location or id",
+      { type, merchantId, squareLocationId, squareOrderId, eventId },
+      webhookBody,
+    );
     return;
   }
 
   const withCreds = await locationService.getByIdWithCredentials(locationId);
   const squareAccessToken = withCreds?.squareAccessToken?.trim() ?? "";
   if (!squareAccessToken) {
-    logger.warn("Square webhook order: missing access token", { type, locationId, squareOrderId });
+    logWebhookWarn(
+      "Square",
+      "order: missing access token",
+      { type, locationId, squareOrderId },
+      webhookBody,
+    );
     return;
   }
 
@@ -179,20 +199,21 @@ async function handleOrderEvent(args: {
       logSource: "squareWebhookOrder",
     });
   } catch (error) {
-    logger.error("Square webhook order: retrieve failed", {
-      err: error,
-      type,
-      locationId,
-      squareOrderId,
-    });
+    logWebhookError(
+      "Square",
+      "order: retrieve failed",
+      { err: error, type, locationId, squareOrderId },
+      webhookBody,
+    );
     return;
   }
   if (!fullOrder) {
-    logger.error("Square webhook order: retrieve returned no order", {
-      type,
-      locationId,
-      squareOrderId,
-    });
+    logWebhookError(
+      "Square",
+      "order: retrieve returned no order",
+      { type, locationId, squareOrderId },
+      webhookBody,
+    );
     return;
   }
 
@@ -200,7 +221,12 @@ async function handleOrderEvent(args: {
   const { timezone, businessStartTime } = await getTimezoneAndBusinessStartTime({ locationRepository, locationId });
   const { squareCreatedAt } = getSquareOrderMongoIndexFields(fullOrder);
   if (!squareCreatedAt) {
-    logger.warn("Square webhook order: skip rollup (no created_at)", { type, locationId, squareOrderId });
+    logWebhookWarn(
+      "Square",
+      "order: skip rollup (no created_at)",
+      { type, locationId, squareOrderId },
+      webhookBody,
+    );
     return;
   }
 
@@ -209,7 +235,12 @@ async function handleOrderEvent(args: {
     await buildSquareOrderRollupForDay(locationId, businessDateKey, timezone, businessStartTime);
     await rebuildSquareOrderDerivedRollupsForBusinessDay(locationId, businessDateKey, timezone, businessStartTime);
   } catch (error) {
-    logger.error("Square webhook order: rollup failed", { err: error, locationId, businessDateKey });
+    logWebhookError(
+      "Square",
+      "order: rollup failed",
+      { err: error, locationId, businessDateKey },
+      webhookBody,
+    );
   }
 }
 
@@ -217,9 +248,10 @@ async function handleTeamMemberEvent(args: {
   type: string;
   merchantId: string;
   obj: Record<string, unknown> | undefined;
+  webhookBody: Record<string, unknown>;
   locationRepository: LocationRepository;
 }): Promise<void> {
-  const { type, merchantId, obj, locationRepository } = args;
+  const { type, merchantId, obj, webhookBody, locationRepository } = args;
   const member = (obj?.team_member ?? obj) as Record<string, unknown> | undefined;
   const assigned = member?.assigned_locations as { location_ids?: string[] } | undefined;
   const locIds = assigned?.location_ids ?? [];
@@ -235,7 +267,12 @@ async function handleTeamMemberEvent(args: {
 
   const locationId = await resolveWebhookLocationId({ merchantId, squareLocationId });
   if (!locationId || !member?.id) {
-    logger.warn("Square webhook team_member: unknown location or id", { type, merchantId });
+    logWebhookWarn(
+      "Square",
+      "team_member: unknown location or id",
+      { type, merchantId },
+      webhookBody,
+    );
     return;
   }
 
@@ -251,21 +288,30 @@ async function dispatchWebhookEvent(args: {
   merchantId: string;
   eventId: string;
   obj: Record<string, unknown> | undefined;
+  webhookBody: Record<string, unknown>;
   locationRepository: LocationRepository;
   locationService: LocationService;
 }): Promise<string | null> {
-  const { type, merchantId, eventId, obj, locationRepository, locationService } = args;
+  const { type, merchantId, eventId, obj, webhookBody, locationRepository, locationService } = args;
 
   if (type.startsWith("payment.")) {
-    await handlePaymentEvent({ type, merchantId, obj, locationRepository });
+    await handlePaymentEvent({ type, merchantId, obj, webhookBody, locationRepository });
     return null;
   }
   if (type.startsWith("order.")) {
-    await handleOrderEvent({ type, merchantId, eventId, obj, locationRepository, locationService });
+    await handleOrderEvent({
+      type,
+      merchantId,
+      eventId,
+      obj,
+      webhookBody,
+      locationRepository,
+      locationService,
+    });
     return null;
   }
   if (type.startsWith("team_member.")) {
-    await handleTeamMemberEvent({ type, merchantId, obj, locationRepository });
+    await handleTeamMemberEvent({ type, merchantId, obj, webhookBody, locationRepository });
     return null;
   }
   if (isCatalogEvent(type)) {
@@ -293,10 +339,21 @@ export async function runSquareWebhookHandler(args: {
   });
 
   let signatureKeys: string[];
+  let parsedBody: Record<string, unknown> | undefined;
+  const parsedEarly = tryParseJsonObject(rawBody);
+  if (parsedEarly.ok) {
+    parsedBody = parsedEarly.body;
+  }
+
   try {
     signatureKeys = await loadSignatureKeys(locationService);
   } catch (error) {
-    logger.error("Square webhook: failed to load signature keys", { err: error });
+    logWebhookError(
+      "Square",
+      "failed to load signature keys",
+      { err: error },
+      parsedBody ?? { rawBody },
+    );
     res.status(503).json({ message: "Square webhook not configured" });
     return;
   }
@@ -310,26 +367,31 @@ export async function runSquareWebhookHandler(args: {
   }
 
   if (!isSignatureValid({ signatureKeys, notificationUrl, rawBody, signature: sig ?? undefined })) {
+    logWebhookWarn("Square", "invalid signature", { contentLength: rawBody.length }, parsedBody ?? {
+      rawBody,
+    });
     res.status(403).json({ message: "Invalid signature" });
     return;
   }
 
-  const parsed = tryParseJsonObject(rawBody);
-  if (!parsed.ok) {
+  if (!parsedEarly.ok) {
+    logWebhookWarn("Square", "invalid JSON", { contentLength: rawBody.length }, { rawBody });
     res.status(400).json({ message: "Invalid JSON" });
     return;
   }
 
-  const { duplicate } = await tryDedupeByEventId(parsed.body);
+  const webhookBody = parsedEarly.body;
+
+  const { duplicate } = await tryDedupeByEventId(webhookBody);
   if (duplicate) {
     res.status(200).json({ received: true, duplicate: true });
     return;
   }
 
-  const type = asTrimmedString(parsed.body.type);
-  const merchantId = asTrimmedString(parsed.body.merchant_id);
-  const eventId = firstNonEmptyString([parsed.body.event_id, parsed.body.id]);
-  const data = parsed.body.data as Record<string, unknown> | undefined;
+  const type = asTrimmedString(webhookBody.type);
+  const merchantId = asTrimmedString(webhookBody.merchant_id);
+  const eventId = firstNonEmptyString([webhookBody.event_id, webhookBody.id]);
+  const data = webhookBody.data as Record<string, unknown> | undefined;
   const obj = data?.object as Record<string, unknown> | undefined;
 
   logWebhookReceived("Square", {
@@ -345,12 +407,13 @@ export async function runSquareWebhookHandler(args: {
       merchantId,
       eventId,
       obj,
+      webhookBody,
       locationRepository,
       locationService,
     });
     responseReceived(res, ignoredType ? { ignored: ignoredType } : undefined);
   } catch (error) {
-    logger.error("Square webhook handler error", { err: error, type });
+    logWebhookError("Square", "handler error", { err: error, type }, webhookBody);
     res.status(500).json({ message: "Handler error" });
   }
 }

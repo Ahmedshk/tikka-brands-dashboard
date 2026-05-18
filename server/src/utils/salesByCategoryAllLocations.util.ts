@@ -16,10 +16,29 @@ import { buildSalesByCategoryResponseData, parseSalesByCategoryQuery } from './s
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
 import { getByIdWithCredentialsCached } from './perRequestCache.util.js';
 import {
+  getLocationFanoutConcurrency,
+  mapWithConcurrency,
+} from './boundedConcurrency.util.js';
+import {
   summarizeAllLocationsTimings,
   timedPerLocation,
 } from './allLocationsTiming.util.js';
+import {
+  readOrdersEmptyCache,
+  writeOrdersEmptyCache,
+} from './rollupReadCache.util.js';
+import {
+  buildPrefetchInputForLocation,
+  prefetchAllLocationsDashboardData,
+  type AllLocationsPrefetchInput,
+} from './allLocationsDashboardPrefetch.util.js';
 import { performance } from 'node:perf_hooks';
+
+const CATEGORY_ORDERS_EMPTY_GRANULARITY = 'category';
+
+function categoryRangeKey(range: { startAt: string; endAt: string }): string {
+  return `${range.startAt}..${range.endAt}`;
+}
 
 type CategoryResult = { categories: Array<{ name: string; netSalesCents: number }>; totalNetSalesCents: number };
 
@@ -118,10 +137,48 @@ async function maybeBuildCategoryOptions(params: {
   const needComparisonOrders = comparisonRange != null && rollupComparison == null;
   if (!needCurrentOrders && !needComparisonOrders) return { currentCatOpts, comparisonCatOpts };
 
+  const currentEmptyKey = needCurrentOrders
+    ? {
+        locationMongoId: mongoId,
+        granularity: CATEGORY_ORDERS_EMPTY_GRANULARITY,
+        rangeKey: categoryRangeKey(dataRange),
+      }
+    : null;
+  const comparisonEmptyKey =
+    needComparisonOrders && comparisonRange
+      ? {
+          locationMongoId: mongoId,
+          granularity: CATEGORY_ORDERS_EMPTY_GRANULARITY,
+          rangeKey: categoryRangeKey(comparisonRange),
+        }
+      : null;
+
+  const currentCacheHit = currentEmptyKey
+    ? readOrdersEmptyCache(currentEmptyKey)
+    : false;
+  const comparisonCacheHit = comparisonEmptyKey
+    ? readOrdersEmptyCache(comparisonEmptyKey)
+    : false;
+
   const [currentOrders, comparisonOrders] = await Promise.all([
-    needCurrentOrders ? loadSquareOrdersForMongoRange(mongoId, dataRange) : Promise.resolve([]),
-    needComparisonOrders && comparisonRange ? loadSquareOrdersForMongoRange(mongoId, comparisonRange) : Promise.resolve([]),
+    needCurrentOrders && !currentCacheHit
+      ? loadSquareOrdersForMongoRange(mongoId, dataRange)
+      : Promise.resolve([]),
+    needComparisonOrders && comparisonRange && !comparisonCacheHit
+      ? loadSquareOrdersForMongoRange(mongoId, comparisonRange)
+      : Promise.resolve([]),
   ]);
+  if (needCurrentOrders && !currentCacheHit && currentOrders.length === 0 && currentEmptyKey) {
+    writeOrdersEmptyCache(currentEmptyKey);
+  }
+  if (
+    needComparisonOrders &&
+    !comparisonCacheHit &&
+    comparisonOrders.length === 0 &&
+    comparisonEmptyKey
+  ) {
+    writeOrdersEmptyCache(comparisonEmptyKey);
+  }
   if (needCurrentOrders) {
     currentCatOpts = {
       ...squareOptions,
@@ -244,15 +301,42 @@ export async function buildSalesByCategoryAllLocations(params: {
   }
 
   const tHandler = performance.now();
+  // Up-front bulk prefetch: collapses N×K per-location Mongo round-trips
+  // into 3 bulk queries that prime the process caches the per-location
+  // workers below already consult.
+  const credsForPrefetch = await Promise.all(
+    ids.map((id) => getByIdWithCredentialsCached(req, locationService, id)),
+  );
+  const prefetchInputs: AllLocationsPrefetchInput[] = [];
+  for (let i = 0; i < ids.length; i++) {
+    const c = credsForPrefetch[i];
+    const locationMongoId = ids[i];
+    if (!c || !locationMongoId) continue;
+    const tz = c.location.timezone?.trim() ?? 'UTC';
+    const bst = c.location.businessStartTime?.trim() ?? '00:00';
+    prefetchInputs.push(
+      buildPrefetchInputForLocation({
+        locationMongoId,
+        timezone: tz,
+        businessStartTime: bst,
+        query: q,
+      }),
+    );
+  }
+  if (prefetchInputs.length > 0) {
+    await prefetchAllLocationsDashboardData(prefetchInputs);
+  }
   const perLocationMs: number[] = [];
-  const perLoc = await Promise.all(
-    ids.map(async (id) => {
+  const perLoc = await mapWithConcurrency(
+    ids,
+    getLocationFanoutConcurrency(),
+    async (id) => {
       const { value, ms } = await timedPerLocation(() =>
         fetchSalesByCategoryForLocation({ req, locationId: id, query: q, locationService }),
       );
       perLocationMs.push(ms);
       return value;
-    }),
+    },
   );
 
   const logTimingDone = (count: number): void => {

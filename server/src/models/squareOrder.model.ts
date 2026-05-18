@@ -33,11 +33,23 @@ const squareOrderSchema = new Schema<SquareOrderDocument>(
 
 squareOrderSchema.index({ squareId: 1 }, { unique: true });
 squareOrderSchema.index({ locationId: 1, updatedAt: -1 });
+// Original composite index. Kept alongside the partial index below until
+// the partial index has been verified in staging/prod; drop in a follow-up
+// PR once the planner has been observed using the partial index.
 squareOrderSchema.index({
   locationId: 1,
   excludedFromDashboard: 1,
   squareCreatedAt: 1,
 });
+// Partial index for the dashboard read path. The dashboard query always
+// filters `excludedFromDashboard: false`; pushing that into the filter
+// expression keeps the index smaller (no entries for excluded orders) and
+// lets the planner range-scan (locationId, squareCreatedAt) directly without
+// a useless middle equality.
+squareOrderSchema.index(
+  { locationId: 1, squareCreatedAt: 1 },
+  { partialFilterExpression: { excludedFromDashboard: false } },
+);
 
 export const SquareOrderModel = mongoose.model<SquareOrderDocument>(
   "SquareOrder",

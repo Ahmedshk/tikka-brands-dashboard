@@ -1,6 +1,6 @@
 import { getMarketManCatalogItems } from "../services/marketman.service.js";
 import type { MarketManCatalogItem } from "../services/marketman.service.js";
-import { logger } from "./logger.util.js";
+import { logWebhookError, logWebhookWarn } from "./webhookLog.util.js";
 import { fillMissingOrderStatusFieldsFromOrderStatus } from "./marketmanWebhookOrderStatus.util.js";
 
 function isMissingField(v: unknown): boolean {
@@ -156,6 +156,7 @@ async function tryEnrichLinesFromMarketManCatalog(
   cloned: Record<string, unknown>,
   items: unknown[],
   buyerGuid: string,
+  webhookReceived?: unknown,
 ): Promise<boolean> {
   if (!orderLinesNeedCatalogFetch(items)) return false;
 
@@ -163,10 +164,12 @@ async function tryEnrichLinesFromMarketManCatalog(
     typeof cloned.VendorGuid === "string" ? cloned.VendorGuid.trim() : "";
 
   if (!vendorGuid) {
-    logger.warn("marketman webhook enrich: VendorGuid missing; cannot call GetCatalogItems", {
-      buyerGuid,
-      orderNumber: cloned.OrderNumber,
-    });
+    logWebhookWarn(
+      "MarketMan",
+      "enrich: VendorGuid missing; cannot call GetCatalogItems",
+      { buyerGuid, orderNumber: cloned.OrderNumber },
+      webhookReceived,
+    );
     return true;
   }
 
@@ -175,12 +178,17 @@ async function tryEnrichLinesFromMarketManCatalog(
     const bySku = buildCatalogByProductCode(catalog);
     return mergeCatalogIntoLinesNeedingFetch(items, bySku);
   } catch (err) {
-    logger.error("marketman webhook enrich: GetCatalogItems failed", {
-      buyerGuid,
-      vendorGuid,
-      orderNumber: cloned.OrderNumber,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    logWebhookError(
+      "MarketMan",
+      "enrich: GetCatalogItems failed",
+      {
+        buyerGuid,
+        vendorGuid,
+        orderNumber: cloned.OrderNumber,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      webhookReceived,
+    );
     return true;
   }
 }
@@ -192,6 +200,7 @@ async function tryEnrichLinesFromMarketManCatalog(
 export async function enrichMarketManWebhookOrder(
   order: Record<string, unknown>,
   buyerGuid: string,
+  webhookReceived?: unknown,
 ): Promise<{ order: Record<string, unknown>; enrichmentPartial: boolean }> {
   const cloned = structuredClone(order) as Record<string, unknown>;
   fillMissingOrderStatusFieldsFromOrderStatus(cloned);
@@ -208,6 +217,7 @@ export async function enrichMarketManWebhookOrder(
     cloned,
     items,
     buyerGuid,
+    webhookReceived,
   );
 
   forEachOrderLine(items, applyPriceTotalWithVatIfMissing);

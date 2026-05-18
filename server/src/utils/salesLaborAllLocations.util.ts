@@ -24,7 +24,7 @@ import {
 import { mergeSourcesOfSalesFromDailyRollupDocs } from './squareSourcesOfSalesMerge.util.js';
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
 import {
-  DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+  getLocationFanoutConcurrency,
   mapWithConcurrency,
 } from './boundedConcurrency.util.js';
 import { getByIdWithCredentialsCached } from './perRequestCache.util.js';
@@ -322,7 +322,7 @@ export async function buildAllLocationsTimesheetRows(params: {
   const perLocationMs: number[] = [];
   const perLocationRows = await mapWithConcurrency(
     effectiveIds,
-    DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+    getLocationFanoutConcurrency(),
     async (id): Promise<unknown[]> => {
       const { value, ms } = await timedPerLocation<unknown[]>(async () => {
         const withCreds = await getByIdWithCredentialsCached(req, locationService, id);

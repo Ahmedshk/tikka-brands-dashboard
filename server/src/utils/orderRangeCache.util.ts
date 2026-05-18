@@ -105,6 +105,37 @@ export async function loadSquareOrdersForMongoRangeCached(
 }
 
 /**
+ * Pre-populate the cache with already-loaded orders for `(locationId, range)`.
+ *
+ * Used by the all-locations dashboard prefetch step: one `find({locationId:
+ * {$in: [...ids]}})` query is bucketed per location and seeded here, so the
+ * per-location workers' subsequent `loadSquareOrdersForMongoRange` calls
+ * become in-process cache hits — zero Mongo round-trips.
+ *
+ * Skips if an inflight loader is in progress for the same key (a real loader
+ * already started; let it complete normally).
+ */
+export function primeOrderRangeCache(
+  locationMongoId: string,
+  range: TimeRangeKeyParts,
+  orders: SquareOrder[],
+): void {
+  const key = buildKey(locationMongoId, range);
+  const existing = cache.get(key);
+  if (existing?.inflight != null) return;
+  const entry: CacheEntry = existing ?? {
+    inflight: null,
+    resolved: null,
+    resolvedAt: 0,
+  };
+  entry.resolved = orders;
+  entry.resolvedAt = Date.now();
+  entry.inflight = null;
+  cache.set(key, entry);
+  evictIfNeeded();
+}
+
+/**
  * Drop any cached orders for a location. Called after a rollup build / fresh
  * Square sync so stale orders aren't served past sync boundaries.
  */

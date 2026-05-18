@@ -11,7 +11,7 @@ import {
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
 import { generateDistinctColors } from './colorPalette.util.js';
 import {
-  DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+  getLocationFanoutConcurrency,
   mapWithConcurrency,
 } from './boundedConcurrency.util.js';
 import { getByIdWithCredentialsCached } from './perRequestCache.util.js';
@@ -19,7 +19,46 @@ import {
   summarizeAllLocationsTimings,
   timedPerLocation,
 } from './allLocationsTiming.util.js';
+import {
+  buildPrefetchInputForLocation,
+  prefetchAllLocationsDashboardData,
+  type AllLocationsPrefetchInput,
+  type AllLocationsPrefetchQueryDateFields,
+} from './allLocationsDashboardPrefetch.util.js';
 import { performance } from 'node:perf_hooks';
+
+async function prefetchForSalesTrend(params: {
+  req: Request;
+  ids: readonly string[];
+  query: AllLocationsPrefetchQueryDateFields;
+  locationService: LocationService;
+}): Promise<void> {
+  const { req, ids, query, locationService } = params;
+  // Resolve creds for every location in parallel — this is per-request
+  // cached, so the subsequent per-location workers reuse the same Promise.
+  const creds = await Promise.all(
+    ids.map((id) => getByIdWithCredentialsCached(req, locationService, id)),
+  );
+  const inputs: AllLocationsPrefetchInput[] = [];
+  for (let i = 0; i < ids.length; i++) {
+    const c = creds[i];
+    if (!c) continue;
+    const locationMongoId = ids[i];
+    if (!locationMongoId) continue;
+    const tz = c.location.timezone?.trim() ?? 'UTC';
+    const bst = c.location.businessStartTime?.trim() ?? '00:00';
+    inputs.push(
+      buildPrefetchInputForLocation({
+        locationMongoId,
+        timezone: tz,
+        businessStartTime: bst,
+        query,
+      }),
+    );
+  }
+  if (inputs.length === 0) return;
+  await prefetchAllLocationsDashboardData(inputs);
+}
 
 function sumNullableSeries(points: Array<(number | null)[]>) {
   const len = Math.max(0, ...points.map((p) => p.length));
@@ -64,7 +103,7 @@ async function loadPerLocationTrendResults(params: {
   const perLocationMs: number[] = [];
   const settled = await mapWithConcurrency(
     ids,
-    DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+    getLocationFanoutConcurrency(),
     async (id): Promise<SalesTrendResult | null> => {
       const { value, ms } = await timedPerLocation<SalesTrendResult | null>(async () => {
         const withCreds = await getByIdWithCredentialsCached(
@@ -161,6 +200,9 @@ export async function buildAllLocationsSalesTrend(params: {
   if (ids.length === 0) return emptyTrendData(query);
 
   const tHandler = performance.now();
+  // Collapse N×K per-location Mongo round-trips into 3 bulk queries; the
+  // per-location workers below then hit primed in-process caches.
+  await prefetchForSalesTrend({ req, ids, query, locationService });
   const { results, perLocationMs } = await loadPerLocationTrendResults({
     req,
     ids,
@@ -201,10 +243,11 @@ export async function buildAllLocationsSalesTrendKpi(params: {
     };
   }
   const tHandler = performance.now();
+  await prefetchForSalesTrend({ req, ids, query, locationService });
   const perLocationMs: number[] = [];
   const settled = await mapWithConcurrency(
     ids,
-    DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+    getLocationFanoutConcurrency(),
     async (id): Promise<Awaited<ReturnType<typeof getSalesTrendKpiData>> | null> => {
       const { value, ms } = await timedPerLocation<
         Awaited<ReturnType<typeof getSalesTrendKpiData>> | null

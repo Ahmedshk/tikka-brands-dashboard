@@ -6,6 +6,7 @@ import { getMarketManOrderBusinessDateAt } from "./marketmanOrderIndexFields.uti
 import { marketManBusinessDateKeyFromUtcDate } from "./marketManBusinessDateKey.util.js";
 import { marketManOrderNumberStringFromRaw } from "./marketmanWebhookExtract.util.js";
 import { logger } from "./logger.util.js";
+import { logWebhookError } from "./webhookLog.util.js";
 
 export function marketManWebhookBodyAsRecord(
   body: unknown,
@@ -22,10 +23,6 @@ export function marketManWebhookHoodEventIdFromBody(
   return null;
 }
 
-function marketManWebhookNowIso(): string {
-  return new Date().toISOString();
-}
-
 export type MarketManWebhookOrderPipelineArgs = {
   order: Record<string, unknown>;
   buyerGuid: string;
@@ -35,6 +32,8 @@ export type MarketManWebhookOrderPipelineArgs = {
   timezone: string;
   businessStartTime: string;
   orderNumberEarly: string;
+  /** Full HTTP webhook JSON body (for warn/error diagnostics). */
+  webhookReceived: Record<string, unknown>;
 };
 
 export type MarketManWebhookOrderPipelineResult = {
@@ -55,27 +54,23 @@ export async function runMarketManWebhookOrderPipeline(
     timezone,
     businessStartTime,
     orderNumberEarly,
+    webhookReceived,
   } = args;
-  const ts = marketManWebhookNowIso();
 
   let enrichedOrder: Record<string, unknown>;
   let enrichmentPartial: boolean;
   try {
-    const enriched = await enrichMarketManWebhookOrder(order, buyerGuid);
+    const enriched = await enrichMarketManWebhookOrder(order, buyerGuid, webhookReceived);
     enrichedOrder = enriched.order;
     enrichmentPartial = enriched.enrichmentPartial;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[${ts}] MarketMan webhook: enrich failed`, {
-      buyerGuid,
-      orderNumber: orderNumberEarly || null,
-      error: msg,
-    });
-    logger.error("marketman webhook: enrich failed", {
-      buyerGuid,
-      orderNumber: orderNumberEarly || null,
-      error: msg,
-    });
+    logWebhookError(
+      "MarketMan",
+      "enrich failed",
+      { buyerGuid, orderNumber: orderNumberEarly || null, error: msg },
+      webhookReceived,
+    );
     throw err;
   }
 
@@ -90,18 +85,17 @@ export async function runMarketManWebhookOrderPipeline(
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[${ts}] MarketMan webhook: upsert failed`, {
-      buyerGuid,
-      orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-      apiKind,
-      error: msg,
-    });
-    logger.error("marketman webhook: upsert failed", {
-      buyerGuid,
-      orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-      apiKind,
-      error: msg,
-    });
+    logWebhookError(
+      "MarketMan",
+      "upsert failed",
+      {
+        buyerGuid,
+        orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
+        apiKind,
+        error: msg,
+      },
+      webhookReceived,
+    );
     throw err;
   }
 
@@ -128,19 +122,18 @@ export async function runMarketManWebhookOrderPipeline(
       rollupUpdated = true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      logger.error("marketman webhook: rollup refresh failed", {
-        buyerGuid,
-        apiKind,
-        orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-        error: msg,
-      });
-      console.error(`[${ts}] MarketMan webhook: rollup refresh failed`, {
-        buyerGuid,
-        orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-        apiKind,
-        businessDateKey,
-        error: msg,
-      });
+      logWebhookError(
+        "MarketMan",
+        "rollup refresh failed",
+        {
+          buyerGuid,
+          orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
+          apiKind,
+          businessDateKey,
+          error: msg,
+        },
+        webhookReceived,
+      );
     }
   } else {
     logger.info("marketman webhook: skipped rollup (no businessDateAt)", {
@@ -148,14 +141,6 @@ export async function runMarketManWebhookOrderPipeline(
       apiKind,
       orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
     });
-    console.log(
-      `[${ts}] MarketMan webhook: rollup skipped (no businessDateAt)`,
-      {
-        buyerGuid,
-        orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),
-        apiKind,
-      },
-    );
   }
 
   const orderNumberFinal = marketManOrderNumberStringFromRaw(enrichedOrder);

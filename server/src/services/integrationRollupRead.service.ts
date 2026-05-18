@@ -41,6 +41,10 @@ import {
   readRollupNegativeCache,
   writeRollupNegativeCache,
 } from "../utils/rollupReadCache.util.js";
+import {
+  readRollupExistsByDate,
+  writeRollupExistsByDate,
+} from "../utils/rollupExistsByDateCache.util.js";
 import { computeRollupUncoveredSubRanges } from "../utils/rollupSplitRange.util.js";
 
 const ROLLUP_READ_ENABLED =
@@ -842,6 +846,54 @@ export async function tryGetOrderTimeSeriesFromPeriodRollups(
 }
 
 /**
+ * Bulk-prefetch which (location, businessDateKey) pairs have ANY hourly
+ * rollup rows. Issued by the all-locations dashboard handlers up-front to
+ * seed the per-(location, date) existence cache so each per-location
+ * `tryGetOrderTimeSeriesFromHourlyRollupsForKeys` call can short-circuit
+ * its own `exists()` round-trip.
+ *
+ * One Mongo aggregate replaces N×M individual `exists()` queries (9 locations
+ * × 2 business dates = 18 round-trips), each of which costs ~240ms RTT to
+ * Atlas regardless of server-side cost (~0ms IXSCAN). Net win: ~18x query-
+ * latency reduction for the rollup existence layer on a cold all-locations
+ * page load.
+ */
+export async function bulkPrefetchHourlyRollupExistsByDate(params: {
+  locationMongoIds: readonly string[];
+  businessDateKeys: readonly string[];
+}): Promise<void> {
+  const { locationMongoIds, businessDateKeys } = params;
+  if (locationMongoIds.length === 0 || businessDateKeys.length === 0) return;
+  if (!ROLLUP_READ_ENABLED) return;
+  const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
+  const groups = (await SquareOrderHourlyRollupModel.aggregate([
+    {
+      $match: {
+        locationId: { $in: oids },
+        businessDateKey: { $in: [...businessDateKeys] },
+      },
+    },
+    {
+      $group: {
+        _id: { locationId: "$locationId", businessDateKey: "$businessDateKey" },
+      },
+    },
+  ]).exec()) as Array<{
+    _id: { locationId: mongoose.Types.ObjectId; businessDateKey: string };
+  }>;
+  const present = new Set<string>();
+  for (const g of groups) {
+    present.add(`${g._id.locationId.toString()}|${g._id.businessDateKey}`);
+  }
+  for (const lid of locationMongoIds) {
+    for (const dk of businessDateKeys) {
+      const exists = present.has(`${lid}|${dk}`);
+      writeRollupExistsByDate(lid, dk, exists);
+    }
+  }
+}
+
+/**
  * Read hourly rollups aligned to sales-trend chart keys (`yyyy-MM-ddTHH` wall-clock).
  */
 export async function tryGetOrderTimeSeriesFromHourlyRollupsForKeys(
@@ -903,6 +955,27 @@ export async function tryGetOrderTimeSeriesFromHourlyRollupsForKeys(
   const distinctBusinessDateKeys = Array.from(
     new Set([...uniquePairs.values()].map((p) => p.businessDateKey)),
   );
+  // First, consult the in-process bulk-prefetch cache: if every requested
+  // business date key has already been confirmed empty for this location
+  // (via the all-locations prefetch step), skip the Mongo `exists()` entirely.
+  // Per-query latency to Atlas dominates the read path; this collapses the
+  // 9 × 2 = 18 round-trips on an all-locations page load into 0.
+  const everyDateKnownEmpty = distinctBusinessDateKeys.every(
+    (k) => readRollupExistsByDate(locationMongoId, k) === false,
+  );
+  if (everyDateKnownEmpty) {
+    const m = miss(
+      "HOURLY_NO_ROWS_FOR_DATES",
+      `No hourly rollup rows exist for the requested business dates (bulk prefetch)`,
+      {
+        distinctBusinessDateCount: distinctBusinessDateKeys.length,
+        sampleBusinessDateKeys: distinctBusinessDateKeys.slice(0, 5),
+        prefetchCacheHit: true,
+      },
+    );
+    writeRollupNegativeCache(negKey, m);
+    return m;
+  }
   // Cheap existence pre-check: avoids composing the expensive $or scan when
   // there are no hourly rollup rows at all for the requested business dates.
   // Index (locationId, businessDateKey) makes `exists` ~1-5 ms.
@@ -911,6 +984,11 @@ export async function tryGetOrderTimeSeriesFromHourlyRollupsForKeys(
     businessDateKey: { $in: distinctBusinessDateKeys },
   });
   if (!anyExists) {
+    // Seed the per-date cache so future calls for any subset of these dates
+    // short-circuit through the bulk-prefetch path above.
+    for (const k of distinctBusinessDateKeys) {
+      writeRollupExistsByDate(locationMongoId, k, false);
+    }
     const m = miss(
       "HOURLY_NO_ROWS_FOR_DATES",
       `No hourly rollup rows exist for the requested business dates (existence pre-check)`,

@@ -35,5 +35,24 @@ export async function mapWithConcurrency<T, R>(
 /**
  * Default concurrency for per-location dashboard fan-out. Tuned to balance
  * parallelism against Mongo connection pool pressure.
+ *
+ * Override via the `LOCATION_FANOUT_CONCURRENCY` env var; clamped to
+ * [MIN_LOCATION_FANOUT_CONCURRENCY, MAX_LOCATION_FANOUT_CONCURRENCY].
+ *
+ * The default is chosen so a typical multi-location tenant (≤10 locations)
+ * finishes in a single wave instead of queueing a second batch behind the first.
  */
-export const DEFAULT_LOCATION_FANOUT_CONCURRENCY = 6;
+export const DEFAULT_LOCATION_FANOUT_CONCURRENCY = 10;
+const MIN_LOCATION_FANOUT_CONCURRENCY = 1;
+const MAX_LOCATION_FANOUT_CONCURRENCY = 16;
+
+export function getLocationFanoutConcurrency(): number {
+  const raw = process.env.LOCATION_FANOUT_CONCURRENCY;
+  if (raw == null || raw.trim() === "") return DEFAULT_LOCATION_FANOUT_CONCURRENCY;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_LOCATION_FANOUT_CONCURRENCY;
+  return Math.max(
+    MIN_LOCATION_FANOUT_CONCURRENCY,
+    Math.min(MAX_LOCATION_FANOUT_CONCURRENCY, parsed),
+  );
+}

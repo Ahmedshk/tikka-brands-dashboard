@@ -1,24 +1,83 @@
+import { logger } from './logger.util.js';
+
 /**
- * Shared helpers for emitting consistent `[ts] <source> webhook: received` console logs
- * across webhook entrypoints (Square, Adobe Sign, MarketMan, etc.). These complement the
- * structured `logger.*` calls — they exist so that webhook traffic is always visible in
- * raw stdout/PM2 logs even when the structured logger is filtered.
+ * Shared helpers for webhook console logs and structured logging.
+ * On warn/error, the complete received webhook body is included when provided.
  */
+
+export type WebhookSource = 'Square' | 'MarketMan';
+
+/** Sources that emit webhook console lines but do not use warn/error body attachment. */
+export type WebhookLogSource = WebhookSource | 'Adobe Sign';
 
 export function webhookLogTs(): string {
   return new Date().toISOString();
 }
 
+function mergeWebhookMeta(
+  fields: Record<string, unknown> | undefined,
+  webhookReceived: unknown,
+): Record<string, unknown> | undefined {
+  const base = fields ?? {};
+  if (webhookReceived === undefined) {
+    return Object.keys(base).length > 0 ? base : undefined;
+  }
+  return { ...base, webhookReceived };
+}
+
+function emitWebhookConsole(
+  stream: 'log' | 'warn' | 'error',
+  source: WebhookLogSource,
+  detail: string,
+  fields?: Record<string, unknown>,
+  webhookReceived?: unknown,
+): void {
+  const prefix = `[${webhookLogTs()}] ${source} webhook: ${detail}`;
+  const emit = stream === 'log' ? console.log : stream === 'warn' ? console.warn : console.error;
+
+  if (fields === undefined) {
+    emit(prefix);
+  } else {
+    emit(prefix, fields);
+  }
+
+  if (webhookReceived !== undefined) {
+    emit(`[${webhookLogTs()}] ${source} webhook: received (full)`, webhookReceived);
+  }
+}
+
 export function logWebhookReceived(
-  source: string,
+  source: WebhookLogSource,
   fields: Record<string, unknown> = {},
 ): void {
-  console.log(`[${webhookLogTs()}] ${source} webhook: received`, fields);
+  emitWebhookConsole('log', source, 'received', fields);
 }
 
 export function logWebhookResponse(
-  source: string,
+  source: WebhookLogSource,
   fields: Record<string, unknown> = {},
 ): void {
-  console.log(`[${webhookLogTs()}] ${source} webhook: response`, fields);
+  emitWebhookConsole('log', source, 'response', fields);
+}
+
+export function logWebhookWarn(
+  source: WebhookSource,
+  detail: string,
+  fields?: Record<string, unknown>,
+  webhookReceived?: unknown,
+): void {
+  const message = `${source} webhook: ${detail}`;
+  logger.warn(message, mergeWebhookMeta(fields, webhookReceived));
+  emitWebhookConsole('warn', source, detail, fields, webhookReceived);
+}
+
+export function logWebhookError(
+  source: WebhookSource,
+  detail: string,
+  fields?: Record<string, unknown>,
+  webhookReceived?: unknown,
+): void {
+  const message = `${source} webhook: ${detail}`;
+  logger.error(message, mergeWebhookMeta(fields, webhookReceived));
+  emitWebhookConsole('error', source, detail, fields, webhookReceived);
 }

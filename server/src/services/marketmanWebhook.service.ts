@@ -12,6 +12,11 @@ import {
 } from "../utils/marketmanWebhookExtract.util.js";
 import { marketManOrderWebhookSyncWindowUtc } from "../utils/marketmanOrderWebhookSyncWindow.util.js";
 import { logger } from "../utils/logger.util.js";
+import {
+  logWebhookReceived,
+  logWebhookResponse,
+  logWebhookWarn,
+} from "../utils/webhookLog.util.js";
 import type { MarketManOrderApiKind } from "../models/marketmanOrderCache.model.js";
 import {
   marketManWebhookBodyAsRecord,
@@ -42,18 +47,17 @@ function resolveApiKind(
   return explicit ?? inferMarketManOrderApiKindFromOrderRaw(order);
 }
 
-function mmWebhookTs(): string {
-  return new Date().toISOString();
-}
-
 export async function processMarketManWebhookHttp(
   req: Request,
   res: Response,
 ): Promise<void> {
   const b = marketManWebhookBodyAsRecord(req.body);
   if (!b) {
-    console.warn(
-      `[${mmWebhookTs()}] MarketMan webhook: invalid body (expected JSON object)`,
+    logWebhookWarn(
+      "MarketMan",
+      "invalid body (expected JSON object)",
+      undefined,
+      req.body,
     );
     res.status(400).json({ message: "Expected JSON object body" });
     return;
@@ -67,7 +71,7 @@ export async function processMarketManWebhookHttp(
     ? marketManOrderNumberStringFromRaw(order)
     : "";
 
-  console.log(`[${mmWebhookTs()}] MarketMan webhook: received`, {
+  logWebhookReceived("MarketMan", {
     buyerGuid: buyerGuid ?? null,
     orderNumber: orderNumberEarly || null,
     orderId: orderNumberEarly || null,
@@ -79,7 +83,7 @@ export async function processMarketManWebhookHttp(
     logger.info("marketman webhook: event not configured for order upsert", {
       eventName,
     });
-    console.log(`[${mmWebhookTs()}] MarketMan webhook: response`, {
+    logWebhookResponse("MarketMan", {
       success: true,
       httpStatus: 200,
       ignored: true,
@@ -95,7 +99,7 @@ export async function processMarketManWebhookHttp(
 
   if (!buyerGuid || !order) {
     logger.info("marketman webhook: no order/buyer to upsert", { eventName });
-    console.log(`[${mmWebhookTs()}] MarketMan webhook: response`, {
+    logWebhookResponse("MarketMan", {
       success: true,
       httpStatus: 200,
       ignored: true,
@@ -113,11 +117,13 @@ export async function processMarketManWebhookHttp(
 
   const loc = await locationRepository.findByMarketManBuyerGuid(buyerGuid);
   if (!loc?._id) {
-    logger.warn("marketman webhook: unknown buyer GUID (no location)", {
-      buyerGuid,
-      eventName,
-    });
-    console.warn(`[${mmWebhookTs()}] MarketMan webhook: response`, {
+    logWebhookWarn(
+      "MarketMan",
+      "unknown buyer GUID (no location)",
+      { buyerGuid, eventName },
+      b,
+    );
+    logWebhookResponse("MarketMan", {
       success: true,
       httpStatus: 200,
       ignored: true,
@@ -136,15 +142,13 @@ export async function processMarketManWebhookHttp(
   const apiKind = resolveApiKind(order, explicitApiKind);
   const window = marketManOrderWebhookSyncWindowUtc(order, apiKind);
   if (!window) {
-    logger.warn(
-      "marketman webhook: could not derive sync window from order dates",
-      {
-        buyerGuid,
-        eventName,
-        apiKind,
-      },
+    logWebhookWarn(
+      "MarketMan",
+      "could not derive sync window from order dates",
+      { buyerGuid, eventName, apiKind },
+      b,
     );
-    console.warn(`[${mmWebhookTs()}] MarketMan webhook: response`, {
+    logWebhookResponse("MarketMan", {
       success: true,
       httpStatus: 200,
       ignored: true,
@@ -171,6 +175,7 @@ export async function processMarketManWebhookHttp(
       timezone: loc.timezone ?? "UTC",
       businessStartTime: loc.businessStartTime ?? "00:00",
       orderNumberEarly,
+      webhookReceived: b,
     });
 
   logger.info("marketman webhook: order upserted", {
@@ -182,7 +187,7 @@ export async function processMarketManWebhookHttp(
     rollupUpdated,
   });
 
-  console.log(`[${mmWebhookTs()}] MarketMan webhook: response`, {
+  logWebhookResponse("MarketMan", {
     success: true,
     httpStatus: 200,
     upserted: true,

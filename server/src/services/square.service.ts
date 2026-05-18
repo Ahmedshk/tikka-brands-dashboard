@@ -31,6 +31,11 @@ import {
 } from "../utils/externalApiCallLog.util.js";
 import { logger } from "../utils/logger.util.js";
 import {
+  buildRangeKey,
+  readOrdersEmptyCache,
+  writeOrdersEmptyCache,
+} from "../utils/rollupReadCache.util.js";
+import {
   deriveSquareSourcesOfSalesKey,
   normalizeTrendSourceKey,
   segmentKeyToLabel,
@@ -1471,6 +1476,32 @@ export async function getOrderTimeSeriesInRange(
     typeof businessStartTimeOpt === "string"
       ? { businessStartTime: businessStartTimeOpt }
       : undefined;
+
+  // Short-circuit when a recent fallback for the same (location, granularity,
+  // range) was confirmed empty by a Mongo orders scan. The 500ms-7s scan to
+  // re-confirm zero rows is the dominant cost early in the business day.
+  const ordersEmptyLocationId =
+    options?.ordersOverride == null ? rr?.locationMongoId : undefined;
+  const ordersEmptyCacheKey = ordersEmptyLocationId
+    ? {
+        locationMongoId: ordersEmptyLocationId,
+        granularity,
+        rangeKey: buildRangeKey(keys),
+      }
+    : null;
+  if (ordersEmptyCacheKey && readOrdersEmptyCache(ordersEmptyCacheKey)) {
+    logger.info(
+      "[sales-trend] getOrderTimeSeriesInRange: orders-empty cache hit",
+      {
+        granularity,
+        bucketCount: keys.length,
+        locationMongoId: ordersEmptyLocationId,
+      },
+    );
+    const zeros = keys.map(() => 0);
+    return { labels, netSales: zeros, transactionCount: zeros };
+  }
+
   const tAggStart = performance.now();
   const orders = await resolveDashboardOrdersForRange(
     squareLocationId,
@@ -1478,6 +1509,9 @@ export async function getOrderTimeSeriesInRange(
     "getOrderTimeSeriesInRange",
     options,
   );
+  if (ordersEmptyCacheKey && orders.length === 0) {
+    writeOrdersEmptyCache(ordersEmptyCacheKey);
+  }
   const { netSalesByKey, countByKey } = aggregateOrdersIntoTimeSeriesBuckets(
     orders,
     keys,
@@ -1613,6 +1647,28 @@ export async function getOrderTimeSeriesBySourceInRange(
     typeof businessStartTimeOpt === "string"
       ? { businessStartTime: businessStartTimeOpt }
       : undefined;
+
+  const ordersEmptyLocationId =
+    options?.ordersOverride == null ? rr?.locationMongoId : undefined;
+  const ordersEmptyCacheKey = ordersEmptyLocationId
+    ? {
+        locationMongoId: ordersEmptyLocationId,
+        granularity,
+        rangeKey: buildRangeKey(keys),
+      }
+    : null;
+  if (ordersEmptyCacheKey && readOrdersEmptyCache(ordersEmptyCacheKey)) {
+    logger.info(
+      "[sales-trend] getOrderTimeSeriesBySourceInRange: orders-empty cache hit",
+      {
+        granularity,
+        bucketCount: keys.length,
+        locationMongoId: ordersEmptyLocationId,
+      },
+    );
+    return { labels, series: [] };
+  }
+
   const tBySourceAgg = performance.now();
   const orders = await resolveDashboardOrdersForRange(
     squareLocationId,
@@ -1620,6 +1676,9 @@ export async function getOrderTimeSeriesBySourceInRange(
     "getOrderTimeSeriesBySourceInRange",
     options,
   );
+  if (ordersEmptyCacheKey && orders.length === 0) {
+    writeOrdersEmptyCache(ordersEmptyCacheKey);
+  }
   const bySourceAndKey = aggregateOrdersIntoBySourceAndBucketKeys(orders, {
     chartBucketKeys: keys,
     timezone,

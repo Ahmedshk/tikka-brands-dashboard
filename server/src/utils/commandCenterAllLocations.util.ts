@@ -23,7 +23,7 @@ import {
 } from './businessDayUtcRange.util.js';
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
 import {
-  DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+  getLocationFanoutConcurrency,
   mapWithConcurrency,
 } from './boundedConcurrency.util.js';
 import { getByIdCached } from './perRequestCache.util.js';
@@ -78,7 +78,7 @@ async function loadPerLocationContext(params: {
 
   const settled = await mapWithConcurrency(
     effectiveIds,
-    DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+    getLocationFanoutConcurrency(),
     async (id) => {
       const location = await getByIdCached(req, locationService, id);
       if (!location) return null;

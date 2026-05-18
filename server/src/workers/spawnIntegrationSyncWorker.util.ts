@@ -2,6 +2,7 @@ import { Worker } from "node:worker_threads";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { IntegrationSyncLogModel } from "../models/integrationSyncLog.model.js";
+import { resolveIntegrationSyncWorkerPath } from "../utils/integrationSyncWorkerPath.util.js";
 import { logger } from "../utils/logger.util.js";
 import type { IntegrationSyncWorkerMsg } from "./integrationSyncWorker.types.js";
 
@@ -68,7 +69,7 @@ export function spawnIntegrationSyncWorker(
     return { spawned: false, reason };
   }
 
-  const workerPath = path.join(__dirname, "integrationSync.worker.js");
+  const workerPath = resolveIntegrationSyncWorkerPath(__dirname);
   const worker = new Worker(workerPath, { workerData: message });
   liveWorkers.add(worker);
 
