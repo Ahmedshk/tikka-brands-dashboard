@@ -496,24 +496,44 @@ function buildMonthlyBuckets(
   return buildMonthlyBucketsCivilCalendar(range, tz, periodType);
 }
 
+/**
+ * Process-level memo for {@link getOrderedBucketsAndLabels}.
+ *
+ * The underlying bucket builders construct `Intl.DateTimeFormat` instances
+ * and run dozens of `formatToParts` calls per invocation. The all-locations
+ * dashboard calls this once per (location, range, endpoint) — easily 36+
+ * times per page load — yet the result is fully determined by the input
+ * tuple. Cache forever in-process; result objects are read-only by convention
+ * and the memo costs are tiny (small arrays of strings).
+ */
+type BucketsResult = { keys: string[]; labels: string[] };
+const bucketsMemo = new Map<string, BucketsResult>();
+const BUCKETS_MEMO_MAX = 5_000;
+
 /** Generate ordered bucket keys and labels for a range (same as Square for alignment). */
 export function getOrderedBucketsAndLabels(
   range: TimeRange,
   timezone: string,
   granularity: SalesTrendGranularity,
   options?: GetOrderedBucketsAndLabelsOptions,
-): { keys: string[]; labels: string[] } {
+): BucketsResult {
   const tz = timezone.trim();
   const periodType = options?.periodType;
   const businessStartTime = options?.businessStartTime;
+  const memoKey = `${granularity}|${tz}|${range.startAt}|${range.endAt}|${periodType ?? ""}|${businessStartTime ?? ""}`;
+  const cached = bucketsMemo.get(memoKey);
+  if (cached) return cached;
 
-  if (granularity === "hourly") return buildHourlyBuckets(range, tz);
-  if (granularity === "daily")
-    return buildDailyBuckets(range, tz, periodType, businessStartTime);
-  if (granularity === "weekly")
-    return buildWeeklyBuckets(range, tz, businessStartTime);
-  if (granularity === "monthly")
-    return buildMonthlyBuckets(range, tz, periodType, businessStartTime);
+  let result: BucketsResult;
+  if (granularity === "hourly") result = buildHourlyBuckets(range, tz);
+  else if (granularity === "daily")
+    result = buildDailyBuckets(range, tz, periodType, businessStartTime);
+  else if (granularity === "weekly")
+    result = buildWeeklyBuckets(range, tz, businessStartTime);
+  else if (granularity === "monthly")
+    result = buildMonthlyBuckets(range, tz, periodType, businessStartTime);
+  else result = { keys: [], labels: [] };
 
-  return { keys: [], labels: [] };
+  if (bucketsMemo.size < BUCKETS_MEMO_MAX) bucketsMemo.set(memoKey, result);
+  return result;
 }
