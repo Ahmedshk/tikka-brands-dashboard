@@ -157,8 +157,21 @@ function mapNotificationToCollectedCommandCenterAlert(
   return { row, category: cat, createdKey };
 }
 
-export async function collectCommandCenterAlertsForUser(params: {
-  userId: string;
+export async function loadCommandCenterNotificationsForUser(
+  userId: string,
+): Promise<NotificationLeanForCommandCenter[]> {
+  const notifications = await NotificationModel.find({
+    recipientId: userId,
+    type: { $in: ALL_CARD_TYPES },
+  })
+    .sort({ createdAt: -1 })
+    .limit(200)
+    .lean();
+  return notifications as unknown as NotificationLeanForCommandCenter[];
+}
+
+export function collectCommandCenterAlertsFromNotifications(params: {
+  notifications: readonly NotificationLeanForCommandCenter[];
   locationId: string;
   timezone: string;
   todayKey: string;
@@ -166,9 +179,9 @@ export async function collectCommandCenterAlertsForUser(params: {
   canFinancial: boolean;
   canInventory: boolean;
   canReputation: boolean;
-}): Promise<CollectedCommandCenterAlert[]> {
+}): CollectedCommandCenterAlert[] {
   const {
-    userId,
+    notifications,
     locationId,
     timezone,
     todayKey,
@@ -177,14 +190,6 @@ export async function collectCommandCenterAlertsForUser(params: {
     canInventory,
     canReputation,
   } = params;
-
-  const notifications = await NotificationModel.find({
-    recipientId: userId,
-    type: { $in: ALL_CARD_TYPES },
-  })
-    .sort({ createdAt: -1 })
-    .limit(200)
-    .lean();
 
   const ctx = {
     locationId,
@@ -198,12 +203,31 @@ export async function collectCommandCenterAlertsForUser(params: {
 
   const out: CollectedCommandCenterAlert[] = [];
   for (const n of notifications) {
-    const collected = mapNotificationToCollectedCommandCenterAlert(
-      n as NotificationLeanForCommandCenter,
-      ctx,
-    );
+    const collected = mapNotificationToCollectedCommandCenterAlert(n, ctx);
     if (collected) out.push(collected);
   }
-
   return out;
+}
+
+export async function collectCommandCenterAlertsForUser(params: {
+  userId: string;
+  locationId: string;
+  timezone: string;
+  todayKey: string;
+  dismissed: Set<string>;
+  canFinancial: boolean;
+  canInventory: boolean;
+  canReputation: boolean;
+}): Promise<CollectedCommandCenterAlert[]> {
+  const notifications = await loadCommandCenterNotificationsForUser(params.userId);
+  return collectCommandCenterAlertsFromNotifications({
+    notifications,
+    locationId: params.locationId,
+    timezone: params.timezone,
+    todayKey: params.todayKey,
+    dismissed: params.dismissed,
+    canFinancial: params.canFinancial,
+    canInventory: params.canInventory,
+    canReputation: params.canReputation,
+  });
 }

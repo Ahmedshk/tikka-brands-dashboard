@@ -22,6 +22,16 @@ import {
   businessDayUtcRangeIsoStrings,
 } from './businessDayUtcRange.util.js';
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
+import {
+  DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+  mapWithConcurrency,
+} from './boundedConcurrency.util.js';
+import { getByIdCached } from './perRequestCache.util.js';
+import {
+  summarizeAllLocationsTimings,
+  timedPerLocation,
+} from './allLocationsTiming.util.js';
+import { performance } from 'node:perf_hooks';
 
 function sumNullable(vals: Array<number | null | undefined>): number | null {
   let any = false;
@@ -65,27 +75,25 @@ async function loadPerLocationContext(params: {
 > {
   const { req, wantLaborCost, goalService, locationService, toLocationForKpi } = params;
   const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
-  const perLoc: Array<{
-    locationMongoId: string;
-    loc: LocationForKpi;
-    laborCostGoal: number;
-    laborCostGoalTolerance: number;
-  }> = [];
 
-  for (const id of effectiveIds) {
-    const location = await locationService.getById(id);
-    if (!location) continue;
-    const loc = toLocationForKpi(location);
-    const goals = await getLaborCostGoals(goalService, id, loc, wantLaborCost);
-    perLoc.push({
-      locationMongoId: id,
-      loc,
-      laborCostGoal: goals.laborCostGoal,
-      laborCostGoalTolerance: goals.laborCostGoalTolerance,
-    });
-  }
+  const settled = await mapWithConcurrency(
+    effectiveIds,
+    DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+    async (id) => {
+      const location = await getByIdCached(req, locationService, id);
+      if (!location) return null;
+      const loc = toLocationForKpi(location);
+      const goals = await getLaborCostGoals(goalService, id, loc, wantLaborCost);
+      return {
+        locationMongoId: id,
+        loc,
+        laborCostGoal: goals.laborCostGoal,
+        laborCostGoalTolerance: goals.laborCostGoalTolerance,
+      };
+    },
+  );
 
-  return perLoc;
+  return settled.filter((p): p is NonNullable<typeof p> => p != null);
 }
 
 function average(nums: number[]): number {
@@ -122,6 +130,11 @@ export async function buildAllLocationsCommandCenterKpis(params: {
   } = params;
 
   const wantWeekToDate = Array.isArray(periods) && periods.includes('weekToDate');
+  const tHandler = performance.now();
+  const perLocationMs: number[] = [];
+  const route = wantWeekToDate
+    ? 'GET /command-center/kpis (weekToDate)'
+    : 'GET /command-center/kpis (today)';
 
   const perLoc = await loadPerLocationContext({
     req,
@@ -132,6 +145,12 @@ export async function buildAllLocationsCommandCenterKpis(params: {
   });
 
   if (perLoc.length === 0) {
+    summarizeAllLocationsTimings({
+      route,
+      locationCount: 0,
+      totalMs: Math.round(performance.now() - tHandler),
+      perLocationMs,
+    });
     if (wantWeekToDate) return { dual: true, data: { today: {}, weekToDate: {} } };
     return { dual: false, data: {} };
   }
@@ -146,17 +165,21 @@ export async function buildAllLocationsCommandCenterKpis(params: {
       rangeWeekToDate: getRangeWeekToDate(p.loc),
     }));
     const results = await Promise.all(
-      rangeByLoc.map((p) =>
-        fetchWeekToDateKpis({
-          locationMongoId: p.locationMongoId,
-          location: p.loc,
-          rangeToday: p.rangeToday,
-          rangeWeekToDate: p.rangeWeekToDate,
-          wantNetSales,
-          wantLaborCost,
-          laborCostGoal: avgGoal,
-        }),
-      ),
+      rangeByLoc.map(async (p) => {
+        const { value, ms } = await timedPerLocation(() =>
+          fetchWeekToDateKpis({
+            locationMongoId: p.locationMongoId,
+            location: p.loc,
+            rangeToday: p.rangeToday,
+            rangeWeekToDate: p.rangeWeekToDate,
+            wantNetSales,
+            wantLaborCost,
+            laborCostGoal: avgGoal,
+          }),
+        );
+        perLocationMs.push(ms);
+        return value;
+      }),
     );
 
     const netSalesToday = sumNullable(results.map((r) => r.netSalesToday));
@@ -193,20 +216,30 @@ export async function buildAllLocationsCommandCenterKpis(params: {
       weekToDateData.reviewCount = null;
     }
 
+    summarizeAllLocationsTimings({
+      route,
+      locationCount: perLoc.length,
+      totalMs: Math.round(performance.now() - tHandler),
+      perLocationMs,
+    });
     return { dual: true, data: { today: todayData, weekToDate: weekToDateData } };
   }
 
   const results = await Promise.all(
-    perLoc.map((p) =>
-      fetchTodayOnlyKpis(
-        p.locationMongoId,
-        p.loc,
-        getRangeToday(p.loc),
-        wantNetSales,
-        wantLaborCost,
-        avgGoal,
-      ),
-    ),
+    perLoc.map(async (p) => {
+      const { value, ms } = await timedPerLocation(() =>
+        fetchTodayOnlyKpis(
+          p.locationMongoId,
+          p.loc,
+          getRangeToday(p.loc),
+          wantNetSales,
+          wantLaborCost,
+          avgGoal,
+        ),
+      );
+      perLocationMs.push(ms);
+      return value;
+    }),
   );
 
   const netSalesToday = sumNullable(results.map((r) => r.netSalesToday));
@@ -233,6 +266,12 @@ export async function buildAllLocationsCommandCenterKpis(params: {
     data.reviewCount = null;
   }
 
+  summarizeAllLocationsTimings({
+    route,
+    locationCount: perLoc.length,
+    totalMs: Math.round(performance.now() - tHandler),
+    perLocationMs,
+  });
   return { dual: false, data };
 }
 
@@ -246,7 +285,7 @@ export async function buildAllLocationsHourlySales(params: {
 
   const perLoc = await Promise.all(
     effectiveIds.map(async (id) => {
-      const location = await locationService.getById(id);
+      const location = await getByIdCached(req, locationService, id);
       if (!location) return null;
       const timezone = location.timezone?.trim();
       const squareLocationId = location.squareLocationId?.trim();

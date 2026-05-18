@@ -23,6 +23,16 @@ import {
 } from './salesTrendDateRange.util.js';
 import { mergeSourcesOfSalesFromDailyRollupDocs } from './squareSourcesOfSalesMerge.util.js';
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
+import {
+  DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+  mapWithConcurrency,
+} from './boundedConcurrency.util.js';
+import { getByIdWithCredentialsCached } from './perRequestCache.util.js';
+import {
+  summarizeAllLocationsTimings,
+  timedPerLocation,
+} from './allLocationsTiming.util.js';
+import { performance } from 'node:perf_hooks';
 
 function sum(vals: Array<number | null | undefined>): number | null {
   let any = false;
@@ -86,47 +96,71 @@ export async function buildAllLocationsSalesLaborKpis(params: {
   const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
   if (effectiveIds.length === 0) return buildEmptySalesLaborKPIs();
 
+  const tHandler = performance.now();
+  const perLocationMs: number[] = [];
+  const logTimingDone = (count: number): void => {
+    summarizeAllLocationsTimings({
+      route: 'GET /sales-labor/kpis',
+      locationCount: count,
+      totalMs: Math.round(performance.now() - tHandler),
+      perLocationMs,
+    });
+  };
+
   const perLoc = await Promise.all(
     effectiveIds.map(async (id) => {
-      const withCreds = await locationService.getByIdWithCredentials(id);
-      if (!withCreds) return null;
-      const { location, squareAccessToken, homebaseApiKey } = withCreds;
-      const timezone = location.timezone?.trim();
-      if (!timezone) return null;
-      const range = getSalesLaborTimeRange({
-        timezone: location.timezone,
-        businessStartTime: location.businessStartTime,
-        squareLocationId: location.squareLocationId,
-        homebaseLocationId: location.homebaseLocationId,
+      const { value, ms } = await timedPerLocation(async () => {
+        const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
+        if (!withCreds) return null;
+        const { location, squareAccessToken, homebaseApiKey } = withCreds;
+        const timezone = location.timezone?.trim();
+        if (!timezone) return null;
+        const range = getSalesLaborTimeRange({
+          timezone: location.timezone,
+          businessStartTime: location.businessStartTime,
+          squareLocationId: location.squareLocationId,
+          homebaseLocationId: location.homebaseLocationId,
+        });
+
+        const squareLocationId = location.squareLocationId?.trim();
+        const homebaseLocationId = location.homebaseLocationId?.trim();
+
+        const [squareData, laborData] = await Promise.all([
+          squareLocationId
+            ? fetchSquareOrderStatsAndSources(
+                squareLocationId,
+                range,
+                squareAccessToken ?? undefined,
+                id,
+                {
+                  timezone,
+                  businessStartTime: location.businessStartTime?.trim() ?? '00:00',
+                },
+              )
+            : Promise.resolve(null),
+          homebaseLocationId
+            ? fetchLaborCostAndHours(
+                homebaseLocationId,
+                range,
+                homebaseApiKey ?? undefined,
+                id,
+                { timezone, businessStartTime: location.businessStartTime?.trim() ?? "00:00" },
+              )
+            : Promise.resolve(null),
+        ]);
+
+        return { squareData, laborData };
       });
-
-      const squareLocationId = location.squareLocationId?.trim();
-      const homebaseLocationId = location.homebaseLocationId?.trim();
-
-      const [squareData, laborData] = await Promise.all([
-        squareLocationId
-          ? fetchSquareOrderStatsAndSources(
-              squareLocationId,
-              range,
-              squareAccessToken ?? undefined,
-              id,
-              {
-                timezone,
-                businessStartTime: location.businessStartTime?.trim() ?? '00:00',
-              },
-            )
-          : Promise.resolve(null),
-        homebaseLocationId
-          ? fetchLaborCostAndHours(homebaseLocationId, range, homebaseApiKey ?? undefined, id)
-          : Promise.resolve(null),
-      ]);
-
-      return { squareData, laborData };
+      perLocationMs.push(ms);
+      return value;
     }),
   );
 
   const usable = perLoc.filter((p): p is NonNullable<typeof p> => p != null);
-  if (usable.length === 0) return buildEmptySalesLaborKPIs();
+  if (usable.length === 0) {
+    logTimingDone(0);
+    return buildEmptySalesLaborKPIs();
+  }
 
   const actualTotalSales = sum(usable.map((u) => u.squareData?.actualTotalSales));
   const transactionCount = sum(usable.map((u) => u.squareData?.transactionCount));
@@ -166,14 +200,18 @@ export async function buildAllLocationsSalesLaborKpis(params: {
     sourcesOfSales,
   };
 
+  if (metrics.length === 0) {
+    logTimingDone(usable.length);
+    return buildEmptySalesLaborKPIs();
+  }
   // Filter to requested metrics (mirror buildSalesLaborKpisResponseData behavior).
-  if (metrics.length === 0) return buildEmptySalesLaborKPIs();
   const filtered: Partial<SalesLaborKPIsData> = {};
   const fullRecord = full as unknown as Record<string, unknown>;
   for (const k of metrics) {
     if (k in full) (filtered as Record<string, unknown>)[k] = fullRecord[k];
   }
   if (metrics.includes('totalRefunds')) filtered.totalRefundCount = full.totalRefundCount;
+  logTimingDone(usable.length);
   return filtered;
 }
 
@@ -188,55 +226,73 @@ export async function buildAllLocationsHourlyBreakdown(params: {
     return buildEmptyHourlyBreakdownData(labels);
   }
 
+  const tHandler = performance.now();
+  const perLocationMs: number[] = [];
   const perLoc = await Promise.all(
     effectiveIds.map(async (id) => {
-      const withCreds = await locationService.getByIdWithCredentials(id);
-      if (!withCreds) return null;
-      const { location, squareAccessToken, homebaseApiKey } = withCreds;
-      const timezone = location.timezone?.trim();
-      if (!timezone) return null;
-      const businessStartTime = location.businessStartTime?.trim() ?? '00:00';
-      const range = getSalesLaborTimeRange({
-        timezone: location.timezone,
-        businessStartTime: location.businessStartTime,
-        squareLocationId: location.squareLocationId,
-        homebaseLocationId: location.homebaseLocationId,
+      const { value, ms } = await timedPerLocation(async () => {
+        const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
+        if (!withCreds) return null;
+        const { location, squareAccessToken, homebaseApiKey } = withCreds;
+        const timezone = location.timezone?.trim();
+        if (!timezone) return null;
+        const businessStartTime = location.businessStartTime?.trim() ?? '00:00';
+        const range = getSalesLaborTimeRange({
+          timezone: location.timezone,
+          businessStartTime: location.businessStartTime,
+          squareLocationId: location.squareLocationId,
+          homebaseLocationId: location.homebaseLocationId,
+        });
+
+        const squareLocationId = location.squareLocationId?.trim();
+        const homebaseLocationId = location.homebaseLocationId?.trim();
+
+        const [netSalesCentsBySlot, laborCostPerHour] = await Promise.all([
+          squareLocationId
+            ? fetchHourlyNetSalesCentsBySlot(
+                squareLocationId,
+                range,
+                timezone,
+                businessStartTime,
+                squareAccessToken ?? undefined,
+                id,
+              )
+            : Promise.resolve(new Array<number>(24).fill(0)),
+          homebaseLocationId
+            ? fetchHourlyLaborCostPerHour(
+                homebaseLocationId,
+                range,
+                timezone,
+                businessStartTime,
+                homebaseApiKey ?? undefined,
+                id,
+              )
+            : Promise.resolve(new Array<number>(24).fill(0)),
+        ]);
+
+        return { businessStartTime, netSalesCentsBySlot, laborCostPerHour };
       });
-
-      const squareLocationId = location.squareLocationId?.trim();
-      const homebaseLocationId = location.homebaseLocationId?.trim();
-
-      const [netSalesCentsBySlot, laborCostPerHour] = await Promise.all([
-        squareLocationId
-          ? fetchHourlyNetSalesCentsBySlot(
-              squareLocationId,
-              range,
-              timezone,
-              businessStartTime,
-              squareAccessToken ?? undefined,
-              id,
-            )
-          : Promise.resolve(new Array<number>(24).fill(0)),
-        homebaseLocationId
-          ? fetchHourlyLaborCostPerHour(
-              homebaseLocationId,
-              range,
-              timezone,
-              businessStartTime,
-              homebaseApiKey ?? undefined,
-              id,
-            )
-          : Promise.resolve(new Array<number>(24).fill(0)),
-      ]);
-
-      return { businessStartTime, netSalesCentsBySlot, laborCostPerHour };
+      perLocationMs.push(ms);
+      return value;
     }),
   );
+
+  const logTimingDone = (count: number): void => {
+    summarizeAllLocationsTimings({
+      route: 'GET /sales-labor/hourly-breakdown',
+      locationCount: count,
+      totalMs: Math.round(performance.now() - tHandler),
+      perLocationMs,
+    });
+  };
 
   const usable = perLoc.filter((p): p is NonNullable<typeof p> => p != null);
   const businessStartTime = usable[0]?.businessStartTime ?? '00:00';
   const labels = buildHourlyBreakdownLabels(businessStartTime);
-  if (usable.length === 0) return buildEmptyHourlyBreakdownData(labels);
+  if (usable.length === 0) {
+    logTimingDone(0);
+    return buildEmptyHourlyBreakdownData(labels);
+  }
 
   const netSalesCentsBySlot = new Array<number>(24).fill(0);
   const laborCostPerHour = new Array<number>(24).fill(0);
@@ -250,6 +306,7 @@ export async function buildAllLocationsHourlyBreakdown(params: {
 
   const netSalesPerHour = netSalesCentsBySlot.map((c) => c / 100);
   const laborCostPercentPerHour = computeLaborCostPercentPerHour(netSalesPerHour, laborCostPerHour);
+  logTimingDone(usable.length);
   return { labels, netSalesPerHour, laborCostPercentPerHour };
 }
 
@@ -261,26 +318,37 @@ export async function buildAllLocationsTimesheetRows(params: {
   const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
   if (effectiveIds.length === 0) return [];
 
-  const allRows: unknown[] = [];
-  for (const id of effectiveIds) {
-    const withCreds = await locationService.getByIdWithCredentials(id);
-    if (!withCreds) continue;
-    const { location } = withCreds;
-    const timezone = location.timezone?.trim() || 'UTC';
-    const homebaseLocationId = location.homebaseLocationId?.trim();
-    if (!homebaseLocationId) continue;
+  const tHandler = performance.now();
+  const perLocationMs: number[] = [];
+  const perLocationRows = await mapWithConcurrency(
+    effectiveIds,
+    DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+    async (id): Promise<unknown[]> => {
+      const { value, ms } = await timedPerLocation<unknown[]>(async () => {
+        const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
+        if (!withCreds) return [];
+        const { location } = withCreds;
+        const timezone = location.timezone?.trim() || 'UTC';
+        const homebaseLocationId = location.homebaseLocationId?.trim();
+        if (!homebaseLocationId) return [];
 
-    // Reuse existing controller behavior by calling the same cache read path.
-    // We intentionally don’t attempt to dedupe staff across locations.
-    const { y, m, d } = getDatePartsInTz(new Date(), timezone);
-    const startAt = getStartOfDayUtc(y, m, d, timezone).toISOString();
-    const endAt = getEndOfDayUtc(y, m, d, timezone).toISOString();
-    const timecards = await loadHomebaseTimecardsForMongoRange(id, { startAt, endAt });
-    for (const tc of timecards) {
-      allRows.push(toTimesheetRow(tc, location, id));
-    }
-  }
+        const { y, m, d } = getDatePartsInTz(new Date(), timezone);
+        const startAt = getStartOfDayUtc(y, m, d, timezone).toISOString();
+        const endAt = getEndOfDayUtc(y, m, d, timezone).toISOString();
+        const timecards = await loadHomebaseTimecardsForMongoRange(id, { startAt, endAt });
+        return timecards.map((tc) => toTimesheetRow(tc, location, id));
+      });
+      perLocationMs.push(ms);
+      return value;
+    },
+  );
 
-  return allRows;
+  summarizeAllLocationsTimings({
+    route: 'GET /sales-labor/timesheet',
+    locationCount: effectiveIds.length,
+    totalMs: Math.round(performance.now() - tHandler),
+    perLocationMs,
+  });
+  return perLocationRows.flat();
 }
 

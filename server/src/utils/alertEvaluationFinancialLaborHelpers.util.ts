@@ -100,6 +100,7 @@ export async function fetchSalesLaborKpisForFinancialLabor(params: {
         range,
         homebaseApiKey ?? undefined,
         locationId,
+        rollupCtx,
       )
     : Promise.resolve(null);
 

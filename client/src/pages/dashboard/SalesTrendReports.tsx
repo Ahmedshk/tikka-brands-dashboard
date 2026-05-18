@@ -408,7 +408,9 @@ export const SalesTrendReports = () => {
         setTrendData(null);
       })
       .finally(() => {
-        if (!aborted) setLoading(false);
+        if (!aborted) {
+          setLoading(false);
+        }
       });
     return () => {
       aborted = true;

@@ -290,6 +290,14 @@ export interface SquareServiceOptions {
     timezone: string;
     businessStartTime: string;
   };
+  /**
+   * Pre-computed rollup probe result for this range. When supplied,
+   * {@link getOrderTimeSeriesInRange} skips the live `tryGetOrderTimeSeriesFromRollups`
+   * call and consumes this value directly (hit → return; miss → fall back to
+   * orders). Used by paired callers (current + comparison) that probe both
+   * ranges in a single batched Mongo query.
+   */
+  pairedRollupResult?: import("./integrationRollupRead.service.js").RollupTimeSeriesResult;
 }
 
 function resolveAccessToken(override?: string): string {
@@ -1412,7 +1420,34 @@ export async function getOrderTimeSeriesInRange(
   );
 
   const rr = options?.rollupRead;
-  if (rr) {
+  const paired = options?.pairedRollupResult;
+  if (paired) {
+    if (paired.hit) {
+      logger.info(
+        "[sales-trend] getOrderTimeSeriesInRange: ROLLUPS (paired)",
+        {
+          granularity,
+          bucketCount: keys.length,
+          locationMongoId: rr?.locationMongoId,
+        },
+      );
+      return {
+        labels,
+        netSales: paired.netSales,
+        transactionCount: paired.transactionCount,
+      };
+    }
+    logger.info(
+      "[sales-trend] getOrderTimeSeriesInRange: paired rollup miss → orders",
+      {
+        granularity,
+        bucketCount: keys.length,
+        locationMongoId: rr?.locationMongoId,
+        rollupMissCode: paired.code,
+        rollupMissReason: paired.reason,
+      },
+    );
+  } else if (rr) {
     const rollupHit = await tryResolveOrderTimeSeriesFromRollups({
       rr,
       range,

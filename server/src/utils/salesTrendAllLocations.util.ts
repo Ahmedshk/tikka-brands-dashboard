@@ -10,6 +10,16 @@ import {
 } from './salesTrendControllerHelpers.js';
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
 import { generateDistinctColors } from './colorPalette.util.js';
+import {
+  DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+  mapWithConcurrency,
+} from './boundedConcurrency.util.js';
+import { getByIdWithCredentialsCached } from './perRequestCache.util.js';
+import {
+  summarizeAllLocationsTimings,
+  timedPerLocation,
+} from './allLocationsTiming.util.js';
+import { performance } from 'node:perf_hooks';
 
 function sumNullableSeries(points: Array<(number | null)[]>) {
   const len = Math.max(0, ...points.map((p) => p.length));
@@ -45,24 +55,40 @@ function emptyTrendData(query: SalesTrendQueryParams): SalesTrendResult['data'] 
 }
 
 async function loadPerLocationTrendResults(params: {
+  req: Request;
   ids: string[];
   query: SalesTrendQueryParams;
   locationService: LocationService;
-}): Promise<SalesTrendResult[]> {
-  const { ids, query, locationService } = params;
-  const results: SalesTrendResult[] = [];
-  for (const id of ids) {
-    const withCreds = await locationService.getByIdWithCredentials(id);
-    if (!withCreds) continue;
-    const ctx = buildSalesTrendContext(
-      withCreds.location,
-      withCreds.squareAccessToken,
-      withCreds.homebaseApiKey,
-      withCreds.location._id,
-    );
-    results.push(await getSalesTrendData(ctx, { ...query, locationId: id }));
-  }
-  return results;
+}): Promise<{ results: SalesTrendResult[]; perLocationMs: number[] }> {
+  const { req, ids, query, locationService } = params;
+  const perLocationMs: number[] = [];
+  const settled = await mapWithConcurrency(
+    ids,
+    DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+    async (id): Promise<SalesTrendResult | null> => {
+      const { value, ms } = await timedPerLocation<SalesTrendResult | null>(async () => {
+        const withCreds = await getByIdWithCredentialsCached(
+          req,
+          locationService,
+          id,
+        );
+        if (!withCreds) return null;
+        const ctx = buildSalesTrendContext(
+          withCreds.location,
+          withCreds.squareAccessToken,
+          withCreds.homebaseApiKey,
+          withCreds.location._id,
+        );
+        return getSalesTrendData(ctx, { ...query, locationId: id });
+      });
+      perLocationMs.push(ms);
+      return value;
+    },
+  );
+  return {
+    results: settled.filter((r): r is SalesTrendResult => r != null),
+    perLocationMs,
+  };
 }
 
 function mergeBySource(results: Array<Extract<SalesTrendResult, { kind: 'bySource' }>>): SalesTrendResult['data'] {
@@ -134,14 +160,29 @@ export async function buildAllLocationsSalesTrend(params: {
   const ids = await resolveEffectiveAllowedLocationIds(req);
   if (ids.length === 0) return emptyTrendData(query);
 
-  const results = await loadPerLocationTrendResults({ ids, query, locationService });
-  if (results.length === 0) return emptyTrendData(query);
+  const tHandler = performance.now();
+  const { results, perLocationMs } = await loadPerLocationTrendResults({
+    req,
+    ids,
+    query,
+    locationService,
+  });
+  try {
+    if (results.length === 0) return emptyTrendData(query);
 
-  const bySourceResults = results.filter((r): r is Extract<SalesTrendResult, { kind: 'bySource' }> => r.kind === 'bySource');
-  if (bySourceResults.length > 0) return mergeBySource(bySourceResults);
+    const bySourceResults = results.filter((r): r is Extract<SalesTrendResult, { kind: 'bySource' }> => r.kind === 'bySource');
+    if (bySourceResults.length > 0) return mergeBySource(bySourceResults);
 
-  const seriesResults = results.filter((r): r is Extract<SalesTrendResult, { kind: 'series' }> => r.kind === 'series');
-  return mergeSeries(seriesResults);
+    const seriesResults = results.filter((r): r is Extract<SalesTrendResult, { kind: 'series' }> => r.kind === 'series');
+    return mergeSeries(seriesResults);
+  } finally {
+    summarizeAllLocationsTimings({
+      route: 'GET /sales-labor/sales-trend',
+      locationCount: ids.length,
+      totalMs: Math.round(performance.now() - tHandler),
+      perLocationMs,
+    });
+  }
 }
 
 export async function buildAllLocationsSalesTrendKpi(params: {
@@ -159,19 +200,42 @@ export async function buildAllLocationsSalesTrendKpi(params: {
       periodRange: undefined,
     };
   }
-  const rows: Array<Awaited<ReturnType<typeof getSalesTrendKpiData>>> = [];
-  for (const id of ids) {
-    const withCreds = await locationService.getByIdWithCredentials(id);
-    if (!withCreds) continue;
-    const ctx = buildSalesTrendContext(
-      withCreds.location,
-      withCreds.squareAccessToken,
-      withCreds.homebaseApiKey,
-      withCreds.location._id,
-    );
-    rows.push(await getSalesTrendKpiData(ctx, { ...query, locationId: id }));
-  }
+  const tHandler = performance.now();
+  const perLocationMs: number[] = [];
+  const settled = await mapWithConcurrency(
+    ids,
+    DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+    async (id): Promise<Awaited<ReturnType<typeof getSalesTrendKpiData>> | null> => {
+      const { value, ms } = await timedPerLocation<
+        Awaited<ReturnType<typeof getSalesTrendKpiData>> | null
+      >(async () => {
+        const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
+        if (!withCreds) return null;
+        const ctx = buildSalesTrendContext(
+          withCreds.location,
+          withCreds.squareAccessToken,
+          withCreds.homebaseApiKey,
+          withCreds.location._id,
+        );
+        return getSalesTrendKpiData(ctx, { ...query, locationId: id });
+      });
+      perLocationMs.push(ms);
+      return value;
+    },
+  );
+  const rows: Array<Awaited<ReturnType<typeof getSalesTrendKpiData>>> = settled.filter(
+    (r): r is Awaited<ReturnType<typeof getSalesTrendKpiData>> => r != null,
+  );
+  const logTimingDone = (): void => {
+    summarizeAllLocationsTimings({
+      route: 'GET /sales-labor/sales-trend-kpi',
+      locationCount: ids.length,
+      totalMs: Math.round(performance.now() - tHandler),
+      perLocationMs,
+    });
+  };
   if (rows.length === 0) {
+    logTimingDone();
     return {
       current: { totalNetSales: 0, totalTransactions: 0, totalHours: 0, numDays: 0 },
       comparison: { totalNetSales: 0, totalTransactions: 0, totalHours: 0, numDays: 0 },
@@ -181,6 +245,7 @@ export async function buildAllLocationsSalesTrendKpi(params: {
   }
   const first = rows[0];
   if (!first) {
+    logTimingDone();
     return {
       current: { totalNetSales: 0, totalTransactions: 0, totalHours: 0, numDays: 0 },
       comparison: { totalNetSales: 0, totalTransactions: 0, totalHours: 0, numDays: 0 },
@@ -191,7 +256,7 @@ export async function buildAllLocationsSalesTrendKpi(params: {
   const sumField = (path: 'current' | 'comparison', key: string) =>
     rows.reduce((acc, r) => acc + (Number((r as any)?.[path]?.[key]) || 0), 0);
 
-  return {
+  const out = {
     periodRange: first.periodRange,
     comparisonRange: first.comparisonRange,
     current: {
@@ -207,5 +272,7 @@ export async function buildAllLocationsSalesTrendKpi(params: {
       numDays: first.comparison?.numDays ?? 0,
     },
   };
+  logTimingDone();
+  return out;
 }
 

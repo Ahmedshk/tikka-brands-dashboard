@@ -14,6 +14,12 @@ import {
 } from './salesTrendDateRange.util.js';
 import { buildSalesByCategoryResponseData, parseSalesByCategoryQuery } from './salesLaborControllerHelpers.js';
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
+import { getByIdWithCredentialsCached } from './perRequestCache.util.js';
+import {
+  summarizeAllLocationsTimings,
+  timedPerLocation,
+} from './allLocationsTiming.util.js';
+import { performance } from 'node:perf_hooks';
 
 type CategoryResult = { categories: Array<{ name: string; netSalesCents: number }>; totalNetSalesCents: number };
 
@@ -134,12 +140,13 @@ async function maybeBuildCategoryOptions(params: {
 }
 
 async function fetchSalesByCategoryForLocation(params: {
+  req: Request;
   locationId: string;
   query: ReturnType<typeof parseSalesByCategoryQuery>;
   locationService: LocationService;
 }) {
-  const { locationId, query, locationService } = params;
-  const withCreds = await locationService.getByIdWithCredentials(locationId);
+  const { req, locationId, query, locationService } = params;
+  const withCreds = await getByIdWithCredentialsCached(req, locationService, locationId);
   if (!withCreds) return null;
   const { location, squareAccessToken } = withCreds;
   const timezone = location.timezone?.trim() ?? 'UTC';
@@ -236,26 +243,49 @@ export async function buildSalesByCategoryAllLocations(params: {
     return emptyResponse();
   }
 
+  const tHandler = performance.now();
+  const perLocationMs: number[] = [];
   const perLoc = await Promise.all(
-    ids.map((id) => fetchSalesByCategoryForLocation({ locationId: id, query: q, locationService })),
+    ids.map(async (id) => {
+      const { value, ms } = await timedPerLocation(() =>
+        fetchSalesByCategoryForLocation({ req, locationId: id, query: q, locationService }),
+      );
+      perLocationMs.push(ms);
+      return value;
+    }),
   );
+
+  const logTimingDone = (count: number): void => {
+    summarizeAllLocationsTimings({
+      route: 'GET /sales-labor/sales-by-category',
+      locationCount: count,
+      totalMs: Math.round(performance.now() - tHandler),
+      perLocationMs,
+    });
+  };
 
   const usable = perLoc.filter((x): x is NonNullable<typeof x> => x != null);
   if (usable.length === 0) {
+    logTimingDone(0);
     return emptyResponse();
   }
 
   const first = usable[0];
-  if (!first) return emptyResponse();
+  if (!first) {
+    logTimingDone(usable.length);
+    return emptyResponse();
+  }
   const mergedCurrent = mergeCategoryResults(usable.map((u) => u.current));
   const mergedComparison = mergeCategoryResults(usable.map((u) => u.comparison));
 
-  return buildSalesByCategoryResponseData(
+  const out = buildSalesByCategoryResponseData(
     mergedCurrent,
     mergedComparison,
     first.periodStartAt,
     first.periodEndAt,
     first.comparisonRange,
   );
+  logTimingDone(usable.length);
+  return out;
 }
 

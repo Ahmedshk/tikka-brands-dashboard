@@ -37,11 +37,13 @@ import {
 } from "../utils/squareOrderCacheHelpers.js";
 import {
   tryGetHourlyNetSalesCentsBySlotFromRollups,
+  tryGetLaborTotalsFromDailyRollups,
   tryGetNetSalesDollarsFromDailyRollups,
   tryGetOrderStatsAndSourcesFromDailyRollups,
 } from "./integrationRollupRead.service.js";
 import { logger } from "../utils/logger.util.js";
 import { squareRawIdAsString } from "../utils/squareRawIdString.util.js";
+import { loadSquareOrdersForMongoRangeCached } from "../utils/orderRangeCache.util.js";
 
 /** Square Payment `amount_money` / `tip_money` shape from cached `raw`. */
 type SquarePaymentMoneyField =
@@ -52,18 +54,24 @@ export async function loadSquareOrdersForMongoRange(
   locationMongoId: string,
   range: TimeRange,
 ): Promise<SquareOrder[]> {
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
-  const startD = new Date(range.startAt);
-  const endD = new Date(range.endAt);
-  const docs = await SquareOrderModel.find({
-    locationId: oid,
-    excludedFromDashboard: false,
-    squareCreatedAt: { $gte: startD, $lte: endD },
-  })
-    .select({ raw: 1 })
-    .lean()
-    .exec();
-  return docs.map((d) => d.raw as SquareOrder);
+  return loadSquareOrdersForMongoRangeCached(
+    locationMongoId,
+    { startAt: range.startAt, endAt: range.endAt },
+    async () => {
+      const oid = new mongoose.Types.ObjectId(locationMongoId);
+      const startD = new Date(range.startAt);
+      const endD = new Date(range.endAt);
+      const docs = await SquareOrderModel.find({
+        locationId: oid,
+        excludedFromDashboard: false,
+        squareCreatedAt: { $gte: startD, $lte: endD },
+      })
+        .select({ raw: 1 })
+        .lean()
+        .exec();
+      return docs.map((d) => d.raw as SquareOrder);
+    },
+  );
 }
 
 export interface RollupReadContext {
@@ -122,7 +130,35 @@ export async function getNetSalesDollarsInRangeFromCache(
 export async function getLaborCostInRangeFromCache(
   locationMongoId: string,
   range: TimeRange,
+  rollupCtx?: RollupReadContext,
+  /** When set, logs whether labor cost came from daily rollups or raw timecards. */
+  logContext?: string,
 ): Promise<number> {
+  if (rollupCtx) {
+    const fromRollup = await tryGetLaborTotalsFromDailyRollups(
+      locationMongoId,
+      range,
+      rollupCtx.timezone,
+      rollupCtx.businessStartTime,
+    );
+    if (fromRollup != null) {
+      if (logContext) {
+        console.log("[api-data-source]", logContext, {
+          laborSource: "rollups",
+          detail:
+            "HomebaseTimecardDailyRollup rows (tryGetLaborTotalsFromDailyRollups)",
+        });
+      }
+      return fromRollup.totalLaborCost;
+    }
+    if (logContext) {
+      console.log("[api-data-source]", logContext, {
+        laborSource: "mongo_homebase_timecards",
+        detail:
+          "rollup miss, ROLLUP_READ_ENABLED off, or missing/incomplete daily Homebase timecard rollup rows — summed from synced timecards",
+      });
+    }
+  }
   const cards = await loadHomebaseTimecardsForMongoRange(
     locationMongoId,
     range,
@@ -140,7 +176,35 @@ export async function getLaborCostInRangeFromCache(
 export async function getTotalHoursInRangeFromCache(
   locationMongoId: string,
   range: TimeRange,
+  rollupCtx?: RollupReadContext,
+  /** When set, logs whether hours came from daily rollups or raw timecards. */
+  logContext?: string,
 ): Promise<number> {
+  if (rollupCtx) {
+    const fromRollup = await tryGetLaborTotalsFromDailyRollups(
+      locationMongoId,
+      range,
+      rollupCtx.timezone,
+      rollupCtx.businessStartTime,
+    );
+    if (fromRollup != null) {
+      if (logContext) {
+        console.log("[api-data-source]", logContext, {
+          hoursSource: "rollups",
+          detail:
+            "HomebaseTimecardDailyRollup rows (tryGetLaborTotalsFromDailyRollups)",
+        });
+      }
+      return fromRollup.totalPaidHours;
+    }
+    if (logContext) {
+      console.log("[api-data-source]", logContext, {
+        hoursSource: "mongo_homebase_timecards",
+        detail:
+          "rollup miss, ROLLUP_READ_ENABLED off, or missing/incomplete daily Homebase timecard rollup rows — summed from synced timecards",
+      });
+    }
+  }
   const cards = await loadHomebaseTimecardsForMongoRange(
     locationMongoId,
     range,

@@ -141,12 +141,15 @@ export async function fetchSquareOrderStatsAndSources(
 
 /**
  * Fetches labor cost and total hours; returns null on error.
+ * When `rollupCtx` is provided, attempts the daily Homebase rollup fast path
+ * before falling back to per-timecard scans (handled inside the cache reads).
  */
 export async function fetchLaborCostAndHours(
   _homebaseLocationId: string,
   range: TimeRange,
   _apiKey: string | undefined,
   cacheLocationId?: string,
+  rollupCtx?: { timezone: string; businessStartTime: string },
 ): Promise<{ laborCost: number; totalHours: number } | null> {
   try {
     if (!cacheLocationId?.trim()) {
@@ -154,13 +157,23 @@ export async function fetchLaborCostAndHours(
     }
     const id = cacheLocationId.trim();
     const [laborCost, totalHours] = await Promise.all([
-      getLaborCostInRangeFromCache(id, range),
-      getTotalHoursInRangeFromCache(id, range),
+      getLaborCostInRangeFromCache(
+        id,
+        range,
+        rollupCtx,
+        "GET /sales-labor/kpis laborCost",
+      ),
+      getTotalHoursInRangeFromCache(
+        id,
+        range,
+        rollupCtx,
+        "GET /sales-labor/kpis totalHours",
+      ),
     ]);
     console.log(SALES_LABOR_DETAIL_API_LOG, "GET /sales-labor/kpis labor cost + hours", {
-      laborSource: "mongo_homebase_timecards",
+      laborSource: rollupCtx ? "rollup_or_timecards" : "mongo_homebase_timecards",
       detail:
-        "getLaborCostInRangeFromCache + getTotalHoursInRangeFromCache (synced Homebase docs)",
+        "getLaborCostInRangeFromCache + getTotalHoursInRangeFromCache (rollup fast path with timecard fallback)",
     });
     return { laborCost, totalHours };
   } catch (err) {

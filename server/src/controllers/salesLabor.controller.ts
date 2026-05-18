@@ -154,6 +154,10 @@ export const getSalesLaborKPIs = async (
             range,
             homebaseApiKey ?? undefined,
             locationId,
+            {
+              timezone,
+              businessStartTime: location.businessStartTime?.trim() ?? "00:00",
+            },
           )
         : Promise.resolve(null),
     ]);

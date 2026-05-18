@@ -15,6 +15,7 @@ import {
   createMongoCatalogBatchRetrieve,
   getLaborAndHoursTimeSeriesInRangeFromCache,
 } from "../services/integrationCacheRead.service.js";
+import { probePairedSalesTrendRollups } from "./salesTrendPairedRollupProbe.util.js";
 import type {
   Granularity,
   PeriodRangeResult,
@@ -384,13 +385,36 @@ export async function fetchSalesTrendOrderMetrics(
         )
       : Promise.resolve(undefined),
   ]);
+  // Paired rollup probe: single Mongo round-trip per granularity covering
+  // current + comparison ranges, instead of one query per range. Result is
+  // threaded through SquareServiceOptions.pairedRollupResult so
+  // getOrderTimeSeriesInRange can consume it instead of issuing its own probe.
+  const pairedRollupRead =
+    opts.locationMongoId &&
+    (currentOpts?.rollupRead || (compOpts?.rollupRead ?? null))
+      ? await probePairedSalesTrendRollups({
+          locationMongoId: opts.locationMongoId,
+          seriesGranularity: opts.seriesGranularity,
+          timezone: opts.timezone,
+          businessStartTime: opts.businessStartTime,
+          periodType: opts.periodType,
+          dataRange: opts.dataRange,
+          comparisonRange: opts.comparisonRange,
+        })
+      : null;
+  const currentOptsPaired: SquareServiceOptions = pairedRollupRead?.current
+    ? { ...(currentOpts ?? baseOpts), pairedRollupResult: pairedRollupRead.current }
+    : (currentOpts ?? baseOpts);
+  const compOptsPaired: SquareServiceOptions = pairedRollupRead?.comparison
+    ? { ...(compOpts ?? baseOpts), pairedRollupResult: pairedRollupRead.comparison }
+    : (compOpts ?? baseOpts);
   const [current, comp] = await Promise.all([
     getOrderTimeSeriesInRange(
       squareLocationId,
       opts.dataRange,
       opts.timezone,
       opts.seriesGranularity,
-      currentOpts ?? baseOpts,
+      currentOptsPaired,
     ),
     opts.comparisonRange
       ? getOrderTimeSeriesInRange(
@@ -398,7 +422,7 @@ export async function fetchSalesTrendOrderMetrics(
           opts.comparisonRange,
           opts.timezone,
           opts.seriesGranularity,
-          compOpts ?? baseOpts,
+          compOptsPaired,
         )
       : null,
   ]);

@@ -20,6 +20,7 @@ import { getHomebaseTimecardClockInAt } from "../utils/homebaseTimecardIndexFiel
 import { getMarketManOrderBusinessDateAt } from "../utils/marketmanOrderIndexFields.util.js";
 import { marketManOrderNumberAsString } from "../utils/marketManOrderNumberString.util.js";
 import { yieldEventLoop } from "../utils/eventLoopYield.util.js";
+import { invalidateOrderRangeCacheForLocation } from "../utils/orderRangeCache.util.js";
 
 function toObjectId(id: string): mongoose.Types.ObjectId {
   return new mongoose.Types.ObjectId(id);
@@ -72,6 +73,7 @@ export async function upsertSquareOrder(
     },
     { upsert: true, new: true },
   ).exec();
+  invalidateOrderRangeCacheForLocation(locationId);
 }
 
 export async function upsertSquareCatalogObject(

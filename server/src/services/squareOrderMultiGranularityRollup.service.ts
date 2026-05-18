@@ -18,6 +18,7 @@ import {
   sourcesOfSalesFactsFromCentsById,
 } from "../utils/sourcesOfSalesFacts.util.js";
 import { deriveSquareSourcesOfSalesKey } from "../utils/squareSourcesOfSalesKey.util.js";
+import { invalidateRollupNegativeCacheForLocation } from "../utils/rollupReadCache.util.js";
 import {
   businessDateKeysForMonthPeriod,
   businessDateKeysForWeekPeriod,
@@ -206,4 +207,7 @@ export async function rebuildSquareOrderDerivedRollupsForBusinessDay(
     businessDateKey,
     timezone,
   );
+  // Drop any cached miss entries for this location so a freshly-rolled-up day
+  // is read from Mongo on the next request.
+  invalidateRollupNegativeCacheForLocation(locationMongoId);
 }

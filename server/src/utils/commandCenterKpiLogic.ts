@@ -109,6 +109,11 @@ export async function fetchTodayOnlyKpis(
       laborCostToday = await getLaborCostInRangeFromCache(
         locationMongoId,
         rangeToday,
+        {
+          timezone: location.timezone,
+          businessStartTime: location.businessStartTime ?? "00:00",
+        },
+        "GET /command-center/kpis laborCost (today range)",
       );
     } catch (err) {
       console.error(`${LOG_PREFIX} Homebase labor cost error:`, err);
@@ -187,13 +192,23 @@ export async function fetchWeekToDateKpis(
 
   if (wantLaborCost && location.homebaseLocationId?.trim()) {
     if (locationMongoId) {
+      const laborRollupCtx = {
+        timezone: location.timezone,
+        businessStartTime: location.businessStartTime ?? "00:00",
+      };
       laborCostPromises.push(
-        getLaborCostInRangeFromCache(locationMongoId, rangeToday).catch(
-          wrapLaborCostErr("today"),
-        ),
-        getLaborCostInRangeFromCache(locationMongoId, rangeWeekToDate).catch(
-          wrapLaborCostErr("WTD"),
-        ),
+        getLaborCostInRangeFromCache(
+          locationMongoId,
+          rangeToday,
+          laborRollupCtx,
+          "GET /command-center/kpis laborCost (today range, dual-period)",
+        ).catch(wrapLaborCostErr("today")),
+        getLaborCostInRangeFromCache(
+          locationMongoId,
+          rangeWeekToDate,
+          laborRollupCtx,
+          "GET /command-center/kpis laborCost (week-to-date range)",
+        ).catch(wrapLaborCostErr("WTD")),
       );
     } else {
       laborCostPromises.push(Promise.resolve(null), Promise.resolve(null));

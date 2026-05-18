@@ -1,5 +1,6 @@
 import type { Request } from "express";
 import mongoose from "mongoose";
+import { performance } from "node:perf_hooks";
 import { CommandCenterAlertDismissalModel } from "../models/commandCenterAlertDismissal.model.js";
 import type { LocationService } from "../services/location.service.js";
 import { getTodayInTimezone } from "./timezone.util.js";
@@ -7,10 +8,21 @@ import { getEffectivePagePermission } from "./permissions.util.js";
 import { PAGE_COMPONENT_IDS } from "../config/kpi-metrics.config.js";
 import {
   collectCommandCenterAlertsForUser,
+  collectCommandCenterAlertsFromNotifications,
+  loadCommandCenterNotificationsForUser,
   type CommandCenterAlertCategory,
   type CommandCenterCardRow,
 } from "./commandCenterAlertsCollect.util.js";
 import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "./locationScope.js";
+import {
+  DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+  mapWithConcurrency,
+} from "./boundedConcurrency.util.js";
+import { getByIdCached } from "./perRequestCache.util.js";
+import {
+  summarizeAllLocationsTimings,
+  timedPerLocation,
+} from "./allLocationsTiming.util.js";
 
 export type AlertsAccessFlags = {
   canFinancial: boolean;
@@ -62,6 +74,31 @@ async function collectBucketsForLocation(
   const buckets = createEmptyBuckets();
   const collected = await collectCommandCenterAlertsForUser({
     userId: args.userId,
+    locationId: args.locationId,
+    timezone: args.timezone,
+    todayKey: args.todayKey,
+    dismissed: args.dismissed,
+    canFinancial: args.flags.canFinancial,
+    canInventory: args.flags.canInventory,
+    canReputation: args.flags.canReputation,
+  });
+  pushTodayRows(buckets, args.todayKey, collected);
+  return buckets;
+}
+
+function collectBucketsForLocationFromNotifications(args: {
+  notifications: readonly Awaited<
+    ReturnType<typeof loadCommandCenterNotificationsForUser>
+  >[number][];
+  locationId: string;
+  timezone: string;
+  todayKey: string;
+  dismissed: Set<string>;
+  flags: AlertsAccessFlags;
+}): AlertsBuckets {
+  const buckets = createEmptyBuckets();
+  const collected = collectCommandCenterAlertsFromNotifications({
+    notifications: args.notifications,
     locationId: args.locationId,
     timezone: args.timezone,
     todayKey: args.todayKey,
@@ -152,30 +189,52 @@ export async function getAlertsBucketsForRequest(args: {
   if (!locationId) return { kind: "bad_request", message: "locationId is required" };
 
   if (isAllLocationsId(locationId)) {
-    const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
-    const flags = componentPermissionsFromRequest(req);
+    const tHandler = performance.now();
     const userId = req.user!.userId;
-    const dismissed = await loadDismissedNotificationIds(userId);
+    const flags = componentPermissionsFromRequest(req);
+
+    const [effectiveIds, dismissed, notifications] = await Promise.all([
+      resolveEffectiveAllowedLocationIds(req),
+      loadDismissedNotificationIds(userId),
+      loadCommandCenterNotificationsForUser(userId),
+    ]);
 
     const merged = createEmptyBuckets();
+    const perLocationMs: number[] = [];
 
-    for (const lid of effectiveIds) {
-      const location = await locationService.getById(lid);
-      if (!location) continue;
-      const timezone = location.timezone?.trim() || "America/Denver";
-      const todayKey = getTodayInTimezone(timezone);
+    const perLoc = await mapWithConcurrency(
+      effectiveIds,
+      DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+      async (lid) => {
+        const { value, ms } = await timedPerLocation(async () => {
+          const location = await getByIdCached(req, locationService, lid);
+          if (!location) return null;
+          const timezone = location.timezone?.trim() || "America/Denver";
+          const todayKey = getTodayInTimezone(timezone);
+          return collectBucketsForLocationFromNotifications({
+            notifications,
+            locationId: lid,
+            timezone,
+            todayKey,
+            dismissed,
+            flags,
+          });
+        });
+        perLocationMs.push(ms);
+        return value;
+      },
+    );
 
-      const buckets = await collectBucketsForLocation({
-        userId,
-        locationId: lid,
-        timezone,
-        todayKey,
-        dismissed,
-        flags,
-      });
-
-      mergeBuckets(merged, buckets);
+    for (const buckets of perLoc) {
+      if (buckets) mergeBuckets(merged, buckets);
     }
+
+    summarizeAllLocationsTimings({
+      route: "GET /command-center/alerts",
+      locationCount: effectiveIds.length,
+      totalMs: Math.round(performance.now() - tHandler),
+      perLocationMs,
+    });
 
     return { kind: "ok", buckets: merged };
   }
@@ -248,28 +307,51 @@ export async function getAlertHistoryForRequest(args: {
   const dismissed = await loadDismissedNotificationIds(userId);
 
   if (isAllLocationsId(locationId)) {
-    const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+    const tHandler = performance.now();
+    const [effectiveIds, notifications] = await Promise.all([
+      resolveEffectiveAllowedLocationIds(req),
+      loadCommandCenterNotificationsForUser(userId),
+    ]);
+    const perLocationMs: number[] = [];
+
+    const perLoc = await mapWithConcurrency(
+      effectiveIds,
+      DEFAULT_LOCATION_FANOUT_CONCURRENCY,
+      async (lid) => {
+        const { value, ms } = await timedPerLocation(async () => {
+          const location = await getByIdCached(req, locationService, lid);
+          if (!location) return null;
+          const timezone = location.timezone?.trim() || "America/Denver";
+          const todayKey = getTodayInTimezone(timezone);
+          const collected = collectCommandCenterAlertsFromNotifications({
+            notifications,
+            locationId: lid,
+            timezone,
+            todayKey,
+            dismissed,
+            canFinancial: flags.canFinancial,
+            canInventory: flags.canInventory,
+            canReputation: flags.canReputation,
+          });
+          return { todayKey, collected };
+        });
+        perLocationMs.push(ms);
+        return value;
+      },
+    );
+
     const alerts: CommandCenterCardRow[] = [];
-
-    for (const lid of effectiveIds) {
-      const location = await locationService.getById(lid);
-      if (!location) continue;
-      const timezone = location.timezone?.trim() || "America/Denver";
-      const todayKey = getTodayInTimezone(timezone);
-
-      const collected = await collectCommandCenterAlertsForUser({
-        userId,
-        locationId: lid,
-        timezone,
-        todayKey,
-        dismissed,
-        canFinancial: flags.canFinancial,
-        canInventory: flags.canInventory,
-        canReputation: flags.canReputation,
-      });
-
-      pushHistoryRows(alerts, category, todayKey, collected);
+    for (const entry of perLoc) {
+      if (!entry) continue;
+      pushHistoryRows(alerts, category, entry.todayKey, entry.collected);
     }
+
+    summarizeAllLocationsTimings({
+      route: `GET /command-center/alerts/history (${category})`,
+      locationCount: effectiveIds.length,
+      totalMs: Math.round(performance.now() - tHandler),
+      perLocationMs,
+    });
 
     return { kind: "ok", alerts };
   }

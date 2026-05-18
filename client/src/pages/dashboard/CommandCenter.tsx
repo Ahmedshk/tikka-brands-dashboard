@@ -92,6 +92,13 @@ export const CommandCenter = () => {
   const [alertBuckets, setAlertBuckets] = useState<CommandCenterAlertBuckets | null>(null);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsError, setAlertsError] = useState<string | null>(null);
+  // Stagger gates: in __all__ mode, fan-out work is heavy server-side. Holding
+  // back hourly-sales until KPIs settle and alerts until hourly-sales settle
+  // avoids 3 parallel endpoints contending for the same Mongo scans.
+  const [kpisSettled, setKpisSettled] = useState(false);
+  const [hourlySettled, setHourlySettled] = useState(false);
+  const canStartHourly = !allLocationsSelected || kpisSettled;
+  const canStartAlerts = !allLocationsSelected || hourlySettled;
   const dismissedAlertIdsRef = useRef<Set<string>>(new Set());
   const [historyModal, setHistoryModal] = useState<{
     categoryId: AlertRoleBindingCategory;
@@ -99,10 +106,16 @@ export const CommandCenter = () => {
   } | null>(null);
 
   useEffect(() => {
+    setKpisSettled(false);
+    setHourlySettled(false);
+  }, [locationId, allLocationsSelected]);
+
+  useEffect(() => {
     if (!locationId || !shouldFetchKpis || kpiMetrics.length === 0) {
       setKpis(null);
       setError(null);
       setLoading(false);
+      setKpisSettled(true);
       return;
     }
     const controller = new AbortController();
@@ -120,7 +133,10 @@ export const CommandCenter = () => {
         setError(err instanceof Error ? err.message : "Failed to load KPIs");
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setKpisSettled(true);
+        }
       });
     return () => controller.abort();
   }, [locationId, shouldFetchKpis, kpiMetrics.join(",")]);
@@ -130,8 +146,10 @@ export const CommandCenter = () => {
       setHourlySales(null);
       setHourlySalesError(null);
       setHourlySalesLoading(false);
+      setHourlySettled(true);
       return;
     }
+    if (!canStartHourly) return;
     const controller = new AbortController();
     setHourlySalesLoading(true);
     setHourlySalesError(null);
@@ -144,10 +162,13 @@ export const CommandCenter = () => {
         setHourlySales(null);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setHourlySalesLoading(false);
+        if (!controller.signal.aborted) {
+          setHourlySalesLoading(false);
+          setHourlySettled(true);
+        }
       });
     return () => controller.abort();
-  }, [locationId, shouldFetchHourly]);
+  }, [locationId, shouldFetchHourly, canStartHourly]);
 
   useEffect(() => {
     if (!locationId || !showAlerts) {
@@ -156,6 +177,7 @@ export const CommandCenter = () => {
       setAlertsLoading(false);
       return;
     }
+    if (!canStartAlerts) return;
     const controller = new AbortController();
     setAlertsLoading(true);
     setAlertsError(null);
@@ -171,7 +193,7 @@ export const CommandCenter = () => {
         if (!controller.signal.aborted) setAlertsLoading(false);
       });
     return () => controller.abort();
-  }, [locationId, showAlerts]);
+  }, [locationId, showAlerts, canStartAlerts]);
 
   const dismissAlertById = useCallback(async (notificationId: string) => {
     await commandCenterService.dismissAlerts([notificationId]);
