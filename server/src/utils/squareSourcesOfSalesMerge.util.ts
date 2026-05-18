@@ -1,5 +1,15 @@
 import { generateDistinctColors } from "./colorPalette.util.js";
 
+export function mergeCentsByIdInto(
+  target: Map<string, number>,
+  src: ReadonlyMap<string, number>,
+): Map<string, number> {
+  for (const [id, cents] of src) {
+    target.set(id, (target.get(id) ?? 0) + cents);
+  }
+  return target;
+}
+
 export function normalizeSourcesOfSalesSegmentId(id: string): string {
   const normalized = id.trim().toLowerCase().replaceAll("_", "-");
   if (normalized === "in-store" || normalized === "pickup") return "register";
@@ -36,11 +46,12 @@ export function sumSourcesOfSalesSegmentsToCentsById(
 }
 
 /**
- * Merge `sourcesOfSales` arrays from multiple daily rollup docs (sum `amount` strings per `id`).
+ * Sum `sourcesOfSales` segment cents across multiple daily rollup docs,
+ * keyed by normalized segment id.
  */
-export function mergeSourcesOfSalesFromDailyRollupDocs(
+export function sumSourcesOfSalesCentsByIdFromDailyRollupDocs(
   docs: Array<{ sourcesOfSales?: unknown[] }>,
-): unknown[] {
+): Map<string, number> {
   const byId = new Map<string, number>();
   for (const doc of docs) {
     for (const [id, cents] of sumSourcesOfSalesSegmentsToCentsById(
@@ -49,6 +60,17 @@ export function mergeSourcesOfSalesFromDailyRollupDocs(
       byId.set(id, (byId.get(id) ?? 0) + cents);
     }
   }
+  return byId;
+}
+
+/**
+ * Render `SourcesOfSalesSegment[]`-shaped objects (id, label, value, amount,
+ * color) from a cents-by-id map. Used both by rollup docs and any merged
+ * split-range total.
+ */
+export function renderSourcesOfSalesSegmentsFromCentsById(
+  byId: Map<string, number>,
+): unknown[] {
   const totalCents = [...byId.values()].reduce((a, b) => a + b, 0);
   if (totalCents <= 0) return [];
   const keys = [...byId.keys()].sort((a, b) => a.localeCompare(b));
@@ -71,4 +93,15 @@ export function mergeSourcesOfSalesFromDailyRollupDocs(
       color: colors[index] ?? "#888888",
     };
   });
+}
+
+/**
+ * Merge `sourcesOfSales` arrays from multiple daily rollup docs (sum `amount` strings per `id`).
+ */
+export function mergeSourcesOfSalesFromDailyRollupDocs(
+  docs: Array<{ sourcesOfSales?: unknown[] }>,
+): unknown[] {
+  return renderSourcesOfSalesSegmentsFromCentsById(
+    sumSourcesOfSalesCentsByIdFromDailyRollupDocs(docs),
+  );
 }

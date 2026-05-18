@@ -37,13 +37,26 @@ import {
 } from "../utils/squareOrderCacheHelpers.js";
 import {
   tryGetHourlyNetSalesCentsBySlotFromRollups,
-  tryGetLaborTotalsFromDailyRollups,
-  tryGetNetSalesDollarsFromDailyRollups,
-  tryGetOrderStatsAndSourcesFromDailyRollups,
+  tryGetLaborTotalsFromDailyRollupsSplit,
+  tryGetOrderStatsAndSourcesFromDailyRollupsSplit,
 } from "./integrationRollupRead.service.js";
 import { logger } from "../utils/logger.util.js";
 import { squareRawIdAsString } from "../utils/squareRawIdString.util.js";
 import { loadSquareOrdersForMongoRangeCached } from "../utils/orderRangeCache.util.js";
+import {
+  sumLaborCostAcrossSubRanges,
+  sumNetSalesCentsAcrossSubRanges,
+  sumOrderStatsAndSourcesAcrossSubRanges,
+  sumTotalHoursAcrossSubRanges,
+} from "../utils/rollupSplitScan.util.js";
+import {
+  mergeCentsByIdInto,
+  renderSourcesOfSalesSegmentsFromCentsById,
+} from "../utils/squareSourcesOfSalesMerge.util.js";
+import {
+  logSplitRangeMiss,
+  logSplitRangeReadOutcome,
+} from "../utils/splitRangeReadLogging.util.js";
 
 /** Square Payment `amount_money` / `tip_money` shape from cached `raw`. */
 type SquarePaymentMoneyField =
@@ -87,34 +100,42 @@ export async function getNetSalesDollarsInRangeFromCache(
   logContext?: string,
 ): Promise<number> {
   if (rollupCtx) {
-    const fromRollup = await tryGetNetSalesDollarsFromDailyRollups(
+    const split = await tryGetOrderStatsAndSourcesFromDailyRollupsSplit(
       locationMongoId,
       range,
       rollupCtx.timezone,
       rollupCtx.businessStartTime,
     );
-    if (fromRollup != null) {
-      if (logContext) {
-        console.log("[api-data-source]", logContext, {
-          netSalesSource: "rollups",
-          detail:
-            "SquareOrderDailyRollup rows (tryGetNetSalesDollarsFromDailyRollups)",
-        });
-      }
-      return fromRollup;
+    if (split != null) {
+      const scannedCents = await sumNetSalesCentsAcrossSubRanges(
+        split.uncoveredRanges,
+        (subRange) => loadSquareOrdersForMongoRange(locationMongoId, subRange),
+      );
+      logSplitRangeReadOutcome(
+        logContext,
+        "netSalesSource",
+        "SquareOrderDailyRollup rows (tryGetOrderStatsAndSourcesFromDailyRollupsSplit)",
+        "orders",
+        {
+          presentKeyCount: split.presentKeys.size,
+          uncoveredRangeCount: split.uncoveredRanges.length,
+        },
+      );
+      return (split.rollupNetSalesCents + scannedCents) / 100;
     }
-    if (logContext) {
-      console.log("[api-data-source]", logContext, {
-        netSalesSource: "mongo_orders",
-        detail:
-          "rollup miss, ROLLUP_READ_ENABLED off, or missing/incomplete daily Square order rollup rows — summed from Mongo orders",
-      });
-    }
-  } else if (logContext) {
-    console.log("[api-data-source]", logContext, {
-      netSalesSource: "mongo_orders",
-      detail: "no rollup context (timezone / businessStartTime) — summed from Mongo orders",
-    });
+    logSplitRangeMiss(
+      logContext,
+      "netSalesSource",
+      "mongo_orders",
+      "rollup miss, ROLLUP_READ_ENABLED off, or zero matching daily Square order rollup rows — summed from Mongo orders",
+    );
+  } else {
+    logSplitRangeMiss(
+      logContext,
+      "netSalesSource",
+      "mongo_orders",
+      "no rollup context (timezone / businessStartTime) — summed from Mongo orders",
+    );
   }
   const orders = filterSquareOrdersForDashboardDisplay(
     await loadSquareOrdersForMongoRange(locationMongoId, range),
@@ -135,29 +156,35 @@ export async function getLaborCostInRangeFromCache(
   logContext?: string,
 ): Promise<number> {
   if (rollupCtx) {
-    const fromRollup = await tryGetLaborTotalsFromDailyRollups(
+    const split = await tryGetLaborTotalsFromDailyRollupsSplit(
       locationMongoId,
       range,
       rollupCtx.timezone,
       rollupCtx.businessStartTime,
     );
-    if (fromRollup != null) {
-      if (logContext) {
-        console.log("[api-data-source]", logContext, {
-          laborSource: "rollups",
-          detail:
-            "HomebaseTimecardDailyRollup rows (tryGetLaborTotalsFromDailyRollups)",
-        });
-      }
-      return fromRollup.totalLaborCost;
+    if (split != null) {
+      const scanned = await sumLaborCostAcrossSubRanges(
+        split.uncoveredRanges,
+        (subRange) => loadHomebaseTimecardsForMongoRange(locationMongoId, subRange),
+      );
+      logSplitRangeReadOutcome(
+        logContext,
+        "laborSource",
+        "HomebaseTimecardDailyRollup rows (tryGetLaborTotalsFromDailyRollupsSplit)",
+        "timecards",
+        {
+          presentKeyCount: split.presentKeys.size,
+          uncoveredRangeCount: split.uncoveredRanges.length,
+        },
+      );
+      return split.rollupTotalLaborCost + scanned;
     }
-    if (logContext) {
-      console.log("[api-data-source]", logContext, {
-        laborSource: "mongo_homebase_timecards",
-        detail:
-          "rollup miss, ROLLUP_READ_ENABLED off, or missing/incomplete daily Homebase timecard rollup rows — summed from synced timecards",
-      });
-    }
+    logSplitRangeMiss(
+      logContext,
+      "laborSource",
+      "mongo_homebase_timecards",
+      "rollup miss, ROLLUP_READ_ENABLED off, or zero matching daily Homebase timecard rollup rows — summed from synced timecards",
+    );
   }
   const cards = await loadHomebaseTimecardsForMongoRange(
     locationMongoId,
@@ -181,29 +208,35 @@ export async function getTotalHoursInRangeFromCache(
   logContext?: string,
 ): Promise<number> {
   if (rollupCtx) {
-    const fromRollup = await tryGetLaborTotalsFromDailyRollups(
+    const split = await tryGetLaborTotalsFromDailyRollupsSplit(
       locationMongoId,
       range,
       rollupCtx.timezone,
       rollupCtx.businessStartTime,
     );
-    if (fromRollup != null) {
-      if (logContext) {
-        console.log("[api-data-source]", logContext, {
-          hoursSource: "rollups",
-          detail:
-            "HomebaseTimecardDailyRollup rows (tryGetLaborTotalsFromDailyRollups)",
-        });
-      }
-      return fromRollup.totalPaidHours;
+    if (split != null) {
+      const scanned = await sumTotalHoursAcrossSubRanges(
+        split.uncoveredRanges,
+        (subRange) => loadHomebaseTimecardsForMongoRange(locationMongoId, subRange),
+      );
+      logSplitRangeReadOutcome(
+        logContext,
+        "hoursSource",
+        "HomebaseTimecardDailyRollup rows (tryGetLaborTotalsFromDailyRollupsSplit)",
+        "timecards",
+        {
+          presentKeyCount: split.presentKeys.size,
+          uncoveredRangeCount: split.uncoveredRanges.length,
+        },
+      );
+      return split.rollupTotalPaidHours + scanned;
     }
-    if (logContext) {
-      console.log("[api-data-source]", logContext, {
-        hoursSource: "mongo_homebase_timecards",
-        detail:
-          "rollup miss, ROLLUP_READ_ENABLED off, or missing/incomplete daily Homebase timecard rollup rows — summed from synced timecards",
-      });
-    }
+    logSplitRangeMiss(
+      logContext,
+      "hoursSource",
+      "mongo_homebase_timecards",
+      "rollup miss, ROLLUP_READ_ENABLED off, or zero matching daily Homebase timecard rollup rows — summed from synced timecards",
+    );
   }
   const cards = await loadHomebaseTimecardsForMongoRange(
     locationMongoId,
@@ -260,34 +293,57 @@ export async function getOrderStatsAndSourcesFromCache(
 } | null> {
   try {
     if (rollupCtx) {
-      const rolled = await tryGetOrderStatsAndSourcesFromDailyRollups(
+      const split = await tryGetOrderStatsAndSourcesFromDailyRollupsSplit(
         locationMongoId,
         range,
         rollupCtx.timezone,
         rollupCtx.businessStartTime,
       );
-      if (rolled) {
-        if (logContext) {
-          console.log("[api-data-source]", logContext, {
-            orderStatsSource: "rollups",
-            detail:
-              "tryGetOrderStatsAndSourcesFromDailyRollups (net sales, tx count, discounts, refunds, sourcesOfSales merge)",
-          });
-        }
-        return rolled;
+      if (split != null) {
+        const scanned = await sumOrderStatsAndSourcesAcrossSubRanges(
+          split.uncoveredRanges,
+          (subRange) => loadSquareOrdersForMongoRange(locationMongoId, subRange),
+        );
+        logSplitRangeReadOutcome(
+          logContext,
+          "orderStatsSource",
+          "tryGetOrderStatsAndSourcesFromDailyRollupsSplit (net sales, tx count, discounts, refunds, sourcesOfSales merge)",
+          "orders",
+          {
+            presentKeyCount: split.presentKeys.size,
+            uncoveredRangeCount: split.uncoveredRanges.length,
+          },
+        );
+        const mergedSourcesById = new Map(split.rollupSourcesOfSalesCentsById);
+        mergeCentsByIdInto(mergedSourcesById, scanned.sourcesOfSalesCentsById);
+        return {
+          actualTotalSales:
+            (split.rollupNetSalesCents + scanned.netSalesCents) / 100,
+          transactionCount:
+            split.rollupTransactionCount + scanned.transactionCount,
+          totalDiscounts:
+            (split.rollupTotalDiscountCents + scanned.totalDiscountCents) / 100,
+          totalRefunds:
+            (split.rollupTotalRefundCents + scanned.totalRefundCents) / 100,
+          totalRefundCount: split.rollupRefundCount + scanned.refundCount,
+          sourcesOfSales: renderSourcesOfSalesSegmentsFromCentsById(
+            mergedSourcesById,
+          ) as ReturnType<typeof getSourcesOfSalesFromOrders>,
+        };
       }
-      if (logContext) {
-        console.log("[api-data-source]", logContext, {
-          orderStatsSource: "mongo_orders",
-          detail:
-            "rollup miss, ROLLUP_READ_ENABLED off, or incomplete daily rows — getOrderStatsFromOrders + getSourcesOfSalesFromOrders",
-        });
-      }
-    } else if (logContext) {
-      console.log("[api-data-source]", logContext, {
-        orderStatsSource: "mongo_orders",
-        detail: "no rollup context — orders from Mongo only",
-      });
+      logSplitRangeMiss(
+        logContext,
+        "orderStatsSource",
+        "mongo_orders",
+        "rollup miss, ROLLUP_READ_ENABLED off, or zero matching daily rows — getOrderStatsFromOrders + getSourcesOfSalesFromOrders",
+      );
+    } else {
+      logSplitRangeMiss(
+        logContext,
+        "orderStatsSource",
+        "mongo_orders",
+        "no rollup context — orders from Mongo only",
+      );
     }
     const orders = await loadSquareOrdersForMongoRange(locationMongoId, range);
     const orderStats = getOrderStatsFromOrders(orders);

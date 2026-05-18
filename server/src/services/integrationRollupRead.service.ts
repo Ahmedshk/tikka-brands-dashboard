@@ -32,12 +32,16 @@ import {
   mergeHourlySourcesIntoBySourceAndChartKey,
   uniqueHourlySlotPairsFromCoords,
 } from "../utils/squareOrderTimeSeriesBySourceRollupHelpers.util.js";
-import { mergeSourcesOfSalesFromDailyRollupDocs } from "../utils/squareSourcesOfSalesMerge.util.js";
+import {
+  mergeSourcesOfSalesFromDailyRollupDocs,
+  sumSourcesOfSalesCentsByIdFromDailyRollupDocs,
+} from "../utils/squareSourcesOfSalesMerge.util.js";
 import {
   buildRangeKey,
   readRollupNegativeCache,
   writeRollupNegativeCache,
 } from "../utils/rollupReadCache.util.js";
+import { computeRollupUncoveredSubRanges } from "../utils/rollupSplitRange.util.js";
 
 const ROLLUP_READ_ENABLED =
   (process.env.ROLLUP_READ_ENABLED ?? "true").trim().toLowerCase() !== "false";
@@ -227,6 +231,142 @@ export async function tryGetNetSalesDollarsFromDailyRollups(
     businessStartTime,
   );
   return full ? full.actualTotalSales : null;
+}
+
+/**
+ * Split-range variant: returns whatever daily rollup rows ARE present plus
+ * the sub-ranges still missing. The caller scans those sub-ranges from raw
+ * orders/timecards and sums with the rollup total.
+ *
+ * Returns `null` when there is nothing to gain (ROLLUP_READ_ENABLED off, no
+ * full business days in range, or zero rollup rows present — the caller
+ * should fall back to a single full-range scan in those cases).
+ */
+export async function tryGetOrderStatsAndSourcesFromDailyRollupsSplit(
+  locationMongoId: string,
+  range: TimeRange,
+  timezone: string,
+  businessStartTime: string,
+): Promise<{
+  rollupNetSalesCents: number;
+  rollupTransactionCount: number;
+  rollupTotalDiscountCents: number;
+  rollupTotalRefundCents: number;
+  rollupRefundCount: number;
+  /** Cents per normalized sourcesOfSales segment id (merge with raw-order map before rendering). */
+  rollupSourcesOfSalesCentsById: Map<string, number>;
+  presentKeys: Set<string>;
+  uncoveredRanges: TimeRange[];
+} | null> {
+  if (!ROLLUP_READ_ENABLED) return null;
+  const keys = fullBusinessDaysCoveredByRange(
+    range,
+    timezone,
+    businessStartTime,
+  );
+  if (keys.length === 0) return null;
+  const oid = new mongoose.Types.ObjectId(locationMongoId);
+  const dailies = await SquareOrderDailyRollupModel.find({
+    locationId: oid,
+    businessDateKey: { $in: keys },
+  })
+    .lean()
+    .exec();
+  if (dailies.length === 0) return null;
+  const presentKeys = new Set(dailies.map((d) => d.businessDateKey));
+  let rollupNetSalesCents = 0;
+  let rollupTransactionCount = 0;
+  let rollupTotalDiscountCents = 0;
+  let rollupTotalRefundCents = 0;
+  let rollupRefundCount = 0;
+  for (const d of dailies) {
+    rollupNetSalesCents += d.netSalesCents ?? 0;
+    rollupTransactionCount += d.transactionCount ?? 0;
+    rollupTotalDiscountCents += d.totalDiscountCents ?? 0;
+    rollupTotalRefundCents += d.totalRefundCents ?? 0;
+    rollupRefundCount += d.refundCount ?? 0;
+  }
+  const rollupSourcesOfSalesCentsById =
+    sumSourcesOfSalesCentsByIdFromDailyRollupDocs(dailies);
+  const uncoveredRanges = computeRollupUncoveredSubRanges(
+    range,
+    timezone,
+    businessStartTime,
+    presentKeys,
+  );
+  return {
+    rollupNetSalesCents,
+    rollupTransactionCount,
+    rollupTotalDiscountCents,
+    rollupTotalRefundCents,
+    rollupRefundCount,
+    rollupSourcesOfSalesCentsById,
+    presentKeys,
+    uncoveredRanges,
+  };
+}
+
+export type DailyLaborSplitResult = {
+  rollupTotalLaborCost: number;
+  rollupTotalPaidHours: number;
+  presentKeys: Set<string>;
+  uncoveredRanges: TimeRange[];
+};
+
+/**
+ * Split-range variant for labor daily rollups. See
+ * {@link tryGetOrderStatsAndSourcesFromDailyRollupsSplit} for the contract.
+ */
+export async function tryGetLaborTotalsFromDailyRollupsSplit(
+  locationMongoId: string,
+  range: TimeRange,
+  timezone: string,
+  businessStartTime: string,
+): Promise<DailyLaborSplitResult | null> {
+  if (!ROLLUP_READ_ENABLED) return null;
+  const keys = fullBusinessDaysCoveredByRange(
+    range,
+    timezone,
+    businessStartTime,
+  );
+  if (keys.length === 0) return null;
+  const oid = new mongoose.Types.ObjectId(locationMongoId);
+  const dailies = await HomebaseTimecardDailyRollupModel.find({
+    locationId: oid,
+    businessDateKey: { $in: keys },
+  })
+    .lean()
+    .exec();
+  if (dailies.length === 0) return null;
+  const presentKeys = new Set(dailies.map((d) => d.businessDateKey));
+  let rollupTotalLaborCost = 0;
+  let rollupTotalPaidHours = 0;
+  for (const d of dailies) {
+    if (
+      typeof d.totalLaborCost === "number" &&
+      Number.isFinite(d.totalLaborCost)
+    ) {
+      rollupTotalLaborCost += d.totalLaborCost;
+    }
+    if (
+      typeof d.totalPaidHours === "number" &&
+      Number.isFinite(d.totalPaidHours)
+    ) {
+      rollupTotalPaidHours += d.totalPaidHours;
+    }
+  }
+  const uncoveredRanges = computeRollupUncoveredSubRanges(
+    range,
+    timezone,
+    businessStartTime,
+    presentKeys,
+  );
+  return {
+    rollupTotalLaborCost,
+    rollupTotalPaidHours,
+    presentKeys,
+    uncoveredRanges,
+  };
 }
 
 /**
