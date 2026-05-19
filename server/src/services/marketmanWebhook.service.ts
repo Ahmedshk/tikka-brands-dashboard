@@ -10,6 +10,7 @@ import {
   inferMarketManOrderApiKindFromOrderRaw,
   marketManOrderNumberStringFromRaw,
 } from "../utils/marketmanWebhookExtract.util.js";
+import { normalizeMarketManWebhookOrderDates } from "../utils/marketmanWebhookOrderDates.util.js";
 import { marketManOrderWebhookSyncWindowUtc } from "../utils/marketmanOrderWebhookSyncWindow.util.js";
 import { logger } from "../utils/logger.util.js";
 import {
@@ -64,7 +65,11 @@ export async function processMarketManWebhookHttp(
   }
 
   const extracted = extractMarketManWebhookPayload(b);
-  const { eventName, buyerGuid, order, explicitApiKind } = extracted;
+  const { eventName, buyerGuid, explicitApiKind } = extracted;
+  const order = extracted.order;
+  if (order) {
+    normalizeMarketManWebhookOrderDates(order);
+  }
 
   const hoodEventId = marketManWebhookHoodEventIdFromBody(b);
   const orderNumberEarly = order

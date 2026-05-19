@@ -1,18 +1,18 @@
 import type { MarketManOrderApiKind } from "../models/marketmanOrderCache.model.js";
 import { formatMarketManDateUtc } from "../services/marketman.client.js";
+import { pickMarketManOrderDateString } from "./marketmanWebhookOrderDates.util.js";
 import { parseMarketManUtcToDate } from "./marketmanUtcDateParse.util.js";
 
 /**
- * Derive `dateTimeFromUTC` / `dateTimeToUTC` for {@link upsertMarketManOrder} from webhook order JSON
- * (same MM shape as API responses: `DeliveryDateUTC` / `SentDateUTC`).
+ * Derive `dateTimeFromUTC` / `dateTimeToUTC` for {@link upsertMarketManOrder} from webhook order JSON.
+ * Accepts API fields (`DeliveryDateUTC` / `SentDateUTC`) and Hood webhooks (`DeliveryDate` / `SentDate`).
  */
 export function marketManOrderWebhookSyncWindowUtc(
   order: Record<string, unknown>,
   apiKind: MarketManOrderApiKind,
 ): { dateTimeFromUTC: string; dateTimeToUTC: string } | null {
-  const key = apiKind === "delivery" ? "DeliveryDateUTC" : "SentDateUTC";
-  const raw = order[key];
-  if (typeof raw !== "string" || !raw.trim()) return null;
+  const raw = pickMarketManOrderDateString(order, apiKind);
+  if (!raw) return null;
   const d = parseMarketManUtcToDate(raw);
   if (!d) return null;
   const y = d.getUTCFullYear();

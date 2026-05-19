@@ -10,6 +10,12 @@ import {
 } from "./marketmanWebhookOrderEnrich.util.js";
 import type { MarketManCatalogItem } from "../services/marketman.service.js";
 import { fillMissingOrderStatusFieldsFromOrderStatus } from "./marketmanWebhookOrderStatus.util.js";
+import {
+  inferMarketManOrderApiKindFromOrderRaw,
+  normalizeMarketManWebhookOrderDates,
+  pickMarketManOrderDateString,
+} from "./marketmanWebhookOrderDates.util.js";
+import { marketManOrderWebhookSyncWindowUtc } from "./marketmanOrderWebhookSyncWindow.util.js";
 
 describe("extractMarketManWebhookPayload", () => {
   it("extracts HoodEventID + Data as order", () => {
@@ -57,6 +63,57 @@ describe("extractMarketManWebhookPayload", () => {
     const r = extractMarketManWebhookPayload(body);
     assert.equal(r.order?.OrderNumber, "7");
     assert.equal(r.buyerGuid, "bg");
+  });
+});
+
+describe("marketmanWebhookOrderDates", () => {
+  it("normalizes Hood DeliveryDate / SentDate onto UTC keys", () => {
+    const order: Record<string, unknown> = {
+      DeliveryDate: "2026/05/23 10:00:00",
+      SentDate: "2026/05/18 08:36:06",
+    };
+    normalizeMarketManWebhookOrderDates(order);
+    assert.equal(order.DeliveryDateUTC, "2026/05/23 10:00:00");
+    assert.equal(order.SentDateUTC, "2026/05/18 08:36:06");
+  });
+
+  it("does not overwrite existing DeliveryDateUTC / SentDateUTC", () => {
+    const order: Record<string, unknown> = {
+      DeliveryDateUTC: "2026/04/01 12:00:00",
+      DeliveryDate: "2026/05/23 10:00:00",
+    };
+    normalizeMarketManWebhookOrderDates(order);
+    assert.equal(order.DeliveryDateUTC, "2026/04/01 12:00:00");
+  });
+
+  it("infers delivery when Hood delivery date is present", () => {
+    assert.equal(
+      inferMarketManOrderApiKindFromOrderRaw({
+        DeliveryDate: "2026/05/23 10:00:00",
+        SentDate: "2026/05/18 08:36:06",
+      }),
+      "delivery",
+    );
+  });
+
+  it("infers sent when only SentDate is present", () => {
+    assert.equal(
+      inferMarketManOrderApiKindFromOrderRaw({
+        SentDate: "2026/05/18 08:36:06",
+      }),
+      "sent",
+    );
+  });
+
+  it("derives sync window from Hood DeliveryDate for delivery apiKind", () => {
+    const order: Record<string, unknown> = {
+      DeliveryDate: "2026/05/23 10:00:00",
+    };
+    const window = marketManOrderWebhookSyncWindowUtc(order, "delivery");
+    assert.ok(window);
+    assert.match(window!.dateTimeFromUTC, /^2026\/05\/23 00:00:00$/);
+    assert.match(window!.dateTimeToUTC, /^2026\/05\/23 23:59:59$/);
+    assert.equal(pickMarketManOrderDateString(order, "delivery"), "2026/05/23 10:00:00");
   });
 });
 

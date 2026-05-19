@@ -184,14 +184,4 @@ export function extractMarketManWebhookPayload(body: Record<string, unknown>): {
   };
 }
 
-export function inferMarketManOrderApiKindFromOrderRaw(
-  order: Record<string, unknown>,
-): MarketManOrderApiKind {
-  const del =
-    typeof order.DeliveryDateUTC === "string" && order.DeliveryDateUTC.trim().length > 0;
-  const sent =
-    typeof order.SentDateUTC === "string" && order.SentDateUTC.trim().length > 0;
-  if (del) return "delivery";
-  if (sent) return "sent";
-  return "delivery";
-}
+export { inferMarketManOrderApiKindFromOrderRaw } from "./marketmanWebhookOrderDates.util.js";
