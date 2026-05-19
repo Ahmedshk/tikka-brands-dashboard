@@ -43,7 +43,6 @@ import {
   buildAllLocationsCommandCenterKpis,
   buildAllLocationsHourlySales,
 } from "../utils/commandCenterAllLocations.util.js";
-import { getAlertsBucketsForRequest } from "../utils/commandCenterAlertsControllerHelpers.util.js";
 import { getAllMetricIdsForPage } from "../config/kpi-metrics.config.js";
 import type { LocationForKpi } from "../types/commandCenter.types.js";
 import type {
@@ -153,9 +152,10 @@ async function computeAllLocationsResponse(args: {
       return await buildAllLocationsHourlySales({ req, locationService });
     }
     case "command-center.alerts": {
-      const result = await getAlertsBucketsForRequest({ req, locationService });
-      if (result.kind !== "ok") return { alerts: [] };
-      return { alerts: result.buckets };
+      // Per-user endpoint (notifications + dismissals are user-scoped) —
+      // never run from the cron's synthesized "system" user. The iteration
+      // below skips these entries; this case exists only for exhaustiveness.
+      return { alerts: [] };
     }
   }
 }
@@ -196,6 +196,13 @@ const HARDCODED_DEFAULT_ENTRIES: ReadonlyArray<DefaultEntry> = [
   { endpoint: "sales-labor.hourly-breakdown", params: {} },
   { endpoint: "sales-labor.timesheet", params: {} },
   // command-center defaults
+  //
+  // `command-center.alerts` is intentionally omitted: that endpoint is
+  // scoped per-user (it queries the current user's notifications and
+  // dismissals), so a process-wide pre-computed cache entry can't be shared
+  // across users. The controller for alerts is also not wrapped with the
+  // cache-aside (it was already ~40ms in production), so no entry of this
+  // kind ever lands in the collection.
   {
     endpoint: "command-center.kpis",
     params: {
@@ -204,7 +211,6 @@ const HARDCODED_DEFAULT_ENTRIES: ReadonlyArray<DefaultEntry> = [
     },
   },
   { endpoint: "command-center.hourly-sales", params: {} },
-  { endpoint: "command-center.alerts", params: {} },
 ];
 
 async function runRefreshCycle(): Promise<void> {
@@ -224,6 +230,8 @@ async function runRefreshCycle(): Promise<void> {
     // expire via the freshness gate + TTL index and recompute on next user
     // request.
     if (!entry.locationScope.startsWith(`${ALL_LOCATIONS_ID}|`)) continue;
+    // Skip alerts: per-user endpoint, can't be refreshed with a system req.
+    if (entry.endpoint === "command-center.alerts") continue;
     try {
       const data = await computeAllLocationsResponse({
         endpoint: entry.endpoint,
