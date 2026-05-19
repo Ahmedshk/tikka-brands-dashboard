@@ -37,6 +37,7 @@ import {
   getRangeWeekToDate,
 } from "../utils/commandCenterKpiLogic.js";
 import { getBusinessStartTimeRange } from "../utils/timezone.util.js";
+import { serveDashboardWithCache } from "../services/dashboardCache.service.js";
 
 const goalService = new GoalService();
 const locationService = new LocationService();
@@ -92,102 +93,101 @@ export const getCommandCenterKPIs = async (
       queryMetrics?.length ?
         queryMetrics.filter((m) => allowedMetrics.includes(m))
         : allowedMetrics;
+    const sortedMetrics = [...metrics].sort();
+    const sortedPeriods = Array.isArray(periods) ? [...periods].sort() : null;
 
-    if (metrics.length === 0) {
-      const emptyToday: Record<string, unknown> = {};
-      const emptyWeekToDate: Record<string, unknown> = {};
-      if (Array.isArray(periods) && periods.includes("weekToDate")) {
-        res.status(200).json({
-          success: true,
-          data: { today: emptyToday, weekToDate: emptyWeekToDate },
-        });
-      } else {
-        res.status(200).json({ success: true, data: emptyToday });
-      }
-      return;
-    }
+    await serveDashboardWithCache({
+      req,
+      res,
+      endpoint: "command-center.kpis",
+      params: { metrics: sortedMetrics, periods: sortedPeriods },
+      compute: async () => {
+        if (sortedMetrics.length === 0) {
+          const emptyToday: Record<string, unknown> = {};
+          const emptyWeekToDate: Record<string, unknown> = {};
+          if (Array.isArray(periods) && periods.includes("weekToDate")) {
+            return { today: emptyToday, weekToDate: emptyWeekToDate };
+          }
+          return emptyToday;
+        }
 
-    if (isAllLocationsId(locationId)) {
-      const { wantNetSales, wantLaborCost, wantReviewRating } = getWantFlags(metrics);
-      const result = await buildAllLocationsCommandCenterKpis({
-        req,
-        metrics,
-        periods,
-        wantNetSales,
-        wantLaborCost,
-        wantReviewRating,
-        goalService,
-        locationService,
-        toLocationForKpi,
-      });
-      res.status(200).json({ success: true, data: result.data });
-      return;
-    }
+        if (isAllLocationsId(locationId)) {
+          const { wantNetSales, wantLaborCost, wantReviewRating } = getWantFlags(metrics);
+          const result = await buildAllLocationsCommandCenterKpis({
+            req,
+            metrics,
+            periods,
+            wantNetSales,
+            wantLaborCost,
+            wantReviewRating,
+            goalService,
+            locationService,
+            toLocationForKpi,
+          });
+          return result.data;
+        }
 
-    const withCreds = await locationService.getByIdWithCredentials(locationId);
-    if (!withCreds) {
-      throw new NotFoundError("Location not found");
-    }
-    const { location } = withCreds;
-    const loc = toLocationForKpi(location);
+        const withCreds = await locationService.getByIdWithCredentials(locationId);
+        if (!withCreds) {
+          throw new NotFoundError("Location not found");
+        }
+        const { location } = withCreds;
+        const loc = toLocationForKpi(location);
 
-    const { wantNetSales, wantLaborCost, wantReviewRating } =
-      getWantFlags(metrics);
-    const { laborCostGoal, laborCostGoalTolerance } = await getLaborCostGoals(
-      goalService,
-      locationId,
-      loc,
-      wantLaborCost,
-    );
-    const rangeToday = getRangeToday(loc);
-    const wantWeekToDate =
-      Array.isArray(periods) && periods.includes("weekToDate");
+        const { wantNetSales, wantLaborCost, wantReviewRating } =
+          getWantFlags(metrics);
+        const { laborCostGoal, laborCostGoalTolerance } = await getLaborCostGoals(
+          goalService,
+          locationId,
+          loc,
+          wantLaborCost,
+        );
+        const rangeToday = getRangeToday(loc);
+        const wantWeekToDate =
+          Array.isArray(periods) && periods.includes("weekToDate");
 
-    if (wantWeekToDate) {
-      const rangeWeekToDate = getRangeWeekToDate(loc);
-      const kpis = await fetchWeekToDateKpis({
-        locationMongoId: locationId,
-        location: loc,
-        rangeToday,
-        rangeWeekToDate,
-        wantNetSales,
-        wantLaborCost,
-        laborCostGoal,
-      });
-      const { todayData, weekToDateData } = buildWeekToDateData(
-        metrics,
-        wantNetSales,
-        wantLaborCost,
-        wantReviewRating,
-        kpis,
-        laborCostGoal,
-        laborCostGoalTolerance,
-      );
-      res.status(200).json({
-        success: true,
-        data: { today: todayData, weekToDate: weekToDateData },
-      });
-      return;
-    }
+        if (wantWeekToDate) {
+          const rangeWeekToDate = getRangeWeekToDate(loc);
+          const kpis = await fetchWeekToDateKpis({
+            locationMongoId: locationId,
+            location: loc,
+            rangeToday,
+            rangeWeekToDate,
+            wantNetSales,
+            wantLaborCost,
+            laborCostGoal,
+          });
+          const { todayData, weekToDateData } = buildWeekToDateData(
+            metrics,
+            wantNetSales,
+            wantLaborCost,
+            wantReviewRating,
+            kpis,
+            laborCostGoal,
+            laborCostGoalTolerance,
+          );
+          return { today: todayData, weekToDate: weekToDateData };
+        }
 
-    const kpis = await fetchTodayOnlyKpis(
-      locationId,
-      loc,
-      rangeToday,
-      wantNetSales,
-      wantLaborCost,
-      laborCostGoal,
-    );
-    const data = buildTodayOnlyData(
-      metrics,
-      wantNetSales,
-      wantLaborCost,
-      wantReviewRating,
-      kpis,
-      laborCostGoal,
-      laborCostGoalTolerance,
-    );
-    res.status(200).json({ success: true, data });
+        const kpis = await fetchTodayOnlyKpis(
+          locationId,
+          loc,
+          rangeToday,
+          wantNetSales,
+          wantLaborCost,
+          laborCostGoal,
+        );
+        return buildTodayOnlyData(
+          metrics,
+          wantNetSales,
+          wantLaborCost,
+          wantReviewRating,
+          kpis,
+          laborCostGoal,
+          laborCostGoalTolerance,
+        );
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -219,74 +219,72 @@ export const getHourlySales = async (
 
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
-    if (isAllLocationsId(locationId)) {
-      const rows = await buildAllLocationsHourlySales({ req, locationService });
-      res.status(200).json({ success: true, data: rows });
-      return;
-    }
-    const withCreds = await locationService.getByIdWithCredentials(locationId);
-    if (!withCreds) {
-      throw new NotFoundError("Location not found");
-    }
-    const { location } = withCreds;
-    const timezone = location.timezone?.trim();
-    const squareLocationId = location.squareLocationId?.trim();
-    if (!timezone || !squareLocationId) {
-      res.status(200).json({
-        success: true,
-        data: buildEmptyHourlySalesRows(),
-      });
-      return;
-    }
+    await serveDashboardWithCache({
+      req,
+      res,
+      endpoint: "command-center.hourly-sales",
+      params: {},
+      compute: async () => {
+        if (isAllLocationsId(locationId)) {
+          return await buildAllLocationsHourlySales({ req, locationService });
+        }
+        const withCreds = await locationService.getByIdWithCredentials(locationId);
+        if (!withCreds) {
+          throw new NotFoundError("Location not found");
+        }
+        const { location } = withCreds;
+        const timezone = location.timezone?.trim();
+        const squareLocationId = location.squareLocationId?.trim();
+        if (!timezone || !squareLocationId) {
+          return buildEmptyHourlySalesRows();
+        }
 
-    const businessStartTime = location.businessStartTime?.trim() ?? "00:00";
-    const todayRange = getBusinessStartTimeRange(timezone, businessStartTime);
-    const todayKey = businessDateKeyForInstant(
-      new Date(),
-      timezone,
-      businessStartTime,
-    );
-    const lastWeekKey = addCalendarDaysToBusinessDateKey(todayKey, -7);
-    const lastWeekRange = businessDayUtcRangeIsoStrings(
-      timezone,
-      businessStartTime,
-      lastWeekKey,
-    );
+        const businessStartTime = location.businessStartTime?.trim() ?? "00:00";
+        const todayRange = getBusinessStartTimeRange(timezone, businessStartTime);
+        const todayKey = businessDateKeyForInstant(
+          new Date(),
+          timezone,
+          businessStartTime,
+        );
+        const lastWeekKey = addCalendarDaysToBusinessDateKey(todayKey, -7);
+        const lastWeekRange = businessDayUtcRangeIsoStrings(
+          timezone,
+          businessStartTime,
+          lastWeekKey,
+        );
 
-    const [todaySlots, lastWeekSlots] = await Promise.all([
-      fetchHourlyNetSalesCentsBySlotFromCache(
-        locationId,
-        todayRange,
-        timezone,
-        businessStartTime,
-        "GET /command-center/hourly-sales today (current business day)",
-      ),
-      fetchHourlyNetSalesCentsBySlotFromCache(
-        locationId,
-        lastWeekRange,
-        timezone,
-        businessStartTime,
-        "GET /command-center/hourly-sales last week (business date − 7 days)",
-      ),
-    ]);
+        const [todaySlots, lastWeekSlots] = await Promise.all([
+          fetchHourlyNetSalesCentsBySlotFromCache(
+            locationId,
+            todayRange,
+            timezone,
+            businessStartTime,
+            "GET /command-center/hourly-sales today (current business day)",
+          ),
+          fetchHourlyNetSalesCentsBySlotFromCache(
+            locationId,
+            lastWeekRange,
+            timezone,
+            businessStartTime,
+            "GET /command-center/hourly-sales last week (business date − 7 days)",
+          ),
+        ]);
 
-    const startHour = Number.parseInt(
-      businessStartTime.split(":")[0] ?? "0",
-      10,
-    );
-    const rows: HourlySalesRow[] = [];
-    for (let slot = 0; slot < 24; slot++) {
-      const hour24 = (startHour + slot) % 24;
-      rows.push({
-        hour: `${String(hour24).padStart(2, "0")}:00`,
-        today: (todaySlots[slot] ?? 0) / 100,
-        last_week: (lastWeekSlots[slot] ?? 0) / 100,
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: rows,
+        const startHour = Number.parseInt(
+          businessStartTime.split(":")[0] ?? "0",
+          10,
+        );
+        const rows: HourlySalesRow[] = [];
+        for (let slot = 0; slot < 24; slot++) {
+          const hour24 = (startHour + slot) % 24;
+          rows.push({
+            hour: `${String(hour24).padStart(2, "0")}:00`,
+            today: (todaySlots[slot] ?? 0) / 100,
+            last_week: (lastWeekSlots[slot] ?? 0) / 100,
+          });
+        }
+        return rows;
+      },
     });
   } catch (error) {
     next(error);

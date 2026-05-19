@@ -51,6 +51,11 @@ export async function initializeAgenda(): Promise<Agenda> {
   const { registerAlertJobs, bootstrapAlertAgendaSchedule } = await import("../jobs/alerts.jobs.js");
   registerAlertJobs(agenda);
 
+  const { registerDashboardCacheJobs, DASHBOARD_CACHE_REFRESH_JOB_NAME } = await import(
+    "../jobs/dashboardCache.jobs.js"
+  );
+  registerDashboardCacheJobs(agenda);
+
   await agenda.start();
   logger.info("Agenda: scheduler started");
 
@@ -81,6 +86,17 @@ export async function initializeAgenda(): Promise<Agenda> {
     isTestMode() ? "*/3 * * * *" : "0 10 * * *",
     "integration:catalog-daily",
   );
+
+  /**
+   * Dashboard response cache: refresh every 15 minutes via the cron, and
+   * queue an immediate one-shot run at startup so the first user request
+   * after deploy is a cache hit instead of a slow live compute.
+   */
+  await agenda.every(
+    isTestMode() ? "*/2 * * * *" : "*/15 * * * *",
+    DASHBOARD_CACHE_REFRESH_JOB_NAME,
+  );
+  await agenda.now(DASHBOARD_CACHE_REFRESH_JOB_NAME, {});
   if (process.env.SKIP_CALENDAR_STARTUP_BACKFILL !== "1") {
     queueCalendarNotificationBackfill(agenda);
   }
