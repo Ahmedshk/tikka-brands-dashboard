@@ -4,7 +4,9 @@
       "Bash(npm run *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(node -e \"const m = require\\('./server/src/utils/logger.util.ts'\\)\")",
+      "Bash(echo \"exit=$?\")"
     ]
   }
 }

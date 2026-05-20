@@ -73,6 +73,8 @@ export interface SquareOrderWithDiscount {
   createdAt: string | null;
   updatedAt: string | null;
   paymentIds: string[];
+  /** Square Order.created_by_team_member_id when present — preferred source for "applied by" in the activity log. */
+  createdByTeamMemberId?: string;
   discounts: SquareOrderDiscount[];
   lineItems: {
     name: string;
@@ -228,6 +230,8 @@ export interface SquareOrder {
   fulfillments?: Array<{ type?: string }>;
   /** Line items (included in SearchOrders response). */
   line_items?: SquareOrderLineItem[];
+  /** Team member that created the order in POS (Square Order.created_by_team_member_id). */
+  created_by_team_member_id?: string;
 }
 
 interface RetrievePaymentResponse {
@@ -889,11 +893,15 @@ export function squareOrdersToWithDiscounts(
             : {}),
         }),
       );
+      const createdByTeamMemberId = order.created_by_team_member_id?.trim();
       return {
         id: order.id ?? "",
         createdAt: order.created_at ?? null,
         updatedAt: order.updated_at ?? null,
         paymentIds,
+        ...(createdByTeamMemberId && createdByTeamMemberId.length > 0
+          ? { createdByTeamMemberId }
+          : {}),
         discounts,
         lineItems,
         orderTotals,

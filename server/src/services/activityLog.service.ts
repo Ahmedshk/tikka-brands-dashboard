@@ -4,7 +4,9 @@ import {
   getSquareTeamMemberRawFromCache,
   searchOrdersWithDiscountsFromCache,
 } from "./integrationCacheRead.service.js";
+import { getTeamMemberById } from "./square.service.js";
 import { ValidationError } from "../utils/errors.util.js";
+import { logger } from "../utils/logger.util.js";
 import { getBusinessDayRangeForDate } from "../utils/timezone.util.js";
 import type {
   ActivityLogListResult,
@@ -327,27 +329,59 @@ export class ActivityLogService {
   private async getCachedTeamMember(
     teamMemberId: string | null,
     teamMemberCache: Map<string, TeamMemberDetails>,
+    squareAccessToken: string | null,
   ): Promise<TeamMemberDetails> {
     if (!teamMemberId) return null;
-    if (!teamMemberCache.has(teamMemberId)) {
+    if (teamMemberCache.has(teamMemberId)) {
+      return teamMemberCache.get(teamMemberId) ?? null;
+    }
+    try {
+      const fromDb = await getSquareTeamMemberRawFromCache(teamMemberId);
+      if (fromDb) {
+        const cached: TeamMemberDetails = {
+          id: fromDb.id,
+          givenName: fromDb.givenName,
+          familyName: fromDb.familyName,
+          ...(fromDb.jobTitle ? { jobTitle: fromDb.jobTitle } : {}),
+        };
+        teamMemberCache.set(teamMemberId, cached);
+        return cached;
+      }
+    } catch (err) {
+      logger.warn("[activity-log] team member cache read failed", {
+        teamMemberId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Cache miss — POS-created orders can reference inactive members not in the
+    // Mongo team-member sync (which only pulls ACTIVE). Fall back to Square's
+    // RetrieveTeamMember API so "applied by" still resolves.
+    if (squareAccessToken) {
       try {
-        const fromDb = await getSquareTeamMemberRawFromCache(teamMemberId);
-        teamMemberCache.set(
+        const fromApi = await getTeamMemberById(teamMemberId, {
+          accessToken: squareAccessToken,
+        });
+        const resolved: TeamMemberDetails = fromApi
+          ? {
+              id: fromApi.id,
+              givenName: fromApi.givenName,
+              familyName: fromApi.familyName,
+              ...(fromApi.jobTitle ? { jobTitle: fromApi.jobTitle } : {}),
+            }
+          : null;
+        teamMemberCache.set(teamMemberId, resolved);
+        return resolved;
+      } catch (err) {
+        logger.warn("[activity-log] Square RetrieveTeamMember failed", {
           teamMemberId,
-          fromDb
-            ? {
-                id: fromDb.id,
-                givenName: fromDb.givenName,
-                familyName: fromDb.familyName,
-                ...(fromDb.jobTitle ? { jobTitle: fromDb.jobTitle } : {}),
-              }
-            : null,
-        );
-      } catch {
-        teamMemberCache.set(teamMemberId, null);
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
-    return teamMemberCache.get(teamMemberId) ?? null;
+
+    teamMemberCache.set(teamMemberId, null);
+    return null;
   }
 
   async getByLocationAndDate(
@@ -376,12 +410,14 @@ export class ActivityLogService {
 
     const paymentCache = new Map<string, PaymentDetails>();
     const teamMemberCache = new Map<string, TeamMemberDetails>();
+    const squareAccessToken = locationWithCredentials.squareAccessToken ?? null;
 
     const rows: ActivityLogRowDto[] = await buildActivityLogRowsForOrders({
       orders,
       location,
       getCachedPayment: (paymentId) => this.getCachedPayment(paymentId, paymentCache),
-      getCachedTeamMember: (teamMemberId) => this.getCachedTeamMember(teamMemberId, teamMemberCache),
+      getCachedTeamMember: (teamMemberId) =>
+        this.getCachedTeamMember(teamMemberId, teamMemberCache, squareAccessToken),
       formatAppliedBy,
       discountRowNameBase,
       listNamePartsWithAmount: (baseWithoutAmount, amountMoneyCents) => {

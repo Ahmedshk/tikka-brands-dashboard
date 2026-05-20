@@ -68,7 +68,13 @@ export async function buildActivityLogRowsForOrders(args: {
     const refundPaymentId = order.refunds[0]?.tenderId ?? null;
     const refundPayment = await getCachedPayment(refundPaymentId);
 
-    const teamMemberId = payment?.employeeId ?? payment?.teamMemberId ?? null;
+    // Prefer the order's POS-recorded team member; payment fields are the fallback
+    // (POS-created orders often lack employee_id on the payment).
+    const teamMemberId =
+      order.createdByTeamMemberId ??
+      payment?.employeeId ??
+      payment?.teamMemberId ??
+      null;
     const teamMember = await getCachedTeamMember(teamMemberId);
 
     const appliedBy = formatAppliedBy(teamMember?.givenName ?? null, teamMember?.familyName ?? null);
