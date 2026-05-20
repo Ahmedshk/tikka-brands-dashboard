@@ -35,6 +35,7 @@ jobs:
           cd server
           npm ci
           npm run build
+          cp -r src/templates dist/templates
 
       - name: Prepare deployment package
         run: |
