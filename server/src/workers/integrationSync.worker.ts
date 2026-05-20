@@ -2,6 +2,7 @@ import { workerData, parentPort } from "node:worker_threads";
 import { connectDatabase } from "../config/database.js";
 import { runManualIntegrationSyncBackground } from "../utils/integrationSyncControllerHelpers.util.js";
 import { runAllTodayBackground } from "./runAllTodayBackground.js";
+import { integrationPoll15mBackground } from "./integrationPoll15mBackground.js";
 import { logger } from "../utils/logger.util.js";
 import type { IntegrationSyncWorkerMsg } from "./integrationSyncWorker.types.js";
 
@@ -26,14 +27,17 @@ async function main(): Promise<void> {
         logId: msg.logId,
         body: msg.body,
       });
-    } else {
+    } else if (msg.kind === "all-today") {
       await runAllTodayBackground(msg.logId);
+    } else {
+      await integrationPoll15mBackground();
     }
     parentPort?.postMessage({ ok: true });
   } catch (err) {
     logger.error("integrationSync worker top-level failure", {
       err,
-      logId: msg.logId,
+      kind: msg.kind,
+      ...(msg.kind !== "poll-15m" ? { logId: msg.logId } : {}),
     });
     parentPort?.postMessage({
       ok: false,

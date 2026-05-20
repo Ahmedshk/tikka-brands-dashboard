@@ -28,7 +28,7 @@ export const postIntegrationSync = async (
       res.status(429).json({
         logId,
         started: false,
-        message: result.reason ?? "Too many concurrent syncs",
+        message: result.reason ?? "Another sync is already in progress",
       });
       return;
     }
@@ -67,7 +67,7 @@ export const postIntegrationSyncRunAllToday = async (
       res.status(429).json({
         logId,
         started: false,
-        message: result.reason ?? "Too many concurrent syncs",
+        message: result.reason ?? "Another sync is already in progress",
       });
       return;
     }

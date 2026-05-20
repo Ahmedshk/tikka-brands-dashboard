@@ -7,4 +7,5 @@ import type { ManualSyncBody } from "../utils/integrationSyncControllerHelpers.u
  */
 export type IntegrationSyncWorkerMsg =
   | { kind: "manual"; logId: string; body: ManualSyncBody }
-  | { kind: "all-today"; logId: string };
+  | { kind: "all-today"; logId: string }
+  | { kind: "poll-15m" };

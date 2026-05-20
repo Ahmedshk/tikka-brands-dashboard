@@ -1,11 +1,8 @@
 import type { Agenda } from "agenda";
 import { formatInTimeZone } from "date-fns-tz";
 import { runSyncForAllLocations } from "../services/integrationSyncRunner.service.js";
-import {
-  refreshHomebaseRollupsAfterPoll,
-  refreshMarketManRollupsAfterPoll,
-} from "../services/integrationPollRollupRefresh.service.js";
 import { IntegrationSyncLogModel } from "../models/integrationSyncLog.model.js";
+import { spawnPoll15mWorker } from "../workers/spawnIntegrationSyncWorker.util.js";
 import { logger } from "../utils/logger.util.js";
 
 function denverDateKey(d = new Date()): string {
@@ -13,7 +10,7 @@ function denverDateKey(d = new Date()): string {
 }
 
 /** First 30 minutes of 08:00 in America/Denver (handles DST). */
-function isDenverEightAmWindow(d = new Date()): boolean {
+export function isDenverEightAmWindow(d = new Date()): boolean {
   const hour = Number(formatInTimeZone(d, "America/Denver", "H"));
   const minute = Number(formatInTimeZone(d, "America/Denver", "m"));
   return hour === 8 && minute < 30;
@@ -23,7 +20,7 @@ function isDenverEightAmWindow(d = new Date()): boolean {
  * If no successful `marketman_valid_count_dates` run is logged for the current Denver calendar day,
  * fetch and upsert valid count dates for all locations (same as the scheduled job).
  */
-async function syncMarketManValidCountDatesForTodayDenverIfMissing(
+export async function syncMarketManValidCountDatesForTodayDenverIfMissing(
   context: "scheduled_eight_am" | "catch_up_startup",
 ): Promise<void> {
   const key = denverDateKey();
@@ -87,44 +84,17 @@ export function registerIntegrationJobs(agenda: Agenda): void {
     }
   });
 
-  agenda.define("integration:poll-15m", async () => {
-    try {
-      const hb = await runSyncForAllLocations("homebase_timecards");
-      logger.info("integration:poll-15m homebase_timecards done", {
-        totalUpserted: hb.totalUpserted,
-      });
-      try {
-        await refreshHomebaseRollupsAfterPoll();
-      } catch (rollErr) {
-        logger.error("integration:poll-15m homebase rollups failed", {
-          err: rollErr,
-        });
-      }
-    } catch (err) {
-      logger.error("integration:poll-15m homebase_timecards failed", { err });
-    }
-
-    try {
-      if (isDenverEightAmWindow()) {
-        await syncMarketManValidCountDatesForTodayDenverIfMissing(
-          "scheduled_eight_am",
-        );
-      }
-
-      /** Actual/theo (+ waste cost fields from same API) populate on inventory KPI requests; orders stay on schedule. */
-      const mm = await runSyncForAllLocations("marketman_orders_both");
-      logger.info("integration:poll-15m marketman_orders_both done", {
-        totalUpserted: mm.totalUpserted,
-      });
-      try {
-        await refreshMarketManRollupsAfterPoll();
-      } catch (rollErr) {
-        logger.error("integration:poll-15m marketman rollups failed", {
-          err: rollErr,
-        });
-      }
-    } catch (err) {
-      logger.error("integration:poll-15m marketman segment failed", { err });
+  agenda.define("integration:poll-15m", () => {
+    // The actual sync + rollup work runs in a dedicated worker_threads worker
+    // (see integrationPoll15mBackground.ts) so it never hitches the HTTP
+    // event loop on the main thread. The Agenda handler just spawns and
+    // returns immediately.
+    const result = spawnPoll15mWorker();
+    if (!result.spawned) {
+      logger.info(
+        "integration:poll-15m skipped (previous run still in progress)",
+        { reason: result.reason },
+      );
     }
   });
 }

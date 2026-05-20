@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import axios from "axios";
 import TextField from "@mui/material/TextField";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
@@ -48,6 +49,15 @@ const GREY_FOCUS_FIELD_SX = {
 } as const;
 
 const DATA_SYNC_DATETIME_FORMAT = "MM/dd/yyyy HH:mm";
+
+/**
+ * Server returns 429 when a sync is already running (cap=1). The axios
+ * response interceptor already toasts the server message, so the caller
+ * should skip its own generic "request failed" toast in that case.
+ */
+function isConflictError(err: unknown): boolean {
+  return axios.isAxiosError(err) && err.response?.status === 429;
+}
 
 /** Nested panel — aligned with Events & Notifications / event types table card. */
 const nestedPanelClass =
@@ -293,8 +303,8 @@ export const DataSyncSettings = () => {
       await integrationSyncService.run(body);
       toast.success("Sync started — progress will appear below");
       await fetchActive();
-    } catch {
-      toast.error("Sync request failed");
+    } catch (err) {
+      if (!isConflictError(err)) toast.error("Sync request failed");
     } finally {
       setRunStarting(false);
     }
@@ -306,8 +316,8 @@ export const DataSyncSettings = () => {
       await integrationSyncService.runAllToday();
       toast.success("Full sync started — progress will appear below");
       await fetchActive();
-    } catch {
-      toast.error("Full sync request failed");
+    } catch (err) {
+      if (!isConflictError(err)) toast.error("Full sync request failed");
     } finally {
       setRunAllTodayStarting(false);
     }
@@ -324,8 +334,8 @@ export const DataSyncSettings = () => {
       await integrationSyncService.run(body);
       toast.success("Retry started — progress will appear above");
       await fetchActive();
-    } catch {
-      toast.error("Retry request failed");
+    } catch (err) {
+      if (!isConflictError(err)) toast.error("Retry request failed");
     } finally {
       setRetryingLogId(null);
     }
@@ -455,7 +465,12 @@ export const DataSyncSettings = () => {
                   <div>
                     <button
                       type="button"
-                      disabled={runStarting}
+                      disabled={runStarting || activeSyncs.length > 0}
+                      title={
+                        activeSyncs.length > 0
+                          ? "Another sync is in progress"
+                          : undefined
+                      }
                       onClick={() => void handleRun()}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-button-primary text-white text-xs md:text-sm rounded-lg hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -475,7 +490,12 @@ export const DataSyncSettings = () => {
                     <div>
                       <button
                         type="button"
-                        disabled={runAllTodayStarting}
+                        disabled={runAllTodayStarting || activeSyncs.length > 0}
+                        title={
+                          activeSyncs.length > 0
+                            ? "Another sync is in progress"
+                            : undefined
+                        }
                         onClick={() => void handleRunAllToday()}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-button-primary border border-button-primary text-xs md:text-sm rounded-lg hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -623,7 +643,12 @@ export const DataSyncSettings = () => {
                                 {canRetryLog(row) && (
                                   <button
                                     type="button"
-                                    disabled={retryingLogId === row._id}
+                                    disabled={retryingLogId === row._id || activeSyncs.length > 0}
+                                    title={
+                                      activeSyncs.length > 0
+                                        ? "Another sync is in progress"
+                                        : undefined
+                                    }
                                     onClick={() => void handleRetry(row)}
                                     className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-button-primary text-white text-[11px] rounded-md hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
@@ -676,7 +701,12 @@ export const DataSyncSettings = () => {
                                   <div>
                                     <button
                                       type="button"
-                                      disabled={retryingLogId === row._id}
+                                      disabled={retryingLogId === row._id || activeSyncs.length > 0}
+                                      title={
+                                        activeSyncs.length > 0
+                                          ? "Another sync is in progress"
+                                          : undefined
+                                      }
                                       onClick={() => void handleRetry(row)}
                                       className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 bg-button-primary text-white text-[11px] rounded-md hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
