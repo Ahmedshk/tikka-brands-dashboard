@@ -25,7 +25,7 @@ import { logger } from "../utils/logger.util.js";
 import { LocationModel } from "../models/location.model.js";
 import { LocationService } from "../services/location.service.js";
 import { GoalService } from "../services/goal.service.js";
-import { listAllCacheEntries, putCachedResponse } from "../services/dashboardCache.service.js";
+import { putCachedResponse } from "../services/dashboardCache.service.js";
 import { ALL_LOCATIONS_ID } from "../utils/locationScope.js";
 import { locationScopeForIds } from "../utils/dashboardCacheScope.util.js";
 import { type DashboardEndpoint } from "../utils/dashboardCacheKey.util.js";
@@ -218,41 +218,21 @@ async function runRefreshCycle(): Promise<void> {
   const allLocationIds = await fetchAllLocationIds();
   const allLocationsScope = locationScopeForIds(allLocationIds);
 
-  // 1. Refresh every entry currently in the cache (covers organic growth from
-  //    live-on-miss writes, including entries with custom periods).
-  const existing = await listAllCacheEntries();
-  const seenKeys = new Set<string>();
   let refreshed = 0;
   let failed = 0;
-  for (const entry of existing) {
-    seenKeys.add(entry.cacheKey);
-    // For now only refresh all-locations entries. Single-location entries
-    // expire via the freshness gate + TTL index and recompute on next user
-    // request.
-    if (!entry.locationScope.startsWith(`${ALL_LOCATIONS_ID}|`)) continue;
-    // Skip alerts: per-user endpoint, can't be refreshed with a system req.
-    if (entry.endpoint === "command-center.alerts") continue;
-    try {
-      const data = await computeAllLocationsResponse({
-        endpoint: entry.endpoint,
-        params: entry.params,
-      });
-      await putCachedResponse(
-        { endpoint: entry.endpoint, locationScope: entry.locationScope, params: entry.params },
-        data,
-      );
-      refreshed += 1;
-    } catch (err) {
-      failed += 1;
-      logger.warn("[dashboard-cache] cron refresh failed for entry", {
-        cacheKey: entry.cacheKey,
-        endpoint: entry.endpoint,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
 
-  // 2. Seed hardcoded defaults so common views are never cold.
+  // NOTE: previously this cycle also iterated every all-locations entry in
+  // `DashboardCache` and refreshed each one. With organic growth from
+  // live-on-miss writes (custom date ranges, etc.) the entry count climbed
+  // to ~23, which combined with the 8 hardcoded defaults made each cycle
+  // take ~6 minutes — long enough that Mongo throughput collapsed and the
+  // site froze every 15 minutes. Disabled until we add a smarter refresh
+  // (e.g. only entries about to expire, or move heavy refreshes off-peak).
+  // Dynamic entries now rely entirely on the freshness gate + TTL index:
+  // first user request after expiry recomputes, same as a single-location
+  // entry.
+
+  // Seed hardcoded defaults so common views are never cold.
   for (const def of HARDCODED_DEFAULT_ENTRIES) {
     try {
       const data = await computeAllLocationsResponse({
