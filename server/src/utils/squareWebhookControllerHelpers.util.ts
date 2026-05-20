@@ -48,6 +48,31 @@ function asTrimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function serializeFetchError(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) {
+    return { value: String(error) };
+  }
+  const out: Record<string, unknown> = {
+    name: error.name,
+    message: error.message,
+  };
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "string") out.code = code;
+  const cause = (error as { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    const causeOut: Record<string, unknown> = {
+      name: cause.name,
+      message: cause.message,
+    };
+    const causeCode = (cause as { code?: unknown }).code;
+    if (typeof causeCode === "string") causeOut.code = causeCode;
+    out.cause = causeOut;
+  } else if (cause !== undefined) {
+    out.cause = String(cause);
+  }
+  return out;
+}
+
 function firstNonEmptyString(values: unknown[]): string {
   for (const v of values) {
     const s = asTrimmedString(v);
@@ -202,7 +227,7 @@ async function handleOrderEvent(args: {
     logWebhookError(
       "Square",
       "order: retrieve failed",
-      { err: error, type, locationId, squareOrderId },
+      { err: serializeFetchError(error), type, locationId, squareOrderId },
       webhookBody,
     );
     return;
