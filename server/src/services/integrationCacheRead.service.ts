@@ -26,6 +26,7 @@ import {
 } from "../utils/homebaseOrderedBuckets.util.js";
 import { aggregateTimecardsIntoBuckets } from "../utils/homebaseTimeSeriesHelpers.js";
 import { computeLaborCostPerHourFromTimecards } from "../utils/homebaseLaborHelpers.js";
+import { tryGetHourlyLaborCostFromRollups } from "./homebaseTimecardHourlyRollupRead.service.js";
 import { getBusinessHourIndex } from "../utils/businessDayUtcRange.util.js";
 import type {
   BatchRetrieveCatalogFn,
@@ -757,6 +758,25 @@ export async function fetchHourlyLaborCostPerHourFromCache(
   timezone: string,
   businessStartTime: string,
 ): Promise<number[]> {
+  // Rollup-first read path: when every full business day in `range` has a
+  // complete (24-slot) `HomebaseTimecardHourlyRollup`, sum those slots
+  // directly. This is the dominant case for multi-day dashboard queries
+  // and avoids loading + prorating every raw timecard on the hot path.
+  //
+  // Falls back to the original timecard scan when:
+  //   - `ROLLUP_READ_ENABLED` is off
+  //   - the range covers no full business days (intraday-only request)
+  //   - any required day is missing rollup rows
+  // The fallback uses the full range — splitting it would risk
+  // double-counting open timecards that span day boundaries.
+  const fromRollups = await tryGetHourlyLaborCostFromRollups(
+    locationMongoId,
+    range,
+    timezone,
+    businessStartTime,
+  );
+  if (fromRollups !== null) return fromRollups;
+
   const cards = await loadHomebaseTimecardsForMongoRange(
     locationMongoId,
     range,

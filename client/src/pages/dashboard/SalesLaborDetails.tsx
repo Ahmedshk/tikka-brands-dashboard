@@ -8,7 +8,11 @@ import {
   ClockedInStaffCard,
   DailyTargetsSectionCard,
 } from '../../components/SalesLabor';
-import { PeriodPicker, type PeriodPickerValue } from '../../components/SalesTrend';
+// Period selector is temporarily hidden in JSX while the rollup backfill runs.
+// To re-enable: add `PeriodPicker` back to this import, change `useState<PeriodPickerValue>`
+// below back to `const [period, setPeriod] = ...`, and uncomment the picker block in JSX.
+// import { PeriodPicker, type PeriodPickerValue } from '../../components/SalesTrend';
+import { type PeriodPickerValue } from '../../components/SalesTrend';
 import SalesAndLaborIcon from '@assets/icons/sales_and_labor.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
 import ActualLaborCostIcon from '@assets/icons/actual_labor_cost.svg?react';
@@ -61,7 +65,10 @@ export const SalesLaborDetails = () => {
     canKpi1 || canKpi2 || canKpi3 || canKpi4 || canKpi5 || canKpi6 || canKpi7 || canKpi8 ||
     canHourly || canSources || canStaff || canDaily;
 
-  const [period, setPeriod] = useState<PeriodPickerValue>(defaultPeriod);
+  // Picker is hidden — state stays so every downstream effect/API call keeps working
+  // against the default ("today") period. Restore the `setPeriod` setter when the picker
+  // is re-enabled (see comment near the JSX block below).
+  const [period] = useState<PeriodPickerValue>(defaultPeriod);
 
   const kpiMetrics = useMemo(
     () =>
@@ -276,6 +283,24 @@ export const SalesLaborDetails = () => {
             <SalesAndLaborIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
             Sales & Labor Detail
           </h2>
+          {/*
+            TEMPORARILY HIDDEN: Period selector is wired end-to-end (state, API
+            calls, server endpoints, goal aggregation) but multi-day periods
+            depend on backfilled Square hourly + Homebase hourly + Square
+            period rollups. The backfill scripts (rollup-square-orders-hourly,
+            rollup-homebase-timecards-hourly, rollup-square-order-periods) are
+            still running and will take a few hours to complete. Until they
+            finish, selecting anything other than "Today" would still scan raw
+            orders/timecards across all locations and hit gateway timeouts.
+
+            The default `period` state ({ periodType: 'today' }) keeps the page
+            on today's data — identical to the pre-period-selector behavior —
+            so nothing else needs to change to hide the UI.
+
+            To re-enable once the backfills complete: just uncomment the
+            <div> block below. Everything else already works.
+          */}
+          {/*
           <div className="flex items-center gap-2">
             <label htmlFor="sales-labor-period" className="text-xs md:text-sm text-secondary">
               Period:
@@ -286,6 +311,7 @@ export const SalesLaborDetails = () => {
               onChange={setPeriod}
             />
           </div>
+          */}
         </div>
 
         {!locationId && (

@@ -1,17 +1,24 @@
 /**
- * Idempotent: upserts `SquarePaymentDailyRollup` per location and business day.
- * Requires `paymentCreatedAt` on payment documents — run `npm run backfill-integration-cache-index-fields` once.
- * Counts COMPLETED/APPROVED payments with `amount_money` in the zoned calendar day window.
+ * Rebuilds `HomebaseTimecardHourlyRollup` (24 slots, prorated labor cost)
+ * per business day from cached timecards. Mirrors the Square equivalent
+ * (`rollup-square-orders-hourly.ts`).
  *
- * Local: npm run rollup-square-payments-daily -- --from 2026-03-01 --to 2026-03-07
- * Optional: `--locationId`. Omit `--from`/`--to` for yesterday per location TZ.
+ * Requires timecards in Mongo for that day; run the 15-min poll once or
+ * `rollup-homebase-timecards-daily` first if dailies aren't current.
+ *
+ * After changing wall-clock / DST slot logic or proration logic, re-run for
+ * affected `businessDateKey` ranges so stored hourly rows match the new
+ * civil-hour buckets.
+ *
+ * Local:
+ *   npm run rollup-homebase-timecards-hourly -- --from 2026-03-01 --to 2026-03-07
  */
 import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import mongoose from "mongoose";
 import { connectDatabase } from "../config/database.js";
-import { buildSquarePaymentRollupForDay } from "../services/dailyRollupBuilder.service.js";
+import { buildHomebaseTimecardHourlyRollupsForDay } from "../services/homebaseTimecardHourlyRollup.service.js";
 import {
   iterBusinessDateKeysInclusive,
   parseRollupCliArgs,
@@ -41,23 +48,23 @@ async function main(): Promise<void> {
       );
       const days = iterBusinessDateKeysInclusive(fromKey, toKey);
       for (const businessDateKey of days) {
-        await buildSquarePaymentRollupForDay(
+        await buildHomebaseTimecardHourlyRollupsForDay(
           String(loc._id),
           businessDateKey,
           loc.timezone,
           loc.businessStartTime,
         );
-        logger.info("Square payment rollup", {
+        logger.info("Homebase timecard hourly rollup", {
           locationId: String(loc._id),
           businessDateKey,
         });
       }
     }
-    console.log("\n✅ Square payment daily rollups complete.\n");
+    console.log("\n✅ Homebase timecard hourly rollups complete.\n");
     await mongoose.disconnect();
     process.exit(0);
   } catch (error) {
-    logger.error("rollup-square-payments-daily failed", error);
+    logger.error("rollup-homebase-timecards-hourly failed", error);
     console.error("\n❌ Rollup failed:", error);
     try {
       await mongoose.disconnect();

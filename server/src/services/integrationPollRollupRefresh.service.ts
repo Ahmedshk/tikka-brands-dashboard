@@ -10,6 +10,7 @@ import {
   buildSquarePaymentRollupForDay,
 } from "./dailyRollupBuilder.service.js";
 import { rebuildSquareOrderDerivedRollupsForBusinessDay } from "./squareOrderMultiGranularityRollup.service.js";
+import { buildHomebaseTimecardHourlyRollupsForDay } from "./homebaseTimecardHourlyRollup.service.js";
 import {
   loadLocationsForRollupScript,
   distinctBuyerGuidsForMarketManRollup,
@@ -36,6 +37,15 @@ async function safeBuildHomebase(
 ): Promise<void> {
   try {
     await buildHomebaseRollupForDay(
+      locationMongoId,
+      key,
+      timezone,
+      businessStartTime,
+    );
+    // Hourly rollup mirrors the Square pattern (safeBuildSquareOrder builds
+    // daily + derived). Failure is non-fatal: the read path falls back to
+    // scanning timecards if the hourly rollup is missing or incomplete.
+    await buildHomebaseTimecardHourlyRollupsForDay(
       locationMongoId,
       key,
       timezone,

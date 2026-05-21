@@ -16,6 +16,7 @@ import {
   buildSquarePaymentRollupForDay,
 } from "../services/dailyRollupBuilder.service.js";
 import { rebuildSquareOrderDerivedRollupsForBusinessDay } from "../services/squareOrderMultiGranularityRollup.service.js";
+import { buildHomebaseTimecardHourlyRollupsForDay } from "../services/homebaseTimecardHourlyRollup.service.js";
 import {
   distinctBuyerGuidsForMarketManRollup,
   loadLocationsForRollupScript,
@@ -36,7 +37,7 @@ async function main(): Promise<void> {
   const args = parseRollupCliArgs(process.argv.slice(2));
   try {
     await connectDatabase();
-    const locations = await loadLocationsForRollupScript(args.locationId);
+    const locations = await loadLocationsForRollupScript(args.locationIds ?? args.locationId);
     if (locations.length === 0) {
       console.log("No locations matched; exiting.");
       await mongoose.disconnect();
@@ -69,6 +70,12 @@ async function main(): Promise<void> {
           loc.businessStartTime,
         );
         await buildHomebaseRollupForDay(
+          String(loc._id),
+          businessDateKey,
+          loc.timezone,
+          loc.businessStartTime,
+        );
+        await buildHomebaseTimecardHourlyRollupsForDay(
           String(loc._id),
           businessDateKey,
           loc.timezone,

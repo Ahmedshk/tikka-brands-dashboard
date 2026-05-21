@@ -4,14 +4,37 @@ import { formatInTimeZone } from "date-fns-tz";
 export interface RollupCliArgs {
   from?: string;
   to?: string;
+  /**
+   * Single location id when only one was passed; preserved for the existing
+   * call sites that look up `args.locationId`. When the CLI receives multiple
+   * ids (via repeated `--locationId` flags or a comma-separated value), all
+   * ids land in `locationIds`; this field is set to the first id only when
+   * exactly one id was provided.
+   */
   locationId?: string;
+  /**
+   * Every location id provided on the CLI, de-duplicated in encounter order.
+   * Empty/unset means "all locations". Accepts:
+   *   --locationId a --locationId b   (repeated flag)
+   *   --locationId a,b,c              (comma-separated)
+   * Both forms can be mixed.
+   */
+  locationIds?: string[];
 }
 
 /**
  * Parse `--from`, `--to`, `--locationId` from argv (e.g. `process.argv.slice(2)`).
+ *
+ * `--locationId` can be:
+ *   - omitted (script runs for every location)
+ *   - a single id (existing behavior; `args.locationId` is set)
+ *   - repeated multiple times, or comma-separated, or any mix — all ids land
+ *     in `args.locationIds` and `args.locationId` stays unset when there is
+ *     more than one.
  */
 export function parseRollupCliArgs(argv: string[]): RollupCliArgs {
   const out: RollupCliArgs = {};
+  const ids: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--from") {
@@ -20,11 +43,17 @@ export function parseRollupCliArgs(argv: string[]): RollupCliArgs {
     } else if (a === "--to") {
       const v = argv[++i]?.trim();
       if (v) out.to = v;
-    } else if (a === "--locationId") {
+    } else if (a === "--locationId" || a === "--locationIds") {
       const v = argv[++i]?.trim();
-      if (v) out.locationId = v;
+      if (!v) continue;
+      for (const part of v.split(",")) {
+        const trimmed = part.trim();
+        if (trimmed && !ids.includes(trimmed)) ids.push(trimmed);
+      }
     }
   }
+  if (ids.length === 1 && ids[0] !== undefined) out.locationId = ids[0];
+  if (ids.length > 0) out.locationIds = ids;
   return out;
 }
 

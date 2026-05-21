@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   const args = parseRollupCliArgs(process.argv.slice(2));
   try {
     await connectDatabase();
-    const locations = await loadLocationsForRollupScript(args.locationId);
+    const locations = await loadLocationsForRollupScript(args.locationIds ?? args.locationId);
     if (locations.length === 0) {
       console.log("No locations matched; exiting.");
       await mongoose.disconnect();
