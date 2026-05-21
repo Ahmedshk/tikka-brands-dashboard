@@ -11,16 +11,12 @@ import {
   fetchHourlyNetSalesCentsBySlot,
   fetchLaborCostAndHours,
   fetchSquareOrderStatsAndSources,
-  getSalesLaborTimeRange,
+  getSalesLaborRangeForPeriod,
+  type SalesLaborPeriodParams,
 } from './salesLaborControllerHelpers.js';
 import {
   loadHomebaseTimecardsForMongoRange,
 } from '../services/integrationCacheRead.service.js';
-import {
-  getDatePartsInTz,
-  getStartOfDayUtc,
-  getEndOfDayUtc,
-} from './salesTrendDateRange.util.js';
 import { mergeSourcesOfSalesFromDailyRollupDocs } from './squareSourcesOfSalesMerge.util.js';
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
 import {
@@ -91,8 +87,9 @@ export async function buildAllLocationsSalesLaborKpis(params: {
   req: Request;
   metrics: string[];
   locationService: LocationService;
+  period: SalesLaborPeriodParams;
 }): Promise<Partial<SalesLaborKPIsData> | SalesLaborKPIsData> {
-  const { req, metrics, locationService } = params;
+  const { req, metrics, locationService, period } = params;
   const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
   if (effectiveIds.length === 0) return buildEmptySalesLaborKPIs();
 
@@ -115,12 +112,15 @@ export async function buildAllLocationsSalesLaborKpis(params: {
         const { location, squareAccessToken, homebaseApiKey } = withCreds;
         const timezone = location.timezone?.trim();
         if (!timezone) return null;
-        const range = getSalesLaborTimeRange({
-          timezone: location.timezone,
-          businessStartTime: location.businessStartTime,
-          squareLocationId: location.squareLocationId,
-          homebaseLocationId: location.homebaseLocationId,
-        });
+        const range = getSalesLaborRangeForPeriod(
+          {
+            timezone: location.timezone,
+            businessStartTime: location.businessStartTime,
+            squareLocationId: location.squareLocationId,
+            homebaseLocationId: location.homebaseLocationId,
+          },
+          period,
+        );
 
         const squareLocationId = location.squareLocationId?.trim();
         const homebaseLocationId = location.homebaseLocationId?.trim();
@@ -218,8 +218,9 @@ export async function buildAllLocationsSalesLaborKpis(params: {
 export async function buildAllLocationsHourlyBreakdown(params: {
   req: Request;
   locationService: LocationService;
+  period: SalesLaborPeriodParams;
 }): Promise<HourlyBreakdownResponseData> {
-  const { req, locationService } = params;
+  const { req, locationService, period } = params;
   const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
   if (effectiveIds.length === 0) {
     const labels = buildHourlyBreakdownLabels('00:00');
@@ -237,12 +238,15 @@ export async function buildAllLocationsHourlyBreakdown(params: {
         const timezone = location.timezone?.trim();
         if (!timezone) return null;
         const businessStartTime = location.businessStartTime?.trim() ?? '00:00';
-        const range = getSalesLaborTimeRange({
-          timezone: location.timezone,
-          businessStartTime: location.businessStartTime,
-          squareLocationId: location.squareLocationId,
-          homebaseLocationId: location.homebaseLocationId,
-        });
+        const range = getSalesLaborRangeForPeriod(
+          {
+            timezone: location.timezone,
+            businessStartTime: location.businessStartTime,
+            squareLocationId: location.squareLocationId,
+            homebaseLocationId: location.homebaseLocationId,
+          },
+          period,
+        );
 
         const squareLocationId = location.squareLocationId?.trim();
         const homebaseLocationId = location.homebaseLocationId?.trim();
@@ -313,8 +317,9 @@ export async function buildAllLocationsHourlyBreakdown(params: {
 export async function buildAllLocationsTimesheetRows(params: {
   req: Request;
   locationService: LocationService;
+  period: SalesLaborPeriodParams;
 }): Promise<unknown[]> {
-  const { req, locationService } = params;
+  const { req, locationService, period } = params;
   const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
   if (effectiveIds.length === 0) return [];
 
@@ -328,13 +333,18 @@ export async function buildAllLocationsTimesheetRows(params: {
         const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
         if (!withCreds) return [];
         const { location } = withCreds;
-        const timezone = location.timezone?.trim() || 'UTC';
         const homebaseLocationId = location.homebaseLocationId?.trim();
         if (!homebaseLocationId) return [];
 
-        const { y, m, d } = getDatePartsInTz(new Date(), timezone);
-        const startAt = getStartOfDayUtc(y, m, d, timezone).toISOString();
-        const endAt = getEndOfDayUtc(y, m, d, timezone).toISOString();
+        const { startAt, endAt } = getSalesLaborRangeForPeriod(
+          {
+            timezone: location.timezone,
+            businessStartTime: location.businessStartTime,
+            squareLocationId: location.squareLocationId,
+            homebaseLocationId: location.homebaseLocationId,
+          },
+          period,
+        );
         const timecards = await loadHomebaseTimecardsForMongoRange(id, { startAt, endAt });
         return timecards.map((tc) => toTimesheetRow(tc, location, id));
       });

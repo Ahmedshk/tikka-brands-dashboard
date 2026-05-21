@@ -270,11 +270,30 @@ export const commandCenterService = {
 
   async getSalesLaborKPIs(
     locationId: string,
-    options?: { metrics?: string[]; signal?: AbortSignal }
+    options?: {
+      metrics?: string[];
+      periodType?: SalesTrendPeriodType;
+      periodStart?: string;
+      periodEnd?: string;
+      signal?: AbortSignal;
+    }
   ): Promise<SalesLaborKPIsData> {
-    const params: { locationId: string; metrics?: string } = { locationId };
+    const params: {
+      locationId: string;
+      metrics?: string;
+      periodType?: SalesTrendPeriodType;
+      periodStart?: string;
+      periodEnd?: string;
+    } = { locationId };
     if (options?.metrics?.length) {
       params.metrics = options.metrics.join(",");
+    }
+    if (options?.periodType) {
+      params.periodType = options.periodType;
+      if (options.periodType === "custom") {
+        if (options.periodStart) params.periodStart = options.periodStart;
+        if (options.periodEnd) params.periodEnd = options.periodEnd;
+      }
     }
     const res = await api.get<ApiResponse<SalesLaborKPIsData>>(
       API_ENDPOINTS.SALES_LABOR.KPIS,
@@ -288,11 +307,29 @@ export const commandCenterService = {
 
   async getHourlyBreakdown(
     locationId: string,
-    options?: { signal?: AbortSignal }
+    options?: {
+      periodType?: SalesTrendPeriodType;
+      periodStart?: string;
+      periodEnd?: string;
+      signal?: AbortSignal;
+    }
   ): Promise<HourlyBreakdownData> {
+    const params: {
+      locationId: string;
+      periodType?: SalesTrendPeriodType;
+      periodStart?: string;
+      periodEnd?: string;
+    } = { locationId };
+    if (options?.periodType) {
+      params.periodType = options.periodType;
+      if (options.periodType === "custom") {
+        if (options.periodStart) params.periodStart = options.periodStart;
+        if (options.periodEnd) params.periodEnd = options.periodEnd;
+      }
+    }
     const res = await api.get<ApiResponse<HourlyBreakdownData>>(
       API_ENDPOINTS.SALES_LABOR.HOURLY_BREAKDOWN,
-      { params: { locationId }, signal: options?.signal }
+      { params, signal: options?.signal }
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(
@@ -304,11 +341,29 @@ export const commandCenterService = {
 
   async getTimesheet(
     locationId: string,
-    options?: { signal?: AbortSignal }
+    options?: {
+      periodType?: SalesTrendPeriodType;
+      periodStart?: string;
+      periodEnd?: string;
+      signal?: AbortSignal;
+    }
   ): Promise<TimesheetRow[]> {
+    const params: {
+      locationId: string;
+      periodType?: SalesTrendPeriodType;
+      periodStart?: string;
+      periodEnd?: string;
+    } = { locationId };
+    if (options?.periodType) {
+      params.periodType = options.periodType;
+      if (options.periodType === "custom") {
+        if (options.periodStart) params.periodStart = options.periodStart;
+        if (options.periodEnd) params.periodEnd = options.periodEnd;
+      }
+    }
     const res = await api.get<ApiResponse<{ rows: TimesheetRow[] }>>(
       API_ENDPOINTS.SALES_LABOR.TIMESHEET,
-      { params: { locationId }, signal: options?.signal }
+      { params, signal: options?.signal }
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch timesheet");

@@ -1,8 +1,126 @@
 import type { SalesLaborKPIsData } from '../services/commandCenter.service';
 import type { Goal } from '../types';
 import type { TargetActualItem } from '../components/SalesLabor';
+import type { PeriodPickerValue } from '../components/SalesTrend';
+import { getTodayInTimezone } from '../services/goal.service';
 
 export { formatCurrency } from './commandCenterHelpers';
+
+function ymdToParts(ymd: string): { y: number; m0: number; d: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+  if (!m) return null;
+  return {
+    y: Number.parseInt(m[1]!, 10),
+    m0: Number.parseInt(m[2]!, 10) - 1,
+    d: Number.parseInt(m[3]!, 10),
+  };
+}
+
+function partsToYmd(p: { y: number; m0: number; d: number }): string {
+  return `${p.y}-${String(p.m0 + 1).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
+}
+
+function addDaysUtc(y: number, m0: number, d: number, delta: number): { y: number; m0: number; d: number } {
+  const x = new Date(Date.UTC(y, m0, d + delta));
+  return { y: x.getUTCFullYear(), m0: x.getUTCMonth(), d: x.getUTCDate() };
+}
+
+function weekdaySun0(ymd: string): number {
+  const p = ymdToParts(ymd);
+  if (!p) return 0;
+  return new Date(Date.UTC(p.y, p.m0, p.d)).getUTCDay();
+}
+
+/**
+ * Resolve a PeriodPickerValue to its calendar date bounds (YYYY-MM-DD in `timezone`).
+ * Returns null when a custom period is missing its bounds.
+ */
+export function resolvePeriodDateBounds(
+  value: PeriodPickerValue,
+  timezone: string,
+): { start: string; end: string } | null {
+  const today = getTodayInTimezone(timezone || 'UTC');
+  const t = ymdToParts(today);
+  if (!t) return null;
+
+  switch (value.periodType) {
+    case 'today':
+      return { start: today, end: today };
+    case 'last7days':
+      return { start: partsToYmd(addDaysUtc(t.y, t.m0, t.d, -6)), end: today };
+    case 'last30days':
+      return { start: partsToYmd(addDaysUtc(t.y, t.m0, t.d, -29)), end: today };
+    case 'last52weeks':
+      return { start: partsToYmd(addDaysUtc(t.y, t.m0, t.d, -363)), end: today };
+    case 'thisWeek': {
+      const dow = weekdaySun0(today);
+      return { start: partsToYmd(addDaysUtc(t.y, t.m0, t.d, -dow)), end: today };
+    }
+    case 'thisMonth':
+      return { start: partsToYmd({ y: t.y, m0: t.m0, d: 1 }), end: today };
+    case 'thisYear':
+      return { start: partsToYmd({ y: t.y, m0: 0, d: 1 }), end: today };
+    case 'custom':
+      if (!value.periodStart || !value.periodEnd) return null;
+      return { start: value.periodStart, end: value.periodEnd };
+    default:
+      return { start: today, end: today };
+  }
+}
+
+/** Enumerate every YYYY-MM-DD between start and end (inclusive). Capped to maxDays for safety. */
+export function enumerateDates(start: string, end: string, maxDays = 400): string[] {
+  const s = ymdToParts(start);
+  const e = ymdToParts(end);
+  if (!s || !e) return [];
+  const out: string[] = [];
+  let cur = s;
+  for (let i = 0; i < maxDays; i++) {
+    const ymd = partsToYmd(cur);
+    out.push(ymd);
+    if (ymd === end) return out;
+    if (cur.y > e.y || (cur.y === e.y && cur.m0 > e.m0) || (cur.y === e.y && cur.m0 === e.m0 && cur.d > e.d)) {
+      break;
+    }
+    cur = addDaysUtc(cur.y, cur.m0, cur.d, 1);
+  }
+  return out;
+}
+
+/** True when the period collapses to a single calendar day. */
+export function isSingleDayPeriod(value: PeriodPickerValue, timezone: string): boolean {
+  const bounds = resolvePeriodDateBounds(value, timezone);
+  if (!bounds) return false;
+  return bounds.start === bounds.end;
+}
+
+/**
+ * Aggregate per-day goals across a multi-day period.
+ * - salesGoal, hoursGoal: summed (they're daily targets)
+ * - laborCostGoal (%), spmhGoal ($/hr): averaged
+ * - tolerances: averaged (kept in the same units as the goal they apply to)
+ */
+export function aggregateGoalsForPeriod(goals: Array<Goal | null>): Goal | null {
+  const valid = goals.filter((g): g is Goal => g != null);
+  if (valid.length === 0) return null;
+  const n = valid.length;
+  const sum = (key: keyof Goal): number => valid.reduce((acc, g) => acc + (Number(g[key]) || 0), 0);
+  const avg = (key: keyof Goal): number => sum(key) / n;
+  const base = valid[0]!;
+  return {
+    ...base,
+    salesGoal: sum('salesGoal'),
+    hoursGoal: sum('hoursGoal'),
+    laborCostGoal: avg('laborCostGoal'),
+    spmhGoal: avg('spmhGoal'),
+    foodCostGoal: avg('foodCostGoal'),
+    salesGoalTolerance: avg('salesGoalTolerance'),
+    laborCostGoalTolerance: avg('laborCostGoalTolerance'),
+    hoursGoalTolerance: avg('hoursGoalTolerance'),
+    spmhGoalTolerance: avg('spmhGoalTolerance'),
+    foodCostGoalTolerance: avg('foodCostGoalTolerance'),
+  };
+}
 
 type KpiFlags = {
   canKpi1: boolean;

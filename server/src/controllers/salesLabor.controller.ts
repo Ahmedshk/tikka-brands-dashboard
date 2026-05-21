@@ -4,11 +4,6 @@ import {
 } from "../services/integrationCacheRead.service.js";
 import { LocationService } from "../services/location.service.js";
 import {
-  getStartOfDayUtc,
-  getEndOfDayUtc,
-  getDatePartsInTz,
-} from "../utils/salesTrendDateRange.util.js";
-import {
   parseSalesTrendQuery,
   parseSalesTrendKpiQuery,
   buildSalesTrendContext,
@@ -27,7 +22,8 @@ import { getEffectivePagePermission } from "../utils/permissions.util.js";
 import {
   validateSalesLaborMetrics,
   buildEmptySalesLaborKPIs,
-  getSalesLaborTimeRange,
+  getSalesLaborRangeForPeriod,
+  parseSalesLaborPeriodQuery,
   fetchSquareOrderStatsAndSources,
   fetchLaborCostAndHours,
   buildSalesLaborKpisFullData,
@@ -66,6 +62,7 @@ export const getSalesLaborKPIs = async (
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
     const queryMetrics = parseMetricsQuery(req.query.metrics);
+    const period = parseSalesLaborPeriodQuery(req.query as Record<string, unknown>);
 
     const effectivePage = getEffectivePagePermission(
       req.user!.permissions!,
@@ -95,7 +92,7 @@ export const getSalesLaborKPIs = async (
       req,
       res,
       endpoint: "sales-labor.kpis",
-      params: { metrics: sortedMetrics },
+      params: { metrics: sortedMetrics, period },
       compute: async () => {
         if (isAllLocationsId(locationId)) {
           if (sortedMetrics.length === 0) {
@@ -105,6 +102,7 @@ export const getSalesLaborKPIs = async (
             req,
             metrics,
             locationService,
+            period,
           });
         }
 
@@ -124,7 +122,7 @@ export const getSalesLaborKPIs = async (
           squareLocationId: location.squareLocationId,
           homebaseLocationId: location.homebaseLocationId,
         };
-        const range = getSalesLaborTimeRange(loc);
+        const range = getSalesLaborRangeForPeriod(loc, period);
         const squareLocationId = location.squareLocationId?.trim();
         const homebaseLocationId = location.homebaseLocationId?.trim();
 
@@ -176,14 +174,15 @@ export const getHourlyBreakdown = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
+    const period = parseSalesLaborPeriodQuery(req.query as Record<string, unknown>);
     await serveDashboardWithCache({
       req,
       res,
       endpoint: "sales-labor.hourly-breakdown",
-      params: {},
+      params: { period },
       compute: async () => {
         if (isAllLocationsId(locationId)) {
-          return await buildAllLocationsHourlyBreakdown({ req, locationService });
+          return await buildAllLocationsHourlyBreakdown({ req, locationService, period });
         }
         const withCreds = await locationService.getByIdWithCredentials(locationId);
         if (!withCreds) {
@@ -204,7 +203,7 @@ export const getHourlyBreakdown = async (
           squareLocationId: location.squareLocationId,
           homebaseLocationId: location.homebaseLocationId,
         };
-        const range = getSalesLaborTimeRange(loc);
+        const range = getSalesLaborRangeForPeriod(loc, period);
         const squareLocationId = location.squareLocationId?.trim();
         const homebaseLocationId = location.homebaseLocationId?.trim();
 
@@ -391,14 +390,15 @@ export const getTimesheet = async (
   try {
     const locationId =
       typeof req.query.locationId === "string" ? req.query.locationId : "";
+    const period = parseSalesLaborPeriodQuery(req.query as Record<string, unknown>);
     await serveDashboardWithCache({
       req,
       res,
       endpoint: "sales-labor.timesheet",
-      params: {},
+      params: { period },
       compute: async () => {
         if (isAllLocationsId(locationId)) {
-          const rows = await buildAllLocationsTimesheetRows({ req, locationService });
+          const rows = await buildAllLocationsTimesheetRows({ req, locationService, period });
           return { rows };
         }
         const withCreds = await locationService.getByIdWithCredentials(locationId);
@@ -407,15 +407,18 @@ export const getTimesheet = async (
         }
         const { location } = withCreds;
 
-        const timezone = location.timezone?.trim() || "UTC";
         const homebaseLocationId = location.homebaseLocationId?.trim();
         if (!homebaseLocationId) {
           return { rows: [] };
         }
 
-        const { y, m, d } = getDatePartsInTz(new Date(), timezone);
-        const startAt = getStartOfDayUtc(y, m, d, timezone).toISOString();
-        const endAt = getEndOfDayUtc(y, m, d, timezone).toISOString();
+        const loc: LocationForSalesLabor = {
+          timezone: location.timezone,
+          businessStartTime: location.businessStartTime,
+          squareLocationId: location.squareLocationId,
+          homebaseLocationId: location.homebaseLocationId,
+        };
+        const { startAt, endAt } = getSalesLaborRangeForPeriod(loc, period);
 
         const timecards = await loadHomebaseTimecardsForMongoRange(locationId, {
           startAt,

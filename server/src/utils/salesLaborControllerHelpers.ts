@@ -12,6 +12,10 @@ import {
 import type { SalesLaborKPIsData } from "../types/salesLabor.types.js";
 import type { TimeRange } from "./businessHours.util.js";
 import { getBusinessStartTimeRange } from "./timezone.util.js";
+import {
+  getSalesTrendPeriodRange,
+  type PeriodType,
+} from "./salesTrendDateRange.util.js";
 
 const LOG_PREFIX = "[Sales Labor]";
 export const SALES_LABOR_DETAIL_API_LOG = "[sales-labor-detail-api]";
@@ -85,6 +89,59 @@ export function getSalesLaborTimeRange(location: LocationForSalesLabor): TimeRan
   const timezone = location.timezone?.trim();
   const businessStartTime = location.businessStartTime?.trim() ?? "00:00";
   return getBusinessStartTimeRange(timezone ?? "America/Denver", businessStartTime);
+}
+
+export interface SalesLaborPeriodParams {
+  periodType: PeriodType;
+  periodStart?: string | undefined;
+  periodEnd?: string | undefined;
+}
+
+/**
+ * Compute the time range for a Sales & Labor request from period params.
+ * Defaults to the business-day "today" range (the prior behavior) when no period is supplied.
+ */
+export function getSalesLaborRangeForPeriod(
+  location: LocationForSalesLabor,
+  period: SalesLaborPeriodParams,
+): TimeRange {
+  const timezone = location.timezone?.trim() ?? "America/Denver";
+  const businessStartTime = location.businessStartTime?.trim() ?? "00:00";
+  const result = getSalesTrendPeriodRange(
+    period.periodType,
+    timezone,
+    period.periodStart,
+    period.periodEnd,
+    businessStartTime,
+  );
+  return { startAt: result.startAt, endAt: result.endAt };
+}
+
+/** Parse periodType/periodStart/periodEnd off req.query into a strict SalesLaborPeriodParams. */
+export function parseSalesLaborPeriodQuery(query: Record<string, unknown>): SalesLaborPeriodParams {
+  const rawType = typeof query.periodType === "string" ? query.periodType : "today";
+  const allowed: ReadonlyArray<PeriodType> = [
+    "today",
+    "last7days",
+    "last30days",
+    "last52weeks",
+    "thisWeek",
+    "thisMonth",
+    "thisYear",
+    "custom",
+  ];
+  const periodType = (allowed as readonly string[]).includes(rawType)
+    ? (rawType as PeriodType)
+    : "today";
+  const periodStart =
+    typeof query.periodStart === "string" && query.periodStart.length > 0
+      ? query.periodStart
+      : undefined;
+  const periodEnd =
+    typeof query.periodEnd === "string" && query.periodEnd.length > 0
+      ? query.periodEnd
+      : undefined;
+  return { periodType, periodStart, periodEnd };
 }
 
 /**

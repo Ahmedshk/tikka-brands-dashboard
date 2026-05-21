@@ -49,6 +49,36 @@ import type {
   SalesTrendQueryParams,
   SalesTrendKpiQueryParams,
 } from "../utils/salesTrendControllerHelpers.js";
+import type { SalesLaborPeriodParams } from "../utils/salesLaborControllerHelpers.js";
+import type { PeriodType } from "../utils/salesTrendDateRange.util.js";
+
+const SALES_LABOR_PERIOD_TYPES: ReadonlyArray<PeriodType> = [
+  "today",
+  "last7days",
+  "last30days",
+  "last52weeks",
+  "thisWeek",
+  "thisMonth",
+  "thisYear",
+  "custom",
+];
+
+function extractSalesLaborPeriod(params: Record<string, unknown>): SalesLaborPeriodParams {
+  const raw = params.period;
+  if (raw == null || typeof raw !== "object") {
+    return { periodType: "today" };
+  }
+  const r = raw as Record<string, unknown>;
+  const typeRaw = typeof r.periodType === "string" ? r.periodType : "today";
+  const periodType = (SALES_LABOR_PERIOD_TYPES as readonly string[]).includes(typeRaw)
+    ? (typeRaw as PeriodType)
+    : "today";
+  return {
+    periodType,
+    periodStart: typeof r.periodStart === "string" ? r.periodStart : undefined,
+    periodEnd: typeof r.periodEnd === "string" ? r.periodEnd : undefined,
+  };
+}
 
 const locationService = new LocationService();
 const goalService = new GoalService();
@@ -121,13 +151,16 @@ async function computeAllLocationsResponse(args: {
     }
     case "sales-labor.kpis": {
       const metrics = Array.isArray(params.metrics) ? (params.metrics as string[]) : [];
-      return await buildAllLocationsSalesLaborKpis({ req, metrics, locationService });
+      const period = extractSalesLaborPeriod(params);
+      return await buildAllLocationsSalesLaborKpis({ req, metrics, locationService, period });
     }
     case "sales-labor.hourly-breakdown": {
-      return await buildAllLocationsHourlyBreakdown({ req, locationService });
+      const period = extractSalesLaborPeriod(params);
+      return await buildAllLocationsHourlyBreakdown({ req, locationService, period });
     }
     case "sales-labor.timesheet": {
-      const rows = await buildAllLocationsTimesheetRows({ req, locationService });
+      const period = extractSalesLaborPeriod(params);
+      const rows = await buildAllLocationsTimesheetRows({ req, locationService, period });
       return { rows };
     }
     case "command-center.kpis": {
@@ -191,10 +224,19 @@ const HARDCODED_DEFAULT_ENTRIES: ReadonlyArray<DefaultEntry> = [
   // sales-labor-detail defaults
   {
     endpoint: "sales-labor.kpis",
-    params: { metrics: [...getAllMetricIdsForPage("sales-labor-detail")].sort() },
+    params: {
+      metrics: [...getAllMetricIdsForPage("sales-labor-detail")].sort(),
+      period: { periodType: "today" },
+    },
   },
-  { endpoint: "sales-labor.hourly-breakdown", params: {} },
-  { endpoint: "sales-labor.timesheet", params: {} },
+  {
+    endpoint: "sales-labor.hourly-breakdown",
+    params: { period: { periodType: "today" } },
+  },
+  {
+    endpoint: "sales-labor.timesheet",
+    params: { period: { periodType: "today" } },
+  },
   // command-center defaults
   //
   // `command-center.alerts` is intentionally omitted: that endpoint is

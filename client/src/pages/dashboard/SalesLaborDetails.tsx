@@ -8,6 +8,7 @@ import {
   ClockedInStaffCard,
   DailyTargetsSectionCard,
 } from '../../components/SalesLabor';
+import { PeriodPicker, type PeriodPickerValue } from '../../components/SalesTrend';
 import SalesAndLaborIcon from '@assets/icons/sales_and_labor.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
 import ActualLaborCostIcon from '@assets/icons/actual_labor_cost.svg?react';
@@ -22,7 +23,7 @@ import {
   type HourlyBreakdownData,
   type TimesheetRow,
 } from '../../services/commandCenter.service';
-import { goalService, getTodayInTimezone } from '../../services/goal.service';
+import { goalService } from '../../services/goal.service';
 import type { Goal } from '../../types';
 import type { RootState } from '../../store/store';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
@@ -30,10 +31,16 @@ import {
   formatCurrency,
   getSalesLaborKpiMetrics,
   buildDailyTargetsItems,
+  resolvePeriodDateBounds,
+  enumerateDates,
+  isSingleDayPeriod,
+  aggregateGoalsForPeriod,
 } from '../../utils/salesLaborDetailsHelpers';
 import { buildSalesLaborKPIItems } from '../../utils/salesLaborKpiBuilder';
 
 const PAGE_ID = 'sales-labor-detail';
+
+const defaultPeriod: PeriodPickerValue = { periodType: 'today' };
 
 export const SalesLaborDetails = () => {
   const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
@@ -55,6 +62,8 @@ export const SalesLaborDetails = () => {
   const shouldFetch =
     canKpi1 || canKpi2 || canKpi3 || canKpi4 || canKpi5 || canKpi6 || canKpi7 || canKpi8 ||
     canHourly || canSources || canStaff || canDaily;
+
+  const [period, setPeriod] = useState<PeriodPickerValue>(defaultPeriod);
 
   const kpiMetrics = useMemo(
     () =>
@@ -81,8 +90,11 @@ export const SalesLaborDetails = () => {
   const [timesheetRows, setTimesheetRows] = useState<TimesheetRow[]>([]);
   const [timesheetLoading, setTimesheetLoading] = useState(!!locationId && canStaff);
 
+  const periodIsCustomIncomplete =
+    period.periodType === 'custom' && (!period.periodStart || !period.periodEnd);
+
   useEffect(() => {
-    if (!locationId || !shouldFetch) {
+    if (!locationId || !shouldFetch || periodIsCustomIncomplete) {
       setKpis(null);
       setHourlyBreakdown(null);
       setGoals(null);
@@ -93,23 +105,60 @@ export const SalesLaborDetails = () => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    const periodOptions = {
+      periodType: period.periodType,
+      ...(period.periodType === 'custom' && period.periodStart && period.periodEnd
+        ? { periodStart: period.periodStart, periodEnd: period.periodEnd }
+        : {}),
+    };
     const promises: Promise<unknown>[] = [];
     if (kpiMetrics.length > 0) {
-      promises.push(commandCenterService.getSalesLaborKPIs(locationId, { metrics: kpiMetrics, signal: controller.signal }));
+      promises.push(
+        commandCenterService.getSalesLaborKPIs(locationId, {
+          metrics: kpiMetrics,
+          ...periodOptions,
+          signal: controller.signal,
+        }),
+      );
     } else {
       promises.push(Promise.resolve(null));
     }
     if (canHourly) {
-      promises.push(commandCenterService.getHourlyBreakdown(locationId, { signal: controller.signal }));
+      promises.push(
+        commandCenterService.getHourlyBreakdown(locationId, {
+          ...periodOptions,
+          signal: controller.signal,
+        }),
+      );
     } else {
       promises.push(Promise.resolve(null));
     }
     if (canDaily) {
-      const date = getTodayInTimezone(currentLocation?.timezone ?? 'UTC');
-      promises.push(goalService.getResolved(locationId, date, { signal: controller.signal }).catch((err) => {
-        if (controller.signal.aborted) throw err;
-        return null;
-      }));
+      const tz = currentLocation?.timezone ?? 'UTC';
+      const bounds = resolvePeriodDateBounds(period, tz);
+      if (bounds) {
+        if (bounds.start === bounds.end) {
+          promises.push(
+            goalService.getResolved(locationId, bounds.start, { signal: controller.signal }).catch((err) => {
+              if (controller.signal.aborted) throw err;
+              return null;
+            }),
+          );
+        } else {
+          const dates = enumerateDates(bounds.start, bounds.end);
+          const perDay = Promise.all(
+            dates.map((d) =>
+              goalService.getResolved(locationId, d, { signal: controller.signal }).catch((err) => {
+                if (controller.signal.aborted) throw err;
+                return null;
+              }),
+            ),
+          ).then((arr) => aggregateGoalsForPeriod(arr));
+          promises.push(perDay);
+        }
+      } else {
+        promises.push(Promise.resolve(null));
+      }
     } else {
       promises.push(Promise.resolve(null));
     }
@@ -130,18 +179,35 @@ export const SalesLaborDetails = () => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [locationId, shouldFetch, canHourly, canDaily, kpiMetrics.join(',')]);
+  }, [
+    locationId,
+    shouldFetch,
+    canHourly,
+    canDaily,
+    kpiMetrics.join(','),
+    period.periodType,
+    period.periodStart,
+    period.periodEnd,
+    periodIsCustomIncomplete,
+    currentLocation?.timezone,
+  ]);
 
   useEffect(() => {
-    if (!locationId || !canStaff) {
+    if (!locationId || !canStaff || periodIsCustomIncomplete) {
       setTimesheetRows([]);
       setTimesheetLoading(false);
       return;
     }
     const controller = new AbortController();
     setTimesheetLoading(true);
+    const periodOptions = {
+      periodType: period.periodType,
+      ...(period.periodType === 'custom' && period.periodStart && period.periodEnd
+        ? { periodStart: period.periodStart, periodEnd: period.periodEnd }
+        : {}),
+    };
     commandCenterService
-      .getTimesheet(locationId, { signal: controller.signal })
+      .getTimesheet(locationId, { ...periodOptions, signal: controller.signal })
       .then(setTimesheetRows)
       .catch(() => {
         if (!controller.signal.aborted) setTimesheetRows([]);
@@ -150,7 +216,14 @@ export const SalesLaborDetails = () => {
         if (!controller.signal.aborted) setTimesheetLoading(false);
       });
     return () => controller.abort();
-  }, [locationId, canStaff]);
+  }, [
+    locationId,
+    canStaff,
+    period.periodType,
+    period.periodStart,
+    period.periodEnd,
+    periodIsCustomIncomplete,
+  ]);
 
   const salesLaborKPIs = useMemo(
     () =>
@@ -184,14 +257,39 @@ export const SalesLaborDetails = () => {
     [kpis, goals]
   );
 
+  const sourcesSubtitle = useMemo(() => {
+    const tz = currentLocation?.timezone ?? 'UTC';
+    if (isSingleDayPeriod(period, tz)) return 'Today';
+    return 'Selected period';
+  }, [period.periodType, period.periodStart, period.periodEnd, currentLocation?.timezone]);
+
+  const dailyTargetsSuffix = useMemo(() => {
+    const tz = currentLocation?.timezone ?? 'UTC';
+    const singleDay = isSingleDayPeriod(period, tz);
+    if (allLocationsSelected) {
+      return singleDay ? '(Avg goal)' : '(Avg goal, period total)';
+    }
+    return singleDay ? undefined : '(Period total)';
+  }, [allLocationsSelected, period.periodType, period.periodStart, period.periodEnd, currentLocation?.timezone]);
+
   return (
     <Layout>
       <div className="p-6 min-h-[200px]">
-        <div className="mb-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <h2 className="flex items-center gap-2 text-base md:text-lg 2xl:text-xl font-semibold text-primary">
             <SalesAndLaborIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
             Sales & Labor Detail
           </h2>
+          <div className="flex items-center gap-2">
+            <label htmlFor="sales-labor-period" className="text-xs md:text-sm text-secondary">
+              Period:
+            </label>
+            <PeriodPicker
+              id="sales-labor-period"
+              value={period}
+              onChange={setPeriod}
+            />
+          </div>
         </div>
 
         {!locationId && (
@@ -231,7 +329,7 @@ export const SalesLaborDetails = () => {
                     : formatCurrency(kpis.actualTotalSales)
                 }
                 segments={kpis?.sourcesOfSales ?? []}
-                subtitle="Today"
+                subtitle={sourcesSubtitle}
                 loading={loading}
               />
             )}
@@ -257,7 +355,7 @@ export const SalesLaborDetails = () => {
               <DailyTargetsSectionCard
                 items={dailyTargetsItems}
                 loading={loading}
-                titleSuffix={allLocationsSelected ? '(Avg goal)' : undefined}
+                titleSuffix={dailyTargetsSuffix}
               />
             )}
           </div>

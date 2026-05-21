@@ -12,31 +12,6 @@ const salesLaborMetricEnum = z.enum([
   "sourcesOfSales",
 ]);
 
-export const getSalesLaborKPIsQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, "Location ID is required"),
-    metrics: z
-      .string()
-      .optional()
-      .transform((s) =>
-        s ? s.split(",").map((x) => x.trim()).filter(Boolean) : undefined
-      )
-      .pipe(z.array(salesLaborMetricEnum).optional()),
-  }),
-});
-
-export const getHourlyBreakdownQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, "Location ID is required"),
-  }),
-});
-
-export const getTimesheetQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, "Location ID is required"),
-  }),
-});
-
 const periodTypeSchema = z.enum([
   "today",
   "last7days",
@@ -47,6 +22,65 @@ const periodTypeSchema = z.enum([
   "thisYear",
   "custom",
 ]);
+
+/** Refine: when periodType is custom, periodStart and periodEnd must be provided. */
+function refineCustomPeriod(
+  data: { periodType: string; periodStart?: string | undefined; periodEnd?: string | undefined },
+): boolean {
+  if (data.periodType !== "custom") return true;
+  return (
+    typeof data.periodStart === "string" &&
+    data.periodStart.length > 0 &&
+    typeof data.periodEnd === "string" &&
+    data.periodEnd.length > 0
+  );
+}
+
+export const getSalesLaborKPIsQuerySchema = z.object({
+  query: z
+    .object({
+      locationId: z.string().min(1, "Location ID is required"),
+      metrics: z
+        .string()
+        .optional()
+        .transform((s) =>
+          s ? s.split(",").map((x) => x.trim()).filter(Boolean) : undefined
+        )
+        .pipe(z.array(salesLaborMetricEnum).optional()),
+      periodType: periodTypeSchema.default("today"),
+      periodStart: z.string().optional(),
+      periodEnd: z.string().optional(),
+    })
+    .refine(refineCustomPeriod, {
+      message: "periodStart and periodEnd required when periodType is custom",
+    }),
+});
+
+export const getHourlyBreakdownQuerySchema = z.object({
+  query: z
+    .object({
+      locationId: z.string().min(1, "Location ID is required"),
+      periodType: periodTypeSchema.default("today"),
+      periodStart: z.string().optional(),
+      periodEnd: z.string().optional(),
+    })
+    .refine(refineCustomPeriod, {
+      message: "periodStart and periodEnd required when periodType is custom",
+    }),
+});
+
+export const getTimesheetQuerySchema = z.object({
+  query: z
+    .object({
+      locationId: z.string().min(1, "Location ID is required"),
+      periodType: periodTypeSchema.default("today"),
+      periodStart: z.string().optional(),
+      periodEnd: z.string().optional(),
+    })
+    .refine(refineCustomPeriod, {
+      message: "periodStart and periodEnd required when periodType is custom",
+    }),
+});
 const comparisonTypeSchema = z.enum([
   "none",
   "1DayPrior",
