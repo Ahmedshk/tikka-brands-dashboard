@@ -91,9 +91,15 @@ export async function initializeAgenda(): Promise<Agenda> {
    * Dashboard response cache: refresh every 15 minutes via the cron, and
    * queue an immediate one-shot run at startup so the first user request
    * after deploy is a cache hit instead of a slow live compute.
+   *
+   * Staggered by 7 minutes from `integration:poll-15m` (both 15-min cadence)
+   * so they don't hit Mongo concurrently — past experiments showed that
+   * collision caused the cache cycle to take ~6 minutes and froze the site
+   * every 15 minutes (see comments in jobs/integration.jobs.ts and
+   * jobs/dashboardCache.jobs.ts).
    */
   await agenda.every(
-    isTestMode() ? "*/2 * * * *" : "*/15 * * * *",
+    isTestMode() ? "*/2 * * * *" : "7-59/15 * * * *",
     DASHBOARD_CACHE_REFRESH_JOB_NAME,
   );
   await agenda.now(DASHBOARD_CACHE_REFRESH_JOB_NAME, {});

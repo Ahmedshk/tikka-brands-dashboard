@@ -250,6 +250,49 @@ export async function refreshHomebaseRollupsAfterPoll(): Promise<void> {
   });
 }
 
+/**
+ * Refresh Square order rollups for the in-progress and most recent business
+ * day per location. Mirrors {@link refreshMarketManRollupsAfterPoll} but covers
+ * "today + yesterday" so that a missed/delayed webhook for an order placed near
+ * the business-day boundary still produces a current daily rollup within one
+ * poll cycle.
+ *
+ * Scope reasoning:
+ *   - Square orders themselves arrive via webhooks (not a poll-time sync), so
+ *     we don't need a full sliding window — only to rebuild rollups whose
+ *     underlying orders may have changed since the last build.
+ *   - Two business-day keys × N locations is bounded work (~200ms per
+ *     buildSquareOrderRollupForDay × ~9 locations × 2 days ≈ 3-4s serial),
+ *     keeping the poll handler well under the 15-min cadence.
+ *   - Each call rebuilds the daily document AND the derived hourly/period
+ *     rollups via {@link safeBuildSquareOrder}, closing the read-path gap
+ *     where "today" has no daily rollup yet (the dashboard's hot path).
+ */
+export async function refreshSquareOrderRollupsAfterPoll(): Promise<void> {
+  const locs = await loadLocationsForRollupScript();
+  const now = new Date();
+  for (const loc of locs) {
+    const id = String(loc._id);
+    const today = businessDateKeyForInstant(
+      now,
+      loc.timezone,
+      loc.businessStartTime,
+    );
+    // Yesterday's key: shift the reference instant back 24h. Safe across DST
+    // because businessDateKeyForInstant resolves the calendar key in TZ.
+    const yesterdayInstant = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const yesterday = businessDateKeyForInstant(
+      yesterdayInstant,
+      loc.timezone,
+      loc.businessStartTime,
+    );
+    const keys = today === yesterday ? [today] : [yesterday, today];
+    for (const key of keys) {
+      await safeBuildSquareOrder(id, key, loc.timezone, loc.businessStartTime);
+    }
+  }
+}
+
 export async function refreshMarketManRollupsAfterPoll(): Promise<void> {
   const locs = await loadLocationsForRollupScript();
   const now = new Date();

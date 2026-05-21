@@ -42,6 +42,18 @@ export const getGoalsQuerySchema = z.object({
   }),
 });
 
+export const getGoalRangeQuerySchema = z.object({
+  query: z
+    .object({
+      locationId: z.string().min(1, "Location ID is required"),
+      startDate: z.string().regex(ymdRegex, "startDate must be YYYY-MM-DD"),
+      endDate: z.string().regex(ymdRegex, "endDate must be YYYY-MM-DD"),
+    })
+    .refine((d) => d.startDate <= d.endDate, {
+      message: "startDate must be on or before endDate",
+    }),
+});
+
 export const getGoalDailyActualsQuerySchema = z.object({
   query: z.object({
     locationId: z.string().min(1, "Location ID is required"),

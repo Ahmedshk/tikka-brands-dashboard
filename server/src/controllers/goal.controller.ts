@@ -10,6 +10,11 @@ import {
   sanitizeResolvedGoalResult,
   sanitizeGoalDailyActualsByDate,
 } from "../utils/goalResponsePermission.util.js";
+import {
+  enumerateDateRange,
+  aggregatePerDayGoals,
+  averageGoalsAcrossLocations,
+} from "../utils/goalRangeAggregate.util.js";
 
 const goalService = new GoalService();
 const locationService = new LocationService();
@@ -124,6 +129,75 @@ export const getGoals = async (
         data: { goals: sanitizeGoalSetting(setting, allowedKeys) },
       });
     }
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Aggregate resolved goals across a date range in one request.
+ *
+ * Eliminates the N+1 the Sales & Labor Detail page would otherwise produce
+ * (one /goals?date=... fetch per day for a 7+ day period). A single setting
+ * fetch per location resolves every date in memory.
+ */
+export const getGoalRange = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const locationId =
+      typeof req.query.locationId === "string" ? req.query.locationId : "";
+    const startDate =
+      typeof req.query.startDate === "string" ? req.query.startDate : "";
+    const endDate =
+      typeof req.query.endDate === "string" ? req.query.endDate : "";
+    const allowedKeys = getAllowedGoalMetricKeys(req);
+    const dates = enumerateDateRange(startDate, endDate);
+
+    if (isAllLocationsId(locationId)) {
+      const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+      if (effectiveIds.length === 0) {
+        const empty = aggregatePerDayGoals(locationId, []);
+        const filtered = sanitizeResolvedGoalResult(
+          { goals: empty, source: "default" },
+          allowedKeys,
+        );
+        res.status(200).json({
+          success: true,
+          data: { goals: filtered.goals, source: filtered.source },
+        });
+        return;
+      }
+      const perLocation = await Promise.all(
+        effectiveIds.map(async (id) => {
+          const days = await goalService.getByLocationIdForDates(id, dates);
+          return aggregatePerDayGoals(id, days);
+        }),
+      );
+      const merged = averageGoalsAcrossLocations(locationId, perLocation);
+      const filtered = sanitizeResolvedGoalResult(
+        { goals: merged, source: "default" },
+        allowedKeys,
+      );
+      res.status(200).json({
+        success: true,
+        data: { goals: filtered.goals, source: filtered.source },
+      });
+      return;
+    }
+
+    const days = await goalService.getByLocationIdForDates(locationId, dates);
+    const aggregated = aggregatePerDayGoals(locationId, days);
+    const filtered = sanitizeResolvedGoalResult(
+      { goals: aggregated, source: "default" },
+      allowedKeys,
+    );
+    res.status(200).json({
+      success: true,
+      data: { goals: filtered.goals, source: filtered.source },
+    });
   } catch (error) {
     next(error);
   }

@@ -248,6 +248,47 @@ export class GoalService {
     };
   }
 
+  /**
+   * Resolve goals for many dates with a single setting fetch — eliminates N+1
+   * when aggregating a multi-day period.
+   */
+  async getByLocationIdForDates(
+    locationId: string,
+    dates: string[],
+  ): Promise<IGoal[]> {
+    const setting = await this.getByLocationId(locationId);
+    return dates.map((dateStr) => this.resolveGoalForDateFromSetting(locationId, dateStr, setting));
+  }
+
+  /** Same per-date resolution as getByLocationIdAndDate, but operates on an already-fetched setting. */
+  private resolveGoalForDateFromSetting(
+    locationId: string,
+    dateStr: string,
+    setting: IGoalSetting,
+  ): IGoal {
+    const { weekStartDate, dayOfWeek } = getWeekStartAndDayOfWeek(dateStr);
+
+    const futureWeek = setting.futureWeeks?.find(
+      (w) => w.weekStartDate === weekStartDate,
+    );
+    const futureDay = futureWeek?.days?.[dayOfWeek as DayOfWeek];
+    if (futureDay) {
+      return this.valuesToGoal(locationId, { ...defaultGoalValues, ...futureDay });
+    }
+
+    const weeklyDay = setting.weekly?.[dayOfWeek as DayOfWeek];
+    if (weeklyDay) {
+      return this.valuesToGoal(locationId, { ...defaultGoalValues, ...weeklyDay });
+    }
+
+    const resolved = resolveDefaultForDate(
+      setting.defaultHistory,
+      setting.default,
+      dateStr,
+    );
+    return this.valuesToGoal(locationId, resolved.values);
+  }
+
   private valuesToGoal(locationId: string, values: IGoalValues): IGoal {
     return {
       locationId,

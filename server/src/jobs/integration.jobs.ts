@@ -4,6 +4,7 @@ import { runSyncForAllLocations } from "../services/integrationSyncRunner.servic
 import {
   refreshHomebaseRollupsAfterPoll,
   refreshMarketManRollupsAfterPoll,
+  refreshSquareOrderRollupsAfterPoll,
 } from "../services/integrationPollRollupRefresh.service.js";
 import { IntegrationSyncLogModel } from "../models/integrationSyncLog.model.js";
 import { logger } from "../utils/logger.util.js";
@@ -108,6 +109,28 @@ export function registerIntegrationJobs(agenda: Agenda): void {
       }
     } catch (err) {
       logger.error("integration:poll-15m homebase_timecards failed", { err });
+    }
+
+    /**
+     * Rebuild Square order rollups (daily + derived hourly/period) for today's
+     * and yesterday's business day per location. Orders arrive via webhooks,
+     * not a poll-time sync, so this just closes the gap left by webhook delivery
+     * jitter — the dashboard read path for any range that includes "today"
+     * relies on the daily rollup being current.
+     *
+     * Bounded work: ~2 business-day keys × N locations × ~200ms each. The
+     * 7-min stagger between this cron and dashboard-cache:refresh-15m
+     * (configured in config/agenda.ts) avoids the Mongo-throughput collision
+     * documented above for the worker-threads variant.
+     */
+    try {
+      const startedAt = Date.now();
+      await refreshSquareOrderRollupsAfterPoll();
+      logger.info("integration:poll-15m square order rollups done", {
+        totalMs: Date.now() - startedAt,
+      });
+    } catch (err) {
+      logger.error("integration:poll-15m square order rollups failed", { err });
     }
 
     try {

@@ -32,9 +32,7 @@ import {
   getSalesLaborKpiMetrics,
   buildDailyTargetsItems,
   resolvePeriodDateBounds,
-  enumerateDates,
   isSingleDayPeriod,
-  aggregateGoalsForPeriod,
 } from '../../utils/salesLaborDetailsHelpers';
 import { buildSalesLaborKPIItems } from '../../utils/salesLaborKpiBuilder';
 
@@ -145,16 +143,14 @@ export const SalesLaborDetails = () => {
             }),
           );
         } else {
-          const dates = enumerateDates(bounds.start, bounds.end);
-          const perDay = Promise.all(
-            dates.map((d) =>
-              goalService.getResolved(locationId, d, { signal: controller.signal }).catch((err) => {
+          promises.push(
+            goalService
+              .getResolvedRange(locationId, bounds.start, bounds.end, { signal: controller.signal })
+              .catch((err) => {
                 if (controller.signal.aborted) throw err;
                 return null;
               }),
-            ),
-          ).then((arr) => aggregateGoalsForPeriod(arr));
-          promises.push(perDay);
+          );
         }
       } else {
         promises.push(Promise.resolve(null));

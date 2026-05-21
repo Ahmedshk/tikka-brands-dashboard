@@ -68,58 +68,11 @@ export function resolvePeriodDateBounds(
   }
 }
 
-/** Enumerate every YYYY-MM-DD between start and end (inclusive). Capped to maxDays for safety. */
-export function enumerateDates(start: string, end: string, maxDays = 400): string[] {
-  const s = ymdToParts(start);
-  const e = ymdToParts(end);
-  if (!s || !e) return [];
-  const out: string[] = [];
-  let cur = s;
-  for (let i = 0; i < maxDays; i++) {
-    const ymd = partsToYmd(cur);
-    out.push(ymd);
-    if (ymd === end) return out;
-    if (cur.y > e.y || (cur.y === e.y && cur.m0 > e.m0) || (cur.y === e.y && cur.m0 === e.m0 && cur.d > e.d)) {
-      break;
-    }
-    cur = addDaysUtc(cur.y, cur.m0, cur.d, 1);
-  }
-  return out;
-}
-
 /** True when the period collapses to a single calendar day. */
 export function isSingleDayPeriod(value: PeriodPickerValue, timezone: string): boolean {
   const bounds = resolvePeriodDateBounds(value, timezone);
   if (!bounds) return false;
   return bounds.start === bounds.end;
-}
-
-/**
- * Aggregate per-day goals across a multi-day period.
- * - salesGoal, hoursGoal: summed (they're daily targets)
- * - laborCostGoal (%), spmhGoal ($/hr): averaged
- * - tolerances: averaged (kept in the same units as the goal they apply to)
- */
-export function aggregateGoalsForPeriod(goals: Array<Goal | null>): Goal | null {
-  const valid = goals.filter((g): g is Goal => g != null);
-  if (valid.length === 0) return null;
-  const n = valid.length;
-  const sum = (key: keyof Goal): number => valid.reduce((acc, g) => acc + (Number(g[key]) || 0), 0);
-  const avg = (key: keyof Goal): number => sum(key) / n;
-  const base = valid[0]!;
-  return {
-    ...base,
-    salesGoal: sum('salesGoal'),
-    hoursGoal: sum('hoursGoal'),
-    laborCostGoal: avg('laborCostGoal'),
-    spmhGoal: avg('spmhGoal'),
-    foodCostGoal: avg('foodCostGoal'),
-    salesGoalTolerance: avg('salesGoalTolerance'),
-    laborCostGoalTolerance: avg('laborCostGoalTolerance'),
-    hoursGoalTolerance: avg('hoursGoalTolerance'),
-    spmhGoalTolerance: avg('spmhGoalTolerance'),
-    foodCostGoalTolerance: avg('foodCostGoalTolerance'),
-  };
 }
 
 type KpiFlags = {

@@ -57,6 +57,29 @@ export const goalService = {
   },
 
   /**
+   * Aggregated goals over [startDate, endDate] in one request — server sums sales/hours
+   * and averages rates/tolerances across the range (and across locations for __all__).
+   */
+  async getResolvedRange(
+    locationId: string,
+    startDate: string,
+    endDate: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<Goal> {
+    const res = await api.get<ApiResponse<{ goals: Goal; source?: string }>>(
+      `${BASE}/range`,
+      {
+        params: { locationId, startDate, endDate },
+        signal: options?.signal,
+      },
+    );
+    if (!res.data.success || res.data.data?.goals == null) {
+      throw new Error(res.data.message ?? "Failed to fetch goals");
+    }
+    return res.data.data.goals;
+  },
+
+  /**
    * Get resolved goals and source for a date (for Previous goals tab).
    */
   async getResolvedWithSource(

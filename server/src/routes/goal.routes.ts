@@ -1,8 +1,14 @@
 import { Router } from "express";
-import { getGoals, getGoalDailyActuals, upsertGoals } from "../controllers/goal.controller.js";
+import {
+  getGoals,
+  getGoalRange,
+  getGoalDailyActuals,
+  upsertGoals,
+} from "../controllers/goal.controller.js";
 import { validate } from "../utils/zod.util.js";
 import {
   getGoalsQuerySchema,
+  getGoalRangeQuerySchema,
   getGoalDailyActualsQuerySchema,
   upsertGoalsSchema,
 } from "../validators/goal.validators.js";
@@ -21,6 +27,11 @@ router.get(
   "/daily-actuals",
   validate(getGoalDailyActualsQuerySchema),
   getGoalDailyActuals,
+);
+router.get(
+  "/range",
+  validate(getGoalRangeQuerySchema),
+  getGoalRange,
 );
 router.get("/", validate(getGoalsQuerySchema), getGoals);
 
