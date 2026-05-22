@@ -50,9 +50,19 @@ async function prefetchSalesLaborCachesForLocations(args: {
   period: SalesLaborPeriodParams;
 }): Promise<void> {
   const { req, locationService, effectiveIds, period } = args;
+  // Load every location's credentials in parallel. The previous serial
+  // `for await` loop dominated wall-clock time (9 locations × Atlas
+  // round-trip ≈ 12-14s of preamble before the actual bulk prefetch ran).
+  // Promise.all collapses this to the cost of the slowest single lookup
+  // (~1-2s) — the per-request cache still guards against duplicate work
+  // inside this same request.
+  const credsPerId = await Promise.all(
+    effectiveIds.map((id) => getByIdWithCredentialsCached(req, locationService, id)),
+  );
   const inputs: AllLocationsPrefetchInput[] = [];
-  for (const id of effectiveIds) {
-    const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
+  for (let i = 0; i < effectiveIds.length; i++) {
+    const id = effectiveIds[i]!;
+    const withCreds = credsPerId[i];
     if (!withCreds) continue;
     const { location } = withCreds;
     const timezone = location.timezone?.trim();

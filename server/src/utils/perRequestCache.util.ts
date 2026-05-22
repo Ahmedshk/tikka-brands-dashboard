@@ -9,6 +9,7 @@
  */
 import type { Request } from "express";
 import type { LocationService } from "../services/location.service.js";
+import { getLocationWithCredentialsCachedAcrossRequests } from "./locationCredentialsCache.util.js";
 
 const CACHE_KEY = Symbol.for("tikka.perRequestCache");
 
@@ -53,7 +54,14 @@ export async function memoForRequest<T>(
 
 /**
  * Cached `locationService.getByIdWithCredentials` keyed by location id.
- * Returns the same resolved value across all calls within one request.
+ *
+ * Two-layer caching:
+ *   - Inner layer ({@link locationCredentialsCache.util.ts}) is process-wide
+ *     with a short TTL + in-flight dedup, so concurrent dashboard endpoints
+ *     (kpis + hourly-breakdown + timesheet) on different requests share a
+ *     single Mongo + decrypt + logo-enrich pipeline per location.
+ *   - Outer layer (this per-request memo) guarantees the same value within
+ *     one request and short-circuits all repeat awaits with zero work.
  */
 export function getByIdWithCredentialsCached(
   req: Request,
@@ -61,7 +69,7 @@ export function getByIdWithCredentialsCached(
   locationId: string,
 ): Promise<Awaited<ReturnType<LocationService["getByIdWithCredentials"]>>> {
   return memoForRequest(req, `loc-creds:${locationId}`, () =>
-    locationService.getByIdWithCredentials(locationId),
+    getLocationWithCredentialsCachedAcrossRequests(locationService, locationId),
   );
 }
 

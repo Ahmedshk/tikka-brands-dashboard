@@ -13,6 +13,7 @@ import {
 import { NotFoundError } from '../utils/errors.util.js';
 import { encryptCredentials, decryptCredentials } from '../utils/credentialsEncryption.util.js';
 import { buildLocationMongoUpdateQuery } from '../utils/locationUpdateMongoMutationHelpers.util.js';
+import { invalidateLocationCredentials } from '../utils/locationCredentialsCache.util.js';
 
 /** Safely coerce logoId (string, ObjectId, or populated doc) to string for API response. */
 function toLogoIdString(val: unknown): string | undefined {
@@ -158,6 +159,10 @@ export class LocationService {
     if (!doc) {
       throw new NotFoundError('Location not found');
     }
+    // Bust the cross-request credentials cache so dashboard endpoints stop
+    // serving the pre-update TZ / business start / API keys / etc. without
+    // waiting for the natural TTL to expire.
+    invalidateLocationCredentials(id);
     return this.enrichWithLogoUrl(this.toLocationResponse(doc));
   }
 
@@ -183,6 +188,7 @@ export class LocationService {
     if (!deleted) {
       throw new NotFoundError('Location not found');
     }
+    invalidateLocationCredentials(id);
   }
 
   /** Populate logoUrl from the Logo collection for a single location. */
