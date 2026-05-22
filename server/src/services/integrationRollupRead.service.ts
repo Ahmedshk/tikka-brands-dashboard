@@ -456,8 +456,22 @@ export async function tryGetHourlyNetSalesCentsBySlotFromRollups(
     timezone,
     businessStartTime,
   );
-  if (keys.length !== 1) return null;
-  const businessDateKey = keys[0]!;
+  if (keys.length === 0) return null;
+  if (keys.length === 1) {
+    return readSingleDayHourlySlot(locationMongoId, keys[0]!);
+  }
+  return readMultiDayHourlySlotSum(locationMongoId, keys);
+}
+
+/**
+ * Original single-day path — preserved as a fast lane because most "today"
+ * and weekToDate dashboard queries hit it. Uses the negative cache + an
+ * existence-precheck to bail out cheaply when no rollup rows exist.
+ */
+async function readSingleDayHourlySlot(
+  locationMongoId: string,
+  businessDateKey: string,
+): Promise<number[] | null> {
   const negKey = {
     locationMongoId,
     granularity: "hourly-slot",
@@ -499,6 +513,42 @@ export async function tryGetHourlyNetSalesCentsBySlotFromRollups(
   for (const h of hourly) {
     const i = h.slotIndex;
     if (i >= 0 && i < 24) out[i] = h.netSalesCents ?? 0;
+  }
+  return out;
+}
+
+/**
+ * Multi-day path — sums hourly rollup rows across every business day in the
+ * range into 24 slot bins (slot 0 = sum of slot-0 across all days, etc.).
+ * This matches what the sales-labor hourly-breakdown card needs for any
+ * multi-day period (last7days, last30days, custom ranges, etc.).
+ *
+ * Uses `loadSquareOrderHourlyRollupsForDates` so the per-(location, date)
+ * cache the all-locations bulk prefetch populates is consulted first; on a
+ * cache hit there is no Mongo round-trip at all.
+ *
+ * Returns null when **any** required day is missing or has fewer than 24
+ * rows. Splitting "partial coverage + scan the gap" would risk
+ * double-counting orders whose business-hour bucket falls outside the
+ * partial-day's slot bounds — cleaner to fall back to a single full-range
+ * raw-orders scan when coverage isn't complete.
+ */
+async function readMultiDayHourlySlotSum(
+  locationMongoId: string,
+  keys: string[],
+): Promise<number[] | null> {
+  const byDate = await loadSquareOrderHourlyRollupsForDates(locationMongoId, keys);
+  for (const key of keys) {
+    const rows = byDate.get(key);
+    if (!rows || rows.length < 24) return null;
+  }
+  const out = new Array<number>(24).fill(0);
+  for (const key of keys) {
+    const rows = byDate.get(key) ?? [];
+    for (const r of rows) {
+      const i = r.slotIndex;
+      if (i >= 0 && i < 24) out[i] = (out[i] ?? 0) + (r.netSalesCents ?? 0);
+    }
   }
   return out;
 }

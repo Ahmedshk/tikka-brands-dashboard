@@ -12,6 +12,24 @@ export class GoalRepository {
   }
 
   /**
+   * Bulk fetch goal settings for many locations in one round-trip. Used by the
+   * all-locations `/goals/range` aggregation to collapse N find-by-id calls
+   * into a single `$in` query. Returns a map keyed by locationId; missing
+   * locations are simply absent (callers default to baseline goal values).
+   */
+  async findByLocationIds(
+    locationIds: readonly string[],
+  ): Promise<Map<string, GoalDocument>> {
+    if (locationIds.length === 0) return new Map();
+    const docs = (await GoalModel.find({ locationId: { $in: [...locationIds] } })
+      .lean()
+      .exec()) as GoalDocument[];
+    const byId = new Map<string, GoalDocument>();
+    for (const doc of docs) byId.set(String(doc.locationId), doc);
+    return byId;
+  }
+
+  /**
    * Upsert goal setting. Accepts full or partial default/weekly/futureWeeks.
    * Merges with existing document so omitted keys are not wiped.
    * Optionally appends rows to defaultHistory (does not replace the array).

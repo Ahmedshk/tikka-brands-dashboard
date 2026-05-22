@@ -32,6 +32,7 @@ import {
   bulkPrefetchHomebaseTimecardDailyRollups,
 } from "./dailyRollupLoader.util.js";
 import { bulkPrefetchSquareOrderHourlyRollups } from "./hourlyRollupLoader.util.js";
+import { bulkPrefetchHomebaseTimecardHourlyRollups } from "./homebaseTimecardHourlyRollupLoader.util.js";
 import { businessDateKeysIntersectingUtcRange } from "./businessDayUtcRange.util.js";
 import { logger } from "./logger.util.js";
 import { performance } from "node:perf_hooks";
@@ -208,6 +209,13 @@ export async function prefetchAllLocationsDashboardData(
     timed(
       "squareOrderHourlyRollups",
       bulkPrefetchSquareOrderHourlyRollups({
+        locationMongoIds,
+        businessDateKeys: businessDateKeysArr,
+      }),
+    ),
+    timed(
+      "homebaseTimecardHourlyRollups",
+      bulkPrefetchHomebaseTimecardHourlyRollups({
         locationMongoIds,
         businessDateKeys: businessDateKeysArr,
       }),

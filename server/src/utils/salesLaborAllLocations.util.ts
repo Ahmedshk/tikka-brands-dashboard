@@ -29,6 +29,54 @@ import {
   timedPerLocation,
 } from './allLocationsTiming.util.js';
 import { performance } from 'node:perf_hooks';
+import {
+  prefetchAllLocationsDashboardData,
+  type AllLocationsPrefetchInput,
+} from './allLocationsDashboardPrefetch.util.js';
+
+/**
+ * Build prefetch inputs from the resolved location ids + period and seed the
+ * process-level rollup caches in a handful of bulk `$in` queries. Returns
+ * `void` — subsequent per-location workers read from the seeded caches.
+ *
+ * Locations that fail to resolve (missing creds, missing TZ) are skipped:
+ * those workers would short-circuit downstream anyway, so leaving them out of
+ * the prefetch keeps the bulk queries lean.
+ */
+async function prefetchSalesLaborCachesForLocations(args: {
+  req: Request;
+  locationService: LocationService;
+  effectiveIds: string[];
+  period: SalesLaborPeriodParams;
+}): Promise<void> {
+  const { req, locationService, effectiveIds, period } = args;
+  const inputs: AllLocationsPrefetchInput[] = [];
+  for (const id of effectiveIds) {
+    const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
+    if (!withCreds) continue;
+    const { location } = withCreds;
+    const timezone = location.timezone?.trim();
+    if (!timezone) continue;
+    const businessStartTime = location.businessStartTime?.trim() ?? '00:00';
+    const range = getSalesLaborRangeForPeriod(
+      {
+        timezone: location.timezone,
+        businessStartTime: location.businessStartTime,
+        squareLocationId: location.squareLocationId,
+        homebaseLocationId: location.homebaseLocationId,
+      },
+      period,
+    );
+    inputs.push({
+      locationMongoId: id,
+      ranges: [range],
+      timezone,
+      businessStartTime,
+    });
+  }
+  if (inputs.length === 0) return;
+  await prefetchAllLocationsDashboardData(inputs);
+}
 
 function sum(vals: Array<number | null | undefined>): number | null {
   let any = false;
@@ -94,6 +142,15 @@ export async function buildAllLocationsSalesLaborKpis(params: {
   if (effectiveIds.length === 0) return buildEmptySalesLaborKPIs();
 
   const tHandler = performance.now();
+  // Prime the daily + hourly rollup caches in one bulk pass before fanning
+  // out per-location. Each worker's calls into the rollup readers then hit
+  // the in-process cache instead of issuing its own Mongo round-trip.
+  await prefetchSalesLaborCachesForLocations({
+    req,
+    locationService,
+    effectiveIds,
+    period,
+  });
   const perLocationMs: number[] = [];
   const logTimingDone = (count: number): void => {
     summarizeAllLocationsTimings({
@@ -228,6 +285,14 @@ export async function buildAllLocationsHourlyBreakdown(params: {
   }
 
   const tHandler = performance.now();
+  // Prime Square + Homebase hourly rollup caches before the fan-out so each
+  // worker's `tryGet*FromRollups` call resolves from in-process state.
+  await prefetchSalesLaborCachesForLocations({
+    req,
+    locationService,
+    effectiveIds,
+    period,
+  });
   const perLocationMs: number[] = [];
   const perLoc = await Promise.all(
     effectiveIds.map(async (id) => {

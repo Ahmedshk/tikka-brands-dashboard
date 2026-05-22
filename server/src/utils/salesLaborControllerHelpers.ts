@@ -372,23 +372,17 @@ export async function fetchHourlyLaborCostPerHour(
     return new Array<number>(24).fill(0);
   }
   try {
-    const slots = await fetchHourlyLaborCostPerHourFromCache(
+    // Source-of-truth log moved inside fetchHourlyLaborCostPerHourFromCache
+    // (it now accepts a logContext and reports rollup hit vs timecard scan
+    // accurately). Previous hardcoded "no labor rollup" message here was
+    // stale and misleading after the Homebase hourly rollup landed.
+    return await fetchHourlyLaborCostPerHourFromCache(
       cacheLocationId.trim(),
       range,
       timezone,
       businessStartTime,
-    );
-    console.log(
-      SALES_LABOR_DETAIL_API_LOG,
       "GET /sales-labor/hourly-breakdown labor cost per hour by slot",
-      {
-        laborHourlySource: "mongo_homebase_timecards",
-        detail:
-          "fetchHourlyLaborCostPerHourFromCache — no labor rollup; aggregated from synced timecards",
-        slotCount: slots.length,
-      },
     );
-    return slots;
   } catch (err) {
     console.error(`${LOG_PREFIX} Homebase hourly labor error:`, err);
     return new Array<number>(24).fill(0);

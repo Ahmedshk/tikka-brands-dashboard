@@ -170,11 +170,14 @@ export const getGoalRange = async (
         });
         return;
       }
-      const perLocation = await Promise.all(
-        effectiveIds.map(async (id) => {
-          const days = await goalService.getByLocationIdForDates(id, dates);
-          return aggregatePerDayGoals(id, days);
-        }),
+      // Bulk-fetch every location's goal setting in one Mongo round-trip,
+      // then resolve dates per location in memory. Replaces N parallel
+      // `getByLocationIdForDates` calls (one find-by-id each) with 1 `$in`
+      // query — observed `/goals/range` latency drops from ~12s to ~200ms
+      // for 9 locations × 7 days.
+      const byLocation = await goalService.getByLocationIdsForDates(effectiveIds, dates);
+      const perLocation = effectiveIds.map((id) =>
+        aggregatePerDayGoals(id, byLocation.get(id) ?? []),
       );
       const merged = averageGoalsAcrossLocations(locationId, perLocation);
       const filtered = sanitizeResolvedGoalResult(

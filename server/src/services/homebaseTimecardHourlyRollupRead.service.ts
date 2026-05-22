@@ -4,13 +4,12 @@
  * has no imports from `integrationCacheRead.service.ts` — that file is where
  * the reader is consumed from, and a same-file pair would create a cycle.
  */
-import mongoose from "mongoose";
-import { HomebaseTimecardHourlyRollupModel } from "../models/homebaseTimecardHourlyRollup.model.js";
 import type { TimeRange } from "../utils/businessHours.util.js";
 import {
   businessDateKeysIntersectingUtcRange,
   businessDayUtcRangeIsoStrings,
 } from "../utils/businessDayUtcRange.util.js";
+import { loadHomebaseTimecardHourlyRollupsForDates } from "../utils/homebaseTimecardHourlyRollupLoader.util.js";
 
 const ROLLUP_READ_ENABLED =
   (process.env.ROLLUP_READ_ENABLED ?? "true").trim().toLowerCase() !== "false";
@@ -70,29 +69,27 @@ export async function tryGetHourlyLaborCostFromRollups(
   if (!ROLLUP_READ_ENABLED) return null;
   const keys = fullBusinessDaysCoveredByRange(range, timezone, businessStartTime);
   if (keys.length === 0) return null;
-  const oid = new mongoose.Types.ObjectId(locationMongoId);
-  const docs = await HomebaseTimecardHourlyRollupModel.find({
-    locationId: oid,
-    businessDateKey: { $in: keys },
-  })
-    .lean()
-    .exec();
-  if (docs.length === 0) return null;
+  // Cache-aware loader: the all-locations bulk prefetch populates this in one
+  // `$in` query so per-location workers hit in-process state instead of
+  // round-tripping Mongo per call.
+  const byDate = await loadHomebaseTimecardHourlyRollupsForDates(
+    locationMongoId,
+    keys,
+  );
   // Require complete coverage for every requested day. If any day has fewer
   // than 24 rows, treat the whole range as a miss so the caller scans
   // timecards once instead of mixing partial rollup data with a sub-range scan.
-  const rowsByDay = new Map<string, number>();
-  for (const doc of docs) {
-    rowsByDay.set(doc.businessDateKey, (rowsByDay.get(doc.businessDateKey) ?? 0) + 1);
-  }
   for (const key of keys) {
-    if ((rowsByDay.get(key) ?? 0) < 24) return null;
+    const rows = byDate.get(key);
+    if (!rows || rows.length < 24) return null;
   }
   const result = new Array<number>(24).fill(0);
-  for (const doc of docs) {
-    const idx = doc.slotIndex;
-    if (idx < 0 || idx >= 24) continue;
-    result[idx] = (result[idx] ?? 0) + (doc.laborCost ?? 0);
+  for (const key of keys) {
+    const rows = byDate.get(key) ?? [];
+    for (const r of rows) {
+      const i = r.slotIndex;
+      if (i >= 0 && i < 24) result[i] = (result[i] ?? 0) + (r.laborCost ?? 0);
+    }
   }
   return result;
 }

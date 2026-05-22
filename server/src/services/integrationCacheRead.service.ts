@@ -757,6 +757,14 @@ export async function fetchHourlyLaborCostPerHourFromCache(
   range: TimeRange,
   timezone: string,
   businessStartTime: string,
+  /**
+   * When set, logs which source supplied the 24 slot values (rollup vs raw
+   * timecard scan) — mirrors the `logContext` pattern in
+   * {@link fetchHourlyNetSalesCentsBySlotFromCache}. Pass the same
+   * `[api-data-source]`-style label as for the Square hourly call so logs
+   * line up on a single grep.
+   */
+  logContext?: string,
 ): Promise<number[]> {
   // Rollup-first read path: when every full business day in `range` has a
   // complete (24-slot) `HomebaseTimecardHourlyRollup`, sum those slots
@@ -775,8 +783,24 @@ export async function fetchHourlyLaborCostPerHourFromCache(
     timezone,
     businessStartTime,
   );
-  if (fromRollups !== null) return fromRollups;
+  if (fromRollups !== null) {
+    if (logContext) {
+      console.log("[api-data-source]", logContext, {
+        laborHourlySource: "homebase_hourly_rollups",
+        detail:
+          "HomebaseTimecardHourlyRollup (24 slots; tryGetHourlyLaborCostFromRollups, summed across days)",
+      });
+    }
+    return fromRollups;
+  }
 
+  if (logContext) {
+    console.log("[api-data-source]", logContext, {
+      laborHourlySource: "mongo_homebase_timecards",
+      detail:
+        "rollup miss, ROLLUP_READ_ENABLED off, or incomplete hourly rows — prorating raw timecards across slots",
+    });
+  }
   const cards = await loadHomebaseTimecardsForMongoRange(
     locationMongoId,
     range,

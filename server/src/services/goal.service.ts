@@ -260,6 +260,44 @@ export class GoalService {
     return dates.map((dateStr) => this.resolveGoalForDateFromSetting(locationId, dateStr, setting));
   }
 
+  /**
+   * Bulk-fetch goal settings for many locations in **one** Mongo query, then
+   * resolve every (locationId, dateStr) pair from the in-memory settings.
+   *
+   * Replaces the N round-trips the all-locations `/goals/range` endpoint used
+   * to issue (one `getByLocationId` per location). For 9 locations × 30 days
+   * this collapses 9 finds into 1, with all 270 date resolutions running on
+   * the loaded settings in microseconds.
+   *
+   * Locations without a stored goal document fall back to baseline default
+   * values (matches `getByLocationId`'s null-doc branch).
+   */
+  async getByLocationIdsForDates(
+    locationIds: readonly string[],
+    dates: string[],
+  ): Promise<Map<string, IGoal[]>> {
+    const out = new Map<string, IGoal[]>();
+    if (locationIds.length === 0 || dates.length === 0) return out;
+    const docs = await this.goalRepository.findByLocationIds(locationIds);
+    for (const id of locationIds) {
+      const doc = docs.get(id);
+      const setting: IGoalSetting = doc
+        ? this.docToSetting(doc)
+        : {
+            locationId: id,
+            default: { ...defaultGoalValues },
+            weekly: {},
+            futureWeeks: [],
+            defaultHistory: [],
+          };
+      out.set(
+        id,
+        dates.map((d) => this.resolveGoalForDateFromSetting(id, d, setting)),
+      );
+    }
+    return out;
+  }
+
   /** Same per-date resolution as getByLocationIdAndDate, but operates on an already-fetched setting. */
   private resolveGoalForDateFromSetting(
     locationId: string,
