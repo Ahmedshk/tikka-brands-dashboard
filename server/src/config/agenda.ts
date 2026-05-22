@@ -61,18 +61,20 @@ export async function initializeAgenda(): Promise<Agenda> {
 
   void runCatchUpMarketManValidCountDatesIfMissedToday();
 
-  const schedule = isTestMode() ? "*/15 * * * * *" : "0 6 * * *";
+  const schedule = isTestMode() ? "*/15 * * * * *" : "0 9 * * *";
+  const reviewOpts = isTestMode() ? undefined : { timezone: "America/Denver" };
   if (isTestMode()) logger.info("Agenda: REVIEW_TEST_MODE enabled — running jobs every 15 seconds");
 
-  await agenda.every(schedule, "review:check-milestones");
-  await agenda.every(schedule, "review:check-manager-deadline");
-  await agenda.every(schedule, "review:check-director-deadline");
-  await agenda.every(schedule, "review:check-sharing-deadline");
-  await agenda.every(schedule, "review:check-checkin-deadlines");
-  await agenda.every(schedule, "review:supersede-scheduled");
+  await agenda.every(schedule, "review:check-milestones", undefined, reviewOpts);
+  await agenda.every(schedule, "review:check-manager-deadline", undefined, reviewOpts);
+  await agenda.every(schedule, "review:check-director-deadline", undefined, reviewOpts);
+  await agenda.every(schedule, "review:check-sharing-deadline", undefined, reviewOpts);
+  await agenda.every(schedule, "review:check-checkin-deadlines", undefined, reviewOpts);
+  await agenda.every(schedule, "review:supersede-scheduled", undefined, reviewOpts);
 
-  // Disciplinary rolling period expiry check (daily at midnight)
-  await agenda.every("0 0 * * *", "disciplinary:check-expiry");
+  await agenda.every("30 9 * * *", "disciplinary:check-expiry", undefined, {
+    timezone: "America/Denver",
+  });
 
   await agenda.every(isTestMode() ? "*/1 * * * * *" : "*/15 * * * *", "calendar:reconcile");
 

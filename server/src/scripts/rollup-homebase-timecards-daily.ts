@@ -1,9 +1,16 @@
 /**
- * Idempotent: upserts `HomebaseTimecardDailyRollup` per location and business day.
- * Labor cost and hours match `getLaborCostInRangeFromCache` / `getTotalHoursInRangeFromCache` semantics.
+ * Idempotent: upserts `HomebaseTimecardDailyRollup` AND
+ * `HomebaseTimecardHourlyRollup` (24 slots) per location and business day.
+ * Labor cost and hours match `getLaborCostInRangeFromCache` /
+ * `getTotalHoursInRangeFromCache` semantics on the daily side; hourly slots
+ * are prorated by overlap (matches `computeLaborCostPerHourFromTimecards`).
+ *
+ * Mirrors the Square equivalent (`rollup-square-orders-daily`) which also
+ * rebuilds derived hourly + period rollups in the same per-day pass.
  *
  * Local: npm run rollup-homebase-timecards-daily -- --from 2026-03-01 --to 2026-03-07
- * Optional: `--locationId`. Omit `--from`/`--to` for yesterday per location TZ.
+ * Optional: `--locationId` (single id, comma-separated, or repeated). Omit
+ * `--from`/`--to` for yesterday per location TZ.
  */
 import dotenv from "dotenv";
 import path from "node:path";
@@ -11,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import mongoose from "mongoose";
 import { connectDatabase } from "../config/database.js";
 import { buildHomebaseRollupForDay } from "../services/dailyRollupBuilder.service.js";
+import { buildHomebaseTimecardHourlyRollupsForDay } from "../services/homebaseTimecardHourlyRollup.service.js";
 import {
   iterBusinessDateKeysInclusive,
   parseRollupCliArgs,
@@ -41,6 +49,15 @@ async function main(): Promise<void> {
       const days = iterBusinessDateKeysInclusive(fromKey, toKey);
       for (const businessDateKey of days) {
         await buildHomebaseRollupForDay(
+          String(loc._id),
+          businessDateKey,
+          loc.timezone,
+          loc.businessStartTime,
+        );
+        // Mirror the Square pattern: build the derived hourly slot rows in
+        // the same per-day pass so a single CLI run leaves both granularities
+        // in sync. Idempotent (replaceOne upsert).
+        await buildHomebaseTimecardHourlyRollupsForDay(
           String(loc._id),
           businessDateKey,
           loc.timezone,
