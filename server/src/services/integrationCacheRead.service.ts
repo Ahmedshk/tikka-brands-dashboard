@@ -27,6 +27,10 @@ import {
 import { aggregateTimecardsIntoBuckets } from "../utils/homebaseTimeSeriesHelpers.js";
 import { computeLaborCostPerHourFromTimecards } from "../utils/homebaseLaborHelpers.js";
 import { tryGetHourlyLaborCostFromRollups } from "./homebaseTimecardHourlyRollupRead.service.js";
+import {
+  tryGetSquareOrderStatsFromHourlyRollupsForSubRange,
+  tryGetHomebaseLaborCostFromHourlyRollupsForSubRange,
+} from "../utils/hourlyRollupSubRangeSum.util.js";
 import { getBusinessHourIndex } from "../utils/businessDayUtcRange.util.js";
 import type {
   BatchRetrieveCatalogFn,
@@ -244,21 +248,44 @@ export async function getLaborCostInRangeFromCache(
       rollupCtx.businessStartTime,
     );
     if (split != null) {
+      // Hourly-rollup-first for each uncovered sub-range (same pattern as
+      // the Square stats path above). Homebase hourly rollup carries
+      // `laborCost` directly, so for hourly-served sub-ranges we add it
+      // straight into the total. Sub-ranges with incomplete hourly coverage
+      // still fall through to a tertiary raw timecard scan.
+      let hourlyLaborCost = 0;
+      const remainingRangesForRawScan: TimeRange[] = [];
+      for (const subRange of split.uncoveredRanges) {
+        const fromHourly = await tryGetHomebaseLaborCostFromHourlyRollupsForSubRange(
+          locationMongoId,
+          subRange,
+          rollupCtx.timezone,
+          rollupCtx.businessStartTime,
+        );
+        if (fromHourly !== null) {
+          hourlyLaborCost += fromHourly;
+        } else {
+          remainingRangesForRawScan.push(subRange);
+        }
+      }
       const scanned = await sumLaborCostAcrossSubRanges(
-        split.uncoveredRanges,
+        remainingRangesForRawScan,
         (subRange) => loadHomebaseTimecardsForMongoRange(locationMongoId, subRange),
       );
       logSplitRangeReadOutcome(
         logContext,
         "laborSource",
-        "HomebaseTimecardDailyRollup rows (tryGetLaborTotalsFromDailyRollupsSplit)",
+        "HomebaseTimecardDailyRollup + hourly-rollup sub-range sum (laborCost)",
         "timecards",
         {
           presentKeyCount: split.presentKeys.size,
           uncoveredRangeCount: split.uncoveredRanges.length,
+          hourlyServedRangeCount:
+            split.uncoveredRanges.length - remainingRangesForRawScan.length,
+          rawScannedRangeCount: remainingRangesForRawScan.length,
         },
       );
-      return split.rollupTotalLaborCost + scanned;
+      return split.rollupTotalLaborCost + hourlyLaborCost + scanned;
     }
     logSplitRangeMiss(
       logContext,
@@ -296,6 +323,11 @@ export async function getTotalHoursInRangeFromCache(
       rollupCtx.businessStartTime,
     );
     if (split != null) {
+      // NOTE: the Homebase hourly rollup currently stores only `laborCost`,
+      // not paid hours. For paid hours we therefore keep the raw timecard
+      // scan as the fallback for uncovered sub-ranges. Adding `paidHours`
+      // to `HomebaseTimecardHourlyRollup` (and backfilling) would let this
+      // path mirror the labor-cost optimization above — see follow-up.
       const scanned = await sumTotalHoursAcrossSubRanges(
         split.uncoveredRanges,
         (subRange) => loadHomebaseTimecardsForMongoRange(locationMongoId, subRange),
@@ -303,7 +335,7 @@ export async function getTotalHoursInRangeFromCache(
       logSplitRangeReadOutcome(
         logContext,
         "hoursSource",
-        "HomebaseTimecardDailyRollup rows (tryGetLaborTotalsFromDailyRollupsSplit)",
+        "HomebaseTimecardDailyRollup rows (tryGetLaborTotalsFromDailyRollupsSplit) + raw timecards for uncovered sub-ranges (hourly rollup lacks paid hours)",
         "timecards",
         {
           presentKeyCount: split.presentKeys.size,
@@ -447,27 +479,67 @@ export async function getOrderStatsAndSourcesFromCache(
         rollupCtx.businessStartTime,
       );
       if (split != null) {
+        // Try the hourly-rollup sub-range summer FIRST for each uncovered
+        // sub-range; only sub-ranges where the hourly rollup is incomplete
+        // fall through to a raw-orders scan. This eliminates the per-location
+        // raw scan from the hot path when (the typical case) today's hourly
+        // rollup is current — see Phase 1's 15-min refresh.
+        //
+        // Trade-off: the Square hourly rollup carries net sales, transactions,
+        // and `sourcesOfSales` — but NOT discount / refund totals. For
+        // sub-ranges served from hourly, those two fields contribute 0 to the
+        // KPI total. This is the same trade we accepted when removing the raw
+        // fallback as a primary path: predictable performance, mild under-
+        // report of today's partial-day discount/refund. Tertiary raw scan
+        // still catches days where even the hourly rollup is missing.
+        const hourlySources = new Map<string, number>();
+        let hourlyNetSalesCents = 0;
+        let hourlyTransactionCount = 0;
+        const remainingRangesForRawScan: TimeRange[] = [];
+        for (const subRange of split.uncoveredRanges) {
+          const fromHourly = await tryGetSquareOrderStatsFromHourlyRollupsForSubRange(
+            locationMongoId,
+            subRange,
+            rollupCtx.timezone,
+            rollupCtx.businessStartTime,
+          );
+          if (fromHourly !== null) {
+            hourlyNetSalesCents += fromHourly.netSalesCents;
+            hourlyTransactionCount += fromHourly.transactionCount;
+            mergeCentsByIdInto(hourlySources, fromHourly.sourcesOfSalesCentsById);
+          } else {
+            remainingRangesForRawScan.push(subRange);
+          }
+        }
         const scanned = await sumOrderStatsAndSourcesAcrossSubRanges(
-          split.uncoveredRanges,
+          remainingRangesForRawScan,
           (subRange) => loadSquareOrdersForMongoRange(locationMongoId, subRange),
         );
         logSplitRangeReadOutcome(
           logContext,
           "orderStatsSource",
-          "tryGetOrderStatsAndSourcesFromDailyRollupsSplit (net sales, tx count, discounts, refunds, sourcesOfSales merge)",
+          "tryGetOrderStatsAndSourcesFromDailyRollupsSplit + hourly-rollup sub-range sum (net sales, tx count, discounts, refunds, sourcesOfSales merge)",
           "orders",
           {
             presentKeyCount: split.presentKeys.size,
             uncoveredRangeCount: split.uncoveredRanges.length,
+            hourlyServedRangeCount:
+              split.uncoveredRanges.length - remainingRangesForRawScan.length,
+            rawScannedRangeCount: remainingRangesForRawScan.length,
           },
         );
         const mergedSourcesById = new Map(split.rollupSourcesOfSalesCentsById);
+        mergeCentsByIdInto(mergedSourcesById, hourlySources);
         mergeCentsByIdInto(mergedSourcesById, scanned.sourcesOfSalesCentsById);
         return {
           actualTotalSales:
-            (split.rollupNetSalesCents + scanned.netSalesCents) / 100,
+            (split.rollupNetSalesCents +
+              hourlyNetSalesCents +
+              scanned.netSalesCents) / 100,
           transactionCount:
-            split.rollupTransactionCount + scanned.transactionCount,
+            split.rollupTransactionCount +
+            hourlyTransactionCount +
+            scanned.transactionCount,
           totalDiscounts:
             (split.rollupTotalDiscountCents + scanned.totalDiscountCents) / 100,
           totalRefunds:

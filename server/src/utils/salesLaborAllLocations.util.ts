@@ -16,14 +16,7 @@ import {
 } from './salesLaborControllerHelpers.js';
 import {
   loadHomebaseTimecardsForMongoRange,
-  bulkPrefetchSquareOrdersForLocations,
-  bulkPrefetchHomebaseTimecardsForLocations,
 } from '../services/integrationCacheRead.service.js';
-import { squareOrderDailyRollupCache } from './dailyRollupCaches.util.js';
-import { homebaseTimecardDailyRollupCache } from './dailyRollupCaches.util.js';
-import { computeRollupUncoveredSubRanges } from './rollupSplitRange.util.js';
-import { businessDateKeysIntersectingUtcRange } from './businessDayUtcRange.util.js';
-import type { TimeRange } from './businessHours.util.js';
 import { mergeSourcesOfSalesFromDailyRollupDocs } from './squareSourcesOfSalesMerge.util.js';
 import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
 import {
@@ -92,114 +85,15 @@ async function prefetchSalesLaborCachesForLocations(args: {
     });
   }
   if (inputs.length === 0) return;
+  // Single-phase prefetch: rollup caches only. The previous "phase 2" that
+  // bulk-fetched raw orders + timecards for uncovered sub-ranges has been
+  // removed — the read path now sums hourly rollups for those sub-ranges
+  // instead of scanning raw documents (see
+  // {@link hourlyRollupSubRangeSum.util.ts}). With the raw-scan path
+  // demoted to a tertiary fallback that rarely fires, the bulk raw prefetch
+  // was paying for itself only in pathological cases and otherwise just
+  // added Mongo work + Node memory pressure on the hot path.
   await prefetchAllLocationsDashboardData(inputs);
-
-  // -------------------------------------------------------------------
-  // Phase 2: bulk-fetch raw orders + timecards for the "uncovered" tail.
-  //
-  // Even with daily rollups fully cached, the read path for KPIs and the
-  // hourly-breakdown's labor totals split the range into [covered days from
-  // rollups] + [uncovered sub-range scanned from raw docs]. For periods that
-  // include today (today / last7days / last30days / thisWeek / ...) the
-  // uncovered tail is today's partial business day, and each per-location
-  // worker issues its own per-location `loadSquareOrdersForMongoRange` /
-  // `loadHomebaseTimecardsForMongoRange` Mongo scan for that tail.
-  //
-  // With 9 locations × ~1.5s per scan that's ~15s of per-worker wall time
-  // (matches the perLocMsMax observed in logs). Bulk-prefetching the raw
-  // documents for the **exact** sub-ranges those workers will request
-  // collapses 9 round-trips into 1 each, and primes the same range-keyed
-  // caches the per-location loaders consult. Workers then hit those caches
-  // and skip Mongo entirely.
-  // -------------------------------------------------------------------
-  const primeOrderRanges: Array<{ locationMongoId: string; range: TimeRange }> = [];
-  const primeTimecardRanges: Array<{ locationMongoId: string; range: TimeRange }> = [];
-
-  for (const input of inputs) {
-    const inputRange = input.ranges[0];
-    if (!inputRange) continue;
-    const intersectingDateKeys = businessDateKeysIntersectingUtcRange(
-      inputRange.startAt,
-      inputRange.endAt,
-      input.timezone,
-      input.businessStartTime,
-    );
-
-    // For Square orders: build a presentKeys set from the daily rollup cache
-    // (populated by phase 1). The same `computeRollupUncoveredSubRanges`
-    // helper the read path uses tells us exactly which sub-ranges the workers
-    // will scan from raw orders. Empty result means full rollup coverage —
-    // no raw scan needed, so nothing to prefetch.
-    const squarePresentKeys = new Set<string>();
-    for (const key of intersectingDateKeys) {
-      const cached = squareOrderDailyRollupCache.read(input.locationMongoId, key);
-      if (cached != null) squarePresentKeys.add(key);
-    }
-    const squareUncovered = computeRollupUncoveredSubRanges(
-      inputRange,
-      input.timezone,
-      input.businessStartTime,
-      squarePresentKeys,
-    );
-    for (const sub of squareUncovered) {
-      primeOrderRanges.push({ locationMongoId: input.locationMongoId, range: sub });
-    }
-
-    // Same exercise for Homebase timecards. The labor-side rollup may have a
-    // different presentKeys set than Square (different ingestion pipelines)
-    // so we compute uncovered sub-ranges independently.
-    const homebasePresentKeys = new Set<string>();
-    for (const key of intersectingDateKeys) {
-      const cached = homebaseTimecardDailyRollupCache.read(input.locationMongoId, key);
-      if (cached != null) homebasePresentKeys.add(key);
-    }
-    const homebaseUncovered = computeRollupUncoveredSubRanges(
-      inputRange,
-      input.timezone,
-      input.businessStartTime,
-      homebasePresentKeys,
-    );
-    for (const sub of homebaseUncovered) {
-      primeTimecardRanges.push({ locationMongoId: input.locationMongoId, range: sub });
-    }
-  }
-
-  /** Union range across primeRanges so the bulk Mongo query has tight bounds. */
-  const unionRangeOf = (ranges: Array<{ range: TimeRange }>): TimeRange | null => {
-    let startAt: string | null = null;
-    let endAt: string | null = null;
-    for (const { range } of ranges) {
-      if (startAt == null || range.startAt < startAt) startAt = range.startAt;
-      if (endAt == null || range.endAt > endAt) endAt = range.endAt;
-    }
-    return startAt && endAt ? { startAt, endAt } : null;
-  };
-
-  const orderLocationIds = Array.from(
-    new Set(primeOrderRanges.map((p) => p.locationMongoId)),
-  );
-  const timecardLocationIds = Array.from(
-    new Set(primeTimecardRanges.map((p) => p.locationMongoId)),
-  );
-  const orderUnion = unionRangeOf(primeOrderRanges);
-  const timecardUnion = unionRangeOf(primeTimecardRanges);
-
-  await Promise.all([
-    orderUnion && orderLocationIds.length > 0
-      ? bulkPrefetchSquareOrdersForLocations({
-          locationMongoIds: orderLocationIds,
-          unionRange: orderUnion,
-          primeRanges: primeOrderRanges,
-        })
-      : Promise.resolve(),
-    timecardUnion && timecardLocationIds.length > 0
-      ? bulkPrefetchHomebaseTimecardsForLocations({
-          locationMongoIds: timecardLocationIds,
-          unionRange: timecardUnion,
-          primeRanges: primeTimecardRanges,
-        })
-      : Promise.resolve(),
-  ]);
 }
 
 function sum(vals: Array<number | null | undefined>): number | null {
