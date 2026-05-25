@@ -33,6 +33,7 @@ import {
   prefetchAllLocationsDashboardData,
   type AllLocationsPrefetchInput,
 } from './allLocationsDashboardPrefetch.util.js';
+import { logger } from './logger.util.js';
 
 /**
  * Build prefetch inputs from the resolved location ids + period and seed the
@@ -169,8 +170,23 @@ export async function buildAllLocationsSalesLaborKpis(params: {
     effectiveIds,
     period,
   });
+  // Diagnostic — handler-level timeline. `tFanOutStart` is the very next line
+  // after prefetch returns; the gap between this log and the first per-
+  // location worker log isolates "did the fan-out actually launch quickly?"
+  // from any other event-loop blocking before the workers can run.
+  const tPrefetchDoneMs = Math.round(performance.now() - tHandler);
+  const tFanOutStart = performance.now();
+  logger.info('[sales-labor-timing] kpis handler prefetch done', {
+    locationCount: effectiveIds.length,
+    msSincePrefetchStart: tPrefetchDoneMs,
+  });
   const perLocationMs: number[] = [];
   const logTimingDone = (count: number): void => {
+    const tFanOutEndMs = Math.round(performance.now() - tFanOutStart);
+    logger.info('[sales-labor-timing] kpis handler fan-out complete', {
+      locationCount: count,
+      fanOutMs: tFanOutEndMs,
+    });
     summarizeAllLocationsTimings({
       route: 'GET /sales-labor/kpis',
       locationCount: count,
@@ -182,8 +198,21 @@ export async function buildAllLocationsSalesLaborKpis(params: {
   const perLoc = await Promise.all(
     effectiveIds.map(async (id) => {
       const { value, ms } = await timedPerLocation(async () => {
+        // Per-worker timing breakdown — measures each await separately so
+        // we can see which of (creds, square, labor) actually owns the
+        // per-location wall time. All three should be ~ms if the prefetch
+        // correctly primed every cache.
+        const workerStart = performance.now();
+        const tCredsStart = performance.now();
         const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
-        if (!withCreds) return null;
+        const tCredsMs = Math.round(performance.now() - tCredsStart);
+        if (!withCreds) {
+          logger.info('[sales-labor-timing] kpis per-loc worker (no creds)', {
+            locationId: id,
+            tCredsMs,
+          });
+          return null;
+        }
         const { location, squareAccessToken, homebaseApiKey } = withCreds;
         const timezone = location.timezone?.trim();
         if (!timezone) return null;
@@ -200,31 +229,43 @@ export async function buildAllLocationsSalesLaborKpis(params: {
         const squareLocationId = location.squareLocationId?.trim();
         const homebaseLocationId = location.homebaseLocationId?.trim();
 
-        const [squareData, laborData] = await Promise.all([
-          squareLocationId
-            ? fetchSquareOrderStatsAndSources(
-                squareLocationId,
-                range,
-                squareAccessToken ?? undefined,
-                id,
-                {
-                  timezone,
-                  businessStartTime: location.businessStartTime?.trim() ?? '00:00',
-                },
-              )
-            : Promise.resolve(null),
-          homebaseLocationId
-            ? fetchLaborCostAndHours(
-                homebaseLocationId,
-                range,
-                homebaseApiKey ?? undefined,
-                id,
-                { timezone, businessStartTime: location.businessStartTime?.trim() ?? "00:00" },
-              )
-            : Promise.resolve(null),
-        ]);
-
-        return { squareData, laborData };
+        // Time each branch of the Promise.all separately. Wrapping each
+        // call in its own timer (instead of timing the Promise.all as a
+        // whole) tells us whether one source is the laggard or both are
+        // equally slow — useful when 1 of 9 locations skews everything.
+        const tSquareStart = performance.now();
+        const squarePromise = squareLocationId
+          ? fetchSquareOrderStatsAndSources(
+              squareLocationId,
+              range,
+              squareAccessToken ?? undefined,
+              id,
+              {
+                timezone,
+                businessStartTime: location.businessStartTime?.trim() ?? '00:00',
+              },
+            ).then((v) => ({ v, ms: Math.round(performance.now() - tSquareStart) }))
+          : Promise.resolve({ v: null, ms: 0 });
+        const tLaborStart = performance.now();
+        const laborPromise = homebaseLocationId
+          ? fetchLaborCostAndHours(
+              homebaseLocationId,
+              range,
+              homebaseApiKey ?? undefined,
+              id,
+              { timezone, businessStartTime: location.businessStartTime?.trim() ?? "00:00" },
+            ).then((v) => ({ v, ms: Math.round(performance.now() - tLaborStart) }))
+          : Promise.resolve({ v: null, ms: 0 });
+        const [square, labor] = await Promise.all([squarePromise, laborPromise]);
+        const totalMs = Math.round(performance.now() - workerStart);
+        logger.info('[sales-labor-timing] kpis per-loc worker', {
+          locationId: id,
+          tCredsMs,
+          tSquareMs: square.ms,
+          tLaborMs: labor.ms,
+          totalMs,
+        });
+        return { squareData: square.v, laborData: labor.v };
       });
       perLocationMs.push(ms);
       return value;
@@ -311,12 +352,29 @@ export async function buildAllLocationsHourlyBreakdown(params: {
     effectiveIds,
     period,
   });
+  // Diagnostic — see comment in buildAllLocationsSalesLaborKpis for the
+  // shape and intent of these timeline log lines.
+  const tPrefetchDoneMs = Math.round(performance.now() - tHandler);
+  const tFanOutStart = performance.now();
+  logger.info('[sales-labor-timing] hourly-breakdown handler prefetch done', {
+    locationCount: effectiveIds.length,
+    msSincePrefetchStart: tPrefetchDoneMs,
+  });
   const perLocationMs: number[] = [];
   const perLoc = await Promise.all(
     effectiveIds.map(async (id) => {
       const { value, ms } = await timedPerLocation(async () => {
+        const workerStart = performance.now();
+        const tCredsStart = performance.now();
         const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
-        if (!withCreds) return null;
+        const tCredsMs = Math.round(performance.now() - tCredsStart);
+        if (!withCreds) {
+          logger.info('[sales-labor-timing] hourly-breakdown per-loc worker (no creds)', {
+            locationId: id,
+            tCredsMs,
+          });
+          return null;
+        }
         const { location, squareAccessToken, homebaseApiKey } = withCreds;
         const timezone = location.timezone?.trim();
         if (!timezone) return null;
@@ -334,30 +392,42 @@ export async function buildAllLocationsHourlyBreakdown(params: {
         const squareLocationId = location.squareLocationId?.trim();
         const homebaseLocationId = location.homebaseLocationId?.trim();
 
-        const [netSalesCentsBySlot, laborCostPerHour] = await Promise.all([
-          squareLocationId
-            ? fetchHourlyNetSalesCentsBySlot(
-                squareLocationId,
-                range,
-                timezone,
-                businessStartTime,
-                squareAccessToken ?? undefined,
-                id,
-              )
-            : Promise.resolve(new Array<number>(24).fill(0)),
-          homebaseLocationId
-            ? fetchHourlyLaborCostPerHour(
-                homebaseLocationId,
-                range,
-                timezone,
-                businessStartTime,
-                homebaseApiKey ?? undefined,
-                id,
-              )
-            : Promise.resolve(new Array<number>(24).fill(0)),
-        ]);
-
-        return { businessStartTime, netSalesCentsBySlot, laborCostPerHour };
+        const tSquareStart = performance.now();
+        const squarePromise = squareLocationId
+          ? fetchHourlyNetSalesCentsBySlot(
+              squareLocationId,
+              range,
+              timezone,
+              businessStartTime,
+              squareAccessToken ?? undefined,
+              id,
+            ).then((v) => ({ v, ms: Math.round(performance.now() - tSquareStart) }))
+          : Promise.resolve({ v: new Array<number>(24).fill(0), ms: 0 });
+        const tLaborStart = performance.now();
+        const laborPromise = homebaseLocationId
+          ? fetchHourlyLaborCostPerHour(
+              homebaseLocationId,
+              range,
+              timezone,
+              businessStartTime,
+              homebaseApiKey ?? undefined,
+              id,
+            ).then((v) => ({ v, ms: Math.round(performance.now() - tLaborStart) }))
+          : Promise.resolve({ v: new Array<number>(24).fill(0), ms: 0 });
+        const [sq, lb] = await Promise.all([squarePromise, laborPromise]);
+        const totalMs = Math.round(performance.now() - workerStart);
+        logger.info('[sales-labor-timing] hourly-breakdown per-loc worker', {
+          locationId: id,
+          tCredsMs,
+          tSquareMs: sq.ms,
+          tLaborMs: lb.ms,
+          totalMs,
+        });
+        return {
+          businessStartTime,
+          netSalesCentsBySlot: sq.v,
+          laborCostPerHour: lb.v,
+        };
       });
       perLocationMs.push(ms);
       return value;
@@ -365,6 +435,11 @@ export async function buildAllLocationsHourlyBreakdown(params: {
   );
 
   const logTimingDone = (count: number): void => {
+    const tFanOutEndMs = Math.round(performance.now() - tFanOutStart);
+    logger.info('[sales-labor-timing] hourly-breakdown handler fan-out complete', {
+      locationCount: count,
+      fanOutMs: tFanOutEndMs,
+    });
     summarizeAllLocationsTimings({
       route: 'GET /sales-labor/hourly-breakdown',
       locationCount: count,

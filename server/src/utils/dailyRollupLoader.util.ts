@@ -23,6 +23,7 @@ import {
   type HomebaseTimecardDailyRollupLean,
 } from "./dailyRollupCaches.util.js";
 import { dedupInflight } from "./inflightDedup.util.js";
+import { logger } from "./logger.util.js";
 
 function dedupKey(prefix: string, ids: readonly string[], dates: readonly string[]): string {
   return `${prefix}|${[...ids].sort().join(",")}|${[...dates].sort().join(",")}`;
@@ -44,6 +45,18 @@ export async function loadSquareOrderDailyRollupsForDates(
     }
   }
   if (missing.length === 0) return present;
+  // Diagnostic — if this fires for a sales-labor request, the all-locations
+  // bulk prefetch did NOT prime every key the per-location worker queries.
+  // That means each worker issues this Mongo find on its own, adding ~150ms
+  // Atlas latency per location → multi-second per-loc time even on a "cache
+  // hit" code path. Logged once per call so we can grep for the pattern.
+  logger.info('[daily-rollup-loader] square cache miss → mongo find', {
+    locationMongoId,
+    requestedDateCount: businessDateKeys.length,
+    cachedDateCount: present.length,
+    missingDateCount: missing.length,
+    missingDates: missing,
+  });
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   const docs = (await SquareOrderDailyRollupModel.find({
     locationId: oid,
@@ -87,6 +100,17 @@ export async function loadHomebaseTimecardDailyRollupsForDates(
     }
   }
   if (missing.length === 0) return present;
+  // Diagnostic — see comment in `loadSquareOrderDailyRollupsForDates` for
+  // why this signal matters. Non-zero `missingDateCount` during a normal
+  // (warm-prefetch) sales-labor request is the smoking gun for "prefetch
+  // primed the wrong keys" and explains slow per-loc workers.
+  logger.info('[daily-rollup-loader] homebase cache miss → mongo find', {
+    locationMongoId,
+    requestedDateCount: businessDateKeys.length,
+    cachedDateCount: present.length,
+    missingDateCount: missing.length,
+    missingDates: missing,
+  });
   const oid = new mongoose.Types.ObjectId(locationMongoId);
   const docs = (await HomebaseTimecardDailyRollupModel.find({
     locationId: oid,

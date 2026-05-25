@@ -53,6 +53,10 @@ export async function loadSquareOrderHourlyRollupsForDates(
     });
     return out;
   }
+  // Diagnostic — same signal as the daily loader miss log. If this fires
+  // during a normal sales-labor or sales-trend request, the all-locations
+  // bulk prefetch did NOT prime every (location, date) the per-location
+  // worker needs. Per-worker Mongo round-trip → per-loc time blows up.
   logger.info("[hourly-rollup-loader] cache miss → mongo", {
     locationMongoId,
     requestedDates: businessDateKeys,
