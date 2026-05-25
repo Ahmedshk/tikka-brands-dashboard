@@ -696,7 +696,12 @@ export async function fetchHourlyNetSalesCentsBySlotFromCache(
   );
   if (fromRollup) {
     if (logContext) {
-      console.log("[api-data-source]", logContext, {
+      // logger.debug (not console.log) — pino's worker-thread transport
+      // keeps this off the main event loop. Was synchronous before, which
+      // on Azure piped stdout cost ~150ms/call × per-location fan-out and
+      // serialized all-locations requests by ~6s. See splitRangeReadLogging
+      // header comment for the full diagnosis.
+      logger.debug(`[api-data-source] ${logContext}`, {
         hourlySalesSource: "rollups",
         detail:
           "SquareOrderHourlyRollup (24 slots; tryGetHourlyNetSalesCentsBySlotFromRollups)",
@@ -705,7 +710,7 @@ export async function fetchHourlyNetSalesCentsBySlotFromCache(
     return fromRollup;
   }
   if (logContext) {
-    console.log("[api-data-source]", logContext, {
+    logger.debug(`[api-data-source] ${logContext}`, {
       hourlySalesSource: "mongo_orders",
       detail:
         "rollup miss, ROLLUP_READ_ENABLED off, or incomplete hourly rows — getBusinessHourIndex on Mongo orders",
@@ -857,7 +862,8 @@ export async function fetchHourlyLaborCostPerHourFromCache(
   );
   if (fromRollups !== null) {
     if (logContext) {
-      console.log("[api-data-source]", logContext, {
+      // logger.debug — see twin call site above for rationale.
+      logger.debug(`[api-data-source] ${logContext}`, {
         laborHourlySource: "homebase_hourly_rollups",
         detail:
           "HomebaseTimecardHourlyRollup (24 slots; tryGetHourlyLaborCostFromRollups, summed across days)",
@@ -867,7 +873,7 @@ export async function fetchHourlyLaborCostPerHourFromCache(
   }
 
   if (logContext) {
-    console.log("[api-data-source]", logContext, {
+    logger.debug(`[api-data-source] ${logContext}`, {
       laborHourlySource: "mongo_homebase_timecards",
       detail:
         "rollup miss, ROLLUP_READ_ENABLED off, or incomplete hourly rows — prorating raw timecards across slots",

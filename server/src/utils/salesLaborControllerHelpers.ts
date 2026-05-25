@@ -16,6 +16,7 @@ import {
   getSalesTrendPeriodRange,
   type PeriodType,
 } from "./salesTrendDateRange.util.js";
+import { logger } from "./logger.util.js";
 
 const LOG_PREFIX = "[Sales Labor]";
 export const SALES_LABOR_DETAIL_API_LOG = "[sales-labor-detail-api]";
@@ -227,11 +228,20 @@ export async function fetchLaborCostAndHours(
         "GET /sales-labor/kpis totalHours",
       ),
     ]);
-    console.log(SALES_LABOR_DETAIL_API_LOG, "GET /sales-labor/kpis labor cost + hours", {
-      laborSource: rollupCtx ? "rollup_or_timecards" : "mongo_homebase_timecards",
-      detail:
-        "getLaborCostInRangeFromCache + getTotalHoursInRangeFromCache (rollup fast path with timecard fallback)",
-    });
+    // logger.debug (not console.log): synchronous stdout writes on Azure's
+    // piped console were a hot-path event-loop blocker for the all-locations
+    // sales-labor request. See splitRangeReadLogging.util.ts header for the
+    // full diagnosis.
+    logger.debug(
+      `${SALES_LABOR_DETAIL_API_LOG} GET /sales-labor/kpis labor cost + hours`,
+      {
+        laborSource: rollupCtx
+          ? "rollup_or_timecards"
+          : "mongo_homebase_timecards",
+        detail:
+          "getLaborCostInRangeFromCache + getTotalHoursInRangeFromCache (rollup fast path with timecard fallback)",
+      },
+    );
     return { laborCost, totalHours };
   } catch (err) {
     console.error(`${LOG_PREFIX} Homebase error:`, err);

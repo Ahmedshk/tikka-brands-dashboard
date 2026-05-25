@@ -2,7 +2,17 @@
  * Small helpers to emit the `[api-data-source]` line for split-range readers.
  * Kept tiny so the parent functions stay below SonarQube's cognitive
  * complexity threshold.
+ *
+ * NOTE: these used to call `console.log` directly. On Azure App Service that
+ * is a synchronous write to a piped stdout — each call blocked the main
+ * thread ~150ms, and the per-location fan-out turned ~5 calls/location × 9
+ * locations into ~6s of event-loop pacing per request (the staircase pattern
+ * in `tCredsMs` instrumentation). Routing through `logger.debug` puts the
+ * write on pino's worker thread and turns it default-off in production,
+ * removing the hot-path cost entirely while keeping the audit trail
+ * available in dev / via LOG_CONSOLE_LEVEL=debug.
  */
+import { logger } from "./logger.util.js";
 
 type SplitOutcome = {
   presentKeyCount: number;
@@ -37,7 +47,7 @@ export function logSplitRangeReadOutcome(
     outcome.hourlyServedRangeCount != null && outcome.rawScannedRangeCount != null
       ? ` [hourly-rollup-served=${outcome.hourlyServedRangeCount}, raw-scanned=${outcome.rawScannedRangeCount}]`
       : "";
-  console.log("[api-data-source]", logContext, {
+  logger.debug(`[api-data-source] ${logContext}`, {
     [sourceField]: isPureRollup
       ? "rollups"
       : `rollups+${splitDetailLabel}_split`,
@@ -52,7 +62,7 @@ export function logSplitRangeMiss(
   detail: string,
 ): void {
   if (!logContext) return;
-  console.log("[api-data-source]", logContext, {
+  logger.debug(`[api-data-source] ${logContext}`, {
     [sourceField]: fallbackSource,
     detail,
   });
