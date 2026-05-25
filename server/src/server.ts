@@ -54,18 +54,48 @@ const startServer = async (): Promise<void> => {
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });
 
-    // Graceful shutdown
-    process.on('SIGTERM', async () => {
-      logger.info('SIGTERM signal received: closing HTTP server');
-      await terminateAllSyncWorkers();
-      await shutdownAgenda();
-      httpServer.close(() => {
+    // Graceful shutdown — SIGTERM (orchestrator stop) and SIGINT (dev Ctrl+C)
+    // share the same teardown sequence: terminate sync workers, stop Agenda,
+    // close HTTP, then `await logger.flush()` so pino's worker-thread
+    // transports have a chance to drain any pending log records before the
+    // process exits. Without the flush the last few lines (including the
+    // final "HTTP server closed" itself) can disappear because pino's
+    // worker thread is still mid-write when `process.exit` fires.
+    let shuttingDown = false;
+    const gracefulShutdown = async (signal: NodeJS.Signals): Promise<void> => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      logger.info(`${signal} signal received: closing HTTP server`);
+      try {
+        await terminateAllSyncWorkers();
+        await shutdownAgenda();
+      } catch (err) {
+        logger.error('Error during pre-close shutdown steps', err);
+      }
+      httpServer.close(async () => {
         logger.info('HTTP server closed');
+        try {
+          await logger.flush();
+        } catch {
+          // Best effort — never let a flush failure prevent exit.
+        }
         process.exit(0);
       });
+    };
+    process.on('SIGTERM', () => {
+      void gracefulShutdown('SIGTERM');
+    });
+    process.on('SIGINT', () => {
+      void gracefulShutdown('SIGINT');
     });
   } catch (error) {
     logger.error('Failed to start server', error instanceof Error ? { message: error.message, stack: error.stack } : error);
+    // Best-effort flush before bailing so the failure log lands in the file.
+    try {
+      await logger.flush();
+    } catch {
+      /* ignore */
+    }
     process.exit(1);
   }
 };

@@ -6,7 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "tsc && node -e \"require('node:fs').mkdirSync('dist/utils',{recursive:true});require('node:fs').copyFileSync('src/utils/pinoExactLevelTransport.cjs','dist/utils/pinoExactLevelTransport.cjs')\"",
     "start": "node dist/server.js",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
@@ -59,9 +59,10 @@
     "react": "^19.2.3",
     "socket.io": "^4.8.3",
     "square": "^44.0.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "pino-roll": "^3.0.0",
     "twilio": "^5.13.0",
-    "winston": "^3.19.0",
-    "winston-daily-rotate-file": "^5.0.0",
     "zod": "^4.3.5"
   },
   "devDependencies": {

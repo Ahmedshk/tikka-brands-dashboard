@@ -8,7 +8,16 @@
       "Bash(node -e \"const m = require\\('./server/src/utils/logger.util.ts'\\)\")",
       "Bash(echo \"exit=$?\")",
       "Bash(npx eslint *)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(timeout 6 npx tsx smoke-pino-multitarget.mjs)",
+      "Bash(timeout 6 npx tsx smoke-pino-pretty-plus-filter.mjs)",
+      "Bash(rm -f /tmp/pino-filter-debug.log; timeout 6 npx tsx smoke-pino-pretty-plus-filter.mjs 2>&1 | head -10; echo \"--- debug log ---\"; cat /tmp/pino-filter-debug.log 2>&1 | head -30)",
+      "Bash(rm -f /tmp/pino-filter-debug.log /d/Projects/tikka-spice-dashboard/server/logs/pretty-plus-filter*; timeout 6 npx tsx smoke-pino-pretty-plus-filter.mjs 2>&1 | head -10; echo \"--- debug ---\"; cat /tmp/pino-filter-debug.log 2>/dev/null | head -10; echo \"--- file ---\"; cat /d/Projects/tikka-spice-dashboard/server/logs/pretty-plus-filter*.log 2>/dev/null | head -5)",
+      "Bash(timeout 8 npx tsx smoke-pino-pretty-plus-filter.mjs)",
+      "Bash(rm -f logs/master-*.log logs/application-*.log)",
+      "Bash(timeout 8 npx tsx smoke-pino-multitarget.mjs)",
+      "Bash(rm -f logs/master.*.log logs/application.*.log logs/warn.*.log logs/error.*.log logs/debug.*.log 2>&1; ls logs/*.log 2>&1 | head -3)",
+      "Bash(rm -f smoke-pino*.mjs pino-filter-debug.log && ls smoke-pino*.mjs pino-filter-debug.log 2>&1)"
     ]
   }
 }

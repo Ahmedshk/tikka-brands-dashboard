@@ -1,4 +1,10 @@
-import { logDebug, logError, logInfo, logWarn } from './winstonLogger.util.js';
+import {
+  flushLogger,
+  logDebug,
+  logError,
+  logInfo,
+  logWarn,
+} from './pinoLogger.util.js';
 
 export enum LogLevel {
   INFO = 'INFO',
@@ -23,4 +29,12 @@ export const logger = {
   debug: (message: string, data?: unknown) => {
     logDebug(message, data);
   },
+
+  /**
+   * Resolve when pending log records have been handed off to transport
+   * workers. Used by graceful shutdown (SIGTERM/SIGINT) to avoid losing
+   * the last few logs in flight before `process.exit`. Safe to call
+   * multiple times — pino tolerates concurrent flushes.
+   */
+  flush: (): Promise<void> => flushLogger(),
 };
