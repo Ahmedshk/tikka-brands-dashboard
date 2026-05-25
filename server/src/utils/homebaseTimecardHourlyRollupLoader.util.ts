@@ -98,6 +98,18 @@ async function bulkPrefetchHomebaseTimecardHourlyRollupsImpl(params: {
   businessDateKeys: readonly string[];
 }): Promise<void> {
   const { locationMongoIds, businessDateKeys } = params;
+  // Cache-first short-circuit — see comment in
+  // `bulkPrefetchSquareOrderDailyRollupsImpl` (dailyRollupLoader.util.ts)
+  // for the full rationale.
+  if (
+    locationMongoIds.every((lid) =>
+      businessDateKeys.every(
+        (dk) => homebaseTimecardHourlyRollupCache.read(lid, dk) !== undefined,
+      ),
+    )
+  ) {
+    return;
+  }
   const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
   const docs = (await HomebaseTimecardHourlyRollupModel.find({
     locationId: { $in: oids },

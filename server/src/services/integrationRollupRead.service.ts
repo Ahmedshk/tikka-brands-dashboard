@@ -886,6 +886,18 @@ async function bulkPrefetchHourlyRollupExistsByDateImpl(params: {
   businessDateKeys: readonly string[];
 }): Promise<void> {
   const { locationMongoIds, businessDateKeys } = params;
+  // Cache-first short-circuit — see comment in
+  // `bulkPrefetchSquareOrderDailyRollupsImpl` (dailyRollupLoader.util.ts)
+  // for the full rationale. The $group aggregation here is the most
+  // expensive of the prefetch phases, so skipping it on warm-cache repeats
+  // is especially valuable.
+  if (
+    locationMongoIds.every((lid) =>
+      businessDateKeys.every((dk) => readRollupExistsByDate(lid, dk) !== undefined),
+    )
+  ) {
+    return;
+  }
   const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
   const groups = (await SquareOrderHourlyRollupModel.aggregate([
     {

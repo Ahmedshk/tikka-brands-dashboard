@@ -117,6 +117,20 @@ async function bulkPrefetchSquareOrderHourlyRollupsImpl(params: {
   businessDateKeys: readonly string[];
 }): Promise<void> {
   const { locationMongoIds, businessDateKeys } = params;
+  // Cache-first short-circuit — see comment in
+  // `bulkPrefetchSquareOrderDailyRollupsImpl` for the full rationale. The
+  // dashboard's 3 parallel endpoints each call this prefetch; once the first
+  // populates the cache, the rest should skip Mongo instead of re-running
+  // the same $in query and risking cluster contention.
+  if (
+    locationMongoIds.every((lid) =>
+      businessDateKeys.every(
+        (dk) => squareOrderHourlyRollupCache.read(lid, dk) !== undefined,
+      ),
+    )
+  ) {
+    return;
+  }
   const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
   const docs = (await SquareOrderHourlyRollupModel.find({
     locationId: { $in: oids },

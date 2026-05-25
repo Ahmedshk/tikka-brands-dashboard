@@ -154,6 +154,24 @@ async function bulkPrefetchSquareOrderDailyRollupsImpl(params: {
   businessDateKeys: readonly string[];
 }): Promise<void> {
   const { locationMongoIds, businessDateKeys } = params;
+  // Cache-first short-circuit. The dashboard fires 3 endpoints in parallel
+  // (kpis / hourly-breakdown / timesheet), each of which calls this prefetch.
+  // `dedupInflight` only collapses concurrent in-flight calls — once the first
+  // prefetch finishes (cache populated, in-flight slot cleared), subsequent
+  // callers were running the same Mongo $in query AGAIN even though every
+  // (locationId, businessDateKey) entry was already in `squareOrderDailyRollupCache`
+  // (60s TTL). Under cluster contention that repeat query was costing 5-11s.
+  // Skipping Mongo when the cache already covers every requested pair makes
+  // the second/third caller a memory hit.
+  if (
+    locationMongoIds.every((lid) =>
+      businessDateKeys.every(
+        (dk) => squareOrderDailyRollupCache.read(lid, dk) !== undefined,
+      ),
+    )
+  ) {
+    return;
+  }
   const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
   const docs = (await SquareOrderDailyRollupModel.find({
     locationId: { $in: oids },
@@ -213,6 +231,17 @@ async function bulkPrefetchHomebaseTimecardDailyRollupsImpl(params: {
   businessDateKeys: readonly string[];
 }): Promise<void> {
   const { locationMongoIds, businessDateKeys } = params;
+  // Cache-first short-circuit — see comment in
+  // `bulkPrefetchSquareOrderDailyRollupsImpl` for the full rationale.
+  if (
+    locationMongoIds.every((lid) =>
+      businessDateKeys.every(
+        (dk) => homebaseTimecardDailyRollupCache.read(lid, dk) !== undefined,
+      ),
+    )
+  ) {
+    return;
+  }
   const oids = locationMongoIds.map((id) => new mongoose.Types.ObjectId(id));
   const docs = (await HomebaseTimecardDailyRollupModel.find({
     locationId: { $in: oids },
