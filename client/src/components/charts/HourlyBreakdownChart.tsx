@@ -18,12 +18,12 @@ import {
   useItemTooltip,
   useAxesTooltip,
 } from '@mui/x-charts/ChartsTooltip';
-import { computePaddedMax } from '../../utils/chartAxis.util';
+import { buildCurrencyAxisFormatter, computePaddedMax } from '../../utils/chartAxis.util';
 
 export interface HourlyBreakdownChartProps {
   xAxisLabels: string[];
   salesData: number[];
-  laborCostData: (number | null)[];
+  laborCostData: number[];
   height?: number;
   /** Chart width in px. If omitted, chart uses container width (fits card on all screens). */
   width?: number;
@@ -50,7 +50,7 @@ function formatCurrency(value: number): string {
 interface HourlyBreakdownTooltipContextValue {
   labels: string[];
   sales: number[];
-  labor: (number | null)[];
+  labor: number[];
 }
 
 const HourlyBreakdownTooltipContext =
@@ -70,15 +70,14 @@ function HourlyBreakdownTooltipContent() {
   const { labels, sales, labor } = ctx;
   const hour = labels[dataIndex] ?? '—';
   const salesVal = sales[dataIndex] ?? 0;
-  const laborPct = labor[dataIndex];
-  const laborPctNum = laborPct ?? 0;
-  const laborAmount = salesVal > 0 && laborPct != null ? (laborPctNum / 100) * salesVal : 0;
+  const laborPct = labor[dataIndex] ?? 0;
+  const laborAmount = salesVal > 0 ? (laborPct / 100) * salesVal : 0;
   const SALES_COLOR = '#FBC52A';
   const LABOR_COLOR = '#EF4444';
   const rows: { color: string; label: string; value: string }[] = [
     { color: SALES_COLOR, label: 'Net sales', value: formatCurrency(salesVal) },
     { color: LABOR_COLOR, label: 'Labor cost', value: formatCurrency(laborAmount) },
-    { color: LABOR_COLOR, label: 'Labor cost %', value: laborPct == null ? '—' : `${laborPctNum.toFixed(2)}%` },
+    { color: LABOR_COLOR, label: 'Labor cost %', value: `${laborPct.toFixed(2)}%` },
   ];
   return (
     <div className="rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm min-w-[160px]">
@@ -134,12 +133,9 @@ export const HourlyBreakdownChart = ({
     salesData.length > 0
       ? Math.max(SALES_AXIS_MIN_DEFAULT, Math.max(...salesData) * 1.1)
       : SALES_AXIS_MIN_DEFAULT;
-  const laborNumbers = laborCostData.filter(
-    (v): v is number => v != null && Number.isFinite(v)
-  );
   const laborMax =
-    laborNumbers.length > 0
-      ? computePaddedMax(laborNumbers, { min: 100, padMultiplier: 1.1, step: 10 })
+    laborCostData.length > 0
+      ? computePaddedMax(laborCostData, { min: 100, padMultiplier: 1.1, step: 10 })
       : LABOR_AXIS_MIN_DEFAULT;
 
   const series = [
@@ -159,7 +155,6 @@ export const HourlyBreakdownChart = ({
       yAxisId: 'laborAxis',
       color: '#EF4444',
       showMark: true,
-      connectNulls: true,
     },
   ];
 
@@ -187,6 +182,9 @@ export const HourlyBreakdownChart = ({
       ...(tickLabelInterval && { tickLabelInterval }),
     };
 
+  // Compact tick labels ("$20K") on the sales axis so they don't crowd the
+  // chart; tooltips/legend show full precision via `location` discriminator.
+  const salesAxisFormatter = buildCurrencyAxisFormatter();
   const salesAxisConfig = isDesktop
     ? {
       id: 'salesAxis' as const,
@@ -196,6 +194,7 @@ export const HourlyBreakdownChart = ({
       tickNumber: 6,
       tickLabelStyle: LABEL_FONT,
       labelStyle: LABEL_FONT,
+      valueFormatter: salesAxisFormatter,
     }
     : {
       id: 'salesAxis' as const,
@@ -206,6 +205,7 @@ export const HourlyBreakdownChart = ({
       width: 52,
       tickLabelStyle: { ...LABEL_FONT, fontSize: 10, overflow: 'visible' },
       labelStyle: { ...LABEL_FONT, fontSize: 9 },
+      valueFormatter: salesAxisFormatter,
     };
 
   const laborAxisConfig = isDesktop

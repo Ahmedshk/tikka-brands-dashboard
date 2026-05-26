@@ -84,7 +84,7 @@ export interface SalesLaborKPIsData {
 export interface HourlyBreakdownData {
   labels: string[];
   netSalesPerHour: number[];
-  laborCostPercentPerHour: (number | null)[];
+  laborCostPercentPerHour: number[];
 }
 
 export interface TimesheetRow {

@@ -4,7 +4,7 @@ import { Spinner } from '../common/Spinner';
 export interface HourlyBreakdownCardProps {
   xAxisLabels: string[];
   salesData: number[];
-  laborCostData: (number | null)[];
+  laborCostData: number[];
   height?: number;
   /** Optional className for the card wrapper (e.g. for grid sizing) */
   className?: string;

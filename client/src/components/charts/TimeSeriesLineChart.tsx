@@ -19,6 +19,8 @@ export interface TimeSeriesLineChartYAxisOverrides {
   min?: number;
   max?: number;
   valueFormatter?: (value: number) => string;
+  /** Optional axis label rendered alongside ticks (e.g. "Sales ($)"). */
+  label?: string;
 }
 
 export interface TimeSeriesLineChartProps {
@@ -40,6 +42,50 @@ const defaultTheme = createTheme({
 });
 
 const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
+
+/**
+ * Renders a tick label as two stacked `<tspan>` lines (date on top, weekday
+ * below) so daily-granularity labels like "Mon, Apr 27" don't overlap on
+ * narrow charts. Falls back to single-line rendering when the incoming `text`
+ * isn't in the weekday map (e.g. hourly or monthly labels).
+ *
+ * Typed loosely because MUI X passes `ChartsTextProps`-shaped data plus our
+ * extra `weekdayMap`/`mobile` from `slotProps.axisTickLabel`.
+ */
+function MultiLineAxisTickLabel(props: Record<string, unknown>) {
+  const text = typeof props.text === 'string' ? props.text : String(props.text ?? '');
+  const x = typeof props.x === 'number' ? props.x : Number(props.x) || 0;
+  const y = typeof props.y === 'number' ? props.y : Number(props.y) || 0;
+  const style = props.style as React.CSSProperties | undefined;
+  const className = props.className as string | undefined;
+  const weekdayMap = props.weekdayMap as
+    | Map<string, { weekday: string; date: string }>
+    | undefined;
+  const mobile = props.mobile === true;
+  const entry = weekdayMap?.get(text);
+  // `dominantBaseline: hanging` makes the first `<tspan>` sit at the tick's y
+  // anchor, with subsequent lines stacking downward via `dy`.
+  const baseProps = {
+    x,
+    y,
+    style,
+    className,
+    textAnchor: 'middle' as const,
+    dominantBaseline: 'hanging' as const,
+  };
+  if (!entry?.weekday) {
+    return <text {...baseProps}>{text}</text>;
+  }
+  const weekdayFontSize = mobile ? 8 : 10;
+  return (
+    <text {...baseProps}>
+      <tspan x={x} dy={0}>{entry.date}</tspan>
+      <tspan x={x} dy="1.25em" style={{ fontSize: weekdayFontSize, opacity: 0.85 }}>
+        {entry.weekday}
+      </tspan>
+    </text>
+  );
+}
 
 const desktopMargin = { top: 10, right: 35, bottom: 0, left: 0 };
 const mobileMargin = { top: 4, right: 25, bottom: 0, left: 0 };
@@ -166,23 +212,74 @@ export const TimeSeriesLineChart = ({
     ? (_value: unknown, index: number) => index % tickStep === 0
     : undefined;
 
+  // Daily labels arrive as "Mon, Apr 27". We render them as two stacked lines
+  // (date on top, weekday underneath) so they don't overlap on narrow charts.
+  // Direct `\n` in the formatter doesn't work because MUI X's `shortenLabels`
+  // measures the text as a single SVG line and ellipsizes it down to "Mon".
+  // Workaround:
+  //   1. `valueFormatter` returns the SHORT form ("Apr 27") for the tick
+  //      location — short enough that no shortening kicks in.
+  //   2. Build a lookup of short → { weekday, date } so a custom
+  //      `axisTickLabel` slot can render two `<tspan>` lines from the
+  //      original (un-shortened) label.
+  //   3. Bump the x-axis height to leave room for the second line.
+  const weekdayLabelMap = useMemo(() => {
+    const m = new Map<string, { weekday: string; date: string }>();
+    for (const item of xAxisData) {
+      const s = String(item);
+      const match = /^([A-Za-z]{3,9}), (.+)$/.exec(s);
+      if (match) {
+        m.set(match[2]!, { weekday: match[1]!, date: match[2]! });
+      }
+    }
+    return m;
+  }, [xAxisData]);
+  const hasWeekdayLabels = weekdayLabelMap.size > 0;
+
+  const formatTickLabel = (value: unknown, context: { location: string }): string => {
+    const str = String(value);
+    if (context.location !== 'tick') return str;
+    return str.replace(/^[A-Za-z]{3,9}, /, '');
+  };
+
   const xAxisConfig = isDesktop
     ? {
       scaleType: 'point' as const,
       data: xAxisData,
       tickLabelStyle: LABEL_FONT,
+      valueFormatter: formatTickLabel,
+      ...(hasWeekdayLabels ? { height: 50 } : {}),
       ...(tickLabelInterval && { tickLabelInterval }),
     }
     : {
       scaleType: 'point' as const,
       data: xAxisData,
       tickLabelStyle: { ...LABEL_FONT, fontSize: 9 },
+      valueFormatter: formatTickLabel,
+      ...(hasWeekdayLabels ? { height: 40 } : {}),
       ...(tickLabelInterval && { tickLabelInterval }),
     };
 
+  // Slots/slotProps go on the LineChart level (not the per-axis config) so MUI
+  // X actually picks them up — per-axis slot wiring isn't honored by the high-
+  // level chart wrappers. The slot is a no-op for the Y axis: its tick labels
+  // ("$20K", "10K") aren't in the weekdayMap so the slot falls through to a
+  // single-line render.
+  const chartSlots = hasWeekdayLabels
+    ? { tooltip: TimeSeriesAxisTooltip, axisTickLabel: MultiLineAxisTickLabel }
+    : { tooltip: TimeSeriesAxisTooltip };
+  const chartSlotProps = hasWeekdayLabels
+    ? {
+        tooltip: { trigger: 'axis' as const },
+        axisTickLabel: { weekdayMap: weekdayLabelMap, mobile: !isDesktop },
+      }
+    : { tooltip: { trigger: 'axis' as const } };
+
+  // Width tuned to fit compact currency ticks (e.g. `$1.2M`) plus a small
+  // safety margin so non-currency formats (`12,345`, `123.45`) also fit.
   const baseYAxisConfig = isDesktop
-    ? { width: 76, tickNumber: 5, tickLabelStyle: { ...LABEL_FONT, overflow: 'visible' }, labelStyle: LABEL_FONT }
-    : { width: 64, tickNumber: 5, tickLabelStyle: { ...LABEL_FONT, fontSize: 10, overflow: 'visible' }, labelStyle: { ...LABEL_FONT, fontSize: 9 } };
+    ? { width: 90, tickNumber: 5, tickLabelStyle: { ...LABEL_FONT, overflow: 'visible' }, labelStyle: LABEL_FONT }
+    : { width: 72, tickNumber: 5, tickLabelStyle: { ...LABEL_FONT, fontSize: 10, overflow: 'visible' }, labelStyle: { ...LABEL_FONT, fontSize: 9 } };
   const yAxisConfig = yAxisOverrides
     ? { ...baseYAxisConfig, ...yAxisOverrides }
     : baseYAxisConfig;
@@ -200,8 +297,8 @@ export const TimeSeriesLineChart = ({
             margin={isDesktop ? desktopMargin : mobileMargin}
             grid={{ vertical: true, horizontal: true }}
             hideLegend
-            slots={{ tooltip: TimeSeriesAxisTooltip }}
-            slotProps={{ tooltip: { trigger: 'axis' } }}
+            slots={chartSlots as never}
+            slotProps={chartSlotProps as never}
           />
           </TooltipLabelsBySeriesIdContext.Provider>
         </TooltipValueFormatterContext.Provider>

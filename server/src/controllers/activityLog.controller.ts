@@ -1,5 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
-import { ActivityLogService } from "../services/activityLog.service.js";
+import {
+  ActivityLogService,
+  createActivityLogCaches,
+} from "../services/activityLog.service.js";
 import { LocationService } from "../services/location.service.js";
 import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "../utils/locationScope.js";
 
@@ -19,10 +22,16 @@ export async function getActivityLog(
 
     if (isAllLocationsId(locationId)) {
       const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+      // Single cache pair shared across the per-location fan-out: each unique
+      // payment id / team member id only triggers one Mongo lookup (or live
+      // Square API hit) per HTTP request, even when many locations reference
+      // the same regional manager or the same payment id appears across an
+      // order + its refund pair.
+      const caches = createActivityLogCaches();
       const perLocation = await Promise.all(
         effectiveIds.map(async (id) => {
           const [result, loc] = await Promise.all([
-            service.getByLocationAndDate(id, date),
+            service.getByLocationAndDate(id, date, caches),
             locationService.getById(id),
           ]);
           const locationName = loc?.storeName?.trim() || "Location";

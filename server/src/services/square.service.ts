@@ -141,6 +141,12 @@ export interface SquareTeamMemberDetails {
   familyName: string | null;
   /** From wage_setting.job_assignments[0].job_title when present. */
   jobTitle?: string;
+  /**
+   * Original Square `team_member` payload, when available. Useful for callers
+   * that want to back-fill the `SquareTeamMember` Mongo cache after a live
+   * RetrieveTeamMember fallback so subsequent reads skip the network hop.
+   */
+  raw?: Record<string, unknown>;
 }
 
 interface NetAmounts {
@@ -543,6 +549,7 @@ export async function getTeamMemberById(
     givenName: member.given_name ?? null,
     familyName: member.family_name ?? null,
     ...(typeof jobTitle === "string" ? { jobTitle } : {}),
+    raw: member as unknown as Record<string, unknown>,
   };
 }
 

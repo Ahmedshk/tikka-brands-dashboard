@@ -402,12 +402,12 @@ export async function fetchHourlyLaborCostPerHour(
 export function computeLaborCostPercentPerHour(
   netSalesPerHour: number[],
   laborCostPerHour: number[]
-): (number | null)[] {
-  const result: (number | null)[] = [];
+): number[] {
+  const result: number[] = [];
   for (let i = 0; i < 24; i++) {
     const sales = netSalesPerHour[i] ?? 0;
     const labor = laborCostPerHour[i] ?? 0;
-    result.push(sales > 0 ? (labor / sales) * 100 : null);
+    result.push(sales > 0 ? (labor / sales) * 100 : 0);
   }
   return result;
 }
@@ -415,7 +415,7 @@ export function computeLaborCostPercentPerHour(
 export interface HourlyBreakdownResponseData {
   labels: string[];
   netSalesPerHour: number[];
-  laborCostPercentPerHour: (number | null)[];
+  laborCostPercentPerHour: number[];
 }
 
 export function buildEmptyHourlyBreakdownData(
@@ -424,7 +424,7 @@ export function buildEmptyHourlyBreakdownData(
   return {
     labels,
     netSalesPerHour: new Array(24).fill(0),
-    laborCostPercentPerHour: new Array(24).fill(null),
+    laborCostPercentPerHour: new Array(24).fill(0),
   };
 }
 

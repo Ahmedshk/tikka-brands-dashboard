@@ -27,6 +27,7 @@ import {
 } from '../../services/commandCenter.service';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 import { formatCurrency, formatHourToAmPm } from '../../utils/commandCenterHelpers';
+import { buildCurrencyAxisFormatter } from '../../utils/chartAxis.util';
 import { buildCommandCenterKPIItems } from '../../utils/commandCenterKpiBuilder';
 import { commandCenterAlertRowToAlertItem } from '../../utils/commandCenterAlertRowToAlertItem.util';
 import {
@@ -461,7 +462,7 @@ export const CommandCenter = () => {
                 valueFormatter={formatCurrency}
                 height={256}
                 className={canLaborGauge ? 'lg:col-span-2' : ''}
-                yAxis={{ valueFormatter: (v) => formatCurrency(Number(v)) }}
+                yAxis={{ valueFormatter: buildCurrencyAxisFormatter(), label: 'Sales ($)' }}
                 loading={hourlySalesLoading}
                 error={hourlySalesError}
               />

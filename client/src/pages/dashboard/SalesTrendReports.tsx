@@ -34,6 +34,7 @@ import {
   salesTrendLineChartPropsToLegendTotals,
   padTooltipLabelsToAxisLength,
 } from '../../utils/salesTrendChartCardHelpers';
+import { buildCurrencyAxisFormatter } from '../../utils/chartAxis.util';
 
 const PAGE_ID = 'sales-trend-reports';
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
@@ -79,24 +80,43 @@ function getComparisonLabel(comparison: ComparisonPeriodPickerValue): string {
   }
 }
 
-function getYAxisFormatter(metric: SalesTrendMetric): (value: number) => string {
+/**
+ * Formats Y-axis values. Currency metrics use {@link buildCurrencyAxisFormatter}
+ * which switches between compact (`$20K`) tick labels and full (`$20,000.00`)
+ * tooltip/legend output via MUI X Charts' `context.location` discriminator.
+ */
+function getYAxisFormatter(
+  metric: SalesTrendMetric,
+): (value: number, context?: { location?: string }) => string {
   switch (metric) {
     case 'netSales':
     case 'averageCheck':
     case 'laborCost':
-      return (v) =>
-        new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }).format(v);
+      return buildCurrencyAxisFormatter();
     case 'transactions':
       return (v) => Math.round(v).toLocaleString();
     case 'hours':
       return (v) => Number(v).toFixed(2);
     default:
       return String;
+  }
+}
+
+/** Y-axis label for the trend chart — mirrors `METRIC_OPTIONS` with the unit. */
+function getYAxisLabel(metric: SalesTrendMetric): string {
+  switch (metric) {
+    case 'netSales':
+      return 'Net Sales ($)';
+    case 'averageCheck':
+      return 'Average Check ($)';
+    case 'laborCost':
+      return 'Labor Cost ($)';
+    case 'transactions':
+      return 'Transactions';
+    case 'hours':
+      return 'Hours';
+    default:
+      return '';
   }
 }
 
@@ -581,7 +601,7 @@ export const SalesTrendReports = () => {
     if (!trendData) return null;
     const xAxisData = trendData.xAxisLabels;
     const valueFormatter = getYAxisFormatter(metric);
-    const yAxis = { valueFormatter, min: 0 };
+    const yAxis = { valueFormatter, min: 0, label: getYAxisLabel(metric) };
 
     if (isSalesTrendStacked(trendData)) {
       return {

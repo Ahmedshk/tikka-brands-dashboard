@@ -222,7 +222,10 @@ export const SalesLaborDetails = () => {
     periodIsCustomIncomplete,
   ]);
 
-  const periodLabel = useMemo(() => getPeriodLabel(period), [period.periodType, period.periodStart, period.periodEnd]);
+  const periodLabel = useMemo(
+    () => getPeriodLabel(period, currentLocation?.timezone ?? 'UTC'),
+    [period.periodType, period.periodStart, period.periodEnd, currentLocation?.timezone]
+  );
 
   const salesLaborKPIs = useMemo(
     () =>
@@ -257,11 +260,7 @@ export const SalesLaborDetails = () => {
     [kpis, goals]
   );
 
-  const sourcesSubtitle = useMemo(() => {
-    const tz = currentLocation?.timezone ?? 'UTC';
-    if (isSingleDayPeriod(period, tz)) return 'Today';
-    return 'Selected period';
-  }, [period.periodType, period.periodStart, period.periodEnd, currentLocation?.timezone]);
+  const sourcesSubtitle = periodLabel;
 
   const dailyTargetsSuffix = useMemo(() => {
     const tz = currentLocation?.timezone ?? 'UTC';

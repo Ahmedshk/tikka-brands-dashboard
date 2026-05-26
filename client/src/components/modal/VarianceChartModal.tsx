@@ -5,6 +5,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { ChartsTooltipContainer, useItemTooltip, useAxesTooltip } from '@mui/x-charts/ChartsTooltip';
 import type { VarianceChartItem } from '../InventoryFoodCost/VarianceChartCard';
+import { buildCurrencyAxisFormatter } from '../../utils/chartAxis.util';
 
 const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
 
@@ -140,8 +141,7 @@ const defaultTheme = createTheme({
   palette: { mode: 'light' },
 });
 
-const varianceAxisTickFormatter = (v: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+const varianceAxisTickFormatter = buildCurrencyAxisFormatter({ fractionDigits: 0 });
 
 export interface VarianceChartModalProps {
   isOpen: boolean;

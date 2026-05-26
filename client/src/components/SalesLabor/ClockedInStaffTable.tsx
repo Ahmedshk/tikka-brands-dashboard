@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TimesheetLocationLabel } from '../../utils/timesheetLocationLabel';
+import LocationIcon from '@assets/icons/location.svg?react';
 
 export interface TimesheetRow {
   name: string;
@@ -27,6 +27,11 @@ const statusClass: Record<TimesheetRow['status'], string> = {
   'Clocked Out': 'rounded-full px-2 py-0.5 text-xs font-medium bg-[rgba(156,163,175,0.2)] text-primary',
 };
 
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
 function formatTime(iso: string | null): string {
   if (!iso) return '—';
   const match = /T(\d{2}):(\d{2})/.exec(iso);
@@ -38,21 +43,21 @@ function formatTime(iso: string | null): string {
   return `${hour}:${minute} ${ampm}`;
 }
 
-function formatDate(iso: string | null): string {
-  if (!iso) return '—';
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-  if (!match) return '—';
-  const yyyy = match[1] ?? '';
-  const mm = match[2] ?? '';
-  const dd = match[3] ?? '';
-  return `${mm}/${dd}/${yyyy.slice(-2)}`;
-}
-
 /** Stable date key (YYYY-MM-DD) for grouping and sorting. */
 function dateKey(iso: string | null): string {
   if (!iso) return '';
   const m = /^(\d{4}-\d{2}-\d{2})/.exec(iso);
   return m?.[1] ?? '';
+}
+
+function formatDateKeyLong(key: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return key || '—';
+  const y = Number(m[1]);
+  const m0 = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  if (Number.isNaN(y) || Number.isNaN(m0) || Number.isNaN(d)) return key;
+  return `${MONTH_NAMES[m0]} ${d}, ${y}`;
 }
 
 function formatDuration(hours: number): string {
@@ -74,14 +79,19 @@ function compareRows(a: TimesheetRow, b: TimesheetRow): number {
   return ta < tb ? -1 : 1;
 }
 
-interface GroupedRows {
+interface DateGroup {
+  dateKey: string;
+  rows: TimesheetRow[];
+}
+
+interface LocationGroup {
   locationKey: string;
   locationName: string;
   rows: TimesheetRow[];
 }
 
-function groupRowsByLocation(rows: TimesheetRow[]): GroupedRows[] {
-  const map = new Map<string, GroupedRows>();
+function groupRowsByLocation(rows: TimesheetRow[]): LocationGroup[] {
+  const map = new Map<string, LocationGroup>();
   for (const row of rows) {
     const key = row.locationId ?? row.locationName ?? '';
     const name = row.locationName?.trim() || 'Unknown Location';
@@ -98,24 +108,51 @@ function groupRowsByLocation(rows: TimesheetRow[]): GroupedRows[] {
   return groups;
 }
 
+function groupRowsByDate(rows: TimesheetRow[]): DateGroup[] {
+  const map = new Map<string, DateGroup>();
+  for (const row of rows) {
+    const key = dateKey(row.clockIn);
+    let group = map.get(key);
+    if (!group) {
+      group = { dateKey: key, rows: [] };
+      map.set(key, group);
+    }
+    group.rows.push(row);
+  }
+  const groups = Array.from(map.values());
+  for (const g of groups) {
+    g.rows.sort((a, b) => {
+      const ta = a.clockIn ?? '';
+      const tb = b.clockIn ?? '';
+      if (ta === tb) return 0;
+      return ta < tb ? -1 : 1;
+    });
+  }
+  // Empty / missing dateKey sorts last.
+  groups.sort((a, b) => {
+    if (a.dateKey === b.dateKey) return 0;
+    if (!a.dateKey) return 1;
+    if (!b.dateKey) return -1;
+    return a.dateKey < b.dateKey ? -1 : 1;
+  });
+  return groups;
+}
+
 function DesktopRow({
   row,
   index,
-  showDate,
-}: Readonly<{ row: TimesheetRow; index: number; showDate: boolean }>) {
+  rowKey,
+}: Readonly<{ row: TimesheetRow; index: number; rowKey: string }>) {
   return (
-    <tr className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}>
+    <tr key={rowKey} className={index % 2 === 1 ? 'bg-[#F3F5F7]' : ''}>
       <td className="py-3 pr-4 pl-2 md:pl-5">
         <div className="min-w-0">
-          <div className="font-medium text-primary truncate" title={row.name}>{row.name}</div>
+          <div className="font-semibold text-primary truncate" title={row.name}>{row.name}</div>
           {row.role && (
             <div className="text-primary text-[10px] md:text-[10px] 2xl:text-xs truncate">{row.role}</div>
           )}
         </div>
       </td>
-      {showDate && (
-        <td className="py-3 pr-4 text-center whitespace-nowrap">{formatDate(row.clockIn)}</td>
-      )}
       <td className="py-3 pr-4 text-center">{formatTime(row.clockIn)}</td>
       <td className="py-3 pr-4 text-center">{formatTime(row.clockOut)}</td>
       <td className="py-3 pr-4 text-center">{formatDuration(row.totalHours)}</td>
@@ -128,16 +165,16 @@ function DesktopRow({
   );
 }
 
-function DesktopHeader({ showDate }: Readonly<{ showDate: boolean }>) {
+function DesktopHeader({ topSpacing }: Readonly<{ topSpacing: boolean }>) {
+  const topPad = topSpacing ? 'pt-4' : '';
   return (
     <thead>
       <tr className="text-left text-secondary">
-        <th className="pb-3 pr-4 pl-2 md:pl-5 font-semibold">Name</th>
-        {showDate && <th className="pb-3 pr-4 font-semibold text-center">Date</th>}
-        <th className="pb-3 pr-4 font-semibold text-center">Clock In</th>
-        <th className="pb-3 pr-4 font-semibold text-center">Clock Out</th>
-        <th className="pb-3 pr-4 font-semibold text-center">Total Time</th>
-        <th className="pb-3 pr-2 md:pr-0 font-semibold text-center">Status</th>
+        <th className={`${topPad} pb-3 pr-4 pl-2 md:pl-5 font-semibold`}>Name</th>
+        <th className={`${topPad} pb-3 pr-4 font-semibold text-center`}>Clock In</th>
+        <th className={`${topPad} pb-3 pr-4 font-semibold text-center`}>Clock Out</th>
+        <th className={`${topPad} pb-3 pr-4 font-semibold text-center`}>Total Time</th>
+        <th className={`${topPad} pb-3 pr-2 md:pr-0 font-semibold text-center`}>Status</th>
       </tr>
     </thead>
   );
@@ -146,19 +183,13 @@ function DesktopHeader({ showDate }: Readonly<{ showDate: boolean }>) {
 function MobileRow({
   row,
   index,
-  showDate,
-}: Readonly<{ row: TimesheetRow; index: number; showDate: boolean }>) {
+  rowKey,
+}: Readonly<{ row: TimesheetRow; index: number; rowKey: string }>) {
   return (
-    <div className={`px-3 py-3 ${index % 2 === 1 ? 'bg-[#F3F5F7]' : 'bg-white'}`}>
+    <div key={rowKey} className={`px-3 py-3 ${index % 2 === 1 ? 'bg-[#F3F5F7]' : 'bg-white'}`}>
       <p className="text-sm font-semibold text-primary truncate" title={row.name}>{row.name}</p>
-      {row.role && <p className="text-xs text-gray-600 mt-0.5 truncate">{row.role}</p>}
+      {row.role && <p className="text-xs text-secondary mt-0.5 truncate">{row.role}</p>}
       <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
-        {showDate && (
-          <div className="flex items-center gap-2">
-            <span className="text-secondary shrink-0">Date:</span>
-            <span className="text-primary">{formatDate(row.clockIn)}</span>
-          </div>
-        )}
         <div className="flex items-center gap-2">
           <span className="text-secondary shrink-0">Clock in:</span>
           <span className="text-primary">{formatTime(row.clockIn)}</span>
@@ -180,8 +211,96 @@ function MobileRow({
   );
 }
 
+function DesktopTable({
+  rows,
+  rowKeyPrefix,
+  topSpacing,
+}: Readonly<{
+  rows: TimesheetRow[];
+  rowKeyPrefix: string;
+  topSpacing: boolean;
+}>) {
+  return (
+    <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
+      <DesktopHeader topSpacing={topSpacing} />
+      <tbody className="text-primary">
+        {rows.map((row, index) => (
+          <DesktopRow
+            key={`${rowKeyPrefix}-${row.name}-${index}`}
+            rowKey={`${rowKeyPrefix}-${row.name}-${index}`}
+            row={row}
+            index={index}
+          />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function MobileList({
+  rows,
+  rowKeyPrefix,
+}: Readonly<{ rows: TimesheetRow[]; rowKeyPrefix: string }>) {
+  return (
+    <div className="divide-y divide-gray-200">
+      {rows.map((row, index) => (
+        <MobileRow
+          key={`${rowKeyPrefix}-${row.name}-${index}-mobile`}
+          rowKey={`${rowKeyPrefix}-${row.name}-${index}-mobile`}
+          row={row}
+          index={index}
+        />
+      ))}
+    </div>
+  );
+}
+
+function LocationSectionHeader({ name }: Readonly<{ name: string }>) {
+  return (
+    <div className="bg-[#F3F5F7] border-b border-gray-200 px-3 md:px-5 py-2.5 flex items-center gap-1.5 min-h-[36px]">
+      <LocationIcon className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" aria-hidden />
+      <span className="text-xs text-gray-500 truncate leading-none">{name}</span>
+    </div>
+  );
+}
+
+function DateSectionHeader({ dateKey }: Readonly<{ dateKey: string }>) {
+  return (
+    <div className="bg-[#F3F5F7] border-b border-gray-200 px-3 md:px-5 py-2.5 flex items-center gap-1.5 min-h-[36px]">
+      <span className="text-xs font-semibold text-gray-500 truncate leading-none">
+        {formatDateKeyLong(dateKey)}
+      </span>
+    </div>
+  );
+}
+
+interface DateBlockProps {
+  group: DateGroup;
+  rowKeyPrefix: string;
+  topSpacing: boolean;
+  withHeader: boolean;
+}
+
+function DateBlock({ group, rowKeyPrefix, topSpacing, withHeader }: Readonly<DateBlockProps>) {
+  return (
+    <>
+      {withHeader && <DateSectionHeader dateKey={group.dateKey} />}
+      <div className="hidden md:block overflow-x-auto">
+        <DesktopTable
+          rows={group.rows}
+          rowKeyPrefix={rowKeyPrefix}
+          topSpacing={topSpacing}
+        />
+      </div>
+      <div className="md:hidden">
+        <MobileList rows={group.rows} rowKeyPrefix={rowKeyPrefix} />
+      </div>
+    </>
+  );
+}
+
 export const ClockedInStaffTable = ({ rows, groupByLocation = false }: ClockedInStaffTableProps) => {
-  const showDate = useMemo(() => {
+  const multiDay = useMemo(() => {
     const days = new Set<string>();
     for (const r of rows) {
       const k = dateKey(r.clockIn);
@@ -191,87 +310,82 @@ export const ClockedInStaffTable = ({ rows, groupByLocation = false }: ClockedIn
     return false;
   }, [rows]);
 
-  const groups = useMemo<GroupedRows[]>(() => {
-    if (groupByLocation) return groupRowsByLocation(rows);
-    return [{ locationKey: '__all__', locationName: '', rows: [...rows].sort(compareRows) }];
-  }, [rows, groupByLocation]);
+  const groupByDate = multiDay;
 
-  const desktopColSpan = showDate ? 6 : 5;
+  // Case 1: flat list (single location, single day).
+  if (!groupByLocation && !groupByDate) {
+    const sorted = [...rows].sort(compareRows);
+    return (
+      <DateBlock
+        group={{ dateKey: '', rows: sorted }}
+        rowKeyPrefix="flat"
+        topSpacing={false}
+        withHeader={false}
+      />
+    );
+  }
 
+  // Case 2: group by date only (single location, multi-day).
+  if (!groupByLocation && groupByDate) {
+    const dateGroups = groupRowsByDate(rows);
+    return (
+      <div className="flex flex-col gap-4">
+        {dateGroups.map((dg) => (
+          <div
+            key={`d-${dg.dateKey}`}
+            className="border border-gray-200 rounded-lg overflow-hidden bg-white"
+          >
+            <DateBlock
+              group={dg}
+              rowKeyPrefix={`d-${dg.dateKey}`}
+              topSpacing
+              withHeader
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Case 3 & 4: group by location (optionally with nested date subgroups).
+  const locationGroups = groupRowsByLocation(rows);
   return (
-    <>
-      {/* Desktop */}
-      <div className="hidden md:block overflow-x-auto">
-        <table className="w-full border-collapse text-[10px] md:text-xs 2xl:text-sm">
-          <DesktopHeader showDate={showDate} />
-          <tbody className="text-primary">
-            {groups.map((group) => (
-              <DesktopGroup
-                key={group.locationKey}
-                group={group}
-                showDate={showDate}
-                showHeader={groupByLocation}
-                colSpan={desktopColSpan}
+    <div className="flex flex-col gap-4">
+      {locationGroups.map((lg) => {
+        const dateGroups = groupByDate ? groupRowsByDate(lg.rows) : null;
+        return (
+          <div
+            key={`l-${lg.locationKey}`}
+            className="border border-gray-200 rounded-lg overflow-hidden bg-white"
+          >
+            <LocationSectionHeader name={lg.locationName} />
+            {dateGroups ? (
+              <div className="flex flex-col gap-4 p-3 md:p-4 bg-white">
+                {dateGroups.map((dg) => (
+                  <div
+                    key={`l-${lg.locationKey}-d-${dg.dateKey}`}
+                    className="border border-gray-200 rounded-lg overflow-hidden bg-white"
+                  >
+                    <DateBlock
+                      group={dg}
+                      rowKeyPrefix={`l-${lg.locationKey}-d-${dg.dateKey}`}
+                      topSpacing
+                      withHeader
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <DateBlock
+                group={{ dateKey: '', rows: lg.rows }}
+                rowKeyPrefix={`l-${lg.locationKey}`}
+                topSpacing
+                withHeader={false}
               />
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Mobile: stacked cards */}
-      <div className="md:hidden -mx-5 px-5">
-        <div className="divide-y divide-gray-200 overflow-y-auto min-h-0">
-          {groups.map((group) => (
-            <div key={`m-${group.locationKey}`}>
-              {groupByLocation && (
-                <div className="px-3 pt-3">
-                  <TimesheetLocationLabel name={group.locationName} />
-                </div>
-              )}
-              {group.rows.map((row, index) => (
-                <MobileRow
-                  key={`${group.locationKey}-${row.name}-${index}-mobile`}
-                  row={row}
-                  index={index}
-                  showDate={showDate}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-    </>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 };
-
-function DesktopGroup({
-  group,
-  showDate,
-  showHeader,
-  colSpan,
-}: Readonly<{
-  group: GroupedRows;
-  showDate: boolean;
-  showHeader: boolean;
-  colSpan: number;
-}>) {
-  return (
-    <>
-      {showHeader && (
-        <tr>
-          <td colSpan={colSpan} className="pt-3 pb-1 pl-2 md:pl-5">
-            <TimesheetLocationLabel name={group.locationName} />
-          </td>
-        </tr>
-      )}
-      {group.rows.map((row, index) => (
-        <DesktopRow
-          key={`${group.locationKey}-${row.name}-${index}`}
-          row={row}
-          index={index}
-          showDate={showDate}
-        />
-      ))}
-    </>
-  );
-}

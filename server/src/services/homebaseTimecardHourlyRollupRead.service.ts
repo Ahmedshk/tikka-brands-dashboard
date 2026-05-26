@@ -10,6 +10,7 @@ import {
   businessDayUtcRangeIsoStrings,
 } from "../utils/businessDayUtcRange.util.js";
 import { loadHomebaseTimecardHourlyRollupsForDates } from "../utils/homebaseTimecardHourlyRollupLoader.util.js";
+import { loadHomebaseTimecardDailyRollupsForDates } from "../utils/dailyRollupLoader.util.js";
 
 const ROLLUP_READ_ENABLED =
   (process.env.ROLLUP_READ_ENABLED ?? "true").trim().toLowerCase() !== "false";
@@ -83,6 +84,33 @@ export async function tryGetHourlyLaborCostFromRollups(
     const rows = byDate.get(key);
     if (!rows || rows.length < 24) return null;
   }
+
+  // Staleness guard: older rollup rows were written by a broken proration that
+  // always used "today's" slot bounds, so any non-today day ended up stored
+  // as 24 zeros. The daily rollup uses a different (correct) code path, so
+  // when its total disagrees with the sum of the hourly slots we know the
+  // hourly rows are stale and force a miss — the caller will rescan raw
+  // timecards through the fixed proration and the next builder run will
+  // overwrite the bad rows.
+  const dailyRollups = await loadHomebaseTimecardDailyRollupsForDates(
+    locationMongoId,
+    keys,
+  );
+  const dailyByKey = new Map<string, number>();
+  for (const d of dailyRollups) {
+    dailyByKey.set(d.businessDateKey, d.totalLaborCost ?? 0);
+  }
+  for (const key of keys) {
+    const rows = byDate.get(key) ?? [];
+    let hourlySum = 0;
+    for (const r of rows) hourlySum += r.laborCost ?? 0;
+    const dailyTotal = dailyByKey.get(key) ?? 0;
+    // Treat anything above 1¢ rounding as a real discrepancy.
+    if (dailyTotal > 0.01 && hourlySum < 0.01) {
+      return null;
+    }
+  }
+
   const result = new Array<number>(24).fill(0);
   for (const key of keys) {
     const rows = byDate.get(key) ?? [];

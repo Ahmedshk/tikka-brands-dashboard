@@ -741,9 +741,7 @@ export async function searchOrdersWithDiscountsFromCache(
   return squareOrdersToWithDiscounts(orders);
 }
 
-export async function getSquarePaymentDetailsFromCache(
-  paymentId: string,
-): Promise<{
+export interface SquarePaymentDetailsRow {
   id: string;
   employeeId: string | null;
   teamMemberId: string | null;
@@ -754,12 +752,13 @@ export async function getSquarePaymentDetailsFromCache(
   receiptNumber: string | null;
   receiptUrl: string | null;
   deviceName: string | null;
-} | null> {
-  const doc = await SquarePaymentModel.findOne({ squareId: paymentId })
-    .lean()
-    .exec();
-  if (!doc?.raw) return null;
-  const p = doc.raw;
+}
+
+function projectSquarePaymentRaw(
+  raw: Record<string, unknown>,
+  fallbackId: string,
+): SquarePaymentDetailsRow {
+  const p = raw;
   const amountMoney = p.amount_money as SquarePaymentMoneyField;
   const tipMoney = p.tip_money as SquarePaymentMoneyField;
   const toCents = (m: SquarePaymentMoneyField): number | undefined => {
@@ -772,19 +771,8 @@ export async function getSquarePaymentDetailsFromCache(
   };
   const amountCents = toCents(amountMoney);
   const tipCents = toCents(tipMoney);
-  const row: {
-    id: string;
-    employeeId: string | null;
-    teamMemberId: string | null;
-    createdAt: string | null;
-    updatedAt: string | null;
-    amountMoneyCents?: number;
-    tipMoneyCents?: number;
-    receiptNumber: string | null;
-    receiptUrl: string | null;
-    deviceName: string | null;
-  } = {
-    id: squareRawIdAsString(p.id, paymentId),
+  const row: SquarePaymentDetailsRow = {
+    id: squareRawIdAsString(p.id, fallbackId),
     employeeId: (p.employee_id as string | null | undefined) ?? null,
     teamMemberId: (p.team_member_id as string | null | undefined) ?? null,
     createdAt: (p.created_at as string | null | undefined) ?? null,
@@ -802,19 +790,50 @@ export async function getSquarePaymentDetailsFromCache(
   return row;
 }
 
-export async function getSquareTeamMemberRawFromCache(
-  teamMemberId: string,
-): Promise<{
+export async function getSquarePaymentDetailsFromCache(
+  paymentId: string,
+): Promise<SquarePaymentDetailsRow | null> {
+  const doc = await SquarePaymentModel.findOne({ squareId: paymentId })
+    .lean()
+    .exec();
+  if (!doc?.raw) return null;
+  return projectSquarePaymentRaw(doc.raw, paymentId);
+}
+
+/**
+ * Batch-load Square payments by id in a single `$in` query. Returns a map
+ * keyed by the requested payment id so callers can resolve N ids with one
+ * Mongo round-trip instead of N. Missing ids are absent from the map.
+ */
+export async function getSquarePaymentDetailsBatchFromCache(
+  paymentIds: readonly string[],
+): Promise<Map<string, SquarePaymentDetailsRow>> {
+  const result = new Map<string, SquarePaymentDetailsRow>();
+  const uniq = [...new Set(paymentIds.filter((id) => id))];
+  if (uniq.length === 0) return result;
+  const docs = await SquarePaymentModel.find({ squareId: { $in: uniq } })
+    .select({ squareId: 1, raw: 1 })
+    .lean()
+    .exec();
+  for (const d of docs) {
+    if (!d.raw) continue;
+    result.set(d.squareId, projectSquarePaymentRaw(d.raw, d.squareId));
+  }
+  return result;
+}
+
+export interface SquareTeamMemberRow {
   id: string;
   givenName: string | null;
   familyName: string | null;
   jobTitle?: string;
-} | null> {
-  const doc = await SquareTeamMemberModel.findOne({ squareId: teamMemberId })
-    .lean()
-    .exec();
-  if (!doc?.raw) return null;
-  const m = doc.raw;
+}
+
+function projectSquareTeamMemberRaw(
+  raw: Record<string, unknown>,
+  fallbackId: string,
+): SquareTeamMemberRow {
+  const m = raw;
   const wage = m.wage_setting as
     | { job_assignments?: Array<{ job_title?: string }> }
     | undefined;
@@ -822,11 +841,43 @@ export async function getSquareTeamMemberRawFromCache(
   const jobTitle =
     jobTitleRaw && jobTitleRaw.length > 0 ? jobTitleRaw : undefined;
   return {
-    id: squareRawIdAsString(m.id, teamMemberId),
+    id: squareRawIdAsString(m.id, fallbackId),
     givenName: (m.given_name as string | null | undefined) ?? null,
     familyName: (m.family_name as string | null | undefined) ?? null,
     ...(jobTitle === undefined ? {} : { jobTitle }),
   };
+}
+
+export async function getSquareTeamMemberRawFromCache(
+  teamMemberId: string,
+): Promise<SquareTeamMemberRow | null> {
+  const doc = await SquareTeamMemberModel.findOne({ squareId: teamMemberId })
+    .lean()
+    .exec();
+  if (!doc?.raw) return null;
+  return projectSquareTeamMemberRaw(doc.raw, teamMemberId);
+}
+
+/**
+ * Batch-load Square team members by id in a single `$in` query. Returns a
+ * map keyed by the requested id; missing ids are absent so callers can detect
+ * cache misses and decide whether to fall back to the live Square API.
+ */
+export async function getSquareTeamMembersBatchFromCache(
+  teamMemberIds: readonly string[],
+): Promise<Map<string, SquareTeamMemberRow>> {
+  const result = new Map<string, SquareTeamMemberRow>();
+  const uniq = [...new Set(teamMemberIds.filter((id) => id))];
+  if (uniq.length === 0) return result;
+  const docs = await SquareTeamMemberModel.find({ squareId: { $in: uniq } })
+    .select({ squareId: 1, raw: 1 })
+    .lean()
+    .exec();
+  for (const d of docs) {
+    if (!d.raw) continue;
+    result.set(d.squareId, projectSquareTeamMemberRaw(d.raw, d.squareId));
+  }
+  return result;
 }
 
 export async function fetchHourlyLaborCostPerHourFromCache(

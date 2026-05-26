@@ -27,7 +27,7 @@ export const SourcesOfSalesCard = ({
       <div className="p-5 pb-0 flex items-center justify-center">
         <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-secondary text-center">
           Sources of Sales
-          {subtitle != null && (
+          {!loading && subtitle != null && (
             <span className="font-medium text-primary text-[10px] md:text-xs 2xl:text-sm"> ({subtitle})</span>
           )}
         </h3>

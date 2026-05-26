@@ -4,6 +4,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { VarianceItemsContext, VarianceTooltipWithContainer } from '../modal/VarianceChartModal';
 import { Spinner } from '../common/Spinner';
+import { buildCurrencyAxisFormatter } from '../../utils/chartAxis.util';
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
 const LABEL_FONT = { fontFamily: 'Onest, sans-serif', fill: '#5B6B79' };
@@ -82,6 +83,10 @@ const defaultTheme = createTheme({
 
 const currencyFormatter = (v: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+
+/** Compact tick labels ("$2K", "-$1K") so the y-axis stays narrow on dense
+ *  variance charts; tooltips/legend keep full precision via context discriminator. */
+const axisCurrencyFormatter = buildCurrencyAxisFormatter({ fractionDigits: 0 });
 
 export const VarianceChartCard = ({ items, timePeriod = null, loading = false, onViewAll }: VarianceChartCardProps) => {
   const theme = useTheme();
@@ -166,7 +171,7 @@ export const VarianceChartCard = ({ items, timePeriod = null, loading = false, o
                     label: 'Variance ($)',
                     width: isDesktop ? 88 : 76,
                     tickLabelStyle: { ...LABEL_FONT, fontSize: 11, overflow: 'visible' as const },
-                    valueFormatter: (v: number) => currencyFormatter(v),
+                    valueFormatter: axisCurrencyFormatter,
                     colorMap: {
                       type: 'piecewise',
                       thresholds: [0],
