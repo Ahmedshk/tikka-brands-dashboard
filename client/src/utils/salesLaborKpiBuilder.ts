@@ -45,16 +45,18 @@ export interface BuildSalesLaborKPIItemsParams {
   canKpi7: boolean;
   canKpi8: boolean;
   icons: SalesLaborKpiBuilderIcons;
+  /** Label shown under each KPI title (e.g. "Today", "Last 7 days"). Defaults to "Today". */
+  periodLabel?: string;
 }
 
 export function buildSalesLaborKPIItems(params: BuildSalesLaborKPIItemsParams): SalesLaborKPIItem[] {
-  const { kpis, loading, icons } = params;
+  const { kpis, loading, icons, periodLabel = 'Today' } = params;
   const items: SalesLaborKPIItem[] = [];
 
   if (params.canKpi1) {
     items.push({
       title: 'Actual Total Net Sales',
-      timePeriod: 'Today',
+      timePeriod: periodLabel,
       value: fmtNum(kpis?.actualTotalSales ?? null, true),
       accentColor: 'green',
       rightIcon: icons.dollar,
@@ -64,7 +66,7 @@ export function buildSalesLaborKPIItems(params: BuildSalesLaborKPIItemsParams): 
   if (params.canKpi2) {
     items.push({
       title: 'Actual Labor Cost %',
-      timePeriod: 'Today',
+      timePeriod: periodLabel,
       value: fmtPercent(kpis?.actualLaborCostPercent ?? null),
       accentColor: 'blue',
       rightIcon: icons.actualLaborCost,
@@ -74,7 +76,7 @@ export function buildSalesLaborKPIItems(params: BuildSalesLaborKPIItemsParams): 
   if (params.canKpi3) {
     items.push({
       title: 'Total Hours',
-      timePeriod: 'Today',
+      timePeriod: periodLabel,
       value: fmtHours(kpis?.totalHours ?? null),
       accentColor: 'orange',
       rightIcon: icons.totalHours,
@@ -85,7 +87,7 @@ export function buildSalesLaborKPIItems(params: BuildSalesLaborKPIItemsParams): 
     const val = kpis?.salesPerManHour;
     items.push({
       title: 'Sales Per Man Hour',
-      timePeriod: 'Today',
+      timePeriod: periodLabel,
       value: val == null ? UNAVAIL : `${formatCurrency(val)}/hr`,
       accentColor: 'purple',
       rightIcon: icons.salesPerManHour,
@@ -95,7 +97,7 @@ export function buildSalesLaborKPIItems(params: BuildSalesLaborKPIItemsParams): 
   if (params.canKpi5) {
     items.push({
       title: 'No. of Transactions',
-      timePeriod: 'Today',
+      timePeriod: periodLabel,
       value: fmtWhole(kpis?.transactionCount ?? null),
       accentColor: 'gray',
       rightIcon: icons.noOfTransactions,
@@ -105,7 +107,7 @@ export function buildSalesLaborKPIItems(params: BuildSalesLaborKPIItemsParams): 
   if (params.canKpi6) {
     items.push({
       title: 'Average Check',
-      timePeriod: 'Today',
+      timePeriod: periodLabel,
       value: fmtNum(kpis?.averageCheck ?? null, true),
       accentColor: 'red',
       rightIcon: icons.averageCheck,
@@ -115,7 +117,7 @@ export function buildSalesLaborKPIItems(params: BuildSalesLaborKPIItemsParams): 
   if (params.canKpi7) {
     items.push({
       title: 'Total Discounts',
-      timePeriod: 'Today',
+      timePeriod: periodLabel,
       value: fmtNum(kpis?.totalDiscounts ?? null, true),
       accentColor: 'azure',
       rightIcon: icons.totalDiscounts,
@@ -128,7 +130,7 @@ export function buildSalesLaborKPIItems(params: BuildSalesLaborKPIItemsParams): 
       : undefined;
     items.push({
       title: 'Total Refunds',
-      timePeriod: 'Today',
+      timePeriod: periodLabel,
       value: fmtNum(kpis?.totalRefunds ?? null, true),
       accentColor: 'yellow',
       subtitle: '#Refunds',

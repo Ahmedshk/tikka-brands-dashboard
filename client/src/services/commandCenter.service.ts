@@ -94,6 +94,10 @@ export interface TimesheetRow {
   clockOut: string | null;
   totalHours: number;
   status: "On Clock" | "On Break" | "Clocked Out";
+  /** Location id; populated only when fetched in all-locations mode. */
+  locationId?: string;
+  /** Location store name; populated only when fetched in all-locations mode. */
+  locationName?: string | null;
 }
 
 export type SalesTrendPeriodType =

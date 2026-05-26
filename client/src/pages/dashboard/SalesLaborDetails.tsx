@@ -33,6 +33,7 @@ import {
   buildDailyTargetsItems,
   resolvePeriodDateBounds,
   isSingleDayPeriod,
+  getPeriodLabel,
 } from '../../utils/salesLaborDetailsHelpers';
 import { buildSalesLaborKPIItems } from '../../utils/salesLaborKpiBuilder';
 
@@ -221,6 +222,8 @@ export const SalesLaborDetails = () => {
     periodIsCustomIncomplete,
   ]);
 
+  const periodLabel = useMemo(() => getPeriodLabel(period), [period.periodType, period.periodStart, period.periodEnd]);
+
   const salesLaborKPIs = useMemo(
     () =>
       buildSalesLaborKPIItems({
@@ -234,6 +237,7 @@ export const SalesLaborDetails = () => {
         canKpi6,
         canKpi7,
         canKpi8,
+        periodLabel,
         icons: {
           dollar: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
           actualLaborCost: <ActualLaborCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
@@ -245,7 +249,7 @@ export const SalesLaborDetails = () => {
           totalRefunds: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
         },
       }),
-    [kpis, loading, canKpi1, canKpi2, canKpi3, canKpi4, canKpi5, canKpi6, canKpi7, canKpi8]
+    [kpis, loading, canKpi1, canKpi2, canKpi3, canKpi4, canKpi5, canKpi6, canKpi7, canKpi8, periodLabel]
   );
 
   const dailyTargetsItems = useMemo(
@@ -309,9 +313,7 @@ export const SalesLaborDetails = () => {
               <HourlyBreakdownCard
                 xAxisLabels={hourlyBreakdown?.labels ?? []}
                 salesData={hourlyBreakdown?.netSalesPerHour ?? []}
-                laborCostData={
-                  hourlyBreakdown?.laborCostPercentPerHour?.map((p) => p ?? 0) ?? []
-                }
+                laborCostData={hourlyBreakdown?.laborCostPercentPerHour ?? []}
                 height={380}
                 className={canSources ? 'lg:col-span-2' : ''}
                 loading={loading}
@@ -345,6 +347,8 @@ export const SalesLaborDetails = () => {
                 rows={timesheetRows}
                 loading={timesheetLoading}
                 className={canDaily ? 'lg:col-span-2' : ''}
+                periodLabel={periodLabel}
+                groupByLocation={allLocationsSelected}
               />
             )}
             {canDaily && (

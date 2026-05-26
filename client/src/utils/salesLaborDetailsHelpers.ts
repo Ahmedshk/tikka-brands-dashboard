@@ -75,6 +75,36 @@ export function isSingleDayPeriod(value: PeriodPickerValue, timezone: string): b
   return bounds.start === bounds.end;
 }
 
+const PERIOD_LABELS: Record<Exclude<PeriodPickerValue['periodType'], 'custom'>, string> = {
+  today: 'Today',
+  last7days: 'Last 7 days',
+  last30days: 'Last 30 days',
+  last52weeks: 'Last 52 weeks',
+  thisWeek: 'This week',
+  thisMonth: 'This month',
+  thisYear: 'This year',
+};
+
+function formatYmdShort(ymd: string): string {
+  const p = ymdToParts(ymd);
+  if (!p) return ymd;
+  const yy = String(p.y).slice(-2);
+  const mm = String(p.m0 + 1).padStart(2, '0');
+  const dd = String(p.d).padStart(2, '0');
+  return `${mm}/${dd}/${yy}`;
+}
+
+/** Human-readable label for the selected period (matches PeriodPicker display). */
+export function getPeriodLabel(value: PeriodPickerValue): string {
+  if (value.periodType === 'custom') {
+    if (!value.periodStart || !value.periodEnd) return 'Custom';
+    const s = formatYmdShort(value.periodStart);
+    const e = formatYmdShort(value.periodEnd);
+    return s === e ? s : `${s} – ${e}`;
+  }
+  return PERIOD_LABELS[value.periodType] ?? 'Today';
+}
+
 type KpiFlags = {
   canKpi1: boolean;
   canKpi2: boolean;
