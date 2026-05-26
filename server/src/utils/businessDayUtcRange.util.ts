@@ -80,20 +80,43 @@ export function addCalendarDaysToBusinessDateKey(
   return `${y2}-${m2}-${d2}`;
 }
 
+/**
+ * Process-wide memo for {@link businessDayUtcRangeIsoStrings}.
+ *
+ * Why this exists: the underlying `getBusinessDayRangeForDate` call uses
+ * `Intl.DateTimeFormat` / `formatInTimeZone`, which allocate a native formatter
+ * on every call (~10ms each on Azure App Service). The dashboard's all-locations
+ * sales-labor handler calls into this function ~18-30 times per per-location
+ * worker via `fullBusinessDaysCoveredByRange` and `computeRollupUncoveredSubRanges`,
+ * and there are 9 location workers running in parallel — but Promise.all can't
+ * actually parallelize synchronous CPU. With per-worker timing instrumentation
+ * we measured ~390ms of pure CPU per `tryGetOrderStatsAndSourcesFromDailyRollupsSplit`
+ * call, ×27 calls per request ≈ 10s of event-loop-blocking date math that made
+ * every Sales & Labor "first view" take ~18-20s even though every Mongo cache
+ * was hit (`cacheCheckMs:0`, `[hourly-rollup-served=0, raw-scanned=0]`).
+ *
+ * The function is a pure mapping of `(timezone, businessStartTime, businessDateKey)`
+ * to a fixed-shape result, so memoizing forever is safe. Key cardinality is
+ * bounded by `(active timezones) × (active business start times) × (dates in flight)`
+ * — well under 10k entries in practice. No TTL needed.
+ */
+const businessDayUtcRangeCache = new Map<string, TimeRange>();
+
 /** RFC 3339 TimeRange for one business day. */
 export function businessDayUtcRangeIsoStrings(
   timezone: string,
   businessStartTime: string,
   businessDateKey: string,
 ): TimeRange {
+  const tz = timezone.trim() || "UTC";
+  const bst = (businessStartTime ?? "00:00").trim() || "00:00";
+  const cacheKey = `${tz}|${bst}|${businessDateKey}`;
+  const cached = businessDayUtcRangeCache.get(cacheKey);
+  if (cached !== undefined) return cached;
   const { y, m0, d } = parseYmdBusinessDateKey(businessDateKey);
-  return getBusinessDayRangeForDate(
-    timezone.trim() || "UTC",
-    (businessStartTime ?? "00:00").trim() || "00:00",
-    y,
-    m0,
-    d,
-  );
+  const result = getBusinessDayRangeForDate(tz, bst, y, m0, d);
+  businessDayUtcRangeCache.set(cacheKey, result);
+  return result;
 }
 
 /** Previous calendar yyyy-MM-dd in `timeZone` (instant just before local midnight of `ymd`). */
@@ -134,6 +157,24 @@ export function businessDateKeyForInstant(
 }
 
 /**
+ * Process-wide memo for {@link businessDateKeysIntersectingUtcRange}.
+ *
+ * Same rationale as the {@link businessDayUtcRangeCache} above: pure function,
+ * bounded key cardinality (`(timezone, businessStartTime, range)` tuples in
+ * flight), and the dashboard's all-locations sales-labor handler calls into it
+ * ~27 times per request (3 split-range calls × 9 location workers). Without
+ * this, even with `businessDayUtcRangeIsoStrings` memoized the two leading
+ * `formatInTimeZone` calls cost ~40ms × 27 ≈ 1s of CPU per request.
+ *
+ * Bounded LRU (5_000 entries) so a long-running process can't unbounded-grow
+ * if the dashboard is queried with many distinct custom ranges. Insertion-
+ * order eviction is good enough — TimeRange tuples don't have meaningful
+ * "recency" beyond their request lifetime.
+ */
+const KEYS_INTERSECTING_CACHE_MAX = 5_000;
+const businessDateKeysIntersectingCache = new Map<string, string[]>();
+
+/**
  * Business date keys whose business-day UTC window intersects [startAt, endAt].
  */
 export function businessDateKeysIntersectingUtcRange(
@@ -149,6 +190,9 @@ export function businessDateKeysIntersectingUtcRange(
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs > endMs) {
     return [];
   }
+  const cacheKey = `${tz}|${bst}|${startMs}|${endMs}`;
+  const cached = businessDateKeysIntersectingCache.get(cacheKey);
+  if (cached !== undefined) return cached;
   const padStart = formatInTimeZone(
     addDays(new Date(startMs), -2),
     tz,
@@ -164,6 +208,11 @@ export function businessDateKeysIntersectingUtcRange(
     if (re < startMs || rs > endMs) continue;
     out.push(key);
   }
+  if (businessDateKeysIntersectingCache.size >= KEYS_INTERSECTING_CACHE_MAX) {
+    const firstKey = businessDateKeysIntersectingCache.keys().next().value;
+    if (firstKey !== undefined) businessDateKeysIntersectingCache.delete(firstKey);
+  }
+  businessDateKeysIntersectingCache.set(cacheKey, out);
   return out;
 }
 

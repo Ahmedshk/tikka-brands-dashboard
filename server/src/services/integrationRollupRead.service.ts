@@ -292,13 +292,15 @@ export async function tryGetOrderStatsAndSourcesFromDailyRollupsSplit(
   );
   const tAfterUncovered = performance.now();
   // Diagnostic — measures each sync CPU step inside the daily-rollup split.
-  // The aggregate worker timing (`tSquareMs` in salesLaborAllLocations)
-  // measured 12-15s/worker on warm-cache requests despite the rollup loader
-  // reporting a hit, so we need to know whether the time is in the loader
-  // await, the sourcesOfSales merge (iterates every segment of every day's
-  // doc — can be O(thousands) per location), or the uncovered-range compute.
-  // Once we identify the hot step we can drop this log.
-  logger.info('[rollup-split-timing] square daily', {
+  // Originally surfaced the ~390ms/call cost of `fullBusinessDaysCoveredByRange`
+  // + `computeRollupUncoveredSubRanges` (Intl.DateTimeFormat-heavy) that was
+  // multiplied by ~27 calls per all-locations request and serialized on the
+  // event loop, producing the 10-15s/worker on warm-cache requests. Now both
+  // helpers are memoized via `businessDayUtcRange.util.ts` so the cost is
+  // amortized to ~ms after the first call per (tz, bst, date). Kept at debug
+  // level so we can re-enable visibility via `LOG_CONSOLE_LEVEL=debug` if a
+  // similar regression appears later.
+  logger.debug('[rollup-split-timing] square daily', {
     locationMongoId,
     dayCount: keys.length,
     docCount: dailies.length,
@@ -378,7 +380,7 @@ export async function tryGetLaborTotalsFromDailyRollupsSplit(
   const tAfterUncovered = performance.now();
   // Diagnostic — twin of the square split timing. See header comment in
   // `tryGetOrderStatsAndSourcesFromDailyRollupsSplit` for rationale.
-  logger.info('[rollup-split-timing] labor daily', {
+  logger.debug('[rollup-split-timing] labor daily', {
     locationMongoId,
     dayCount: keys.length,
     docCount: dailies.length,
