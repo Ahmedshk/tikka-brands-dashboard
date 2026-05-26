@@ -40,7 +40,7 @@ export async function loadHomebaseTimecardHourlyRollupsForDates(
     }
   }
   if (missing.length === 0) {
-    logger.info("[homebase-hourly-rollup-loader] cache hit", {
+    logger.debug("[homebase-hourly-rollup-loader] cache hit", {
       locationMongoId,
       dateCount: businessDateKeys.length,
       cacheCheckMs: Math.round(performance.now() - t0),

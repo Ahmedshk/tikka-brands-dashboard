@@ -8,6 +8,8 @@ import {
   getBusinessDayRangeForDate,
   getBusinessStartTimeRange,
   getStartOfDayUtc,
+  getCachedDateTimeFormatter,
+  formatYmdInTimezone,
 } from "./timezone.util.js";
 import type { TimeRange } from "./businessHours.util.js";
 import { iterBusinessDateKeysInclusive } from "./rollupScriptArgs.util.js";
@@ -31,7 +33,7 @@ function localYmdHmInTz(
   timezone: string,
 ): { y: number; m0: number; d: number; h: number; mi: number } {
   const tz = timezone.trim() || "UTC";
-  const f = new Intl.DateTimeFormat("en-CA", {
+  const f = getCachedDateTimeFormatter("en-CA", {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
@@ -96,10 +98,16 @@ export function addCalendarDaysToBusinessDateKey(
  * was hit (`cacheCheckMs:0`, `[hourly-rollup-served=0, raw-scanned=0]`).
  *
  * The function is a pure mapping of `(timezone, businessStartTime, businessDateKey)`
- * to a fixed-shape result, so memoizing forever is safe. Key cardinality is
- * bounded by `(active timezones) × (active business start times) × (dates in flight)`
- * — well under 10k entries in practice. No TTL needed.
+ * to a fixed-shape result. Bounded with insertion-order eviction (matching
+ * the sibling {@link businessDateKeysIntersectingCache} below) so a long-
+ * running process — or future code paths that pass user-controllable date
+ * inputs — can't grow the Map unbounded. The realistic working set
+ * (`(active timezones) × (business start times) × (dates in flight)`) is
+ * well below the cap; eviction effectively never fires under normal load,
+ * and re-allocation cost is one `Intl.DateTimeFormat` (~5-10ms) per evicted
+ * key on the rare miss.
  */
+const BUSINESS_DAY_UTC_RANGE_CACHE_MAX = 5_000;
 const businessDayUtcRangeCache = new Map<string, TimeRange>();
 
 /** RFC 3339 TimeRange for one business day. */
@@ -115,6 +123,10 @@ export function businessDayUtcRangeIsoStrings(
   if (cached !== undefined) return cached;
   const { y, m0, d } = parseYmdBusinessDateKey(businessDateKey);
   const result = getBusinessDayRangeForDate(tz, bst, y, m0, d);
+  if (businessDayUtcRangeCache.size >= BUSINESS_DAY_UTC_RANGE_CACHE_MAX) {
+    const firstKey = businessDayUtcRangeCache.keys().next().value;
+    if (firstKey !== undefined) businessDayUtcRangeCache.delete(firstKey);
+  }
   businessDayUtcRangeCache.set(cacheKey, result);
   return result;
 }
@@ -125,7 +137,7 @@ export function previousYmdInTimezone(ymd: string, timeZone: string): string {
   const { y, m0, d } = parseYmdBusinessDateKey(ymd);
   const startOfYmd = getStartOfDayUtc(y, m0, d, tz);
   const probe = new Date(startOfYmd.getTime() - 1);
-  return formatInTimeZone(probe, tz, "yyyy-MM-dd");
+  return formatYmdInTimezone(probe, tz);
 }
 
 /**
@@ -140,9 +152,11 @@ export function businessDateKeyForInstant(
   const tz = timeZone.trim() || "UTC";
   const bst = (businessStartTime ?? "00:00").trim() || "00:00";
   if (Number.isNaN(d.getTime())) {
+    // Invalid-Date branch — preserve date-fns-tz behavior verbatim. Not on
+    // the hot path so no benefit to swapping the implementation here.
     return formatInTimeZone(d, tz, "yyyy-MM-dd");
   }
-  let key = formatInTimeZone(d, tz, "yyyy-MM-dd");
+  let key = formatYmdInTimezone(d, tz);
   let range = businessDayUtcRangeIsoStrings(tz, bst, key);
   const t = d.getTime();
   const rs = new Date(range.startAt).getTime();
@@ -193,12 +207,8 @@ export function businessDateKeysIntersectingUtcRange(
   const cacheKey = `${tz}|${bst}|${startMs}|${endMs}`;
   const cached = businessDateKeysIntersectingCache.get(cacheKey);
   if (cached !== undefined) return cached;
-  const padStart = formatInTimeZone(
-    addDays(new Date(startMs), -2),
-    tz,
-    "yyyy-MM-dd",
-  );
-  const padEnd = formatInTimeZone(addDays(new Date(endMs), 2), tz, "yyyy-MM-dd");
+  const padStart = formatYmdInTimezone(addDays(new Date(startMs), -2), tz);
+  const padEnd = formatYmdInTimezone(addDays(new Date(endMs), 2), tz);
   const candidates = iterBusinessDateKeysInclusive(padStart, padEnd);
   const out: string[] = [];
   for (const key of candidates) {

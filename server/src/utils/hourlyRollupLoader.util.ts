@@ -46,7 +46,7 @@ export async function loadSquareOrderHourlyRollupsForDates(
     }
   }
   if (missing.length === 0) {
-    logger.info("[hourly-rollup-loader] cache hit", {
+    logger.debug("[hourly-rollup-loader] cache hit", {
       locationMongoId,
       dateCount: businessDateKeys.length,
       cacheCheckMs: Math.round(performance.now() - t0),

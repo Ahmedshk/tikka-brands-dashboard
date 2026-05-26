@@ -1,4 +1,4 @@
-import { formatInTimeZone } from "date-fns-tz";
+import { formatYmdInTimezone } from "./timezone.util.js";
 import { iterBusinessDateKeysInclusive } from "./rollupScriptArgs.util.js";
 
 /**
@@ -13,7 +13,10 @@ export function businessDateKeysForUtcRange(
   const tz = timeZone.trim() || "UTC";
   const start = typeof startAt === "string" ? new Date(startAt) : startAt;
   const end = typeof endAt === "string" ? new Date(endAt) : endAt;
-  const fromKey = formatInTimeZone(start, tz, "yyyy-MM-dd");
-  const toKey = formatInTimeZone(end, tz, "yyyy-MM-dd");
+  // `formatYmdInTimezone` uses the process-wide cached `Intl.DateTimeFormat`,
+  // avoiding the per-call ICU formatter allocation that `formatInTimeZone`
+  // from date-fns-tz incurs. Equivalent output for valid Dates.
+  const fromKey = formatYmdInTimezone(start, tz);
+  const toKey = formatYmdInTimezone(end, tz);
   return iterBusinessDateKeysInclusive(fromKey, toKey);
 }

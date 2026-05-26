@@ -55,13 +55,14 @@ import {
   getStartOfDayUtc,
   getEndOfDayUtc,
   getCalendarYmdInTz,
+  getCachedDateTimeFormatter,
 } from "./timezone.util.js";
 
 export { getStartOfDayUtc, getEndOfDayUtc } from "./timezone.util.js";
 
 /** Get (year, month 0-based, day) of "now" in the given timezone. */
 function getTodayInTz(timezone: string): { y: number; m: number; d: number } {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = getCachedDateTimeFormatter("en-CA", {
     timeZone: timezone,
     year: "numeric",
     month: "2-digit",
@@ -84,7 +85,7 @@ function getDayOfWeekInTz(
   timezone: string,
 ): number {
   const startOfDay = getStartOfDayUtc(y, m, d, timezone);
-  const formatter = new Intl.DateTimeFormat("en-US", {
+  const formatter = getCachedDateTimeFormatter("en-US", {
     timeZone: timezone,
     weekday: "short",
   });

@@ -176,14 +176,14 @@ export async function buildAllLocationsSalesLaborKpis(params: {
   // from any other event-loop blocking before the workers can run.
   const tPrefetchDoneMs = Math.round(performance.now() - tHandler);
   const tFanOutStart = performance.now();
-  logger.info('[sales-labor-timing] kpis handler prefetch done', {
+  logger.debug('[sales-labor-timing] kpis handler prefetch done', {
     locationCount: effectiveIds.length,
     msSincePrefetchStart: tPrefetchDoneMs,
   });
   const perLocationMs: number[] = [];
   const logTimingDone = (count: number): void => {
     const tFanOutEndMs = Math.round(performance.now() - tFanOutStart);
-    logger.info('[sales-labor-timing] kpis handler fan-out complete', {
+    logger.debug('[sales-labor-timing] kpis handler fan-out complete', {
       locationCount: count,
       fanOutMs: tFanOutEndMs,
     });
@@ -207,7 +207,7 @@ export async function buildAllLocationsSalesLaborKpis(params: {
         const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
         const tCredsMs = Math.round(performance.now() - tCredsStart);
         if (!withCreds) {
-          logger.info('[sales-labor-timing] kpis per-loc worker (no creds)', {
+          logger.debug('[sales-labor-timing] kpis per-loc worker (no creds)', {
             locationId: id,
             tCredsMs,
           });
@@ -258,7 +258,7 @@ export async function buildAllLocationsSalesLaborKpis(params: {
           : Promise.resolve({ v: null, ms: 0 });
         const [square, labor] = await Promise.all([squarePromise, laborPromise]);
         const totalMs = Math.round(performance.now() - workerStart);
-        logger.info('[sales-labor-timing] kpis per-loc worker', {
+        logger.debug('[sales-labor-timing] kpis per-loc worker', {
           locationId: id,
           tCredsMs,
           tSquareMs: square.ms,
@@ -356,7 +356,7 @@ export async function buildAllLocationsHourlyBreakdown(params: {
   // shape and intent of these timeline log lines.
   const tPrefetchDoneMs = Math.round(performance.now() - tHandler);
   const tFanOutStart = performance.now();
-  logger.info('[sales-labor-timing] hourly-breakdown handler prefetch done', {
+  logger.debug('[sales-labor-timing] hourly-breakdown handler prefetch done', {
     locationCount: effectiveIds.length,
     msSincePrefetchStart: tPrefetchDoneMs,
   });
@@ -369,7 +369,7 @@ export async function buildAllLocationsHourlyBreakdown(params: {
         const withCreds = await getByIdWithCredentialsCached(req, locationService, id);
         const tCredsMs = Math.round(performance.now() - tCredsStart);
         if (!withCreds) {
-          logger.info('[sales-labor-timing] hourly-breakdown per-loc worker (no creds)', {
+          logger.debug('[sales-labor-timing] hourly-breakdown per-loc worker (no creds)', {
             locationId: id,
             tCredsMs,
           });
@@ -416,7 +416,7 @@ export async function buildAllLocationsHourlyBreakdown(params: {
           : Promise.resolve({ v: new Array<number>(24).fill(0), ms: 0 });
         const [sq, lb] = await Promise.all([squarePromise, laborPromise]);
         const totalMs = Math.round(performance.now() - workerStart);
-        logger.info('[sales-labor-timing] hourly-breakdown per-loc worker', {
+        logger.debug('[sales-labor-timing] hourly-breakdown per-loc worker', {
           locationId: id,
           tCredsMs,
           tSquareMs: sq.ms,
@@ -436,7 +436,7 @@ export async function buildAllLocationsHourlyBreakdown(params: {
 
   const logTimingDone = (count: number): void => {
     const tFanOutEndMs = Math.round(performance.now() - tFanOutStart);
-    logger.info('[sales-labor-timing] hourly-breakdown handler fan-out complete', {
+    logger.debug('[sales-labor-timing] hourly-breakdown handler fan-out complete', {
       locationCount: count,
       fanOutMs: tFanOutEndMs,
     });

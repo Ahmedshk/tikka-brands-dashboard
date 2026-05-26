@@ -1,5 +1,4 @@
-import { formatInTimeZone } from "date-fns-tz";
-import { getStartOfDayUtc } from "./timezone.util.js";
+import { formatYmdInTimezone, getStartOfDayUtc } from "./timezone.util.js";
 import {
   parseYmdBusinessDateKey,
   previousYmdInTimezone,
@@ -11,7 +10,11 @@ export function nextYmdInTimezone(ymd: string, timeZone: string): string {
   const { y, m0, d } = parseYmdBusinessDateKey(ymd);
   const startOfYmd = getStartOfDayUtc(y, m0, d, tz);
   const probe = new Date(startOfYmd.getTime() + 24 * 60 * 60 * 1000);
-  return formatInTimeZone(probe, tz, "yyyy-MM-dd");
+  // Uses the cached `Intl.DateTimeFormat` via `formatYmdInTimezone` instead of
+  // `formatInTimeZone(...)` from date-fns-tz — equivalent output for valid
+  // Dates with `yyyy-MM-dd` format, but avoids the per-call ICU formatter
+  // allocation that was a contributor to the dashboard hot-path slowness.
+  return formatYmdInTimezone(probe, tz);
 }
 
 export function addDaysToYmd(ymd: string, tz: string, deltaDays: number): string {

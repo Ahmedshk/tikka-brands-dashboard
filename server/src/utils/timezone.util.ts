@@ -1,10 +1,72 @@
+/**
+ * Process-wide cache of `Intl.DateTimeFormat` instances.
+ *
+ * The constructor is the expensive part of `Intl.DateTimeFormat` (allocates
+ * a native ICU formatter ~5-10ms per call on Azure App Service); the
+ * subsequent `format` / `formatToParts` calls on a built instance are cheap.
+ * Every function below previously allocated a fresh formatter on every
+ * invocation, which compounded into ~10s of synchronous CPU during all-
+ * locations dashboard requests (instrumented as `tKeysMs`/`tUncoveredMs`
+ * inside the rollup-split timers). This cache amortizes the constructor
+ * cost to one allocation per unique `(locale, options)` shape.
+ *
+ * The key is a sorted serialization of the options so different literal
+ * orderings at call sites still hit the same entry. Key cardinality is
+ * bounded by `(locales × option-shapes × timezones)` — under a few hundred
+ * entries in practice — so no LRU eviction is needed.
+ *
+ * Exported so the other date utilities (`salesTrendDateRange.util.ts`,
+ * `nextYmdInTimezone.util.ts`, `businessDayUtcRange.util.ts`) can share the
+ * same instances instead of allocating their own.
+ */
+const intlDateTimeFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+export function getCachedDateTimeFormatter(
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  // Stable key regardless of literal property order at the call site.
+  const entries = Object.entries(options).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  let key = locale;
+  for (const [k, v] of entries) key += `|${k}=${String(v)}`;
+  const cached = intlDateTimeFormatterCache.get(key);
+  if (cached !== undefined) return cached;
+  const formatter = new Intl.DateTimeFormat(locale, options);
+  intlDateTimeFormatterCache.set(key, formatter);
+  return formatter;
+}
+
+/**
+ * Format a Date as `yyyy-MM-dd` in the given IANA timezone.
+ *
+ * Equivalent to `formatInTimeZone(d, tz, "yyyy-MM-dd")` from date-fns-tz but
+ * uses the process-wide formatter cache above, so the underlying ICU
+ * formatter is allocated once per timezone instead of on every call. Replaces
+ * `formatInTimeZone` in hot-path callers (`businessDayUtcRange.util.ts`,
+ * `nextYmdInTimezone.util.ts`, `businessDateKeysForUtcRange.util.ts`) where
+ * the same conversion was being invoked dozens of times per dashboard
+ * request. Behaviorally identical for valid Dates — `en-CA` locale with
+ * `year: "numeric", month: "2-digit", day: "2-digit"` produces `YYYY-MM-DD`,
+ * the same calendar mapping date-fns-tz uses.
+ */
+export function formatYmdInTimezone(d: Date, timezone: string): string {
+  return getCachedDateTimeFormatter("en-CA", {
+    timeZone: timezone.trim() || "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
 /** Calendar (y, month 0-based, d) for an instant in `timezone` (DST-safe). */
 export function getCalendarYmdInTz(
   utcMs: number,
   timezone: string,
 ): { y: number; m: number; d: number } {
   const tz = timezone.trim();
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = getCachedDateTimeFormatter("en-CA", {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
@@ -109,7 +171,7 @@ export function getBusinessStartTimeRange(
 ): { startAt: string; endAt: string } {
   const tz = timezone.trim();
   const now = new Date();
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = getCachedDateTimeFormatter("en-CA", {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
@@ -166,7 +228,7 @@ export function getWeekToDateRange(
 ): { startAt: string; endAt: string } {
   const tz = timezone.trim();
   const now = new Date();
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = getCachedDateTimeFormatter("en-CA", {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
@@ -256,7 +318,7 @@ export function getTodayRange(timezone?: string): {
   const tz = timezone?.trim();
   if (tz) {
     // Get (year, month, day) in the given timezone
-    const formatter = new Intl.DateTimeFormat("en-CA", {
+    const formatter = getCachedDateTimeFormatter("en-CA", {
       timeZone: tz,
       year: "numeric",
       month: "2-digit",
@@ -271,7 +333,7 @@ export function getTodayRange(timezone?: string): {
 
     // Offset at noon UTC on this date in the timezone (for DST)
     const utcNoon = Date.UTC(y, m, d, 12, 0, 0, 0);
-    const hourFormatter = new Intl.DateTimeFormat("en-CA", {
+    const hourFormatter = getCachedDateTimeFormatter("en-CA", {
       timeZone: tz,
       hour: "2-digit",
       hour12: false,
@@ -344,7 +406,7 @@ export function getTodayRangeFullDay(timezone: string): {
 } {
   const now = new Date();
   const tz = timezone.trim();
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = getCachedDateTimeFormatter("en-CA", {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
@@ -358,7 +420,7 @@ export function getTodayRangeFullDay(timezone: string): {
   const d = Number.parseInt(get("day"), 10);
 
   const utcNoon = Date.UTC(y, m, d, 12, 0, 0, 0);
-  const hourFormatter = new Intl.DateTimeFormat("en-CA", {
+  const hourFormatter = getCachedDateTimeFormatter("en-CA", {
     timeZone: tz,
     hour: "2-digit",
     hour12: false,
@@ -387,7 +449,7 @@ export function getSameDayLastWeekRange(timezone: string): {
 } {
   const tz = timezone.trim();
   const now = new Date();
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = getCachedDateTimeFormatter("en-CA", {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
@@ -418,7 +480,7 @@ export function getSameDayLastWeekRange(timezone: string): {
  * Get the current hour (0-23) in the given IANA timezone.
  */
 export function getCurrentHourInTimezone(timezone: string): number {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = getCachedDateTimeFormatter("en-CA", {
     timeZone: timezone.trim(),
     hour: "2-digit",
     hour12: false,
@@ -433,7 +495,7 @@ export function getCurrentHourInTimezone(timezone: string): number {
 export function getHourInTimezone(isoDateString: string, timezone: string): number {
   const date = new Date(isoDateString);
   if (Number.isNaN(date.getTime())) return 0;
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = getCachedDateTimeFormatter("en-CA", {
     timeZone: timezone.trim(),
     hour: "2-digit",
     hour12: false,
@@ -446,7 +508,7 @@ export function getHourInTimezone(isoDateString: string, timezone: string): numb
  * Get the current calendar date in the given IANA timezone as YYYY-MM-DD.
  */
 export function getTodayInTimezoneAt(timezone: string, atMs: number): string {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  const formatter = getCachedDateTimeFormatter("en-CA", {
     timeZone: timezone.trim(),
     year: "numeric",
     month: "2-digit",

@@ -17,7 +17,8 @@
       "Bash(rm -f logs/master-*.log logs/application-*.log)",
       "Bash(timeout 8 npx tsx smoke-pino-multitarget.mjs)",
       "Bash(rm -f logs/master.*.log logs/application.*.log logs/warn.*.log logs/error.*.log logs/debug.*.log 2>&1; ls logs/*.log 2>&1 | head -3)",
-      "Bash(rm -f smoke-pino*.mjs pino-filter-debug.log && ls smoke-pino*.mjs pino-filter-debug.log 2>&1)"
+      "Bash(rm -f smoke-pino*.mjs pino-filter-debug.log && ls smoke-pino*.mjs pino-filter-debug.log 2>&1)",
+      "Bash(npx tsx *)"
     ]
   }
 }
