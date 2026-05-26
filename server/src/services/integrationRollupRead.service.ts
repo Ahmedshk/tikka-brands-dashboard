@@ -2,6 +2,7 @@
  * Rollup-first reads for Square order aggregates (daily + hourly + period).
  */
 import mongoose from "mongoose";
+import { performance } from "node:perf_hooks";
 import { SquareOrderHourlyRollupModel } from "../models/squareOrderHourlyRollup.model.js";
 import { SquareOrderPeriodRollupModel } from "../models/squareOrderPeriodRollup.model.js";
 import {
@@ -255,14 +256,17 @@ export async function tryGetOrderStatsAndSourcesFromDailyRollupsSplit(
   uncoveredRanges: TimeRange[];
 } | null> {
   if (!ROLLUP_READ_ENABLED) return null;
+  const tStart = performance.now();
   const keys = fullBusinessDaysCoveredByRange(
     range,
     timezone,
     businessStartTime,
   );
   if (keys.length === 0) return null;
+  const tAfterKeys = performance.now();
   const dailies = await loadSquareOrderDailyRollupsForDates(locationMongoId, keys);
   if (dailies.length === 0) return null;
+  const tAfterLoad = performance.now();
   const presentKeys = new Set(dailies.map((d) => d.businessDateKey));
   let rollupNetSalesCents = 0;
   let rollupTransactionCount = 0;
@@ -276,14 +280,36 @@ export async function tryGetOrderStatsAndSourcesFromDailyRollupsSplit(
     rollupTotalRefundCents += d.totalRefundCents ?? 0;
     rollupRefundCount += d.refundCount ?? 0;
   }
+  const tAfterSums = performance.now();
   const rollupSourcesOfSalesCentsById =
     sumSourcesOfSalesCentsByIdFromDailyRollupDocs(dailies);
+  const tAfterSources = performance.now();
   const uncoveredRanges = computeRollupUncoveredSubRanges(
     range,
     timezone,
     businessStartTime,
     presentKeys,
   );
+  const tAfterUncovered = performance.now();
+  // Diagnostic — measures each sync CPU step inside the daily-rollup split.
+  // The aggregate worker timing (`tSquareMs` in salesLaborAllLocations)
+  // measured 12-15s/worker on warm-cache requests despite the rollup loader
+  // reporting a hit, so we need to know whether the time is in the loader
+  // await, the sourcesOfSales merge (iterates every segment of every day's
+  // doc — can be O(thousands) per location), or the uncovered-range compute.
+  // Once we identify the hot step we can drop this log.
+  logger.info('[rollup-split-timing] square daily', {
+    locationMongoId,
+    dayCount: keys.length,
+    docCount: dailies.length,
+    sourcesSegmentCount: rollupSourcesOfSalesCentsById.size,
+    tKeysMs: Math.round(tAfterKeys - tStart),
+    tLoadMs: Math.round(tAfterLoad - tAfterKeys),
+    tSumsMs: Math.round(tAfterSums - tAfterLoad),
+    tSourcesMs: Math.round(tAfterSources - tAfterSums),
+    tUncoveredMs: Math.round(tAfterUncovered - tAfterSources),
+    tTotalMs: Math.round(tAfterUncovered - tStart),
+  });
   return {
     rollupNetSalesCents,
     rollupTransactionCount,
@@ -314,14 +340,17 @@ export async function tryGetLaborTotalsFromDailyRollupsSplit(
   businessStartTime: string,
 ): Promise<DailyLaborSplitResult | null> {
   if (!ROLLUP_READ_ENABLED) return null;
+  const tStart = performance.now();
   const keys = fullBusinessDaysCoveredByRange(
     range,
     timezone,
     businessStartTime,
   );
   if (keys.length === 0) return null;
+  const tAfterKeys = performance.now();
   const dailies = await loadHomebaseTimecardDailyRollupsForDates(locationMongoId, keys);
   if (dailies.length === 0) return null;
+  const tAfterLoad = performance.now();
   const presentKeys = new Set(dailies.map((d) => d.businessDateKey));
   let rollupTotalLaborCost = 0;
   let rollupTotalPaidHours = 0;
@@ -339,12 +368,26 @@ export async function tryGetLaborTotalsFromDailyRollupsSplit(
       rollupTotalPaidHours += d.totalPaidHours;
     }
   }
+  const tAfterSums = performance.now();
   const uncoveredRanges = computeRollupUncoveredSubRanges(
     range,
     timezone,
     businessStartTime,
     presentKeys,
   );
+  const tAfterUncovered = performance.now();
+  // Diagnostic — twin of the square split timing. See header comment in
+  // `tryGetOrderStatsAndSourcesFromDailyRollupsSplit` for rationale.
+  logger.info('[rollup-split-timing] labor daily', {
+    locationMongoId,
+    dayCount: keys.length,
+    docCount: dailies.length,
+    tKeysMs: Math.round(tAfterKeys - tStart),
+    tLoadMs: Math.round(tAfterLoad - tAfterKeys),
+    tSumsMs: Math.round(tAfterSums - tAfterLoad),
+    tUncoveredMs: Math.round(tAfterUncovered - tAfterSums),
+    tTotalMs: Math.round(tAfterUncovered - tStart),
+  });
   return {
     rollupTotalLaborCost,
     rollupTotalPaidHours,
