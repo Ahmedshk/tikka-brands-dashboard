@@ -5,8 +5,7 @@ import { enrichMarketManWebhookOrder } from "./marketmanWebhookOrderEnrich.util.
 import { getMarketManOrderBusinessDateAt } from "./marketmanOrderIndexFields.util.js";
 import { marketManBusinessDateKeyFromUtcDate } from "./marketManBusinessDateKey.util.js";
 import { marketManOrderNumberStringFromRaw } from "./marketmanWebhookExtract.util.js";
-import { logger } from "./logger.util.js";
-import { logWebhookError } from "./webhookLog.util.js";
+import { logWebhookError, logWebhookInfo } from "./webhookLog.util.js";
 
 export function marketManWebhookBodyAsRecord(
   body: unknown,
@@ -136,7 +135,7 @@ export async function runMarketManWebhookOrderPipeline(
       );
     }
   } else {
-    logger.info("marketman webhook: skipped rollup (no businessDateAt)", {
+    logWebhookInfo("MarketMan", "skipped rollup (no businessDateAt)", {
       buyerGuid,
       apiKind,
       orderNumber: marketManOrderNumberStringFromRaw(enrichedOrder),

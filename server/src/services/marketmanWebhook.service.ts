@@ -12,7 +12,6 @@ import {
 } from "../utils/marketmanWebhookExtract.util.js";
 import { normalizeMarketManWebhookOrderDates } from "../utils/marketmanWebhookOrderDates.util.js";
 import { marketManOrderWebhookSyncWindowUtc } from "../utils/marketmanOrderWebhookSyncWindow.util.js";
-import { logger } from "../utils/logger.util.js";
 import {
   logWebhookReceived,
   logWebhookResponse,
@@ -85,14 +84,12 @@ export async function processMarketManWebhookHttp(
   });
 
   if (!eventAllowsOrderUpsert(eventName)) {
-    logger.info("marketman webhook: event not configured for order upsert", {
-      eventName,
-    });
     logWebhookResponse("MarketMan", {
       success: true,
       httpStatus: 200,
       ignored: true,
       reason: "event_not_allowed",
+      eventName,
       buyerGuid,
       orderNumber: orderNumberEarly || null,
     });
@@ -103,12 +100,12 @@ export async function processMarketManWebhookHttp(
   }
 
   if (!buyerGuid || !order) {
-    logger.info("marketman webhook: no order/buyer to upsert", { eventName });
     logWebhookResponse("MarketMan", {
       success: true,
       httpStatus: 200,
       ignored: true,
       reason: "unrecognized_payload",
+      eventName,
       buyerGuid: buyerGuid ?? null,
       orderNumber: null,
     });
@@ -183,19 +180,11 @@ export async function processMarketManWebhookHttp(
       webhookReceived: b,
     });
 
-  logger.info("marketman webhook: order upserted", {
-    eventName,
-    buyerGuid,
-    apiKind,
-    orderNumber: orderNumberFinal,
-    enrichmentPartial,
-    rollupUpdated,
-  });
-
   logWebhookResponse("MarketMan", {
     success: true,
     httpStatus: 200,
     upserted: true,
+    eventName,
     buyerGuid,
     orderNumber: orderNumberFinal,
     orderId: orderNumberFinal,

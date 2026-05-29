@@ -1,13 +1,13 @@
 import { logger } from './logger.util.js';
 
 /**
- * Shared helpers for webhook console logs and structured logging.
- * On warn/error, the complete received webhook body is included when provided.
+ * Shared helpers for webhook structured logging (Pino → master / application / warn / error files).
+ * On warn/error, the complete received webhook body is included in `webhookReceived` when provided.
  */
 
 export type WebhookSource = 'Square' | 'MarketMan';
 
-/** Sources that emit webhook console lines but do not use warn/error body attachment. */
+/** Sources that emit webhook log lines but do not use warn/error body attachment. */
 export type WebhookLogSource = WebhookSource | 'Adobe Sign';
 
 export function webhookLogTs(): string {
@@ -25,39 +25,55 @@ function mergeWebhookMeta(
   return { ...base, webhookReceived };
 }
 
-function emitWebhookConsole(
-  stream: 'log' | 'warn' | 'error',
+function emitWebhookLog(
+  level: 'info' | 'warn' | 'error',
   source: WebhookLogSource,
   detail: string,
   fields?: Record<string, unknown>,
   webhookReceived?: unknown,
 ): void {
-  const prefix = `[${webhookLogTs()}] ${source} webhook: ${detail}`;
-  const emit = stream === 'log' ? console.log : stream === 'warn' ? console.warn : console.error;
+  const message = `${source} webhook: ${detail}`;
+  const meta = mergeWebhookMeta(
+    { webhookSource: source, ...fields },
+    webhookReceived,
+  );
 
-  if (fields === undefined) {
-    emit(prefix);
-  } else {
-    emit(prefix, fields);
+  if (level === 'info') {
+    if (meta) {
+      logger.info(message, meta);
+    } else {
+      logger.info(message);
+    }
+    return;
   }
-
-  if (webhookReceived !== undefined) {
-    emit(`[${webhookLogTs()}] ${source} webhook: received (full)`, webhookReceived);
+  if (level === 'warn') {
+    logger.warn(message, meta);
+    return;
   }
+  logger.error(message, meta);
 }
 
 export function logWebhookReceived(
   source: WebhookLogSource,
   fields: Record<string, unknown> = {},
 ): void {
-  emitWebhookConsole('log', source, 'received', fields);
+  emitWebhookLog('info', source, 'received', fields);
 }
 
 export function logWebhookResponse(
   source: WebhookLogSource,
   fields: Record<string, unknown> = {},
 ): void {
-  emitWebhookConsole('log', source, 'response', fields);
+  emitWebhookLog('info', source, 'response', fields);
+}
+
+/** Pipeline / handler detail between received and response (e.g. rollup skipped). */
+export function logWebhookInfo(
+  source: WebhookSource,
+  detail: string,
+  fields?: Record<string, unknown>,
+): void {
+  emitWebhookLog('info', source, detail, fields);
 }
 
 export function logWebhookWarn(
@@ -66,9 +82,7 @@ export function logWebhookWarn(
   fields?: Record<string, unknown>,
   webhookReceived?: unknown,
 ): void {
-  const message = `${source} webhook: ${detail}`;
-  logger.warn(message, mergeWebhookMeta(fields, webhookReceived));
-  emitWebhookConsole('warn', source, detail, fields, webhookReceived);
+  emitWebhookLog('warn', source, detail, fields, webhookReceived);
 }
 
 export function logWebhookError(
@@ -77,7 +91,5 @@ export function logWebhookError(
   fields?: Record<string, unknown>,
   webhookReceived?: unknown,
 ): void {
-  const message = `${source} webhook: ${detail}`;
-  logger.error(message, mergeWebhookMeta(fields, webhookReceived));
-  emitWebhookConsole('error', source, detail, fields, webhookReceived);
+  emitWebhookLog('error', source, detail, fields, webhookReceived);
 }
