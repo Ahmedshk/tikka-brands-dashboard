@@ -1,19 +1,37 @@
-import { formatYmdInTimezone, getStartOfDayUtc } from "./timezone.util.js";
+import { formatYmdInTimezone } from "./timezone.util.js";
 import {
   parseYmdBusinessDateKey,
   previousYmdInTimezone,
 } from "./businessDayUtcRange.util.js";
 
-/** Next calendar yyyy-MM-dd in `timeZone` (≈24h after local midnight of `ymd`). */
+/**
+ * Next calendar yyyy-MM-dd in `timeZone`.
+ *
+ * IMPORTANT — DST CORRECTNESS:
+ * The naive implementation ("start of local midnight + 24h") infinite-loops
+ * on fall-back DST days for callers that walk a month by calling this
+ * repeatedly (e.g. `businessDateKeysForMonthPeriod`). On Nov 2 in
+ * America/Denver, midnight MDT is 06:00Z; adding 24h gives 06:00Z on Nov 3,
+ * but by then the zone has fallen back to MST (UTC-7), so 06:00Z is 23:00
+ * MST on Nov 2 — STILL the same local date. The function would return
+ * "2025-11-02" given "2025-11-02", and the caller's
+ * `while (k.startsWith(prefix))` loop would never advance, hanging the
+ * Square / Homebase rollup script for any month containing the fall-back
+ * transition.
+ *
+ * Fix: advance the civil date components directly (`d + 1`) and anchor the
+ * probe instant at NOON UTC of that target date. Noon UTC is at least ~10h
+ * away from any IANA-recognized DST transition, so the formatted local date
+ * is unambiguous in every timezone we care about.
+ *
+ * `formatYmdInTimezone` is the cached-`Intl.DateTimeFormat` variant — same
+ * output as `date-fns-tz` `formatInTimeZone` but avoids the per-call ICU
+ * allocation that was a contributor to dashboard hot-path slowness.
+ */
 export function nextYmdInTimezone(ymd: string, timeZone: string): string {
   const tz = timeZone.trim() || "UTC";
   const { y, m0, d } = parseYmdBusinessDateKey(ymd);
-  const startOfYmd = getStartOfDayUtc(y, m0, d, tz);
-  const probe = new Date(startOfYmd.getTime() + 24 * 60 * 60 * 1000);
-  // Uses the cached `Intl.DateTimeFormat` via `formatYmdInTimezone` instead of
-  // `formatInTimeZone(...)` from date-fns-tz — equivalent output for valid
-  // Dates with `yyyy-MM-dd` format, but avoids the per-call ICU formatter
-  // allocation that was a contributor to the dashboard hot-path slowness.
+  const probe = new Date(Date.UTC(y, m0, d + 1, 12, 0, 0, 0));
   return formatYmdInTimezone(probe, tz);
 }
 
