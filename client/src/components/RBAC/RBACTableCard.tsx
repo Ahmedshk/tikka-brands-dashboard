@@ -1,4 +1,5 @@
-import type { RoleRow, RolePermissions, RoleLocationsResponse } from '../../types/rbac.types';
+import type { RoleRow, RolePermissions } from '../../types/rbac.types';
+import { formatRoleLocationsForTable } from '../../utils/rbacTableHelpers';
 import { Pagination } from '../common/Pagination';
 import EditIcon from '@assets/icons/edit.svg?react';
 import DeleteIcon from '@assets/icons/delete.svg?react';
@@ -26,23 +27,6 @@ function formatPermissions(permissions: RolePermissions): { summary: string; tit
   return { summary, title };
 }
 
-/** Returns location display lines (one entry = one line in the UI). */
-function getLocationLines(locations: RoleLocationsResponse | undefined): string[] {
-  if (locations == null || locations === 'all') return ['All'];
-  if (!Array.isArray(locations)) return ['All'];
-  const n = locations.length;
-  if (n === 0) return ['None'];
-  const withNames = locations.every(
-    (item): item is { _id: string; storeName: string } =>
-      typeof item === 'object' && item != null && 'storeName' in item
-  );
-  if (withNames) {
-    const names = locations.map((loc) => loc.storeName || '—').filter(Boolean);
-    return names.length > 0 ? names : [n === 1 ? '1 location' : `${n} locations`];
-  }
-  return [n === 1 ? '1 location' : `${n} locations`];
-}
-
 export interface RBACTableCardProps {
   rows: RoleRow[];
   onEdit?: (row: RoleRow, index: number) => void;
@@ -65,6 +49,7 @@ export const RBACTableCard = ({
         <div className="md:hidden divide-y divide-gray-200">
           {rows.map((row, index) => {
             const { summary, title } = formatPermissions(row.permissions);
+            const locationsLabel = formatRoleLocationsForTable(row.locations);
             const isSystem = row.isSystem === true;
             const isInactive = row.isActive === false;
             const cardBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
@@ -93,16 +78,12 @@ export const RBACTableCard = ({
                     <span className="font-medium text-primary">Reports To:</span>{' '}
                     {row.reportsToRoleName ?? '---'}
                   </p>
-                  <div className="text-xs text-secondary">
-                    <span className="font-medium text-primary">Locations:</span>
-                    <div className="mt-0.5 flex flex-col gap-0.5">
-                      {getLocationLines(row.locations).map((line) => (
-                        <span key={line} className="block break-words">
-                          {line}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                  <p className="text-xs text-secondary">
+                    <span className="font-medium text-primary">Locations:</span>{' '}
+                    <span className="break-words whitespace-normal" title={locationsLabel}>
+                      {locationsLabel}
+                    </span>
+                  </p>
                   <p className="text-xs text-secondary" title={title ?? summary}>
                     <span className="font-medium text-primary">Permissions:</span> {summary}
                   </p>
@@ -169,6 +150,7 @@ export const RBACTableCard = ({
             <tbody className="text-primary">
               {rows.map((row, index) => {
                 const { summary, title } = formatPermissions(row.permissions);
+                const locationsLabel = formatRoleLocationsForTable(row.locations);
                 const isSystem = row.isSystem === true;
                 const isInactive = row.isActive === false;
                 return (
@@ -199,13 +181,12 @@ export const RBACTableCard = ({
                       </span>
                     </td>
                     <td className="w-[35%] px-4 lg:px-6 py-3 lg:py-4 text-secondary align-top">
-                      <div className="flex flex-col gap-0.5">
-                        {getLocationLines(row.locations).map((line) => (
-                          <span key={line} className="block break-words">
-                            {line}
-                          </span>
-                        ))}
-                      </div>
+                      <span
+                        className="block break-words whitespace-normal min-w-0"
+                        title={locationsLabel}
+                      >
+                        {locationsLabel}
+                      </span>
                     </td>
                     <td className="w-[15%] px-4 lg:px-6 py-3 lg:py-4 align-middle">
                       <span

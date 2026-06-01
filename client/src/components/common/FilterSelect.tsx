@@ -15,6 +15,7 @@ export interface FilterSelectProps {
   className?: string;
   /** When true, dropdown opens above the trigger (e.g. in modals). Default false. */
   openAbove?: boolean;
+  disabled?: boolean;
 }
 
 export function FilterSelect({
@@ -25,6 +26,7 @@ export function FilterSelect({
   'aria-label': ariaLabel,
   className = '',
   openAbove = false,
+  disabled = false,
 }: Readonly<FilterSelectProps>) {
   const dropdownOptions: DropdownOption[] = options.map((o) => ({ value: o.value, label: o.label }));
   return (
@@ -37,6 +39,7 @@ export function FilterSelect({
       className={className}
       openAbove={openAbove}
       allowEmpty={true}
+      disabled={disabled}
     />
   );
 }

@@ -16,6 +16,10 @@ import {
   getProfileAvatarContent,
   userRowStartDateToYmd,
 } from '../../utils/addUserModalHelpers';
+import {
+  filterRolesAssignableToUsers,
+  isOwnerRole,
+} from '../../utils/userManagementTableHelpers';
 import { normalizeLocationsToIds } from '../../utils/addEditRoleModalHelpers';
 
 const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -72,6 +76,8 @@ export function AddUserModal({
   };
 
   const isEdit = Boolean(initialUser?._id);
+  const editingOwner = isEdit && isOwnerRole(initialUser?.role);
+  const assignableRoles = useMemo(() => filterRolesAssignableToUsers(roles), [roles]);
   const selectedRole = roleId ? roles.find((r) => r.id === roleId) : null;
   const roleLocationIdSet = useMemo(() => {
     if (!selectedRole?.locations || !locations.length) return new Set<string>();
@@ -421,14 +427,25 @@ export function AddUserModal({
             <label htmlFor="user-role" className="block text-sm font-medium text-primary mb-1">
               Role (optional)
             </label>
-            <FilterSelect
-              value={roleId}
-              onChange={setRoleId}
-              options={roles.map((r) => ({ value: r.id ?? '', label: r.roleName }))}
-              placeholder="Role unassigned"
-              aria-label="Role"
-              openAbove={true}
-            />
+            {editingOwner ? (
+              <input
+                id="user-role"
+                type="text"
+                readOnly
+                value={initialUser?.role ?? 'Owner'}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary bg-gray-50 cursor-not-allowed"
+                aria-label="Role"
+              />
+            ) : (
+              <FilterSelect
+                value={roleId}
+                onChange={setRoleId}
+                options={assignableRoles.map((r) => ({ value: r.id ?? '', label: r.roleName }))}
+                placeholder="Role unassigned"
+                aria-label="Role"
+                openAbove={true}
+              />
+            )}
           </div>
 
           {isEdit && (
