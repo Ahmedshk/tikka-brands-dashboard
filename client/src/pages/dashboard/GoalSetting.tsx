@@ -3,7 +3,7 @@ import { useBlocker } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import { Layout } from '../../components/common/Layout';
-import { Spinner } from '../../components/common/Spinner';
+import { UnsavedChangesBar } from '../../components/common/UnsavedChangesBar';
 import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
 import { goalService } from '../../services/goal.service';
 import { locationService } from '../../services/location.service';
@@ -404,6 +404,9 @@ export const GoalSetting = () => {
     }
   };
 
+  const showUnsavedBar =
+    hasUnsavedChanges && activeTab !== 'previous' && canEditAnyGoalMetric;
+
   const renderGoalReadOnly = useCallback(
     (goal: Goal | null, actuals?: GoalDailyActuals | null) => (
       <GoalSettingFormFields
@@ -419,7 +422,7 @@ export const GoalSetting = () => {
 
   return (
     <Layout>
-      <div className="p-6">
+      <div className={`p-6 ${showUnsavedBar ? 'pb-24' : ''}`}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
           <h2 className="flex items-center gap-2 text-base md:text-lg 2xl:text-xl font-semibold text-primary">
             <AdminAndSettingsIcon
@@ -491,7 +494,7 @@ export const GoalSetting = () => {
                   </p>
                 )}
 
-                <form onSubmit={handleSubmit}>
+                <form id="goal-setting-form" onSubmit={handleSubmit}>
                   {activeTab === 'default' && (
                     <DefaultGoalsTab
                       defaultGoals={defaultGoals}
@@ -542,37 +545,22 @@ export const GoalSetting = () => {
                     />
                   )}
 
-                  {activeTab !== 'previous' && canEditAnyGoalMetric && (
-                    <div className="mt-8 flex gap-3 max-w-xs">
-                      <button
-                        type="button"
-                        onClick={handleReset}
-                        className="flex-1 min-w-0 flex items-center justify-center px-4 py-3 border border-gray-200 rounded-xl text-sm md:text-base 2xl:text-lg font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer"
-                      >
-                        Reset
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={saving}
-                        className="flex-1 min-w-0 flex items-center justify-center gap-2 px-4 py-3 bg-button-primary text-white rounded-xl text-sm md:text-base 2xl:text-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-60 cursor-pointer"
-                      >
-                        {saving ? (
-                          <>
-                            <Spinner size="sm" className="h-4 w-4 text-white" />
-                            Saving...
-                          </>
-                        ) : (
-                          'Save Goals'
-                        )}
-                      </button>
-                    </div>
-                  )}
                 </form>
               </>
             </GoalSettingMainContent>
           </div>
         </div>
       </div>
+
+      <UnsavedChangesBar
+        visible={showUnsavedBar}
+        onDiscard={handleReset}
+        onSave={() => {}}
+        saving={saving}
+        saveLabel={saving ? 'Saving...' : 'Save Goals'}
+        description="Review and save to apply goal updates for this location."
+        formId="goal-setting-form"
+      />
 
       <ConfirmDialog
         isOpen={pendingTab !== null || pendingLocation !== null || blocker.state === 'blocked'}

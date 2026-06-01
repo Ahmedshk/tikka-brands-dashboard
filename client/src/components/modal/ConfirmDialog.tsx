@@ -81,39 +81,39 @@ export const ConfirmDialog = ({
       aria-describedby="confirm-dialog-message"
     >
       <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl border border-gray-200 bg-card-background p-6 shadow-lg">
-      <h2 id="confirm-dialog-title" className="text-lg font-semibold text-secondary mb-2">
-        {title}
-      </h2>
-      <p id="confirm-dialog-message" className="text-sm text-primary mb-6">
-        {message}
-      </p>
-      <div className="flex gap-3 justify-end">
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={isLoading}
-          className="px-4 py-3 border border-gray-200 rounded-xl text-sm font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-60"
-          title={cancelLabel}
-        >
-          {cancelLabel}
-        </button>
-        <button
-          type="button"
-          onClick={handleConfirm}
-          disabled={isLoading}
-          className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-colors cursor-pointer disabled:opacity-60 ${confirmButtonClass}`}
-          title={confirmLabel}
-        >
-          {isLoading ? (
-            <>
-              <Spinner size="sm" className="text-inherit" />
-              Please wait...
-            </>
-          ) : (
-            confirmLabel
-          )}
-        </button>
-      </div>
+        <h2 id="confirm-dialog-title" className="text-lg font-semibold text-secondary mb-2">
+          {title}
+        </h2>
+        <p id="confirm-dialog-message" className="text-sm text-primary mb-6">
+          {message}
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isLoading}
+            className="px-4 py-3 border border-gray-200 rounded-xl text-sm font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-60"
+            title={cancelLabel}
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={isLoading}
+            className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-colors cursor-pointer disabled:opacity-60 ${confirmButtonClass}`}
+            title={confirmLabel}
+          >
+            {isLoading ? (
+              <>
+                <Spinner size="sm" className="text-inherit" />
+                Please wait...
+              </>
+            ) : (
+              confirmLabel
+            )}
+          </button>
+        </div>
       </div>
     </dialog>,
     document.body

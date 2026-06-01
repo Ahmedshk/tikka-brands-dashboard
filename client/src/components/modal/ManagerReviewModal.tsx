@@ -112,9 +112,8 @@ function EmployeeSelfReviewSection({
         type="button"
         onClick={handleViewEmployeeSelfReview}
         disabled={!hasCompleted}
-        className={`text-sm font-semibold flex items-center gap-1 cursor-pointer ${
-          hasCompleted ? "text-button-primary hover:underline" : "text-gray-400 cursor-not-allowed"
-        }`}
+        className={`text-sm font-semibold flex items-center gap-1 cursor-pointer ${hasCompleted ? "text-button-primary hover:underline" : "text-gray-400 cursor-not-allowed"
+          }`}
       >
         {showSelfReview ? "▼" : "►"} View Employee Self-Review
         {!hasCompleted && " (complete your review first)"}
@@ -375,48 +374,48 @@ export const ManagerReviewModal = ({ isOpen, onClose, cycleId, status, onSubmitt
           </div>
           <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden border-x border-gray-200">
             <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 pt-4 pb-4 md:[scrollbar-gutter:stable]">
-        {loading ? (
-          <div className="flex justify-center py-12"><Spinner size="lg" className="text-button-primary" /></div>
-        ) : (
-          <div className="space-y-6 pb-2">
-            <ReviewEmployeeBioSection cycle={reviewCycle} sectionHeadingId="manager-review-employee-bio-heading" />
+              {loading ? (
+                <div className="flex justify-center py-12"><Spinner size="lg" className="text-button-primary" /></div>
+              ) : (
+                <div className="space-y-6 pb-2">
+                  <ReviewEmployeeBioSection cycle={reviewCycle} sectionHeadingId="manager-review-employee-bio-heading" />
 
-            <DirectorReturnCallout
-              show={showDirectorReturnCallout}
-              directorComments={reviewCycle?.directorComments}
-            />
+                  <DirectorReturnCallout
+                    show={showDirectorReturnCallout}
+                    directorComments={reviewCycle?.directorComments}
+                  />
 
-            <ManagerQuestionsSection
-              questions={questions}
-              answers={answers}
-              setAnswers={setAnswers}
-              isFormLocked={isFormLocked}
-            />
+                  <ManagerQuestionsSection
+                    questions={questions}
+                    answers={answers}
+                    setAnswers={setAnswers}
+                    isFormLocked={isFormLocked}
+                  />
 
-            {/* Prior saved snapshots (current answers are in the form above) */}
-            {existingReview && existingReview.revisionHistory.length > 0 && (
-              <section>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Revision history</h3>
-                <ManagerReviewResponsesWithHistory
-                  managerReview={existingReview}
-                  questionnaire={questions}
-                  accent="gray"
-                  showCurrentResponses={false}
-                />
-              </section>
-            )}
+                  {/* Prior saved snapshots (current answers are in the form above) */}
+                  {existingReview && existingReview.revisionHistory.length > 0 && (
+                    <section>
+                      <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Revision history</h3>
+                      <ManagerReviewResponsesWithHistory
+                        managerReview={existingReview}
+                        questionnaire={questions}
+                        accent="gray"
+                        showCurrentResponses={false}
+                      />
+                    </section>
+                  )}
 
-            <EmployeeSelfReviewSection
-              hasCompleted={hasCompleted}
-              showSelfReview={showSelfReview}
-              loadingSelfReview={loadingSelfReview}
-              canSeeEmployeeReview={canSeeEmployeeReview}
-              selfReview={selfReview}
-              selfReviewQuestionnaire={selfReviewQuestionnaire}
-              handleViewEmployeeSelfReview={handleViewEmployeeSelfReview}
-            />
-          </div>
-        )}
+                  <EmployeeSelfReviewSection
+                    hasCompleted={hasCompleted}
+                    showSelfReview={showSelfReview}
+                    loadingSelfReview={loadingSelfReview}
+                    canSeeEmployeeReview={canSeeEmployeeReview}
+                    selfReview={selfReview}
+                    selfReviewQuestionnaire={selfReviewQuestionnaire}
+                    handleViewEmployeeSelfReview={handleViewEmployeeSelfReview}
+                  />
+                </div>
+              )}
             </div>
 
             <ManagerReviewFooter

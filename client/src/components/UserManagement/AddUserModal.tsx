@@ -290,225 +290,225 @@ export function AddUserModal({
           </div>
           <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-4 space-y-4 border-x border-gray-200">
-          {/* Profile image first */}
-          <div>
-            <label htmlFor="user-profile-image" className="block text-sm font-medium text-primary mb-1">
-              Profile image (optional, max 2 MB, JPEG/PNG/WebP)
-            </label>
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="w-14 h-14 rounded-full border border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
-                {profileAvatarContent}
+              {/* Profile image first */}
+              <div>
+                <label htmlFor="user-profile-image" className="block text-sm font-medium text-primary mb-1">
+                  Profile image (optional, max 2 MB, JPEG/PNG/WebP)
+                </label>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="w-14 h-14 rounded-full border border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
+                    {profileAvatarContent}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <input
+                      id="user-profile-image"
+                      ref={fileInputRef}
+                      type="file"
+                      accept={PROFILE_IMAGE_ACCEPT}
+                      className="hidden"
+                      onChange={handleProfileImageChange}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-primary hover:bg-gray-50"
+                    >
+                      {profileImageFile || currentProfileImageUrl ? 'Change' : 'Upload'}
+                    </button>
+                    {(profileImagePreview || currentProfileImageUrl) && !removeProfileImage && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileImageFile(null);
+                          setRemoveProfileImage(true);
+                        }}
+                        className="text-sm text-negative hover:underline"
+                      >
+                        Remove image
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="user-first-name" className="block text-sm font-medium text-primary mb-1">
+                    First name <span className="text-negative">*</span>
+                  </label>
+                  <input
+                    id="user-first-name"
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
+                    placeholder="First name"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="user-last-name" className="block text-sm font-medium text-primary mb-1">
+                    Last name <span className="text-negative">*</span>
+                  </label>
+                  <input
+                    id="user-last-name"
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
+                    placeholder="Last name"
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="user-phone" className="block text-sm font-medium text-primary mb-1">
+                  Phone number (optional)
+                </label>
                 <input
-                  id="user-profile-image"
-                  ref={fileInputRef}
-                  type="file"
-                  accept={PROFILE_IMAGE_ACCEPT}
-                  className="hidden"
-                  onChange={handleProfileImageChange}
+                  id="user-phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
+                  placeholder="Phone"
                 />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-primary hover:bg-gray-50"
-                >
-                  {profileImageFile || currentProfileImageUrl ? 'Change' : 'Upload'}
-                </button>
-                {(profileImagePreview || currentProfileImageUrl) && !removeProfileImage && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProfileImageFile(null);
-                      setRemoveProfileImage(true);
-                    }}
-                    className="text-sm text-negative hover:underline"
-                  >
-                    Remove image
-                  </button>
+              </div>
+              <div>
+                <label htmlFor="user-email" className="block text-sm font-medium text-primary mb-1">
+                  Email <span className="text-negative">*</span>
+                </label>
+                <input
+                  id="user-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
+                  placeholder="email@example.com"
+                />
+              </div>
+              <div className="min-w-0">
+                <span id="user-start-date-label" className="block text-sm font-medium text-primary mb-1">
+                  Start date <span className="text-negative">*</span>
+                </span>
+                <AnalogDatePickerField
+                  value={startDate}
+                  onChange={setStartDate}
+                  pickerPaperWidth={pickerPaperWidth}
+                  pickerPopperContainer={pickerPopperContainer}
+                  pickerModalPanel={pickerModalPanel}
+                  labelledBy="user-start-date-label"
+                />
+              </div>
+              <div>
+                <label htmlFor="user-square-id" className="block text-sm font-medium text-primary mb-1">
+                  Square ID (optional)
+                </label>
+                <input
+                  id="user-square-id"
+                  type="text"
+                  value={squareId}
+                  onChange={(e) => setSquareId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
+                  placeholder="Square ID"
+                />
+              </div>
+              <div>
+                <label htmlFor="user-homebase-id" className="block text-sm font-medium text-primary mb-1">
+                  Homebase ID (optional)
+                </label>
+                <input
+                  id="user-homebase-id"
+                  type="text"
+                  value={homebaseDataId}
+                  onChange={(e) => setHomebaseDataId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
+                  placeholder="Homebase ID"
+                />
+              </div>
+              <div>
+                <label htmlFor="user-role" className="block text-sm font-medium text-primary mb-1">
+                  Role (optional)
+                </label>
+                {editingOwner ? (
+                  <input
+                    id="user-role"
+                    type="text"
+                    readOnly
+                    value={initialUser?.role ?? 'Owner'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary bg-gray-50 cursor-not-allowed"
+                    aria-label="Role"
+                  />
+                ) : (
+                  <FilterSelect
+                    value={roleId}
+                    onChange={setRoleId}
+                    options={assignableRoles.map((r) => ({ value: r.id ?? '', label: r.roleName }))}
+                    placeholder="Role unassigned"
+                    aria-label="Role"
+                    openAbove={true}
+                  />
                 )}
               </div>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="user-first-name" className="block text-sm font-medium text-primary mb-1">
-                First name <span className="text-negative">*</span>
-              </label>
-              <input
-                id="user-first-name"
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
-                placeholder="First name"
-              />
-            </div>
-            <div>
-              <label htmlFor="user-last-name" className="block text-sm font-medium text-primary mb-1">
-                Last name <span className="text-negative">*</span>
-              </label>
-              <input
-                id="user-last-name"
-                type="text"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
-                placeholder="Last name"
-              />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="user-phone" className="block text-sm font-medium text-primary mb-1">
-              Phone number (optional)
-            </label>
-            <input
-              id="user-phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
-              placeholder="Phone"
-            />
-          </div>
-          <div>
-            <label htmlFor="user-email" className="block text-sm font-medium text-primary mb-1">
-              Email <span className="text-negative">*</span>
-            </label>
-            <input
-              id="user-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
-              placeholder="email@example.com"
-            />
-          </div>
-          <div className="min-w-0">
-            <span id="user-start-date-label" className="block text-sm font-medium text-primary mb-1">
-              Start date <span className="text-negative">*</span>
-            </span>
-            <AnalogDatePickerField
-              value={startDate}
-              onChange={setStartDate}
-              pickerPaperWidth={pickerPaperWidth}
-              pickerPopperContainer={pickerPopperContainer}
-              pickerModalPanel={pickerModalPanel}
-              labelledBy="user-start-date-label"
-            />
-          </div>
-          <div>
-            <label htmlFor="user-square-id" className="block text-sm font-medium text-primary mb-1">
-              Square ID (optional)
-            </label>
-            <input
-              id="user-square-id"
-              type="text"
-              value={squareId}
-              onChange={(e) => setSquareId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
-              placeholder="Square ID"
-            />
-          </div>
-          <div>
-            <label htmlFor="user-homebase-id" className="block text-sm font-medium text-primary mb-1">
-              Homebase ID (optional)
-            </label>
-            <input
-              id="user-homebase-id"
-              type="text"
-              value={homebaseDataId}
-              onChange={(e) => setHomebaseDataId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary"
-              placeholder="Homebase ID"
-            />
-          </div>
-          <div>
-            <label htmlFor="user-role" className="block text-sm font-medium text-primary mb-1">
-              Role (optional)
-            </label>
-            {editingOwner ? (
-              <input
-                id="user-role"
-                type="text"
-                readOnly
-                value={initialUser?.role ?? 'Owner'}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-primary bg-gray-50 cursor-not-allowed"
-                aria-label="Role"
-              />
-            ) : (
-              <FilterSelect
-                value={roleId}
-                onChange={setRoleId}
-                options={assignableRoles.map((r) => ({ value: r.id ?? '', label: r.roleName }))}
-                placeholder="Role unassigned"
-                aria-label="Role"
-                openAbove={true}
-              />
-            )}
-          </div>
 
-          {isEdit && (
-            <EditUserOverridesSection
-              additionalLocationsOpen={additionalLocationsOpen}
-              setAdditionalLocationsOpen={setAdditionalLocationsOpen}
-              additionalPermissionsOpen={additionalPermissionsOpen}
-              setAdditionalPermissionsOpen={setAdditionalPermissionsOpen}
-              locations={locations}
-              roleLocationIdSet={roleLocationIdSet}
-              locationOverrides={locationOverrides}
-              setLocationOverrides={setLocationOverrides}
-              locationRemovals={locationRemovals}
-              setLocationRemovals={setLocationRemovals}
-              permissionOverrides={permissionOverrides}
-              setPermissionOverrides={setPermissionOverrides}
-              permissionRemovals={permissionRemovals}
-              setPermissionRemovals={setPermissionRemovals}
-              roleId={roleId}
-              roles={roles}
-            />
-          )}
+              {isEdit && (
+                <EditUserOverridesSection
+                  additionalLocationsOpen={additionalLocationsOpen}
+                  setAdditionalLocationsOpen={setAdditionalLocationsOpen}
+                  additionalPermissionsOpen={additionalPermissionsOpen}
+                  setAdditionalPermissionsOpen={setAdditionalPermissionsOpen}
+                  locations={locations}
+                  roleLocationIdSet={roleLocationIdSet}
+                  locationOverrides={locationOverrides}
+                  setLocationOverrides={setLocationOverrides}
+                  locationRemovals={locationRemovals}
+                  setLocationRemovals={setLocationRemovals}
+                  permissionOverrides={permissionOverrides}
+                  setPermissionOverrides={setPermissionOverrides}
+                  permissionRemovals={permissionRemovals}
+                  setPermissionRemovals={setPermissionRemovals}
+                  roleId={roleId}
+                  roles={roles}
+                />
+              )}
             </div>
             <div className="px-5 py-4 border-t border-gray-200 flex flex-wrap justify-end gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              dialogRef.current?.close();
-              onClose();
-            }}
-            className="px-4 py-2 rounded-lg border border-gray-300 text-primary hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          {isEdit ? (
-            <button
-              type="button"
-              onClick={() => handleSubmit(false)}
-              disabled={saving}
-              className="px-4 py-2 rounded-lg bg-button-primary text-white font-medium hover:opacity-90 disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-          ) : (
-            <>
               <button
                 type="button"
-                onClick={() => handleSubmit(false)}
-                disabled={saving}
-                className="px-4 py-2 rounded-lg bg-primary text-white font-medium hover:opacity-90 disabled:opacity-50"
+                onClick={() => {
+                  dialogRef.current?.close();
+                  onClose();
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-primary hover:bg-gray-50"
               >
-                {saving ? 'Creating…' : 'Create'}
+                Cancel
               </button>
-              <button
-                type="button"
-                onClick={() => setShowInviteConfirm(true)}
-                disabled={saving}
-                className="px-4 py-2 rounded-lg bg-button-primary text-white font-medium hover:opacity-90 disabled:opacity-50"
-              >
-                {saving ? 'Creating…' : 'Create and invite'}
-              </button>
-            </>
-          )}
+              {isEdit ? (
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(false)}
+                  disabled={saving}
+                  className="px-4 py-2 rounded-lg bg-button-primary text-white font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleSubmit(false)}
+                    disabled={saving}
+                    className="px-4 py-2 rounded-lg bg-primary text-white font-medium hover:opacity-90 disabled:opacity-50"
+                  >
+                    {saving ? 'Creating…' : 'Create'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowInviteConfirm(true)}
+                    disabled={saving}
+                    className="px-4 py-2 rounded-lg bg-button-primary text-white font-medium hover:opacity-90 disabled:opacity-50"
+                  >
+                    {saving ? 'Creating…' : 'Create and invite'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

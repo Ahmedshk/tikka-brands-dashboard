@@ -75,7 +75,7 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
     setLogoListLoading(true);
     logoService.getList().then((logos) => {
       if (!cancelled) setLogoList(logos);
-    }).catch(() => {}).finally(() => {
+    }).catch(() => { }).finally(() => {
       if (!cancelled) setLogoListLoading(false);
     });
     return () => { cancelled = true; };

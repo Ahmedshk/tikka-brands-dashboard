@@ -14,7 +14,10 @@ import { AnalogTimePickerField } from "../../components/common/AnalogTimePickerF
 import { Dropdown, type DropdownOption } from "../../components/common/Dropdown";
 import { Layout } from "../../components/common/Layout";
 import { Spinner } from "../../components/common/Spinner";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 import { ConfirmDialog } from "../../components/modal/ConfirmDialog";
+import { useUnsavedChangesNavigationGuard } from "../../hooks/useUnsavedChangesNavigationGuard";
+import { calendarBindingsEqual } from "../../utils/settingsDirtyStateHelpers";
 import { calendarService } from "../../services/calendar.service";
 import { format } from "date-fns";
 import {
@@ -236,9 +239,8 @@ function EventsNotificationsSettingsConfirmDialogs({
   const integrationMessage =
     integrationPendingDelete == null
       ? ""
-      : `Remove “${
-          integrationPendingDelete.description?.trim() || integrationPendingDelete.googleCalendarId
-        }”? All dashboard events linked to this calendar will be permanently deleted from the database, scheduled notifications for those events will be cancelled, and those events will be removed from Google Calendar. This cannot be undone.`;
+      : `Remove “${integrationPendingDelete.description?.trim() || integrationPendingDelete.googleCalendarId
+      }”? All dashboard events linked to this calendar will be permanently deleted from the database, scheduled notifications for those events will be cancelled, and those events will be removed from Google Calendar. This cannot be undone.`;
 
   const eventTypeMessage =
     eventTypePendingDelete == null ? "" : `Delete “${eventTypePendingDelete.name}”? Existing calendar events may become invalid.`;
@@ -285,8 +287,6 @@ function EventsNotificationsSettingsMain({
   bindings,
   roles,
   onAssignRoles,
-  saving,
-  onSaveSettings,
 }: Readonly<{
   googleCalIntegrations: IntegratedGoogleCalendarDto[];
   onAddCalendar: () => void;
@@ -300,8 +300,6 @@ function EventsNotificationsSettingsMain({
   bindings: UiBinding[];
   roles: RoleOption[];
   onAssignRoles: (eventTypeId?: string) => void;
-  saving: boolean;
-  onSaveSettings: () => void;
 }>) {
   return (
     <div className="space-y-8">
@@ -546,7 +544,7 @@ function EventsNotificationsSettingsMain({
               Use the button to choose an event type, select which roles get notified, and set channels. Notified users
               receive the event type&apos;s advance reminder schedule (in the location timezone), a heads-up{" "}
               <span className="font-medium text-primary">1 hour before</span> start, and a notification when the event
-              begins. Use <span className="font-medium text-primary">Save Settings</span> below to persist changes.
+              begins. Use the save bar at the bottom of the screen to persist role notification changes.
             </p>
           </div>
           <button
@@ -566,17 +564,6 @@ function EventsNotificationsSettingsMain({
           bindings={bindings}
           onEditRoles={(id) => onAssignRoles(id)}
         />
-      </div>
-
-      <div className="flex justify-end pt-2">
-        <button
-          type="button"
-          disabled={saving}
-          onClick={onSaveSettings}
-          className="px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
-        >
-          {saving ? "Saving..." : "Save Settings"}
-        </button>
       </div>
     </div>
   );
@@ -720,11 +707,9 @@ function EventsNotificationsSettingsModals({
   return (
     <>
       {editingType && (
-        <button
+        <div
           ref={setEventTypeTimePickerHost}
-          type="button"
           className="fixed inset-0 z-[400] grid place-items-center bg-black/50 p-4"
-          aria-label="Close modal"
           onClick={(e) => {
             if (e.target === e.currentTarget) closeEditTypeModal();
           }}
@@ -742,6 +727,9 @@ function EventsNotificationsSettingsModals({
             <div
               ref={setEventTypeTimePickerPanel}
               className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="edit-event-type-title"
             >
               <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
                 <h2 id="edit-event-type-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
@@ -860,15 +848,13 @@ function EventsNotificationsSettingsModals({
               </div>
             </div>
           </div>
-        </button>
+        </div>
       )}
 
       {typeModalOpen && (
-        <button
+        <div
           ref={setEventTypeTimePickerHost}
-          type="button"
           className="fixed inset-0 z-[400] grid place-items-center bg-black/50 p-4"
-          aria-label="Close modal"
           onClick={(e) => {
             if (e.target === e.currentTarget) setTypeModalOpen(false);
           }}
@@ -886,6 +872,9 @@ function EventsNotificationsSettingsModals({
             <div
               ref={setEventTypeTimePickerPanel}
               className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="new-event-type-modal-title"
             >
               <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
                 <h2 id="new-event-type-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
@@ -1000,14 +989,12 @@ function EventsNotificationsSettingsModals({
               </div>
             </div>
           </div>
-        </button>
+        </div>
       )}
 
       {roleRuleModalOpen && (
-        <button
-          type="button"
+        <div
           className="fixed inset-0 z-[390] grid place-items-center bg-black/50 p-4"
-          aria-label="Close modal"
           onClick={(e) => {
             if (e.target === e.currentTarget) closeRoleRuleModal();
           }}
@@ -1022,7 +1009,12 @@ function EventsNotificationsSettingsModals({
             >
               <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
             </button>
-            <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+            <div
+              className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="role-rule-modal-title"
+            >
               <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
                 <h2 id="role-rule-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
                   Notify roles
@@ -1138,14 +1130,12 @@ function EventsNotificationsSettingsModals({
               </div>
             </div>
           </div>
-        </button>
+        </div>
       )}
 
       {addCalModalOpen && (
-        <button
-          type="button"
+        <div
           className="fixed inset-0 z-[400] grid place-items-center bg-black/50 p-4"
-          aria-label="Close modal"
           onClick={(e) => {
             if (e.target === e.currentTarget) setAddCalModalOpen(false);
           }}
@@ -1160,9 +1150,14 @@ function EventsNotificationsSettingsModals({
             >
               <span className="text-lg md:text-xl 2xl:text-2xl leading-none">×</span>
             </button>
-            <div className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden">
+            <div
+              className="relative max-h-[90vh] flex flex-col bg-card-background rounded-xl shadow-lg border-b border-gray-200 overflow-hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="add-cal-modal-title"
+            >
               <div className="relative w-full rounded-t-xl bg-primary px-5 py-3 flex-shrink-0">
-                <h2 className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
+                <h2 id="add-cal-modal-title" className="text-sm md:text-base 2xl:text-lg font-semibold text-white">
                   {editingIntegration ? "Edit Google calendar" : "Add Google calendar"}
                 </h2>
               </div>
@@ -1255,7 +1250,7 @@ function EventsNotificationsSettingsModals({
               </div>
             </div>
           </div>
-        </button>
+        </div>
       )}
     </>
   );
@@ -1295,6 +1290,24 @@ function EventsNotificationsSettingsPage() {
   const [eventTypes, setEventTypes] = useState<CalendarEventTypeDto[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [bindings, setBindings] = useState<UiBinding[]>([]);
+  const [savedBindings, setSavedBindings] = useState<UiBinding[]>([]);
+
+  const hasUnsavedChanges = useMemo(() => {
+    if (loading) return false;
+    return !calendarBindingsEqual(bindings, savedBindings);
+  }, [loading, bindings, savedBindings]);
+
+  const blocker = useUnsavedChangesNavigationGuard(hasUnsavedChanges);
+
+  const handleDiscardBindings = useCallback(() => {
+    setBindings(
+      savedBindings.map((b) => ({
+        ...b,
+        channels: { ...b.channels },
+        key: randomKey(),
+      })),
+    );
+  }, [savedBindings]);
 
   const [typeModalOpen, setTypeModalOpen] = useState(false);
   const [newTypeName, setNewTypeName] = useState("");
@@ -1390,7 +1403,15 @@ function EventsNotificationsSettingsPage() {
       setEventTypes(nextTypes);
       setRoles(nextRoles);
       setGoogleCalIntegrations(integrations);
-      setBindings(bindingsFromSettings(settings.roleEventBindings ?? []));
+      const nextBindings = bindingsFromSettings(settings.roleEventBindings ?? []);
+      setBindings(nextBindings);
+      setSavedBindings(
+        nextBindings.map((b) => ({
+          ...b,
+          channels: { ...b.channels },
+          key: b.key,
+        })),
+      );
     } catch {
       toast.error("Failed to load events & notifications settings.");
     } finally {
@@ -1502,7 +1523,17 @@ function EventsNotificationsSettingsPage() {
     await saveNotificationSettings({
       bindings: bindings as never,
       setSaving,
-      applySettings: (settings) => setBindings(bindingsFromSettings(settings.roleEventBindings ?? [])),
+      applySettings: (settings) => {
+        const nextBindings = bindingsFromSettings(settings.roleEventBindings ?? []);
+        setBindings(nextBindings);
+        setSavedBindings(
+          nextBindings.map((b) => ({
+            ...b,
+            channels: { ...b.channels },
+            key: b.key,
+          })),
+        );
+      },
     });
   };
 
@@ -1622,7 +1653,7 @@ function EventsNotificationsSettingsPage() {
 
   return (
     <Layout>
-      <div className="p-6">
+      <div className={`p-6 ${hasUnsavedChanges ? "pb-24" : ""}`}>
         <EventsNotificationsSettingsHeader />
 
         <EventsNotificationsSettingsShell>
@@ -1642,12 +1673,33 @@ function EventsNotificationsSettingsPage() {
               bindings={bindings}
               roles={roles}
               onAssignRoles={openRoleRuleModal}
-              saving={saving}
-              onSaveSettings={handleSaveSettings}
             />
           )}
         </EventsNotificationsSettingsShell>
       </div>
+
+      <UnsavedChangesBar
+        visible={hasUnsavedChanges}
+        onDiscard={handleDiscardBindings}
+        onSave={() => void handleSaveSettings()}
+        saving={saving}
+        saveLabel={saving ? "Saving..." : "Save Settings"}
+      />
+
+      <ConfirmDialog
+        isOpen={blocker.state === "blocked"}
+        onClose={() => {
+          if (blocker.state === "blocked") blocker.reset();
+        }}
+        title="Unsaved changes"
+        message="Unsaved role notification changes will be lost if you leave."
+        confirmLabel="Leave"
+        cancelLabel="Stay"
+        variant="danger"
+        onConfirm={() => {
+          if (blocker.state === "blocked") blocker.proceed();
+        }}
+      />
 
       <EventsNotificationsSettingsModals
         editingType={editingType}

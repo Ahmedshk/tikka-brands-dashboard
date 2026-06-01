@@ -1,23 +1,51 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
 import { Layout } from "../../components/common/Layout";
 import { Spinner } from "../../components/common/Spinner";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 import { SystemRulesSection } from "../../components/DisciplinarySettings/SystemRulesSection";
 import { PolicySectionsBuilder } from "../../components/DisciplinarySettings/PolicySectionsBuilder";
 import { ImmediateTerminationBuilder } from "../../components/DisciplinarySettings/ImmediateTerminationBuilder";
 import { GuidelinesBuilder } from "../../components/DisciplinarySettings/GuidelinesBuilder";
+import { ConfirmDialog } from "../../components/modal/ConfirmDialog";
+import { useUnsavedChangesNavigationGuard } from "../../hooks/useUnsavedChangesNavigationGuard";
 import {
   disciplinarySettingsService,
   type DisciplinaryPolicySection,
   type ImmediateTerminationPolicy,
   type DisciplineGuideline,
 } from "../../services/disciplinarySettings.service";
+import { stableJsonEqual } from "../../utils/settingsDirtyStateHelpers";
 import AdminAndSettingsIcon from "@assets/icons/admin_and_settings.svg?react";
 
 function sortDisciplineGuidelinesByThreshold(
   list: DisciplineGuideline[],
 ): DisciplineGuideline[] {
   return [...list].sort((a, b) => a.pointThreshold - b.pointThreshold);
+}
+
+interface DisciplinarySnapshot {
+  rollingPeriodDays: number;
+  pointsToTermination: number;
+  policySections: DisciplinaryPolicySection[];
+  immediateTerminationPolicies: ImmediateTerminationPolicy[];
+  disciplineGuidelines: DisciplineGuideline[];
+}
+
+function buildSnapshot(
+  rollingPeriodDays: number,
+  pointsToTermination: number,
+  policySections: DisciplinaryPolicySection[],
+  immediateTerminationPolicies: ImmediateTerminationPolicy[],
+  disciplineGuidelines: DisciplineGuideline[],
+): DisciplinarySnapshot {
+  return {
+    rollingPeriodDays,
+    pointsToTermination,
+    policySections,
+    immediateTerminationPolicies,
+    disciplineGuidelines: sortDisciplineGuidelinesByThreshold(disciplineGuidelines),
+  };
 }
 
 export const DisciplinarySettings = () => {
@@ -34,6 +62,34 @@ export const DisciplinarySettings = () => {
   const [disciplineGuidelines, setDisciplineGuidelines] = useState<
     DisciplineGuideline[]
   >([]);
+  const [savedSnapshot, setSavedSnapshot] = useState<DisciplinarySnapshot | null>(
+    null,
+  );
+
+  const currentSnapshot = useMemo(
+    () =>
+      buildSnapshot(
+        rollingPeriodDays,
+        pointsToTermination,
+        policySections,
+        immediateTerminationPolicies,
+        disciplineGuidelines,
+      ),
+    [
+      rollingPeriodDays,
+      pointsToTermination,
+      policySections,
+      immediateTerminationPolicies,
+      disciplineGuidelines,
+    ],
+  );
+
+  const hasUnsavedChanges = useMemo(() => {
+    if (loading || savedSnapshot == null) return false;
+    return !stableJsonEqual(currentSnapshot, savedSnapshot);
+  }, [loading, savedSnapshot, currentSnapshot]);
+
+  const blocker = useUnsavedChangesNavigationGuard(hasUnsavedChanges);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -47,6 +103,15 @@ export const DisciplinarySettings = () => {
           settings.immediateTerminationPolicies,
         );
         setDisciplineGuidelines(settings.disciplineGuidelines);
+        setSavedSnapshot(
+          buildSnapshot(
+            settings.rollingPeriodDays,
+            settings.pointsToTermination,
+            settings.policySections,
+            settings.immediateTerminationPolicies,
+            settings.disciplineGuidelines,
+          ),
+        );
       }
     } catch {
       toast.error("Failed to load disciplinary settings");
@@ -58,6 +123,15 @@ export const DisciplinarySettings = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const handleDiscard = useCallback(() => {
+    if (!savedSnapshot) return;
+    setRollingPeriodDays(savedSnapshot.rollingPeriodDays);
+    setPointsToTermination(savedSnapshot.pointsToTermination);
+    setPolicySections(savedSnapshot.policySections);
+    setImmediateTerminationPolicies(savedSnapshot.immediateTerminationPolicies);
+    setDisciplineGuidelines(savedSnapshot.disciplineGuidelines);
+  }, [savedSnapshot]);
 
   const handleSave = async () => {
     if (rollingPeriodDays < 1) {
@@ -85,6 +159,15 @@ export const DisciplinarySettings = () => {
       setDisciplineGuidelines(
         sortDisciplineGuidelinesByThreshold(saved.disciplineGuidelines),
       );
+      setSavedSnapshot(
+        buildSnapshot(
+          saved.rollingPeriodDays,
+          saved.pointsToTermination,
+          saved.policySections,
+          saved.immediateTerminationPolicies,
+          saved.disciplineGuidelines,
+        ),
+      );
       toast.success("Disciplinary settings saved");
     } catch {
       toast.error("Failed to save disciplinary settings");
@@ -95,7 +178,7 @@ export const DisciplinarySettings = () => {
 
   return (
     <Layout>
-      <div className="p-6">
+      <div className={`p-6 ${hasUnsavedChanges ? "pb-24" : ""}`}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
           <h2 className="flex items-center gap-2 text-base md:text-lg 2xl:text-xl font-semibold text-primary">
             <AdminAndSettingsIcon
@@ -143,22 +226,34 @@ export const DisciplinarySettings = () => {
                   guidelines={disciplineGuidelines}
                   onChange={setDisciplineGuidelines}
                 />
-
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="button"
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
-                  >
-                    {saving ? "Saving..." : "Save Settings"}
-                  </button>
-                </div>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      <UnsavedChangesBar
+        visible={hasUnsavedChanges}
+        onDiscard={handleDiscard}
+        onSave={() => void handleSave()}
+        saving={saving}
+        saveLabel={saving ? "Saving..." : "Save Settings"}
+      />
+
+      <ConfirmDialog
+        isOpen={blocker.state === "blocked"}
+        onClose={() => {
+          if (blocker.state === "blocked") blocker.reset();
+        }}
+        title="Unsaved changes"
+        message="Unsaved disciplinary settings will be lost if you leave."
+        confirmLabel="Leave"
+        cancelLabel="Stay"
+        variant="danger"
+        onConfirm={() => {
+          if (blocker.state === "blocked") blocker.proceed();
+        }}
+      />
     </Layout>
   );
 };

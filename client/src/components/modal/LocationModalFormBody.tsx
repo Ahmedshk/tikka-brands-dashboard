@@ -463,11 +463,10 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
                       key={logo._id}
                       type="button"
                       onClick={() => onSelectLogo(logo)}
-                      className={`relative h-14 w-14 rounded-lg border-2 bg-white p-1 transition-colors ${
-                        selectedLogoId === logo._id
+                      className={`relative h-14 w-14 rounded-lg border-2 bg-white p-1 transition-colors ${selectedLogoId === logo._id
                           ? 'border-button-primary ring-1 ring-button-primary'
                           : 'border-gray-200 hover:border-gray-400'
-                      }`}
+                        }`}
                       title={logo.name ?? 'Logo'}
                     >
                       <img

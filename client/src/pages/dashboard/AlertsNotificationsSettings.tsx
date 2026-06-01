@@ -12,7 +12,10 @@ import toast from "react-hot-toast";
 import { FiPlus, FiTrash2, FiX } from "react-icons/fi";
 import { Layout } from "../../components/common/Layout";
 import { Spinner } from "../../components/common/Spinner";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 import { ConfirmDialog } from "../../components/modal/ConfirmDialog";
+import { useUnsavedChangesNavigationGuard } from "../../hooks/useUnsavedChangesNavigationGuard";
+import { stableJsonEqual } from "../../utils/settingsDirtyStateHelpers";
 import { Dropdown, type DropdownOption } from "../../components/common/Dropdown";
 import api from "../../services/api.service";
 import { alertNotificationSettingsService } from "../../services/alertNotificationSettings.service";
@@ -352,6 +355,9 @@ export const AlertsNotificationsSettings = () => {
   const [saving, setSaving] = useState(false);
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [settings, setSettings] = useState<AlertNotificationSettingsDto | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState<AlertNotificationSettingsDto | null>(
+    null,
+  );
 
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [roleModalCategory, setRoleModalCategory] = useState<AlertRoleBindingCategory>(
@@ -370,6 +376,18 @@ export const AlertsNotificationsSettings = () => {
     category: AlertRoleBindingCategory;
     subKey: string;
   } | null>(null);
+
+  const hasUnsavedChanges = useMemo(() => {
+    if (loading || !settings || !savedSnapshot) return false;
+    return !stableJsonEqual(normalizeSettings(settings), savedSnapshot);
+  }, [loading, settings, savedSnapshot]);
+
+  const blocker = useUnsavedChangesNavigationGuard(hasUnsavedChanges);
+
+  const handleDiscard = useCallback(() => {
+    if (!savedSnapshot) return;
+    setSettings(structuredClone(savedSnapshot));
+  }, [savedSnapshot]);
 
   const categoryDropdownOptions: DropdownOption[] = useMemo(
     () =>
@@ -423,7 +441,9 @@ export const AlertsNotificationsSettings = () => {
       ]);
       const body = rolesRes.data as { data?: { roles: RoleOption[] } };
       setRoles(body.data?.roles ?? []);
-      setSettings(normalizeSettings(s));
+      const normalized = normalizeSettings(s);
+      setSettings(normalized);
+      setSavedSnapshot(normalized);
     } catch {
       toast.error("Failed to load alert notification settings.");
     } finally {
@@ -572,7 +592,9 @@ export const AlertsNotificationsSettings = () => {
     setSaving(true);
     try {
       const next = await alertNotificationSettingsService.update(settings);
-      setSettings(normalizeSettings(next));
+      const normalized = normalizeSettings(next);
+      setSettings(normalized);
+      setSavedSnapshot(normalized);
       toast.success("Alert settings saved.");
     } catch {
       toast.error("Failed to save settings.");
@@ -583,7 +605,7 @@ export const AlertsNotificationsSettings = () => {
 
   return (
     <Layout>
-      <div className="p-6">
+      <div className={`p-6 ${hasUnsavedChanges ? "pb-24" : ""}`}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
           <h2 className="flex items-center gap-2 text-base md:text-lg 2xl:text-xl font-semibold text-primary">
             <AdminAndSettingsIcon
@@ -918,8 +940,8 @@ export const AlertsNotificationsSettings = () => {
                       Notify roles by category
                     </h3>
                     <p className="text-xs text-tertiary mt-1 max-w-2xl">
-                      For each category, pick an alert type, choose roles, and set channels.                       Use{" "}
-                      <span className="font-medium text-primary">Save Settings</span> below to persist changes.
+                      For each category, pick an alert type, choose roles, and set channels. Use the save bar at
+                      the bottom of the screen to persist changes.
                     </p>
                   </div>
                   {roles.length === 0 ? (
@@ -1022,16 +1044,6 @@ export const AlertsNotificationsSettings = () => {
                   })}
                 </div>
 
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() => void save()}
-                    className="px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
-                  >
-                    {saving ? "Saving..." : "Save Settings"}
-                  </button>
-                </div>
               </div>
             )}
           </div>
@@ -1210,6 +1222,29 @@ export const AlertsNotificationsSettings = () => {
           </div>
         </div>
       )}
+
+      <UnsavedChangesBar
+        visible={hasUnsavedChanges}
+        onDiscard={handleDiscard}
+        onSave={() => void save()}
+        saving={saving}
+        saveLabel={saving ? "Saving..." : "Save Settings"}
+      />
+
+      <ConfirmDialog
+        isOpen={blocker.state === "blocked"}
+        onClose={() => {
+          if (blocker.state === "blocked") blocker.reset();
+        }}
+        title="Unsaved changes"
+        message="Unsaved alert settings will be lost if you leave."
+        confirmLabel="Leave"
+        cancelLabel="Stay"
+        variant="danger"
+        onConfirm={() => {
+          if (blocker.state === "blocked") blocker.proceed();
+        }}
+      />
 
       <ConfirmDialog
         isOpen={notifyRolesDeletePending != null}

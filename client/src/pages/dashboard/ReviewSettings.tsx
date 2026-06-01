@@ -1,15 +1,19 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import toast from "react-hot-toast";
 import { Layout } from "../../components/common/Layout";
 import { Spinner } from "../../components/common/Spinner";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 import { RoleMappingSection } from "../../components/ReviewSettings/RoleMappingSection";
 import {
   QuestionnaireBuilder,
   type QuestionnaireBuilderHandle,
 } from "../../components/ReviewSettings/QuestionnaireBuilder";
+import { ConfirmDialog } from "../../components/modal/ConfirmDialog";
+import { useUnsavedChangesNavigationGuard } from "../../hooks/useUnsavedChangesNavigationGuard";
 import { reviewService } from "../../services/review.service";
 import api from "../../services/api.service";
 import type { ReviewSettings as ReviewSettingsType, Question } from "../../types/review.types";
+import { stableJsonEqual } from "../../utils/settingsDirtyStateHelpers";
 import AdminAndSettingsIcon from "@assets/icons/admin_and_settings.svg?react";
 
 interface RoleOption {
@@ -19,6 +23,33 @@ interface RoleOption {
 
 function extractRoleId(item: string | { _id: string }): string {
   return typeof item === "string" ? item : item._id;
+}
+
+interface ReviewSettingsSnapshot {
+  employeeRoleIds: string[];
+  managerRoleIds: string[];
+  directorRoleIds: string[];
+  selfReviewQuestions: Question[];
+  managerReviewQuestions: Question[];
+  checkInQuestions: Question[];
+}
+
+function buildReviewSnapshot(
+  employeeRoleIds: string[],
+  managerRoleIds: string[],
+  directorRoleIds: string[],
+  selfReviewQuestions: Question[],
+  managerReviewQuestions: Question[],
+  checkInQuestions: Question[],
+): ReviewSettingsSnapshot {
+  return {
+    employeeRoleIds: [...employeeRoleIds],
+    managerRoleIds: [...managerRoleIds],
+    directorRoleIds: [...directorRoleIds],
+    selfReviewQuestions,
+    managerReviewQuestions,
+    checkInQuestions,
+  };
 }
 
 export const ReviewSettings = () => {
@@ -31,10 +62,38 @@ export const ReviewSettings = () => {
   const [selfReviewQuestions, setSelfReviewQuestions] = useState<Question[]>([]);
   const [managerReviewQuestions, setManagerReviewQuestions] = useState<Question[]>([]);
   const [checkInQuestions, setCheckInQuestions] = useState<Question[]>([]);
+  const [savedSnapshot, setSavedSnapshot] = useState<ReviewSettingsSnapshot | null>(null);
 
   const selfQuestionnaireRef = useRef<QuestionnaireBuilderHandle>(null);
   const managerQuestionnaireRef = useRef<QuestionnaireBuilderHandle>(null);
   const checkInQuestionnaireRef = useRef<QuestionnaireBuilderHandle>(null);
+
+  const currentSnapshot = useMemo(
+    () =>
+      buildReviewSnapshot(
+        employeeRoleIds,
+        managerRoleIds,
+        directorRoleIds,
+        selfReviewQuestions,
+        managerReviewQuestions,
+        checkInQuestions,
+      ),
+    [
+      employeeRoleIds,
+      managerRoleIds,
+      directorRoleIds,
+      selfReviewQuestions,
+      managerReviewQuestions,
+      checkInQuestions,
+    ],
+  );
+
+  const hasUnsavedChanges = useMemo(() => {
+    if (loading || savedSnapshot == null) return false;
+    return !stableJsonEqual(currentSnapshot, savedSnapshot);
+  }, [loading, savedSnapshot, currentSnapshot]);
+
+  const blocker = useUnsavedChangesNavigationGuard(hasUnsavedChanges);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -47,12 +106,25 @@ export const ReviewSettings = () => {
       setRoles(allRoles);
 
       if (settingsRes) {
-        setEmployeeRoleIds(settingsRes.employeeRoleIds.map(extractRoleId));
-        setManagerRoleIds(settingsRes.managerRoleIds.map(extractRoleId));
-        setDirectorRoleIds(settingsRes.directorRoleIds.map(extractRoleId));
+        const employee = settingsRes.employeeRoleIds.map(extractRoleId);
+        const manager = settingsRes.managerRoleIds.map(extractRoleId);
+        const director = settingsRes.directorRoleIds.map(extractRoleId);
+        setEmployeeRoleIds(employee);
+        setManagerRoleIds(manager);
+        setDirectorRoleIds(director);
         setSelfReviewQuestions(settingsRes.selfReviewQuestionnaire);
         setManagerReviewQuestions(settingsRes.managerReviewQuestionnaire);
         setCheckInQuestions(settingsRes.checkInQuestionnaire);
+        setSavedSnapshot(
+          buildReviewSnapshot(
+            employee,
+            manager,
+            director,
+            settingsRes.selfReviewQuestionnaire,
+            settingsRes.managerReviewQuestionnaire,
+            settingsRes.checkInQuestionnaire,
+          ),
+        );
       }
     } catch {
       toast.error("Failed to load review settings");
@@ -62,6 +134,16 @@ export const ReviewSettings = () => {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleDiscard = useCallback(() => {
+    if (!savedSnapshot) return;
+    setEmployeeRoleIds(savedSnapshot.employeeRoleIds);
+    setManagerRoleIds(savedSnapshot.managerRoleIds);
+    setDirectorRoleIds(savedSnapshot.directorRoleIds);
+    setSelfReviewQuestions(savedSnapshot.selfReviewQuestions);
+    setManagerReviewQuestions(savedSnapshot.managerReviewQuestions);
+    setCheckInQuestions(savedSnapshot.checkInQuestions);
+  }, [savedSnapshot]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -86,6 +168,16 @@ export const ReviewSettings = () => {
         setSelfReviewQuestions(saved.selfReviewQuestionnaire);
         setManagerReviewQuestions(saved.managerReviewQuestionnaire);
         setCheckInQuestions(saved.checkInQuestionnaire);
+        setSavedSnapshot(
+          buildReviewSnapshot(
+            employeeRoleIds,
+            managerRoleIds,
+            directorRoleIds,
+            saved.selfReviewQuestionnaire,
+            saved.managerReviewQuestionnaire,
+            saved.checkInQuestionnaire,
+          ),
+        );
       }
       toast.success("Review settings saved");
     } catch {
@@ -97,7 +189,7 @@ export const ReviewSettings = () => {
 
   return (
     <Layout>
-      <div className="p-6">
+      <div className={`p-6 ${hasUnsavedChanges ? "pb-24" : ""}`}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
           <h2 className="flex items-center gap-2 text-base md:text-lg 2xl:text-xl font-semibold text-primary">
             <AdminAndSettingsIcon
@@ -150,22 +242,34 @@ export const ReviewSettings = () => {
                   questions={checkInQuestions}
                   onChange={setCheckInQuestions}
                 />
-
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="button"
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="px-4 py-3 bg-button-primary text-white rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
-                  >
-                    {saving ? "Saving..." : "Save Settings"}
-                  </button>
-                </div>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      <UnsavedChangesBar
+        visible={hasUnsavedChanges}
+        onDiscard={handleDiscard}
+        onSave={() => void handleSave()}
+        saving={saving}
+        saveLabel={saving ? "Saving..." : "Save Settings"}
+      />
+
+      <ConfirmDialog
+        isOpen={blocker.state === "blocked"}
+        onClose={() => {
+          if (blocker.state === "blocked") blocker.reset();
+        }}
+        title="Unsaved changes"
+        message="Unsaved review settings will be lost if you leave."
+        confirmLabel="Leave"
+        cancelLabel="Stay"
+        variant="danger"
+        onConfirm={() => {
+          if (blocker.state === "blocked") blocker.proceed();
+        }}
+      />
     </Layout>
   );
 };

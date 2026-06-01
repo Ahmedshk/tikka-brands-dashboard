@@ -402,141 +402,141 @@ export const AddEventModal = ({
                     )}
                   </p>
                 )}
-            <div>
-              <label htmlFor="add-event-title" className="block text-xs font-semibold text-primary mb-2">
-                Title
-              </label>
-              <input
-                id="add-event-title"
-                type="text"
-                value={title}
-                onChange={(ev) => setTitle(ev.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                placeholder="Event title"
-                maxLength={500}
-              />
-            </div>
-            <div>
-              <span id="add-event-type-label" className="block text-xs font-semibold text-primary mb-2">
-                Event type
-              </span>
-              <Dropdown
-                options={eventTypeOptions}
-                value={eventTypeId}
-                onChange={setEventTypeId}
-                placeholder={eventTypePlaceholder}
-                aria-label="Select event type"
-                aria-labelledby="add-event-type-label"
-                className="w-full"
-                allowEmpty={false}
-                disabled={typesLoading || types.length === 0}
-                triggerLabel={eventTypeTriggerContent}
-              />
-            </div>
-            <div>
-              <span id="add-event-calendar-label" className="block text-xs font-semibold text-primary mb-2">
-                Google calendar
-              </span>
-              {calendarPickerBlock}
-            </div>
-            <fieldset className="border-0 p-0 m-0 min-w-0">
-              <legend className="block text-xs font-semibold text-primary mb-3 px-0">Start</legend>
-              <div className="grid grid-cols-2 gap-4 min-w-0">
-                <div className="min-w-0">
-                  <span id="add-event-start-date-label" className="block text-xs text-secondary mb-1.5">
-                    Date
-                  </span>
-                  <AnalogDatePickerField
-                    value={startDate}
-                    onChange={setStartDate}
-                    pickerPaperWidth={pickerPaperWidth}
-                    pickerPopperContainer={pickerPopperContainer}
-                    pickerModalPanel={pickerModalPanel}
-                    labelledBy="add-event-start-date-label"
-                    minDate={minStartDateForPicker}
+                <div>
+                  <label htmlFor="add-event-title" className="block text-xs font-semibold text-primary mb-2">
+                    Title
+                  </label>
+                  <input
+                    id="add-event-title"
+                    type="text"
+                    value={title}
+                    onChange={(ev) => setTitle(ev.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    placeholder="Event title"
+                    maxLength={500}
                   />
                 </div>
-                <div className="min-w-0">
-                  <span id="add-event-start-time-label" className="block text-xs text-secondary mb-1.5">
-                    Time
+                <div>
+                  <span id="add-event-type-label" className="block text-xs font-semibold text-primary mb-2">
+                    Event type
                   </span>
-                  <QuarterHourTimeSelect
-                    value={startTime}
-                    onChange={setStartTime}
-                    fallbackTime="09:00"
-                    labelledBy="add-event-start-time-label"
-                    allowedValues={startTimeNotBeforeNowValues}
+                  <Dropdown
+                    options={eventTypeOptions}
+                    value={eventTypeId}
+                    onChange={setEventTypeId}
+                    placeholder={eventTypePlaceholder}
+                    aria-label="Select event type"
+                    aria-labelledby="add-event-type-label"
+                    className="w-full"
+                    allowEmpty={false}
+                    disabled={typesLoading || types.length === 0}
+                    triggerLabel={eventTypeTriggerContent}
                   />
                 </div>
-              </div>
-            </fieldset>
-            <fieldset className="border-0 p-0 m-0 min-w-0">
-              <legend className="block text-xs font-semibold text-primary mb-3 px-0">End</legend>
-              <div className="grid grid-cols-2 gap-4 min-w-0">
-                <div className="min-w-0">
-                  <span id="add-event-end-date-label" className="block text-xs text-secondary mb-1.5">
-                    Date
+                <div>
+                  <span id="add-event-calendar-label" className="block text-xs font-semibold text-primary mb-2">
+                    Google calendar
                   </span>
-                  <AnalogDatePickerField
-                    value={endDate}
-                    onChange={setEndDate}
-                    pickerPaperWidth={pickerPaperWidth}
-                    pickerPopperContainer={pickerPopperContainer}
-                    pickerModalPanel={pickerModalPanel}
-                    labelledBy="add-event-end-date-label"
-                    minDate={parsedEndMinDate}
+                  {calendarPickerBlock}
+                </div>
+                <fieldset className="border-0 p-0 m-0 min-w-0">
+                  <legend className="block text-xs font-semibold text-primary mb-3 px-0">Start</legend>
+                  <div className="grid grid-cols-2 gap-4 min-w-0">
+                    <div className="min-w-0">
+                      <span id="add-event-start-date-label" className="block text-xs text-secondary mb-1.5">
+                        Date
+                      </span>
+                      <AnalogDatePickerField
+                        value={startDate}
+                        onChange={setStartDate}
+                        pickerPaperWidth={pickerPaperWidth}
+                        pickerPopperContainer={pickerPopperContainer}
+                        pickerModalPanel={pickerModalPanel}
+                        labelledBy="add-event-start-date-label"
+                        minDate={minStartDateForPicker}
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <span id="add-event-start-time-label" className="block text-xs text-secondary mb-1.5">
+                        Time
+                      </span>
+                      <QuarterHourTimeSelect
+                        value={startTime}
+                        onChange={setStartTime}
+                        fallbackTime="09:00"
+                        labelledBy="add-event-start-time-label"
+                        allowedValues={startTimeNotBeforeNowValues}
+                      />
+                    </div>
+                  </div>
+                </fieldset>
+                <fieldset className="border-0 p-0 m-0 min-w-0">
+                  <legend className="block text-xs font-semibold text-primary mb-3 px-0">End</legend>
+                  <div className="grid grid-cols-2 gap-4 min-w-0">
+                    <div className="min-w-0">
+                      <span id="add-event-end-date-label" className="block text-xs text-secondary mb-1.5">
+                        Date
+                      </span>
+                      <AnalogDatePickerField
+                        value={endDate}
+                        onChange={setEndDate}
+                        pickerPaperWidth={pickerPaperWidth}
+                        pickerPopperContainer={pickerPopperContainer}
+                        pickerModalPanel={pickerModalPanel}
+                        labelledBy="add-event-end-date-label"
+                        minDate={parsedEndMinDate}
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <span id="add-event-end-time-label" className="block text-xs text-secondary mb-1.5">
+                        Time
+                      </span>
+                      <QuarterHourTimeSelect
+                        value={endTime}
+                        onChange={setEndTime}
+                        fallbackTime="09:00"
+                        labelledBy="add-event-end-time-label"
+                        allowedValues={endTimeAllowedValues}
+                      />
+                    </div>
+                  </div>
+                </fieldset>
+                <div>
+                  <label htmlFor="add-event-desc" className="block text-xs font-semibold text-primary mb-2">
+                    Description (optional)
+                  </label>
+                  <textarea
+                    id="add-event-desc"
+                    value={description}
+                    onChange={(ev) => setDescription(ev.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y min-h-[80px]"
+                    placeholder="Notes for your team"
                   />
                 </div>
-                <div className="min-w-0">
-                  <span id="add-event-end-time-label" className="block text-xs text-secondary mb-1.5">
-                    Time
-                  </span>
-                  <QuarterHourTimeSelect
-                    value={endTime}
-                    onChange={setEndTime}
-                    fallbackTime="09:00"
-                    labelledBy="add-event-end-time-label"
-                    allowedValues={endTimeAllowedValues}
-                  />
+                <div className="flex justify-end gap-3 pt-5 mt-2 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-primary hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      saving ||
+                      !locationId ||
+                      typesLoading ||
+                      integrationsLoading ||
+                      integrations.length === 0 ||
+                      !googleCalendarId.trim()
+                    }
+                    className="px-4 py-2 bg-button-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                  >
+                    {saving ? 'Saving…' : 'Save event'}
+                  </button>
                 </div>
-              </div>
-            </fieldset>
-            <div>
-              <label htmlFor="add-event-desc" className="block text-xs font-semibold text-primary mb-2">
-                Description (optional)
-              </label>
-              <textarea
-                id="add-event-desc"
-                value={description}
-                onChange={(ev) => setDescription(ev.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y min-h-[80px]"
-                placeholder="Notes for your team"
-              />
-            </div>
-            <div className="flex justify-end gap-3 pt-5 mt-2 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-primary hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={
-                  saving ||
-                  !locationId ||
-                  typesLoading ||
-                  integrationsLoading ||
-                  integrations.length === 0 ||
-                  !googleCalendarId.trim()
-                }
-                className="px-4 py-2 bg-button-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : 'Save event'}
-              </button>
-            </div>
               </>
             )}
           </form>
