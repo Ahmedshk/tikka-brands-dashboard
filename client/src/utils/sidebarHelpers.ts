@@ -7,6 +7,9 @@ export const SIDEBAR_DEFAULT_LOGO_PATHS = new Set([
   '/dashboard/training-settings',
   '/dashboard/review-settings',
   '/dashboard/disciplinary-settings',
+  '/dashboard/events-notifications-settings',
+  '/dashboard/alerts-notifications-settings',
+  '/dashboard/data-sync-settings',
 ]);
 
 export const SIDEBAR_WIDTH = 256;
