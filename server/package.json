@@ -20,6 +20,8 @@
     "seed-roles": "tsx src/scripts/seed-roles.ts",
     "backfill-calendar-notification-jobs": "tsx src/scripts/backfill-calendar-notification-jobs.ts",
     "backfill-integration-cache-index-fields": "tsx src/scripts/backfill-integration-cache-index-fields.ts",
+    "reconcile-marketman-order-status-siblings": "tsx src/scripts/reconcile-marketman-order-status-siblings.ts",
+    "test:marketman-order-cache-status-sync": "tsx --test src/utils/marketmanOrderCacheStatusSync.util.test.ts",
     "rollup-square-orders-daily": "tsx src/scripts/rollup-square-orders-daily.ts",
     "rollup-square-payments-daily": "tsx src/scripts/rollup-square-payments-daily.ts",
     "rollup-homebase-timecards-daily": "tsx src/scripts/rollup-homebase-timecards-daily.ts",

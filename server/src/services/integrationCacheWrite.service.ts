@@ -19,6 +19,11 @@ import { catalogObjectVersionFromUnknown } from "../utils/squareCatalogObjectVer
 import { getHomebaseTimecardClockInAt } from "../utils/homebaseTimecardIndexFields.util.js";
 import { getMarketManOrderBusinessDateAt } from "../utils/marketmanOrderIndexFields.util.js";
 import { marketManOrderNumberAsString } from "../utils/marketManOrderNumberString.util.js";
+import {
+  reconcileMarketManOrderStatusBatch,
+  reconcileMarketManOrderStatusWithSibling,
+  type ReconcileMarketManOrderStatusResult,
+} from "../utils/marketmanOrderCacheStatusSync.util.js";
 import { yieldEventLoop } from "../utils/eventLoopYield.util.js";
 import { invalidateOrderRangeCacheForLocation } from "../utils/orderRangeCache.util.js";
 import { invalidateOrdersEmptyCacheForLocation } from "../utils/rollupReadCache.util.js";
@@ -235,9 +240,10 @@ export async function upsertMarketManOrder(
   dateTimeFromUTC: string,
   dateTimeToUTC: string,
   order: Record<string, unknown>,
-): Promise<void> {
+): Promise<ReconcileMarketManOrderStatusResult | null> {
   const orderNumber = marketManOrderNumberAsString(order.OrderNumber);
-  if (!orderNumber) return;
+  if (!orderNumber) return null;
+  const fetchedAt = new Date();
   await MarketManOrderCacheModel.findOneAndUpdate(
     { buyerGuid, apiKind, orderNumber },
     {
@@ -248,11 +254,19 @@ export async function upsertMarketManOrder(
       raw: order,
       dateTimeFromUTC,
       dateTimeToUTC,
-      fetchedAt: new Date(),
+      fetchedAt,
       businessDateAt: getMarketManOrderBusinessDateAt(order, apiKind),
     },
     { upsert: true, new: true },
   ).exec();
+
+  return reconcileMarketManOrderStatusWithSibling({
+    buyerGuid,
+    orderNumber,
+    sourceApiKind: apiKind,
+    sourceOrderRaw: order,
+    sourceFetchedAt: fetchedAt,
+  });
 }
 
 /** Returns false if duplicate (already processed). */
@@ -504,5 +518,15 @@ export async function bulkUpsertMarketManOrders(
       },
     });
   }
-  return flushBulkBatches(MarketManOrderCacheModel, ops);
+  const processed = await flushBulkBatches(MarketManOrderCacheModel, ops);
+
+  await reconcileMarketManOrderStatusBatch({
+    buyerGuid,
+    apiKind,
+    orders,
+    fetchedAt,
+    orderNumberFromRaw: (raw) => marketManOrderNumberAsString(raw.OrderNumber),
+  });
+
+  return processed;
 }

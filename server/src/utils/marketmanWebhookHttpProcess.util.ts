@@ -1,11 +1,11 @@
 import type { MarketManOrderApiKind } from "../models/marketmanOrderCache.model.js";
 import { upsertMarketManOrder } from "../services/integrationCacheWrite.service.js";
+import type { ReconcileMarketManOrderStatusResult } from "./marketmanOrderCacheStatusSync.util.js";
 import { buildMarketManRollupForDay } from "../services/dailyRollupBuilder.service.js";
 import { enrichMarketManWebhookOrder } from "./marketmanWebhookOrderEnrich.util.js";
 import { getMarketManOrderBusinessDateAt } from "./marketmanOrderIndexFields.util.js";
 import { marketManBusinessDateKeyFromUtcDate } from "./marketManBusinessDateKey.util.js";
 import { marketManOrderNumberStringFromRaw } from "./marketmanWebhookExtract.util.js";
-import { syncMarketManOrderStatusToSiblingCache } from "./marketmanOrderCacheStatusSync.util.js";
 import { logWebhookError, logWebhookInfo } from "./webhookLog.util.js";
 
 export function marketManWebhookBodyAsRecord(
@@ -76,8 +76,9 @@ export async function runMarketManWebhookOrderPipeline(
 
   const orderNumberForUpsert = marketManOrderNumberStringFromRaw(enrichedOrder);
 
+  let statusReconcile: ReconcileMarketManOrderStatusResult | null = null;
   try {
-    await upsertMarketManOrder(
+    statusReconcile = await upsertMarketManOrder(
       locationMongoId,
       buyerGuid,
       apiKind,
@@ -101,36 +102,15 @@ export async function runMarketManWebhookOrderPipeline(
     throw err;
   }
 
-  if (orderNumberForUpsert) {
-    try {
-      const statusSync = await syncMarketManOrderStatusToSiblingCache({
-        buyerGuid,
-        orderNumber: orderNumberForUpsert,
-        sourceApiKind: apiKind,
-        sourceOrderRaw: enrichedOrder,
-      });
-      if (statusSync.updated) {
-        logWebhookInfo("MarketMan", "synced order status to sibling apiKind cache", {
-          buyerGuid,
-          orderNumber: orderNumberForUpsert,
-          sourceApiKind: apiKind,
-          siblingApiKind: statusSync.siblingApiKind,
-        });
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logWebhookError(
-        "MarketMan",
-        "sibling status sync failed",
-        {
-          buyerGuid,
-          orderNumber: orderNumberForUpsert,
-          sourceApiKind: apiKind,
-          error: msg,
-        },
-        webhookReceived,
-      );
-    }
+  if (statusReconcile?.reconciled) {
+    const target = statusReconcile.updatedTarget ?? "sibling";
+    logWebhookInfo("MarketMan", "reconciled order status with sibling apiKind cache", {
+      buyerGuid,
+      orderNumber: orderNumberForUpsert,
+      sourceApiKind: apiKind,
+      siblingApiKind: statusReconcile.siblingApiKind,
+      updatedTarget: target,
+    });
   }
 
   let rollupUpdated = false;
