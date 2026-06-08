@@ -45,6 +45,8 @@ export async function initializeAgenda(): Promise<Agenda> {
   const {
     registerIntegrationJobs,
     runCatchUpMarketManValidCountDatesIfMissedToday,
+    runCatchUpMarketManOrdersMonthWindowIfMissedToday,
+    INTEGRATION_MARKETMAN_ORDERS_MONTHLY_DAILY_JOB,
   } = await import("../jobs/integration.jobs.js");
   registerIntegrationJobs(agenda);
 
@@ -60,6 +62,7 @@ export async function initializeAgenda(): Promise<Agenda> {
   logger.info("Agenda: scheduler started");
 
   void runCatchUpMarketManValidCountDatesIfMissedToday();
+  void runCatchUpMarketManOrdersMonthWindowIfMissedToday();
 
   const schedule = isTestMode() ? "*/15 * * * * *" : "0 9 * * *";
   const reviewOpts = isTestMode() ? undefined : { timezone: "America/Denver" };
@@ -88,6 +91,16 @@ export async function initializeAgenda(): Promise<Agenda> {
     isTestMode() ? "*/3 * * * *" : "0 10 * * *",
     "integration:catalog-daily",
   );
+
+  /** MarketMan orders (sent + delivery) month-window backfill daily at 3 AM MT. */
+  if (!isTestMode()) {
+    await agenda.every(
+      "0 3 * * *",
+      INTEGRATION_MARKETMAN_ORDERS_MONTHLY_DAILY_JOB,
+      undefined,
+      { timezone: "America/Denver" },
+    );
+  }
 
   /**
    * Dashboard response cache: refresh every 15 minutes via the cron, and

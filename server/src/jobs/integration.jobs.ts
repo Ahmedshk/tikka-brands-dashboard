@@ -8,6 +8,10 @@ import {
 } from "../services/integrationPollRollupRefresh.service.js";
 import { IntegrationSyncLogModel } from "../models/integrationSyncLog.model.js";
 import { logger } from "../utils/logger.util.js";
+import { runMarketManOrdersBothMonthWindowSync } from "../utils/marketmanScheduledOrdersSync.util.js";
+
+export const INTEGRATION_MARKETMAN_ORDERS_MONTHLY_DAILY_JOB =
+  "integration:marketman-orders-monthly-daily";
 
 function denverDateKey(d = new Date()): string {
   return formatInTimeZone(d, "America/Denver", "yyyy-MM-dd");
@@ -65,6 +69,20 @@ export async function runCatchUpMarketManValidCountDatesIfMissedToday(): Promise
   }
 }
 
+/**
+ * Run after Agenda starts if today's scheduled MarketMan month-window order sync
+ * did not succeed (e.g. server was down at 3 AM MT).
+ */
+export async function runCatchUpMarketManOrdersMonthWindowIfMissedToday(): Promise<void> {
+  try {
+    await runMarketManOrdersBothMonthWindowSync("catch_up_startup");
+  } catch (err) {
+    logger.error("runCatchUpMarketManOrdersMonthWindowIfMissedToday failed", {
+      err,
+    });
+  }
+}
+
 export function registerIntegrationJobs(agenda: Agenda): void {
   agenda.define("integration:catalog-daily", async () => {
     try {
@@ -85,6 +103,16 @@ export function registerIntegrationJobs(agenda: Agenda): void {
       });
     } catch (err) {
       logger.error("integration:catalog-daily failed", { err });
+    }
+  });
+
+  agenda.define(INTEGRATION_MARKETMAN_ORDERS_MONTHLY_DAILY_JOB, async () => {
+    try {
+      await runMarketManOrdersBothMonthWindowSync("scheduled_three_am");
+    } catch (err) {
+      logger.error(`${INTEGRATION_MARKETMAN_ORDERS_MONTHLY_DAILY_JOB} failed`, {
+        err,
+      });
     }
   });
 
