@@ -75,6 +75,30 @@ function lowInventoryTemplateFields(
   };
 }
 
+function lowRatingReviewTemplateFields(
+  data: Record<string, unknown>,
+  storeName: string,
+): Record<string, unknown> {
+  const commentRaw = data.reviewComment;
+  const comment =
+    typeof commentRaw === "string" && commentRaw.trim()
+      ? commentRaw.trim()
+      : typeof data.comment === "string" && data.comment.trim()
+        ? data.comment.trim()
+        : "";
+  const updatedRaw = data.reviewUpdatedAt;
+  return {
+    locationName: typeof data.locationName === "string" ? data.locationName : storeName,
+    reviewerDisplayName:
+      typeof data.reviewerDisplayName === "string" ? data.reviewerDisplayName : "Reviewer",
+    starRatingNumeric:
+      typeof data.starRatingNumeric === "number" ? data.starRatingNumeric : null,
+    alertThreshold: typeof data.alertThreshold === "number" ? data.alertThreshold : null,
+    reviewUpdatedAt: typeof updatedRaw === "string" ? updatedRaw : "",
+    reviewComment: comment || "No comment provided.",
+  };
+}
+
 function buildAlertEmailTemplateData(params: {
   title: string;
   message: string;
@@ -84,6 +108,7 @@ function buildAlertEmailTemplateData(params: {
   sevStyles: AlertEmailSeverityStyle;
   detailRows: Array<{ label: string; value: string }>;
   isLowInventoryEmail: boolean;
+  isLowRatingReviewEmail: boolean;
   data: Record<string, unknown>;
   storeName: string;
   overdueRowsForEmail: DeliveryOverdueOrderEmailRow[];
@@ -93,7 +118,7 @@ function buildAlertEmailTemplateData(params: {
   const base: Record<string, unknown> = {
     title: params.title,
     calloutLine: params.title,
-    summaryMessage: params.message,
+    ...(params.isLowRatingReviewEmail ? {} : { summaryMessage: params.message }),
     categoryLabel: params.categoryLabel,
     locationLine: params.locationLine,
     severityLabel: params.sevStyles.severityLabel,
@@ -109,6 +134,10 @@ function buildAlertEmailTemplateData(params: {
     Object.assign(base, lowInventoryTemplateFields(params.data, params.storeName));
   }
 
+  if (params.isLowRatingReviewEmail) {
+    Object.assign(base, lowRatingReviewTemplateFields(params.data, params.storeName));
+  }
+
   if (params.overdueRowsForEmail.length > 0) {
     base.deliveryOverdueOrders = params.overdueRowsForEmail;
     base.deliveryOverdueMoreCount = params.overdueMoreCount;
@@ -121,8 +150,17 @@ function buildAlertEmailTemplateData(params: {
   return base;
 }
 
-function alertEmailTemplateFileForKind(isLowInventoryEmail: boolean): string {
-  return isLowInventoryEmail ? "alert-low-inventory-email.ejs" : "alert-notification-email.ejs";
+function alertEmailTemplateFileForKind(params: {
+  isLowInventoryEmail: boolean;
+  isLowRatingReviewEmail: boolean;
+}): string {
+  if (params.isLowInventoryEmail) {
+    return "alert-low-inventory-email.ejs";
+  }
+  if (params.isLowRatingReviewEmail) {
+    return "alert-low-rating-review-email.ejs";
+  }
+  return "alert-notification-email.ejs";
 }
 
 export function buildAlertEmailSendExtras(params: {
@@ -135,6 +173,7 @@ export function buildAlertEmailSendExtras(params: {
   sevStyles: AlertEmailSeverityStyle;
   detailRows: Array<{ label: string; value: string }>;
   isLowInventoryEmail: boolean;
+  isLowRatingReviewEmail: boolean;
   data: Record<string, unknown>;
   storeName: string;
   overdueRowsForEmail: DeliveryOverdueOrderEmailRow[];
@@ -149,7 +188,10 @@ export function buildAlertEmailSendExtras(params: {
 
   return {
     emailSubject: params.title,
-    emailTemplateFile: alertEmailTemplateFileForKind(params.isLowInventoryEmail),
+    emailTemplateFile: alertEmailTemplateFileForKind({
+      isLowInventoryEmail: params.isLowInventoryEmail,
+      isLowRatingReviewEmail: params.isLowRatingReviewEmail,
+    }),
     emailTemplateData: buildAlertEmailTemplateData({
       title: params.title,
       message: params.message,
@@ -159,6 +201,7 @@ export function buildAlertEmailSendExtras(params: {
       sevStyles: params.sevStyles,
       detailRows: params.detailRows,
       isLowInventoryEmail: params.isLowInventoryEmail,
+      isLowRatingReviewEmail: params.isLowRatingReviewEmail,
       data: params.data,
       storeName: params.storeName,
       overdueRowsForEmail: params.overdueRowsForEmail,

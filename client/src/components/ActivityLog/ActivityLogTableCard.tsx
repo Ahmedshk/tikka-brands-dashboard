@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import ViewIcon from "@assets/icons/view.svg?react";
 import LocationIcon from "@assets/icons/location.svg?react";
 import type { ActivityLogRow } from "../../types/activityLog.types";
+import { formatDateTimeParts } from "../../utils/dateTimeDisplayHelpers";
 import { Pagination } from "../common/Pagination";
 import { Spinner } from "../common/Spinner";
 
@@ -18,20 +19,11 @@ export interface ActivityLogTableCardPagination {
 interface ActivityLogTableCardProps {
   rows: ActivityLogRow[];
   loading?: boolean;
+  displayTimezone: string;
   /** When true, group rows by location into bordered sections (all-locations view). */
   showLocationLabel?: boolean;
   onView?: (row: ActivityLogRow, index: number) => void;
   pagination?: ActivityLogTableCardPagination;
-}
-
-function formatDateTimeParts(value: string | null): { time: string; date: string } {
-  if (!value) return { time: "—", date: "—" };
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return { time: "—", date: "—" };
-  return {
-    time: parsed.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
-    date: parsed.toLocaleDateString("en-US"),
-  };
 }
 
 /** Same palette as `getStageStatusColor` in review.types (Past due / Pending). */
@@ -135,14 +127,16 @@ function DesktopRow({
   row,
   index,
   rowKey,
+  displayTimezone,
   onView,
 }: Readonly<{
   row: ActivityLogRow;
   index: number;
   rowKey: string;
+  displayTimezone: string;
   onView?: (row: ActivityLogRow, index: number) => void;
 }>) {
-  const appliedAt = formatDateTimeParts(row.appliedAt);
+  const appliedAt = formatDateTimeParts(row.appliedAt, displayTimezone);
   return (
     <tr key={rowKey} className={index % 2 === 1 ? "bg-[#F3F5F7]" : ""}>
       <td className="py-3 pr-4 pl-2 md:pl-5 align-middle">
@@ -177,11 +171,13 @@ function DesktopTable({
   rows,
   rowKeyPrefix,
   topSpacing,
+  displayTimezone,
   onView,
 }: Readonly<{
   rows: ActivityLogRow[];
   rowKeyPrefix: string;
   topSpacing: boolean;
+  displayTimezone: string;
   onView?: (row: ActivityLogRow, index: number) => void;
 }>) {
   return (
@@ -196,6 +192,7 @@ function DesktopTable({
               rowKey={key}
               row={row}
               index={index}
+              displayTimezone={displayTimezone}
               onView={onView}
             />
           );
@@ -209,14 +206,16 @@ function MobileRow({
   row,
   index,
   rowKey,
+  displayTimezone,
   onView,
 }: Readonly<{
   row: ActivityLogRow;
   index: number;
   rowKey: string;
+  displayTimezone: string;
   onView?: (row: ActivityLogRow, index: number) => void;
 }>) {
-  const appliedAt = formatDateTimeParts(row.appliedAt);
+  const appliedAt = formatDateTimeParts(row.appliedAt, displayTimezone);
   return (
     <div
       key={rowKey}
@@ -255,10 +254,12 @@ function MobileRow({
 function MobileList({
   rows,
   rowKeyPrefix,
+  displayTimezone,
   onView,
 }: Readonly<{
   rows: ActivityLogRow[];
   rowKeyPrefix: string;
+  displayTimezone: string;
   onView?: (row: ActivityLogRow, index: number) => void;
 }>) {
   return (
@@ -271,6 +272,7 @@ function MobileList({
             rowKey={key}
             row={row}
             index={index}
+            displayTimezone={displayTimezone}
             onView={onView}
           />
         );
@@ -282,6 +284,7 @@ function MobileList({
 export const ActivityLogTableCard = ({
   rows,
   loading = false,
+  displayTimezone,
   showLocationLabel = false,
   onView,
   pagination,
@@ -322,6 +325,7 @@ export const ActivityLogTableCard = ({
                 rows={group.rows}
                 rowKeyPrefix={`l-${group.locationKey}`}
                 topSpacing
+                displayTimezone={displayTimezone}
                 onView={onView}
               />
             </div>
@@ -329,6 +333,7 @@ export const ActivityLogTableCard = ({
               <MobileList
                 rows={group.rows}
                 rowKeyPrefix={`l-${group.locationKey}`}
+                displayTimezone={displayTimezone}
                 onView={onView}
               />
             </div>
@@ -345,11 +350,17 @@ export const ActivityLogTableCard = ({
             rows={rows}
             rowKeyPrefix="flat"
             topSpacing={false}
+            displayTimezone={displayTimezone}
             onView={onView}
           />
         </div>
         <div className="md:hidden overflow-y-auto min-h-0">
-          <MobileList rows={rows} rowKeyPrefix="flat" onView={onView} />
+          <MobileList
+            rows={rows}
+            rowKeyPrefix="flat"
+            displayTimezone={displayTimezone}
+            onView={onView}
+          />
         </div>
       </>
     );

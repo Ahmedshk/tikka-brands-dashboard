@@ -78,6 +78,32 @@ export const updateAlertNotificationSettingsBodySchema = z.object({
         trainingRun: runScheduleSchema.optional(),
         pendingPips: z.boolean().optional(),
         pendingPipsRun: runScheduleSchema.optional(),
+        lowRatingReviews: z.boolean().optional(),
+        lowRatingReviewsRun: runScheduleSchema.optional(),
+        lowRatingThreshold: z.number().int().min(1).max(5).optional(),
+      })
+      .superRefine((rep, ctx) => {
+        if (!rep.lowRatingReviews || !rep.lowRatingReviewsRun) {
+          return;
+        }
+        const run = rep.lowRatingReviewsRun;
+        if (run.scheduleMode !== "interval") {
+          return;
+        }
+        if (run.interval.hours < 1) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Low rating review alert interval hours must be at least 1",
+            path: ["lowRatingReviewsRun", "interval", "hours"],
+          });
+        }
+        if (run.interval.minutes !== 0) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Low rating review alert interval must use whole hours only",
+            path: ["lowRatingReviewsRun", "interval", "minutes"],
+          });
+        }
       })
       .optional(),
     roleBindings: z.array(roleBindingSchema).optional(),

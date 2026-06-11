@@ -15,6 +15,7 @@ const COMMAND_CENTER_ALERT_TYPES: ReadonlySet<string> = new Set([
   "alert_inventory_low_inventory",
   "alert_training_overdue",
   "alert_pip_pending",
+  "alert_low_rating_review",
 ]);
 
 const COMMAND_CENTER_REPUTATION_REVIEW_TYPES: ReadonlySet<string> = new Set([
@@ -40,7 +41,13 @@ export function notificationTypeToCommandCenterCategory(
   if (COMMAND_CENTER_ALERT_TYPES.has(type)) {
     if (type === "alert_inventory_delivery_overdue") return "inventory_supply_chain";
     if (type === "alert_inventory_low_inventory") return "inventory_supply_chain";
-    if (type === "alert_training_overdue" || type === "alert_pip_pending") return "reputation_hr";
+    if (
+      type === "alert_training_overdue" ||
+      type === "alert_pip_pending" ||
+      type === "alert_low_rating_review"
+    ) {
+      return "reputation_hr";
+    }
     if (type.startsWith("alert_goal_")) return "financial_labor";
   }
   if (COMMAND_CENTER_REPUTATION_REVIEW_TYPES.has(type)) {

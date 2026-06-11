@@ -87,6 +87,27 @@ function applySquareWebhookSignatureKeyFromBody(
       : "";
 }
 
+function normalizeOptionalTrimmedString(value: unknown): string {
+  if (value === null || value === "") return "";
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function applyGoogleBusinessIds(
+  updateData: UpdateLocationData,
+  body: Record<string, unknown>,
+): void {
+  if (Object.hasOwn(body, "googleBusinessAccountId")) {
+    updateData.googleBusinessAccountId = normalizeOptionalTrimmedString(
+      body.googleBusinessAccountId,
+    );
+  }
+  if (Object.hasOwn(body, "googleBusinessLocationId")) {
+    updateData.googleBusinessLocationId = normalizeOptionalTrimmedString(
+      body.googleBusinessLocationId,
+    );
+  }
+}
+
 /**
  * Build UpdateLocationData from request body (only include defined fields).
  */
@@ -106,6 +127,7 @@ export function buildUpdateLocationData(body: Record<string, unknown>): UpdateLo
     body,
     body.squareWebhookSignatureKey,
   );
+  applyGoogleBusinessIds(updateData, body);
 
   return updateData;
 }

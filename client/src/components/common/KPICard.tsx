@@ -105,16 +105,18 @@ export const KPICard = ({
 
   return (
     <div
-      className={`bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden border-l-8 ${accentBorderClass[accentColor]} p-5 flex flex-col`}
+      className={`bg-card-background rounded-xl shadow border border-gray-200 overflow-visible border-l-8 ${accentBorderClass[accentColor]} p-5 flex flex-col`}
     >
-      <div className="text-sm font-medium text-primary mb-2">
+      <div
+        className={`text-sm font-medium text-primary mb-2 ${titleRight != null ? 'relative z-20' : ''}`}
+      >
         {/* Row 1: title (and optional titleRight e.g. period dropdown). Row 2: period — same layout for all cards. */}
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             {titleIcon}
             <span className="text-xs md:text-sm 2xl:text-base font-semibold text-secondary">{title}</span>
           </div>
-          {titleRight != null && <div className="flex-shrink-0">{titleRight}</div>}
+          {titleRight != null && <div className="relative z-20 flex-shrink-0">{titleRight}</div>}
         </div>
         {!loading && timePeriod != null && (
           <p className="text-[10px] md:text-xs 2xl:text-sm font-normal text-primary mt-0.5">({timePeriod})</p>

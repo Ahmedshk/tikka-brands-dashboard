@@ -207,6 +207,10 @@ export interface LocationModalFormBodyProps {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   marketManBuyerGuid: string;
   setMarketManBuyerGuid: (v: string) => void;
+  googleBusinessAccountId: string;
+  setGoogleBusinessAccountId: (v: string) => void;
+  googleBusinessLocationId: string;
+  setGoogleBusinessLocationId: (v: string) => void;
   squareLocationId: string;
   setSquareLocationId: (v: string) => void;
   hasStoredSquare: boolean;
@@ -265,6 +269,10 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
     fileInputRef,
     marketManBuyerGuid,
     setMarketManBuyerGuid,
+    googleBusinessAccountId,
+    setGoogleBusinessAccountId,
+    googleBusinessLocationId,
+    setGoogleBusinessLocationId,
     squareLocationId,
     setSquareLocationId,
     hasStoredSquare,
@@ -598,6 +606,41 @@ export function LocationModalFormBody(props: Readonly<LocationModalFormBodyProps
             placeholder={isEdit && hasStoredHomebase ? 'Enter new API key to replace' : 'Homebase API key'}
             inputId="homebaseApiKey"
             label="API key"
+          />
+        </div>
+      </section>
+
+      <section className="space-y-4 pt-6 border-t border-gray-200">
+        <h4 className="text-base font-semibold text-primary border-l-4 border-button-primary pl-3 py-1">
+          Google Business Profile
+        </h4>
+        <p className="text-xs text-tertiary">
+          Map this store to Google Business Profile account and location IDs for review sync.
+        </p>
+        <div>
+          <label htmlFor="googleBusinessAccountId" className="block text-sm font-medium text-primary mb-1">
+            Google Business account ID
+          </label>
+          <input
+            id="googleBusinessAccountId"
+            type="text"
+            value={googleBusinessAccountId}
+            onChange={(e) => setGoogleBusinessAccountId(e.target.value)}
+            className="w-full px-4 py-3 bg-[#F9F9F9] border border-[#DBDBDB] rounded-xl text-sm md:text-base 2xl:text-lg placeholder:text-sm md:placeholder:text-base 2xl:placeholder:text-lg"
+            placeholder="e.g. 101822178176386020175"
+          />
+        </div>
+        <div>
+          <label htmlFor="googleBusinessLocationId" className="block text-sm font-medium text-primary mb-1">
+            Google Business location ID
+          </label>
+          <input
+            id="googleBusinessLocationId"
+            type="text"
+            value={googleBusinessLocationId}
+            onChange={(e) => setGoogleBusinessLocationId(e.target.value)}
+            className="w-full px-4 py-3 bg-[#F9F9F9] border border-[#DBDBDB] rounded-xl text-sm md:text-base 2xl:text-lg placeholder:text-sm md:placeholder:text-base 2xl:placeholder:text-lg"
+            placeholder="e.g. 15944984015302876295"
           />
         </div>
       </section>

@@ -53,6 +53,12 @@ export async function initializeAgenda(): Promise<Agenda> {
   const { registerAlertJobs, bootstrapAlertAgendaSchedule } = await import("../jobs/alerts.jobs.js");
   registerAlertJobs(agenda);
 
+  const {
+    registerGoogleBusinessReviewJobs,
+    bootstrapGoogleBusinessReviewAgendaSchedule,
+  } = await import("../jobs/googleBusinessReviews.jobs.js");
+  registerGoogleBusinessReviewJobs(agenda);
+
   const { registerDashboardCacheJobs, DASHBOARD_CACHE_REFRESH_JOB_NAME } = await import(
     "../jobs/dashboardCache.jobs.js"
   );
@@ -123,6 +129,7 @@ export async function initializeAgenda(): Promise<Agenda> {
   }
 
   await bootstrapAlertAgendaSchedule(agenda);
+  await bootstrapGoogleBusinessReviewAgendaSchedule(agenda);
 
   return agenda;
 }

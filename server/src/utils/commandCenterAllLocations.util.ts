@@ -13,7 +13,9 @@ import {
   fetchWeekToDateKpis,
   buildTodayOnlyData,
   buildWeekToDateData,
+  type ReviewRatingKpiData,
 } from './commandCenterKpiLogic.js';
+import { getReviewRatingSummariesForLocations } from './googleBusinessReviewAggregation.util.js';
 import { buildEmptyHourlySalesRows } from './commandCenterHelpers.js';
 import { getBusinessStartTimeRange } from './timezone.util.js';
 import {
@@ -215,6 +217,22 @@ export async function buildAllLocationsCommandCenterKpis(params: {
     const pctToday = laborPercent(netSalesToday, laborCostToday);
     const pctWtd = laborPercent(netSalesWeekToDate, laborCostWeekToDate);
 
+    let reviewRatingData: ReviewRatingKpiData | undefined;
+    if (wantReviewRating) {
+      const summaries = await getReviewRatingSummariesForLocations(
+        perLoc.map((p) => p.locationMongoId),
+        perLoc.map((p) => p.loc),
+      );
+      reviewRatingData = {
+        todayRating: summaries.today.averageRating,
+        todayCount: summaries.today.reviewCount,
+        weekToDateRating: summaries.weekToDate.averageRating,
+        weekToDateCount: summaries.weekToDate.reviewCount,
+        overallRating: summaries.overall.averageRating,
+        overallCount: summaries.overall.reviewCount,
+      };
+    }
+
     const { todayData, weekToDateData } = buildWeekToDateData(
       metrics,
       wantNetSales,
@@ -232,14 +250,8 @@ export async function buildAllLocationsCommandCenterKpis(params: {
       },
       avgGoal,
       avgTol,
+      reviewRatingData,
     );
-
-    if (wantReviewRating) {
-      todayData.reviewRating = null;
-      todayData.reviewCount = null;
-      weekToDateData.reviewRating = null;
-      weekToDateData.reviewCount = null;
-    }
 
     summarizeAllLocationsTimings({
       route,
@@ -271,6 +283,22 @@ export async function buildAllLocationsCommandCenterKpis(params: {
   const laborCostToday = sumNullable(results.map((r) => r.laborCostToday));
   const pct = laborPercent(netSalesToday, laborCostToday);
 
+  let reviewRatingData: ReviewRatingKpiData | undefined;
+  if (wantReviewRating) {
+    const summaries = await getReviewRatingSummariesForLocations(
+      perLoc.map((p) => p.locationMongoId),
+      perLoc.map((p) => p.loc),
+    );
+    reviewRatingData = {
+      todayRating: summaries.today.averageRating,
+      todayCount: summaries.today.reviewCount,
+      weekToDateRating: summaries.weekToDate.averageRating,
+      weekToDateCount: summaries.weekToDate.reviewCount,
+      overallRating: summaries.overall.averageRating,
+      overallCount: summaries.overall.reviewCount,
+    };
+  }
+
   const data = buildTodayOnlyData(
     metrics,
     wantNetSales,
@@ -284,12 +312,8 @@ export async function buildAllLocationsCommandCenterKpis(params: {
     },
     avgGoal,
     avgTol,
+    reviewRatingData,
   );
-
-  if (wantReviewRating) {
-    data.reviewRating = null;
-    data.reviewCount = null;
-  }
 
   summarizeAllLocationsTimings({
     route,

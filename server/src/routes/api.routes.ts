@@ -22,6 +22,8 @@ import adobeSignWebhookRoutes from "./adobeSignWebhook.routes.js";
 import marketManWebhookRoutes from "./marketManWebhook.routes.js";
 import integrationSyncRoutes from "./integrationSync.routes.js";
 import alertNotificationSettingsRoutes from "./alertNotificationSettings.routes.js";
+import googleBusinessRoutes from "./googleBusiness.routes.js";
+import googleBusinessReviewRoutes from "./googleBusinessReview.routes.js";
 import {
   getSelfReviewByToken,
   getSelfReviewDocumentByToken,
@@ -115,5 +117,9 @@ router.use("/alert-notification-settings", alertNotificationSettingsRoutes);
 
 // Integration data sync (admin)
 router.use("/integration-sync", integrationSyncRoutes);
+
+// Google Business Profile (reviews OAuth + read API)
+router.use("/google-business", googleBusinessRoutes);
+router.use("/google-business-reviews", googleBusinessReviewRoutes);
 
 export default router;

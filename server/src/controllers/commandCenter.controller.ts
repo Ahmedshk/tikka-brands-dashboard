@@ -30,6 +30,7 @@ import {
 import {
   buildTodayOnlyData,
   buildWeekToDateData,
+  fetchReviewRatingKpiData,
   fetchTodayOnlyKpis,
   fetchWeekToDateKpis,
   getLaborCostGoals,
@@ -146,6 +147,10 @@ export const getCommandCenterKPIs = async (
         const wantWeekToDate =
           Array.isArray(periods) && periods.includes("weekToDate");
 
+        const reviewRating = wantReviewRating
+          ? await fetchReviewRatingKpiData(locationId, loc)
+          : undefined;
+
         if (wantWeekToDate) {
           const rangeWeekToDate = getRangeWeekToDate(loc);
           const kpis = await fetchWeekToDateKpis({
@@ -165,6 +170,7 @@ export const getCommandCenterKPIs = async (
             kpis,
             laborCostGoal,
             laborCostGoalTolerance,
+            reviewRating,
           );
           return { today: todayData, weekToDate: weekToDateData };
         }
@@ -185,6 +191,7 @@ export const getCommandCenterKPIs = async (
           kpis,
           laborCostGoal,
           laborCostGoalTolerance,
+          reviewRating,
         );
       },
     });

@@ -1,25 +1,13 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { ActivityLogDetailItem, ActivityLogRow } from "../../types/activityLog.types";
+import { formatReadableDateTime } from "../../utils/dateTimeDisplayHelpers";
 
 interface ActivityLogDetailsModalProps {
   open: boolean;
   row: ActivityLogRow | null;
+  displayTimezone: string;
   onClose: () => void;
-}
-
-function formatReadableDateTime(value: string | null): string {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 /** Line items + modifiers (same layout for refund and discount details). */
@@ -172,6 +160,7 @@ function TotalsSection({
 export const ActivityLogDetailsModal = ({
   open,
   row,
+  displayTimezone,
   onClose,
 }: ActivityLogDetailsModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -244,7 +233,7 @@ export const ActivityLogDetailsModal = ({
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-medium text-primary">Applied At</span>
                   <span className="text-right text-secondary text-xs sm:text-sm max-w-[65%]">
-                    {formatReadableDateTime(row?.appliedAt ?? null)}
+                    {formatReadableDateTime(row?.appliedAt ?? null, displayTimezone)}
                   </span>
                 </div>
               )}
@@ -253,19 +242,19 @@ export const ActivityLogDetailsModal = ({
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium text-primary">Original Transaction</span>
                     <span className="text-right text-secondary text-xs sm:text-sm max-w-[60%]">
-                      {formatReadableDateTime(details?.originalTransactionAt ?? null)}
+                      {formatReadableDateTime(details?.originalTransactionAt ?? null, displayTimezone)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium text-primary">Canceled At</span>
                     <span className="text-right text-secondary text-xs sm:text-sm max-w-[60%]">
-                      {formatReadableDateTime(details?.canceledAt ?? null)}
+                      {formatReadableDateTime(details?.canceledAt ?? null, displayTimezone)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium text-primary">Refunded At</span>
                     <span className="text-right text-secondary text-xs sm:text-sm max-w-[60%]">
-                      {formatReadableDateTime(details?.refundedAt ?? null)}
+                      {formatReadableDateTime(details?.refundedAt ?? null, displayTimezone)}
                     </span>
                   </div>
                 </>

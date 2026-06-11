@@ -1,6 +1,6 @@
 import { logger } from "./logger.util.js";
 
-export type ExternalApiProvider = "Square" | "Homebase" | "MarketMan";
+export type ExternalApiProvider = "Square" | "Homebase" | "MarketMan" | "GoogleBusiness";
 
 const DEFAULT_ERROR_MAX = 480;
 

@@ -86,6 +86,12 @@ export class LocationService {
         : {}),
       ...(data.logoId && { logoId: data.logoId }),
       ...(data.marketManBuyerGuid != null && data.marketManBuyerGuid !== '' && { marketManBuyerGuid: data.marketManBuyerGuid.trim() }),
+      ...(data.googleBusinessAccountId?.trim()
+        ? { googleBusinessAccountId: data.googleBusinessAccountId.trim() }
+        : {}),
+      ...(data.googleBusinessLocationId?.trim()
+        ? { googleBusinessLocationId: data.googleBusinessLocationId.trim() }
+        : {}),
     } as Omit<ILocation, '_id' | 'createdAt' | 'updatedAt'>);
     return this.enrichWithLogoUrl(this.toLocationResponse(doc));
   }
@@ -228,6 +234,8 @@ export class LocationService {
     squareWebhookSignatureKeyEnc?: string;
     logoId?: unknown;
     marketManBuyerGuid?: string;
+    googleBusinessAccountId?: string;
+    googleBusinessLocationId?: string;
     createdAt: Date;
     updatedAt: Date;
   }): ILocationResponse {
@@ -250,6 +258,12 @@ export class LocationService {
         return id == null ? {} : { logoId: id };
       })(),
       ...(doc.marketManBuyerGuid != null && doc.marketManBuyerGuid !== '' && { marketManBuyerGuid: doc.marketManBuyerGuid }),
+      ...(doc.googleBusinessAccountId != null && doc.googleBusinessAccountId !== ''
+        ? { googleBusinessAccountId: doc.googleBusinessAccountId }
+        : {}),
+      ...(doc.googleBusinessLocationId != null && doc.googleBusinessLocationId !== ''
+        ? { googleBusinessLocationId: doc.googleBusinessLocationId }
+        : {}),
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     };

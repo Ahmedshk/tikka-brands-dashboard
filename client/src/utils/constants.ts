@@ -74,4 +74,9 @@ export const API_ENDPOINTS = {
     LOGS: "/integration-sync/logs",
     ACTIVE: "/integration-sync/active",
   },
+  GOOGLE_BUSINESS: {
+    CONNECTION: "/google-business/connection",
+    OAUTH_START: "/google-business/oauth/start",
+  },
+  GOOGLE_BUSINESS_REVIEWS: "/google-business-reviews",
 } as const;

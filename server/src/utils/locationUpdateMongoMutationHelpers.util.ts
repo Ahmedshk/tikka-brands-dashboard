@@ -61,6 +61,31 @@ function finalizeLogoNullUnset(
   delete $set.logoId;
 }
 
+function applyGoogleBusinessIdFields(
+  data: UpdateLocationData,
+  $set: Record<string, unknown>,
+  $unset: Record<string, 1>,
+): void {
+  if (data.googleBusinessAccountId !== undefined) {
+    const id = data.googleBusinessAccountId.trim();
+    if (id === "") {
+      $unset.googleBusinessAccountId = 1;
+      delete $set.googleBusinessAccountId;
+    } else {
+      $set.googleBusinessAccountId = id;
+    }
+  }
+  if (data.googleBusinessLocationId !== undefined) {
+    const id = data.googleBusinessLocationId.trim();
+    if (id === "") {
+      $unset.googleBusinessLocationId = 1;
+      delete $set.googleBusinessLocationId;
+    } else {
+      $set.googleBusinessLocationId = id;
+    }
+  }
+}
+
 export function buildLocationMongoUpdateQuery(
   data: UpdateLocationData,
 ): {
@@ -81,6 +106,7 @@ export function buildLocationMongoUpdateQuery(
   applyLogoIdWhenProvided(data, $set);
   applyWebhookSignatureField(squareWebhookSignatureKey, $set, $unset);
   finalizeLogoNullUnset(data, $set, $unset);
+  applyGoogleBusinessIdFields(data, $set, $unset);
 
   const updateQuery: UpdateQuery<LocationDocument> = {};
   if (Object.keys($set).length > 0) updateQuery.$set = $set;

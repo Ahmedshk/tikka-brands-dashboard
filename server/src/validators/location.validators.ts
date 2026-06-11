@@ -18,6 +18,8 @@ const locationBodySchema = z.object({
   logoId: z.string().trim().optional().nullable(),
   clearLogo: z.string().optional(),
   marketManBuyerGuid: z.string().min(1, "MarketMan buyer GUID is required").trim(),
+  googleBusinessAccountId: z.string().trim().optional(),
+  googleBusinessLocationId: z.string().trim().optional(),
   squareWebhookSignatureKey: z.string().optional(),
 });
 
@@ -36,6 +38,8 @@ export const updateLocationSchema = z.object({
     logoId: z.string().trim().optional().nullable(),
     clearLogo: z.string().optional(),
     marketManBuyerGuid: z.string().min(1, "MarketMan buyer GUID is required").trim().optional(),
+    googleBusinessAccountId: z.string().trim().optional(),
+    googleBusinessLocationId: z.string().trim().optional(),
     squareWebhookSignatureKey: z.string().optional(),
   }),
 });

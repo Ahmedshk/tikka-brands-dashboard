@@ -13,6 +13,10 @@ export interface ILocation {
   squareWebhookSignatureKeyEnc?: string;
   logoId?: string | null;
   marketManBuyerGuid?: string;
+  /** Google Business Profile account id segment (accounts/{id}). */
+  googleBusinessAccountId?: string;
+  /** Google Business Profile location id segment (locations/{id}). */
+  googleBusinessLocationId?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }

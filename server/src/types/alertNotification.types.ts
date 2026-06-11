@@ -56,6 +56,10 @@ export interface IAlertReputationHrToggles {
   trainingRun: IAlertRunSchedule;
   pendingPips: boolean;
   pendingPipsRun: IAlertRunSchedule;
+  lowRatingReviews: boolean;
+  lowRatingReviewsRun: IAlertRunSchedule;
+  /** Alert when starRatingNumeric is strictly less than this threshold (1–5). */
+  lowRatingThreshold: number;
 }
 
 /**
@@ -67,7 +71,8 @@ export type IAlertRoleBindingSubcategory =
   | "delivery_overdue"
   | "low_inventory"
   | "training_overdue"
-  | "pending_pips";
+  | "pending_pips"
+  | "low_rating_reviews";
 
 export interface IAlertRoleBinding {
   category: AlertRoleBindingCategory;
@@ -123,6 +128,9 @@ export const DEFAULT_ALERT_NOTIFICATION_SETTINGS: Omit<
     trainingRun: { ...DEFAULT_ALERT_RUN_SCHEDULE },
     pendingPips: false,
     pendingPipsRun: { ...DEFAULT_ALERT_RUN_SCHEDULE },
+    lowRatingReviews: false,
+    lowRatingReviewsRun: { ...DEFAULT_ALERT_RUN_SCHEDULE },
+    lowRatingThreshold: 3,
   },
   roleBindings: [],
 };

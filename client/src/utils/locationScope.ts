@@ -10,6 +10,7 @@ const ALL_LOCATIONS_ROUTE_ALLOWLIST: readonly string[] = [
   '/dashboard/sales-labor-detail',
   '/dashboard/sales-trend-reports',
   '/dashboard/activity-log',
+  '/dashboard/ratings-and-reviews',
   '/dashboard/kitchen-performance',
   '/dashboard/training-management',
   '/dashboard/reviews-management',

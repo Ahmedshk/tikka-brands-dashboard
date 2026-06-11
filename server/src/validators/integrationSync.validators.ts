@@ -10,6 +10,7 @@ const integrationResourceSchema = z.enum([
   "marketman_orders_sent",
   "marketman_orders_delivery",
   "marketman_orders_both",
+  "google_business_reviews",
 ]);
 
 export const postIntegrationSyncSchema = z.object({

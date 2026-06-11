@@ -5,6 +5,10 @@ import InventoryAndSupplyChainIcon from '@assets/icons/inventory_and_supply_chai
 import ReputationAndHrIcon from '@assets/icons/reputation_and_hr.svg?react';
 import { Spinner } from '../common/Spinner';
 import { COMMAND_CENTER_ALERT_NEW_BADGE_CLASSNAME } from '../../utils/commandCenterAlertNewBadge.util';
+import {
+  isLowRatingReviewAlertType,
+  renderLowRatingReviewAlertBody,
+} from '../../utils/lowRatingReviewAlertDisplay.util';
 
 export type AlertSeverity = 'critical' | 'warning';
 
@@ -17,6 +21,8 @@ function isAlertNew(createdAt: string | undefined, now: number): boolean {
 
 export interface AlertItem {
   id: string;
+  /** Notification type when sourced from alerts API (e.g. alert_low_rating_review). */
+  alertType?: string;
   /** Optional location label shown above the alert (e.g. "Stackers Burger Co. 1 - ..."). */
   locationLine?: string;
   /** Short alert kind (e.g. "Sales goal") */
@@ -147,7 +153,11 @@ function CategoryAlertsContent({
                         <span className="shrink-0 select-none text-secondary" aria-hidden>
                           ·
                         </span>
-                        <span className="min-w-0 font-normal text-secondary">{alert.bodyLine}</span>
+                        <span className="min-w-0 font-normal text-secondary">
+                          {isLowRatingReviewAlertType(alert.alertType)
+                            ? renderLowRatingReviewAlertBody(alert.bodyLine)
+                            : alert.bodyLine}
+                        </span>
                       </>
                     ) : null}
                   </span>

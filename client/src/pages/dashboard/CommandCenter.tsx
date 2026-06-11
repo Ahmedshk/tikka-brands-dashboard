@@ -12,6 +12,7 @@ import {
   type AlertItem,
   type CommandCenterKPIItem,
   type CommandCenterKPIPeriod,
+  type ReviewRatingKPIPeriod,
 } from '../../components/CommandCenter';
 import { CommandCenterAlertsHistoryModal } from '../../components/CommandCenter/CommandCenterAlertsHistoryModal';
 import CommandCenterIcon from '@assets/icons/command_center.svg?react';
@@ -86,7 +87,7 @@ export const CommandCenter = () => {
   const [error, setError] = useState<string | null>(null);
   const [netSalesPeriod, setNetSalesPeriod] = useState<CommandCenterKPIPeriod>('today');
   const [laborCostPeriod, setLaborCostPeriod] = useState<CommandCenterKPIPeriod>('today');
-  const [reviewRatingPeriod, setReviewRatingPeriod] = useState<CommandCenterKPIPeriod>('today');
+  const [reviewRatingPeriod, setReviewRatingPeriod] = useState<ReviewRatingKPIPeriod>('today');
   const [hourlySales, setHourlySales] = useState<HourlySalesRow[] | null>(null);
   const [hourlySalesLoading, setHourlySalesLoading] = useState(!!currentLocation?._id && shouldFetchHourly);
   const [hourlySalesError, setHourlySalesError] = useState<string | null>(null);
@@ -394,24 +395,15 @@ export const CommandCenter = () => {
       });
     }
     if (canAlertsReputation) {
-      const dynamic =
-        alertBuckets?.reputation_hr.map((r) =>
-          commandCenterAlertRowToAlertItem(r, { includeLocationLine }),
-        ) ?? [];
-      const staticPlaceholders: AlertItem[] = [
-        {
-          id: 'placeholder-review-thresholds',
-          titleLine: 'Review and rating thresholds are not yet available.',
-          severity: 'warning' as const,
-          dismissable: false,
-          createdAt: undefined,
-        },
-      ];
       cats.push({
         id: 'reputation_hr',
         title: 'Reputation & HR',
         icon: reputationAlertsIcon,
-        alerts: sortAlertItemsNewestFirst<AlertItem>([...dynamic, ...staticPlaceholders]),
+        alerts: sortAlertItemsNewestFirst<AlertItem>(
+          alertBuckets?.reputation_hr.map((r) =>
+            commandCenterAlertRowToAlertItem(r, { includeLocationLine }),
+          ) ?? [],
+        ),
       });
     }
     return cats;

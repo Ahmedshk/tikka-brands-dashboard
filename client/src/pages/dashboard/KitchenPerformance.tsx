@@ -20,6 +20,7 @@ import {
   periodToDateRange,
   zonedWallTodayYmd,
 } from "../../utils/kitchenPerformancePeriodRange";
+import { resolveDisplayTimezone } from "../../utils/displayTimezoneHelpers";
 
 const PAGE_SIZE = 10;
 const PAGE_ID = "kitchen-performance";
@@ -50,7 +51,10 @@ export const KitchenPerformance = () => {
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     [],
   );
-  const timezone = currentLocation?.timezone?.trim() || browserDefaultTz;
+  const timezone = useMemo(
+    () => resolveDisplayTimezone(allLocationsSelected, currentLocation?.timezone, browserDefaultTz),
+    [allLocationsSelected, currentLocation?.timezone, browserDefaultTz],
+  );
 
   const startParam = searchParams.get("startDate");
   const endParam = searchParams.get("endDate");

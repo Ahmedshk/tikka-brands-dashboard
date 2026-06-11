@@ -42,6 +42,7 @@ export const NOTIFICATION_TYPES = [
   "alert_inventory_low_inventory",
   "alert_training_overdue",
   "alert_pip_pending",
+  "alert_low_rating_review",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

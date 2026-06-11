@@ -24,6 +24,9 @@ export interface AlertNotificationSettingsDocument extends Document {
     trainingRun?: IAlertRunSchedule;
     pendingPips: boolean;
     pendingPipsRun?: IAlertRunSchedule;
+    lowRatingReviews?: boolean;
+    lowRatingReviewsRun?: IAlertRunSchedule;
+    lowRatingThreshold?: number;
   };
   roleBindings: IAlertRoleBinding[];
   createdAt: Date;
@@ -138,6 +141,9 @@ const alertNotificationSettingsSchema = new Schema<AlertNotificationSettingsDocu
           trainingRun: { type: runScheduleSchema, default: () => ({}) },
           pendingPips: { type: Boolean, default: false },
           pendingPipsRun: { type: runScheduleSchema, default: () => ({}) },
+          lowRatingReviews: { type: Boolean, default: false },
+          lowRatingReviewsRun: { type: runScheduleSchema, default: () => ({}) },
+          lowRatingThreshold: { type: Number, default: 3, min: 1, max: 5 },
         },
         { _id: false },
       ),

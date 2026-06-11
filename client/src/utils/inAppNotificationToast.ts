@@ -1,11 +1,26 @@
-import { createElement, type ReactElement } from "react";
+import { createElement, type ReactElement, type ReactNode } from "react";
 import toast from "react-hot-toast";
 import NotificationIcon from "@assets/icons/notification.svg?react";
 import type { NotificationItem } from "../services/notification.service";
+import {
+  isLowRatingReviewAlertType,
+  renderLowRatingReviewAlertBody,
+} from "./lowRatingReviewAlertDisplay.util";
 
 const TOAST_DURATION_MS = 5000;
 
-function notificationToastBody(title: string, message: string): ReactElement {
+function notificationMessageContent(type: string | undefined, message: string): ReactNode {
+  if (isLowRatingReviewAlertType(type)) {
+    return renderLowRatingReviewAlertBody(message);
+  }
+  return message;
+}
+
+function notificationToastBody(
+  title: string,
+  message: string,
+  type: string | undefined,
+): ReactElement {
   const textBlock = createElement(
     "div",
     { className: "flex min-w-0 flex-1 flex-col gap-1 text-left" },
@@ -16,7 +31,7 @@ function notificationToastBody(title: string, message: string): ReactElement {
       ? createElement(
           "span",
           { className: "text-xs text-gray-600 line-clamp-4 whitespace-pre-wrap" },
-          message,
+          notificationMessageContent(type, message),
         )
       : null,
   );
@@ -42,7 +57,8 @@ export function showInAppNotificationToast(payload: unknown): void {
   const n = payload as Partial<NotificationItem>;
   const title = typeof n.title === "string" ? n.title.trim() : "";
   const message = typeof n.message === "string" ? n.message.trim() : "";
+  const type = typeof n.type === "string" ? n.type : undefined;
   if (!title && !message) return;
 
-  toast(() => notificationToastBody(title, message), { duration: TOAST_DURATION_MS });
+  toast(() => notificationToastBody(title, message, type), { duration: TOAST_DURATION_MS });
 }

@@ -3,6 +3,10 @@ import { createPortal } from "react-dom";
 import { commandCenterService } from "../../services/commandCenter.service";
 import { commandCenterAlertRowToAlertItem } from "../../utils/commandCenterAlertRowToAlertItem.util";
 import { COMMAND_CENTER_ALERT_NEW_BADGE_CLASSNAME } from "../../utils/commandCenterAlertNewBadge.util";
+import {
+  isLowRatingReviewAlertType,
+  renderLowRatingReviewAlertBody,
+} from "../../utils/lowRatingReviewAlertDisplay.util";
 import type {
   AlertRoleBindingCategory,
   CommandCenterAlertRow,
@@ -133,7 +137,11 @@ export function CommandCenterAlertsHistoryModal({
                     ) : null}
                   </span>
                   {alert.bodyLine != null && alert.bodyLine !== "" && (
-                    <span className="mt-0.5 block font-normal text-secondary">{alert.bodyLine}</span>
+                    <span className="mt-0.5 block font-normal text-secondary">
+                      {isLowRatingReviewAlertType(alert.alertType)
+                        ? renderLowRatingReviewAlertBody(alert.bodyLine)
+                        : alert.bodyLine}
+                    </span>
                   )}
                   {alert.subtitle != null && alert.subtitle !== "" && (
                     <span className="mt-0.5 block text-[10px] text-secondary opacity-90 md:text-xs">

@@ -1,14 +1,4 @@
-export function formatDateTimeParts(value: string | null): { time: string; date: string } {
-  if (!value) return { time: "—", date: "—" };
-  const parsed = new Date(value.replace(" ", "T"));
-  if (Number.isNaN(parsed.getTime())) return { time: "—", date: "—" };
-  const time = parsed.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  const date = parsed.toLocaleDateString("en-US");
-  return { time, date };
-}
+import { formatDateTimeParts } from "../../utils/dateTimeDisplayHelpers";
 
 function parseTicketDisplayInstant(value: string | null): number | null {
   if (!value?.trim()) return null;
@@ -47,16 +37,18 @@ export function formatDuration(seconds: number | null): string {
 
 export function TicketDateCell({
   value,
+  displayTimezone,
   compareDueForCompletedAt,
   layout = "stacked",
 }: Readonly<{
   value: string | null;
+  displayTimezone: string;
   /** When set, `value` is treated as completed-at; time is shown in red if after this due time. */
   compareDueForCompletedAt?: string | null;
   /** Mobile ticket rows: time and date on one line. */
   layout?: "stacked" | "inline";
 }>) {
-  const parts = formatDateTimeParts(value);
+  const parts = formatDateTimeParts(value, displayTimezone);
   const showLateCompletion =
     compareDueForCompletedAt !== undefined &&
     isCompletedAfterDue(value, compareDueForCompletedAt ?? null);

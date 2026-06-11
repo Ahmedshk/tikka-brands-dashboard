@@ -4,6 +4,7 @@ import type { KPICardAccentColor } from '../common/KPICard';
 import { Dropdown } from '../common/Dropdown';
 
 export type CommandCenterKPIPeriod = 'today' | 'weekToDate';
+export type ReviewRatingKPIPeriod = 'today' | 'weekToDate' | 'overall';
 
 export interface CommandCenterKPIItem {
   title: string;
@@ -21,9 +22,11 @@ export interface CommandCenterKPIItem {
   extraClassName?: string;
   loading?: boolean;
   /** When set, show period selector and use this as selected value */
-  period?: CommandCenterKPIPeriod;
-  /** When set, show "Today" / "Week to date" selector and call on change */
-  onPeriodChange?: (period: CommandCenterKPIPeriod) => void;
+  period?: string;
+  /** When set, show period selector and call on change */
+  onPeriodChange?: (period: string) => void;
+  /** Override default Today / Week to date options */
+  periodOptions?: { value: string; label: string }[];
 }
 
 export interface CommandCenterKPICardsProps {
@@ -37,15 +40,15 @@ const PERIOD_OPTIONS: { value: CommandCenterKPIPeriod; label: string }[] = [
 
 export const CommandCenterKPICards = ({ items }: CommandCenterKPICardsProps) => {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 overflow-visible">
       {items.map((kpi) => {
-        const { period, onPeriodChange, ...kpiCardProps } = kpi;
+        const { period, onPeriodChange, periodOptions, ...kpiCardProps } = kpi;
         const titleRight =
           onPeriodChange != null && period != null ? (
             <Dropdown
-              options={PERIOD_OPTIONS}
+              options={periodOptions ?? PERIOD_OPTIONS}
               value={period}
-              onChange={(v) => onPeriodChange(v as CommandCenterKPIPeriod)}
+              onChange={(v) => onPeriodChange(v)}
               placeholder="Today"
               aria-label={`Period for ${kpi.title}`}
               className="min-w-[7.5rem] text-[10px] md:text-xs 2xl:text-sm"

@@ -8,6 +8,9 @@ export function integrationSyncLogResourceLabel(resource: string): string {
   if (resource === "all_resources_today") {
     return "All resources (today)";
   }
+  if (resource === "google_business_reviews") {
+    return "Google Business — reviews";
+  }
   return resource;
 }
 

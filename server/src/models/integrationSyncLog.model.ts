@@ -9,7 +9,8 @@ export type IntegrationSyncResource =
   | "marketman_valid_count_dates"
   | "marketman_orders_sent"
   | "marketman_orders_delivery"
-  | "marketman_orders_both";
+  | "marketman_orders_both"
+  | "google_business_reviews";
 
 /** Log documents may include resources no longer valid for POST /integration-sync */
 export type IntegrationSyncLogResource =

@@ -30,4 +30,9 @@ export const DATA_SYNC_RESOURCE_OPTIONS: {
     label: "MarketMan — orders by delivery date",
     needsDateRange: true,
   },
+  {
+    value: "google_business_reviews",
+    label: "Google Business — reviews",
+    needsDateRange: false,
+  },
 ];

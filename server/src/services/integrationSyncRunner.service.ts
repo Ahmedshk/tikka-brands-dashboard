@@ -28,6 +28,7 @@ import { logger } from "../utils/logger.util.js";
 import { yieldEventLoop } from "../utils/eventLoopYield.util.js";
 import { getZonedCalendarDayUtcBounds } from "../utils/integrationSyncZonedDayBounds.util.js";
 import type { IntegrationSyncResource } from "../models/integrationSyncLog.model.js";
+import { syncGoogleBusinessReviewsCountsForLocation } from "./googleBusinessReviewSync.service.js";
 
 const locationRepository = new LocationRepository();
 const locationService = new LocationService();
@@ -423,6 +424,7 @@ const SYNC_LOCATION_HANDLERS: Record<string, LocationSyncKindHandler> = {
       opts,
       "marketman_orders_delivery",
     ),
+  google_business_reviews: (id) => syncGoogleBusinessReviewsCountsForLocation(id),
 };
 
 export async function runSyncForAllLocations(

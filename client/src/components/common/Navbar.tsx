@@ -28,6 +28,10 @@ import {
   resolveNotificationLocationLabel,
 } from '../../utils/notificationNavigation';
 import {
+  isLowRatingReviewAlertType,
+  renderLowRatingReviewAlertBody,
+} from '../../utils/lowRatingReviewAlertDisplay.util';
+import {
   isAllLocationsId,
   shouldHideLocationSelector,
   shouldOfferAllLocationsOption,
@@ -211,6 +215,7 @@ function NavbarNotificationList({
           const navTarget = getNotificationNavigationTarget(n);
           const locationLine = resolveNotificationLocationLabel(n, locations);
           const hasNavTarget = navTarget != null;
+          const bodyText = alertNotificationBodyTextForDropdown(n.message, n, locations);
           let ariaLabel = `${n.title}.`;
           if (!n.isRead) ariaLabel += ' Unread.';
           if (hasNavTarget) ariaLabel += ' Open related page.';
@@ -233,7 +238,9 @@ function NavbarNotificationList({
                     </p>
                   )}
                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
-                    {alertNotificationBodyTextForDropdown(n.message, n, locations)}
+                    {isLowRatingReviewAlertType(n.type)
+                      ? renderLowRatingReviewAlertBody(bodyText)
+                      : bodyText}
                   </p>
                   <p className={timeClass}>{formatTimeAgo(n.createdAt)}</p>
                 </div>
@@ -545,7 +552,7 @@ export const Navbar = () => {
   const locationPlaceholder = getLocationPlaceholder(locationsLoading, locations.length);
 
   return (
-    <nav className="relative z-20 shrink-0 bg-card-background border-b border-gray-200 min-h-[72px] flex flex-col" ref={mobileMenuRef}>
+    <nav className="relative z-30 shrink-0 bg-card-background border-b border-gray-200 min-h-[72px] flex flex-col" ref={mobileMenuRef}>
       <div className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-8 h-[72px] shrink-0">
         {/* Spacer when location selector is hidden (e.g. Location Management) so notifications/profile stay right */}
         {hideLocationSelector && <div className="min-w-0 flex-1" />}

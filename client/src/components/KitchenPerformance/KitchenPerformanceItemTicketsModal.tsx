@@ -13,6 +13,7 @@ interface KitchenPerformanceItemTicketsModalProps {
   onClose: () => void;
   itemName: string;
   tickets: KitchenPerformanceTicketRow[];
+  displayTimezone: string;
 }
 
 export const KitchenPerformanceItemTicketsModal = ({
@@ -20,6 +21,7 @@ export const KitchenPerformanceItemTicketsModal = ({
   onClose,
   itemName,
   tickets,
+  displayTimezone,
 }: KitchenPerformanceItemTicketsModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -99,20 +101,21 @@ export const KitchenPerformanceItemTicketsModal = ({
                           />
                         </td>
                         <td className="py-3 pr-4">
-                          <TicketDateCell value={row.timeCreated} />
+                          <TicketDateCell value={row.timeCreated} displayTimezone={displayTimezone} />
                         </td>
                         <td className="py-3 pr-4">
-                          <TicketDateCell value={row.timeDue} />
+                          <TicketDateCell value={row.timeDue} displayTimezone={displayTimezone} />
                         </td>
                         <td className="py-3 pr-4">
                           <TicketDateCell
                             value={row.timeCompleted}
+                            displayTimezone={displayTimezone}
                             compareDueForCompletedAt={row.timeDue}
                           />
                         </td>
                         <td className="py-3 pr-4">{formatDuration(row.completionTimeSeconds)}</td>
                         <td className="py-3 pr-4">
-                          <TicketDateCell value={row.timeRecalled} />
+                          <TicketDateCell value={row.timeRecalled} displayTimezone={displayTimezone} />
                         </td>
                         <td className="py-3 pr-2 text-right font-semibold">
                           {formatTicketItemCount(row.numberOfItems)}

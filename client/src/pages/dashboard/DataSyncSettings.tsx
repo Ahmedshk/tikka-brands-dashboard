@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import axios from "axios";
 import TextField from "@mui/material/TextField";
@@ -9,6 +10,10 @@ import { Layout } from "../../components/common/Layout";
 import { Spinner } from "../../components/common/Spinner";
 import { Dropdown, type DropdownOption } from "../../components/common/Dropdown";
 import { integrationSyncService } from "../../services/integrationSync.service";
+import {
+  googleBusinessConnectionService,
+  type GoogleBusinessConnectionStatus,
+} from "../../services/googleBusinessConnection.service";
 import type { IntegrationSyncLogRow } from "../../services/integrationSync.service";
 import { locationService } from "../../services/location.service";
 import type { LocationListItem } from "../../types";
@@ -78,6 +83,12 @@ function formatLogWhen(iso: string): string {
 }
 
 export const DataSyncSettings = () => {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [gbpStatus, setGbpStatus] = useState<GoogleBusinessConnectionStatus | null>(null);
+  const [gbpStatusLoading, setGbpStatusLoading] = useState(true);
+  const [gbpConnectStarting, setGbpConnectStarting] = useState(false);
+  const [gbpDisconnectStarting, setGbpDisconnectStarting] = useState(false);
   const [logsLoading, setLogsLoading] = useState(true);
   const [runStarting, setRunStarting] = useState(false);
   const [runAllTodayStarting, setRunAllTodayStarting] = useState(false);
@@ -115,6 +126,61 @@ export const DataSyncSettings = () => {
       })),
     [],
   );
+
+  const fetchGbpStatus = useCallback(async () => {
+    setGbpStatusLoading(true);
+    try {
+      const status = await googleBusinessConnectionService.getStatus();
+      setGbpStatus(status);
+    } catch {
+      setGbpStatus({ connected: false });
+    } finally {
+      setGbpStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchGbpStatus();
+  }, [fetchGbpStatus]);
+
+  useEffect(() => {
+    const gbp = searchParams.get("gbp");
+    if (!gbp) return;
+
+    if (gbp === "connected") {
+      toast.success("Google Business Profile connected");
+      void fetchGbpStatus();
+    } else if (gbp === "error") {
+      const message = searchParams.get("message") ?? "Connection failed";
+      toast.error(decodeURIComponent(message));
+    }
+
+    navigate("/dashboard/data-sync-settings", { replace: true });
+  }, [searchParams, navigate, fetchGbpStatus]);
+
+  const handleGbpConnect = async () => {
+    setGbpConnectStarting(true);
+    try {
+      const url = await googleBusinessConnectionService.startOAuth();
+      window.location.href = url;
+    } catch {
+      toast.error("Could not start Google Business Profile connection");
+      setGbpConnectStarting(false);
+    }
+  };
+
+  const handleGbpDisconnect = async () => {
+    setGbpDisconnectStarting(true);
+    try {
+      await googleBusinessConnectionService.disconnect();
+      setGbpStatus({ connected: false });
+      toast.success("Google Business Profile disconnected");
+    } catch {
+      toast.error("Could not disconnect Google Business Profile");
+    } finally {
+      setGbpDisconnectStarting(false);
+    }
+  };
 
   const fetchLogsForPage = useCallback(async (page: number) => {
     setLogsLoading(true);
@@ -358,15 +424,70 @@ export const DataSyncSettings = () => {
           <div className="h-4 rounded-t-xl bg-primary" aria-hidden />
           <div className="p-6">
             <div className="space-y-8">
+              <div className={`${nestedPanelClass} p-4 md:p-5`}>
+                <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-primary">
+                  Google Business Profile
+                </h3>
+                <p className="text-xs text-tertiary mt-1 max-w-2xl">
+                  Connect your organization&apos;s Google account to sync customer reviews. Map each location
+                  with Google account and location IDs in Location Management. Review sync schedule is
+                  configured under Alerts &amp; Notifications (Reputation &amp; HR).
+                </p>
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                  {gbpStatusLoading ? (
+                    <span className="text-sm text-tertiary flex items-center gap-2">
+                      <Spinner size="sm" />
+                      Checking connection…
+                    </span>
+                  ) : gbpStatus?.connected ? (
+                    <div className="text-sm text-primary">
+                      <span className="font-medium text-green-700">Connected</span>
+                      {gbpStatus.connectedEmail ? (
+                        <span className="text-tertiary"> — {gbpStatus.connectedEmail}</span>
+                      ) : null}
+                      {gbpStatus.connectedAt ? (
+                        <span className="block text-xs text-tertiary mt-0.5">
+                          Since {formatLogWhen(gbpStatus.connectedAt)}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <span className="text-sm text-tertiary">Not connected</span>
+                  )}
+                  <div className="flex gap-2 sm:ml-auto">
+                    {gbpStatus?.connected ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleGbpDisconnect()}
+                        disabled={gbpDisconnectStarting || gbpStatusLoading}
+                        className="px-4 py-2 text-sm font-medium rounded-xl border border-gray-300 text-primary hover:bg-gray-50 disabled:opacity-60"
+                      >
+                        {gbpDisconnectStarting ? "Disconnecting…" : "Disconnect"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void handleGbpConnect()}
+                        disabled={gbpConnectStarting || gbpStatusLoading}
+                        className="px-4 py-2 text-sm font-medium rounded-xl bg-button-primary text-white hover:opacity-90 disabled:opacity-60"
+                      >
+                        {gbpConnectStarting ? "Redirecting…" : "Connect Google Business"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <h3 className="text-sm md:text-base 2xl:text-lg font-semibold text-primary">
                   Run sync
                 </h3>
                 <p className="text-xs text-tertiary mt-1 max-w-2xl">
-                  On-demand backfills for Square, Homebase, and MarketMan. For Homebase timecards and
-                  MarketMan orders, choose a start and end (same as Square payments). Scheduled jobs keep
-                  MarketMan orders (and valid count dates once daily) plus a rolling Homebase window updated;
-                  actual/theoretical and waste cost for Inventory &amp; Food Cost load from MarketMan on first
+                  On-demand backfills for Square, Homebase, MarketMan, and Google Business reviews. For
+                  Homebase timecards and MarketMan orders, choose a start and end (same as Square payments).
+                  Scheduled jobs keep MarketMan orders (and valid count dates once daily) plus a rolling
+                  Homebase window updated; Google Business Profile reviews sync automatically every hour.
+                  Actual/theoretical and waste cost for Inventory &amp; Food Cost load from MarketMan on first
                   use per count period and are then read from the database (no TTL yet).
                 </p>
                 <div className="mt-4 space-y-4">

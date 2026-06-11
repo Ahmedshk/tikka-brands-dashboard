@@ -38,6 +38,7 @@ import {
   subcategoryOptionsForNotifyRoles,
 } from "../../utils/alertRoleBindingNotify.util";
 import { getRoleNamesForBindingRow } from "../../utils/alertsNotificationsSettingsHelpers";
+import { validateLowRatingReviewsSchedule } from "../../utils/alertsNotificationsSettingsValidation";
 
 const fieldClass =
   "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary";
@@ -48,6 +49,9 @@ const tableCardClass =
 /** Distinct panel for each alert category block (financial, inventory, reputation). */
 const alertSettingsSectionClass =
   "rounded-xl border border-gray-200 bg-card-background shadow-sm p-5 md:p-6 space-y-4";
+
+/** Two alert rule panels per row from md breakpoint up. */
+const alertRulePanelsGridClass = "grid grid-cols-1 gap-4 md:grid-cols-2";
 
 const thClass =
   "text-left font-semibold px-4 lg:px-6 py-3 lg:py-4 text-[10px] md:text-xs 2xl:text-sm text-white";
@@ -146,6 +150,17 @@ const FINANCIAL_ROWS: Array<{ key: keyof AlertFinancialLaborDto; label: string }
   { key: "foodCostPct", label: "Food cost %" },
 ];
 
+function normalizeLowRatingReviewsRun(r?: Partial<AlertRunScheduleDto> | null): AlertRunScheduleDto {
+  const normalized = normalizeRun(r);
+  if (normalized.scheduleMode === "interval") {
+    return {
+      ...normalized,
+      interval: { hours: normalized.interval.hours, minutes: 0 },
+    };
+  }
+  return normalized;
+}
+
 function normalizeSettings(s: AlertNotificationSettingsDto): AlertNotificationSettingsDto {
   const fl = s.financialLabor;
   return {
@@ -174,6 +189,14 @@ function normalizeSettings(s: AlertNotificationSettingsDto): AlertNotificationSe
       trainingRun: normalizeRun(s.reputationHr?.trainingRun),
       pendingPips: s.reputationHr?.pendingPips ?? false,
       pendingPipsRun: normalizeRun(s.reputationHr?.pendingPipsRun),
+      lowRatingReviews: s.reputationHr?.lowRatingReviews ?? false,
+      lowRatingReviewsRun: normalizeLowRatingReviewsRun(s.reputationHr?.lowRatingReviewsRun),
+      lowRatingThreshold:
+        typeof s.reputationHr?.lowRatingThreshold === "number" &&
+        s.reputationHr.lowRatingThreshold >= 1 &&
+        s.reputationHr.lowRatingThreshold <= 5
+          ? s.reputationHr.lowRatingThreshold
+          : 3,
     },
     roleBindings: [...(s.roleBindings ?? [])],
   };
@@ -183,10 +206,13 @@ function ScheduleEditor({
   idPrefix,
   schedule,
   onChange,
+  hideMinutes = false,
 }: Readonly<{
   idPrefix: string;
   schedule: AlertRunScheduleDto;
   onChange: (next: AlertRunScheduleDto) => void;
+  /** When true, interval mode shows hours only (minutes forced to 0). */
+  hideMinutes?: boolean;
 }>) {
   const [hoursDraft, setHoursDraft] = useState<string | null>(null);
   const [minutesDraft, setMinutesDraft] = useState<string | null>(null);
@@ -208,10 +234,16 @@ function ScheduleEditor({
   const minutesDisplay = minutesDraft ?? String(schedule.interval.minutes);
 
   const setSchedule = (patch: Partial<AlertRunScheduleDto>) => {
+    const nextInterval = patch.interval
+      ? { ...schedule.interval, ...patch.interval }
+      : schedule.interval;
+    if (hideMinutes) {
+      nextInterval.minutes = 0;
+    }
     onChange({
       ...schedule,
       ...patch,
-      interval: patch.interval ? { ...schedule.interval, ...patch.interval } : schedule.interval,
+      interval: nextInterval,
       fixedTimesLocal: patch.fixedTimesLocal ?? schedule.fixedTimesLocal,
     });
   };
@@ -328,22 +360,24 @@ function ScheduleEditor({
               onBlur={commitIntervalHours}
             />
           </div>
-          <div>
-            <label className="block text-[10px] md:text-xs text-secondary mb-1" htmlFor={`${idPrefix}-im`}>
-              Minutes
-            </label>
-            <input
-              id={`${idPrefix}-im`}
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              maxLength={2}
-              className={fieldClass + " w-24"}
-              value={minutesDisplay}
-              onChange={(e) => setMinutesDraft(sanitizeDigitsOnlyInput(e.target.value))}
-              onBlur={commitIntervalMinutes}
-            />
-          </div>
+          {!hideMinutes ? (
+            <div>
+              <label className="block text-[10px] md:text-xs text-secondary mb-1" htmlFor={`${idPrefix}-im`}>
+                Minutes
+              </label>
+              <input
+                id={`${idPrefix}-im`}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={2}
+                className={fieldClass + " w-24"}
+                value={minutesDisplay}
+                onChange={(e) => setMinutesDraft(sanitizeDigitsOnlyInput(e.target.value))}
+                onBlur={commitIntervalMinutes}
+              />
+            </div>
+          ) : null}
         </div>
       )}
     </div>
@@ -589,9 +623,15 @@ export const AlertsNotificationsSettings = () => {
 
   const save = async () => {
     if (!settings) return;
+    const validationError = validateLowRatingReviewsSchedule(settings);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
     setSaving(true);
     try {
-      const next = await alertNotificationSettingsService.update(settings);
+      const payload = normalizeSettings(settings);
+      const next = await alertNotificationSettingsService.update(payload);
       const normalized = normalizeSettings(next);
       setSettings(normalized);
       setSavedSnapshot(normalized);
@@ -753,7 +793,8 @@ export const AlertsNotificationsSettings = () => {
                   <p className="text-xs text-tertiary max-w-3xl">
                     Delivery-overdue and low-inventory checks each use their own schedule.
                   </p>
-                  <div className="rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
+                  <div className={alertRulePanelsGridClass}>
+                  <div className="min-w-0 rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
                     <label className="flex items-center gap-2 text-sm text-primary">
                       <input
                         type="checkbox"
@@ -782,7 +823,7 @@ export const AlertsNotificationsSettings = () => {
                       }
                     />
                   </div>
-                  <div className="rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
+                  <div className="min-w-0 rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
                     <label className="flex items-center gap-2 text-sm text-primary">
                       <input
                         type="checkbox"
@@ -854,6 +895,7 @@ export const AlertsNotificationsSettings = () => {
                       }
                     />
                   </div>
+                  </div>
                 </section>
 
                 <section className={alertSettingsSectionClass} aria-labelledby="alerts-section-reputation">
@@ -864,10 +906,11 @@ export const AlertsNotificationsSettings = () => {
                     Reputation & HR
                   </h3>
                   <p className="text-xs text-tertiary max-w-3xl">
-                    Training overdue and pending PIPs each have a separate run schedule.
+                    Training overdue, pending PIPs, and low-rating review alerts each have a separate run
+                    schedule. Google reviews sync from Business Profile runs automatically every hour.
                   </p>
-                  <div className="space-y-4">
-                    <div className="rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
+                  <div className={alertRulePanelsGridClass}>
+                    <div className="min-w-0 rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
                       <label className="flex items-center gap-2 text-sm text-primary">
                         <input
                           type="checkbox"
@@ -896,7 +939,7 @@ export const AlertsNotificationsSettings = () => {
                         }
                       />
                     </div>
-                    <div className="rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
+                    <div className="min-w-0 rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
                       <label className="flex items-center gap-2 text-sm text-primary">
                         <input
                           type="checkbox"
@@ -925,11 +968,65 @@ export const AlertsNotificationsSettings = () => {
                         }
                       />
                     </div>
+                    <div className="min-w-0 rounded-lg border border-gray-200 p-4 space-y-3 bg-[#F9FAFB]/80">
+                      <label className="flex items-center gap-2 text-sm text-primary">
+                        <input
+                          type="checkbox"
+                          checked={settings.reputationHr.lowRatingReviews}
+                          onChange={(e) =>
+                            setSettings({
+                              ...settings,
+                              reputationHr: {
+                                ...settings.reputationHr,
+                                lowRatingReviews: e.target.checked,
+                              },
+                            })
+                          }
+                          className="rounded border-gray-300"
+                        />
+                        <span>Low Google review rating alert</span>
+                      </label>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <label htmlFor="low-rating-threshold" className="text-sm text-primary shrink-0">
+                          Alert when star rating is below
+                        </label>
+                        <select
+                          id="low-rating-threshold"
+                          value={settings.reputationHr.lowRatingThreshold}
+                          onChange={(e) =>
+                            setSettings({
+                              ...settings,
+                              reputationHr: {
+                                ...settings.reputationHr,
+                                lowRatingThreshold: Number(e.target.value),
+                              },
+                            })
+                          }
+                          className="rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white max-w-[8rem]"
+                        >
+                          {[2, 3, 4, 5].map((n) => (
+                            <option key={n} value={n}>
+                              Below {n} stars
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <ScheduleEditor
+                        idPrefix="low-rating"
+                        schedule={settings.reputationHr.lowRatingReviewsRun}
+                        hideMinutes
+                        onChange={(lowRatingReviewsRun) =>
+                          setSettings({
+                            ...settings,
+                            reputationHr: {
+                              ...settings.reputationHr,
+                              lowRatingReviewsRun: normalizeLowRatingReviewsRun(lowRatingReviewsRun),
+                            },
+                          })
+                        }
+                      />
+                    </div>
                   </div>
-                  <p className="text-xs text-secondary max-w-3xl">
-                    Negative reviews and minimum rating thresholds are not implemented yet. Review milestone
-                    notifications still appear in the Command Center from existing review flows when applicable.
-                  </p>
                 </section>
 
                 <hr className="border-gray-200" />

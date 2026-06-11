@@ -53,7 +53,7 @@ export const Layout = ({ children }: LayoutProps) => {
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <Navbar />
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
+        <main className="relative z-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
           {locationListHydrated ? (
             children
           ) : (

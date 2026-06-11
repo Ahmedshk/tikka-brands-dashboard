@@ -10,7 +10,8 @@ export type IntegrationSyncResource =
   | "marketman_valid_count_dates"
   | "marketman_orders_sent"
   | "marketman_orders_delivery"
-  | "marketman_orders_both";
+  | "marketman_orders_both"
+  | "google_business_reviews";
 
 /** Older log rows may still reference removed manual-sync resources */
 export type IntegrationSyncLogResource =

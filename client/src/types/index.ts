@@ -92,6 +92,8 @@ export interface Location {
   logoUrl?: string;
   /** MarketMan Buyer GUID for this location. */
   marketManBuyerGuid?: string;
+  googleBusinessAccountId?: string;
+  googleBusinessLocationId?: string;
   createdAt?: string;
   updatedAt?: string;
 }

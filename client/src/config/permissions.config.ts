@@ -82,6 +82,11 @@ export const PERMISSION_PAGES: PermissionPageConfig[] = [
     components: [FULL_PAGE_ACCESS],
   },
   {
+    pageId: 'ratings-and-reviews',
+    pageLabel: 'Ratings and Reviews',
+    components: [FULL_PAGE_ACCESS],
+  },
+  {
     pageId: 'inventory-food-cost',
     pageLabel: 'Inventory & Food Cost',
     components: [

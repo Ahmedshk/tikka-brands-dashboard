@@ -144,6 +144,8 @@ export const locationService = {
     logoId?: string | null;
     marketManBuyerGuid?: string;
     squareWebhookSignatureKey?: string;
+    googleBusinessAccountId?: string;
+    googleBusinessLocationId?: string;
   }): Promise<Location> {
     const res = await api.post<ApiResponse<{ location: Location }>>(
       BASE,
@@ -171,6 +173,8 @@ export const locationService = {
       logoId?: string | null;
       clearLogo?: boolean;
       marketManBuyerGuid?: string | null;
+      googleBusinessAccountId?: string;
+      googleBusinessLocationId?: string;
     }
   ): Promise<Location> {
     const { clearLogo, ...fields } = payload;

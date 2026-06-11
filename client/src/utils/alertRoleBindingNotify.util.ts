@@ -5,7 +5,7 @@ import type { DropdownOption } from "../components/common/Dropdown";
 export const NOTIFY_ROLES_SUBCATEGORIES: Record<AlertRoleBindingCategory, readonly string[]> = {
   financial_labor: ["sales", "laborCostPct", "hours", "spmh", "foodCostPct"],
   inventory_supply_chain: ["delivery_overdue", "low_inventory"],
-  reputation_hr: ["training_overdue", "pending_pips"],
+  reputation_hr: ["training_overdue", "pending_pips", "low_rating_reviews"],
 };
 
 export const NOTIFY_ROLES_SUBCATEGORY_LABELS: Record<string, string> = {
@@ -18,6 +18,7 @@ export const NOTIFY_ROLES_SUBCATEGORY_LABELS: Record<string, string> = {
   low_inventory: "Low inventory (below minimum on hand)",
   training_overdue: "Training overdue",
   pending_pips: "Pending PIPs",
+  low_rating_reviews: "Low Google review rating",
 };
 
 export function firstSubcategoryForNotifyRoles(category: AlertRoleBindingCategory): string {

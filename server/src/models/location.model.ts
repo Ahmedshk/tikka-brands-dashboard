@@ -73,6 +73,18 @@ const locationSchema = new Schema<LocationDocument>(
       trim: true,
       default: undefined,
     },
+    googleBusinessAccountId: {
+      type: String,
+      required: false,
+      trim: true,
+      default: undefined,
+    },
+    googleBusinessLocationId: {
+      type: String,
+      required: false,
+      trim: true,
+      default: undefined,
+    },
   },
   {
     timestamps: true,

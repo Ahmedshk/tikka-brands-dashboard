@@ -30,6 +30,7 @@ type Props = {
   chartXAxis: string[];
   chartSeriesData: number[];
   ticketsLatePercentageDisplay: string;
+  displayTimezone: string;
   onViewTicketDetail: (row: KitchenPerformanceTicketRow) => void;
 };
 
@@ -40,6 +41,7 @@ export const KitchenPerformanceDetailsTicketTab = ({
   chartXAxis,
   chartSeriesData,
   ticketsLatePercentageDisplay,
+  displayTimezone,
   onViewTicketDetail,
 }: Props) => {
   return (
@@ -175,11 +177,19 @@ export const KitchenPerformanceDetailsTicketTab = ({
                           <span className="text-secondary shrink-0">
                             Sent to KDS at:
                           </span>
-                          <TicketDateCell value={row.timeCreated} layout="inline" />
+                          <TicketDateCell
+                            value={row.timeCreated}
+                            displayTimezone={displayTimezone}
+                            layout="inline"
+                          />
                         </div>
                         <div className="flex items-start gap-2">
                           <span className="text-secondary shrink-0">Time due:</span>
-                          <TicketDateCell value={row.timeDue} layout="inline" />
+                          <TicketDateCell
+                            value={row.timeDue}
+                            displayTimezone={displayTimezone}
+                            layout="inline"
+                          />
                         </div>
                         <div className="flex items-start gap-2">
                           <span className="text-secondary shrink-0">
@@ -187,6 +197,7 @@ export const KitchenPerformanceDetailsTicketTab = ({
                           </span>
                           <TicketDateCell
                             value={row.timeCompleted}
+                            displayTimezone={displayTimezone}
                             compareDueForCompletedAt={row.timeDue}
                             layout="inline"
                           />
@@ -199,7 +210,11 @@ export const KitchenPerformanceDetailsTicketTab = ({
                         </div>
                         <div className="flex items-start gap-2">
                           <span className="text-secondary shrink-0">Recalled at:</span>
-                          <TicketDateCell value={row.timeRecalled} layout="inline" />
+                          <TicketDateCell
+                            value={row.timeRecalled}
+                            displayTimezone={displayTimezone}
+                            layout="inline"
+                          />
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-secondary"># of items:</span>
@@ -252,14 +267,18 @@ export const KitchenPerformanceDetailsTicketTab = ({
                             />
                           </td>
                           <td className="py-3 pr-4">
-                            <TicketDateCell value={row.timeCreated} />
+                            <TicketDateCell
+                              value={row.timeCreated}
+                              displayTimezone={displayTimezone}
+                            />
                           </td>
                           <td className="py-3 pr-4">
-                            <TicketDateCell value={row.timeDue} />
+                            <TicketDateCell value={row.timeDue} displayTimezone={displayTimezone} />
                           </td>
                           <td className="py-3 pr-4">
                             <TicketDateCell
                               value={row.timeCompleted}
+                              displayTimezone={displayTimezone}
                               compareDueForCompletedAt={row.timeDue}
                             />
                           </td>
@@ -267,7 +286,10 @@ export const KitchenPerformanceDetailsTicketTab = ({
                             {formatDuration(row.completionTimeSeconds)}
                           </td>
                           <td className="py-3 pr-4">
-                            <TicketDateCell value={row.timeRecalled} />
+                            <TicketDateCell
+                              value={row.timeRecalled}
+                              displayTimezone={displayTimezone}
+                            />
                           </td>
                           <td className="py-3 pr-4 text-right font-semibold">
                             {formatTicketItemCount(row.numberOfItems)}

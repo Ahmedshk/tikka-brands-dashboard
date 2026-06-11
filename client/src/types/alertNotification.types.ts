@@ -46,6 +46,9 @@ export interface AlertNotificationSettingsDto {
     trainingRun: AlertRunScheduleDto;
     pendingPips: boolean;
     pendingPipsRun: AlertRunScheduleDto;
+    lowRatingReviews: boolean;
+    lowRatingReviewsRun: AlertRunScheduleDto;
+    lowRatingThreshold: number;
   };
   roleBindings: Array<{
     category: AlertRoleBindingCategory;

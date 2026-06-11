@@ -47,7 +47,7 @@ async function main(): Promise<void> {
     // process.exit terminates this worker isolate; the OS closes its
     // sockets and the Mongo driver on the server side reaps them.
     // Awaiting mongoose.disconnect() here has been seen to hang
-    // (winston file transport timers, mongoose heartbeat scheduler,
+    // (pino file transport timers, mongoose heartbeat scheduler,
     // etc.), which keeps the worker alive forever and starves the
     // spawnIntegrationSyncWorker concurrency cap.
     process.exit(0);

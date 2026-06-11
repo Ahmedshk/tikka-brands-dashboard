@@ -17,6 +17,31 @@ import type {
   WeekToDateKpis,
   FetchWeekToDateKpisParams,
 } from "../types/commandCenter.types.js";
+import { getReviewRatingSummariesForLocation } from "./googleBusinessReviewAggregation.util.js";
+
+export interface ReviewRatingKpiData {
+  todayRating: number | null;
+  todayCount: number | null;
+  weekToDateRating: number | null;
+  weekToDateCount: number | null;
+  overallRating: number | null;
+  overallCount: number | null;
+}
+
+export async function fetchReviewRatingKpiData(
+  locationMongoId: string,
+  location: LocationForKpi,
+): Promise<ReviewRatingKpiData> {
+  const summaries = await getReviewRatingSummariesForLocation(location, locationMongoId);
+  return {
+    todayRating: summaries.today.averageRating,
+    todayCount: summaries.today.reviewCount,
+    weekToDateRating: summaries.weekToDate.averageRating,
+    weekToDateCount: summaries.weekToDate.reviewCount,
+    overallRating: summaries.overall.averageRating,
+    overallCount: summaries.overall.reviewCount,
+  };
+}
 
 const LOG_PREFIX = "[Command Center]";
 
@@ -262,6 +287,7 @@ export function buildTodayOnlyData(
   kpis: TodayOnlyKpis,
   laborCostGoal: number,
   laborCostGoalTolerance: number,
+  reviewRating?: ReviewRatingKpiData,
 ): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   if (!metrics?.length || metrics.includes("netSales")) {
@@ -274,9 +300,11 @@ export function buildTodayOnlyData(
     data.laborCostGoalTolerance = laborCostGoalTolerance;
     data.laborCostStatus = kpis.laborCostStatus;
   }
-  if (wantReviewRating) {
-    data.reviewRating = 4.3;
-    data.reviewCount = 272;
+  if (wantReviewRating && reviewRating) {
+    data.reviewRating = reviewRating.todayRating;
+    data.reviewCount = reviewRating.todayCount;
+    data.reviewRatingOverall = reviewRating.overallRating;
+    data.reviewCountOverall = reviewRating.overallCount;
   }
   return data;
 }
@@ -289,6 +317,7 @@ export function buildWeekToDateData(
   kpis: WeekToDateKpis,
   laborCostGoal: number,
   laborCostGoalTolerance: number,
+  reviewRating?: ReviewRatingKpiData,
 ): { todayData: Record<string, unknown>; weekToDateData: Record<string, unknown> } {
   const todayData: Record<string, unknown> = {};
   const weekToDateData: Record<string, unknown> = {};
@@ -309,11 +338,15 @@ export function buildWeekToDateData(
     weekToDateData.laborCostGoalTolerance = laborCostGoalTolerance;
     weekToDateData.laborCostStatusWeekToDate = kpis.laborCostStatusWeekToDate;
   }
-  if (wantReviewRating) {
-    todayData.reviewRating = 4.3;
-    todayData.reviewCount = 272;
-    weekToDateData.reviewRating = 4.3;
-    weekToDateData.reviewCount = 272;
+  if (wantReviewRating && reviewRating) {
+    todayData.reviewRating = reviewRating.todayRating;
+    todayData.reviewCount = reviewRating.todayCount;
+    todayData.reviewRatingOverall = reviewRating.overallRating;
+    todayData.reviewCountOverall = reviewRating.overallCount;
+    weekToDateData.reviewRating = reviewRating.weekToDateRating;
+    weekToDateData.reviewCount = reviewRating.weekToDateCount;
+    weekToDateData.reviewRatingOverall = reviewRating.overallRating;
+    weekToDateData.reviewCountOverall = reviewRating.overallCount;
   }
 
   return { todayData, weekToDateData };

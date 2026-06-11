@@ -18,6 +18,7 @@
     "test:rollup-split-range": "tsx --test src/utils/rollupSplitRange.util.test.ts",
     "create-owner": "tsx src/scripts/create-owner.ts",
     "seed-roles": "tsx src/scripts/seed-roles.ts",
+    "seed-google-business-reviews": "tsx src/scripts/seed-google-business-reviews.ts",
     "backfill-calendar-notification-jobs": "tsx src/scripts/backfill-calendar-notification-jobs.ts",
     "backfill-integration-cache-index-fields": "tsx src/scripts/backfill-integration-cache-index-fields.ts",
     "reconcile-marketman-order-status-siblings": "tsx src/scripts/reconcile-marketman-order-status-siblings.ts",
@@ -34,6 +35,7 @@
     "rollup-homebase-timecards-hourly": "tsx src/scripts/rollup-homebase-timecards-hourly.ts",
     "test:rollup-period-keys": "tsx --test src/utils/rollupPeriodKeys.util.test.ts",
     "test:sales-trend-comparison": "tsx --test src/utils/salesTrendDateRange.comparison.test.ts",
+    "test:google-business-reviews": "tsx --test src/utils/googleBusinessReviewHelpers.test.ts src/utils/googleBusinessReviewAggregation.util.test.ts",
     "verify-daily-rollup-parity": "tsx src/scripts/verify-daily-rollup-parity.ts",
     "diagnose-rollup-probe-perf": "tsx src/scripts/diagnose-rollup-probe-perf.ts"
   },

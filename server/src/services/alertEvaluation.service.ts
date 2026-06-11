@@ -37,6 +37,14 @@ import {
 } from "../utils/alertEvaluationFinancialLaborHelpers.util.js";
 import { buildFireTimeKey } from "../utils/alertFireTimeKey.util.js";
 import { collectInventoryEvaluateAlertPayloads } from "../utils/alertEvaluationInventoryHelpers.util.js";
+import { GoogleBusinessReviewModel } from "../models/googleBusinessReview.model.js";
+import { buildLowRatingReviewFireKey } from "../utils/googleBusinessReviewHelpers.js";
+import {
+  buildLowRatingReviewInAppMessage,
+  buildLowRatingReviewSmsMessage,
+  formatLowRatingReviewUpdatedAtForEmail,
+} from "../utils/lowRatingReviewAlertMessage.util.js";
+import type { GoogleBusinessReviewSyncDiffItem } from "../types/googleBusinessReview.types.js";
 
 const alertSettingsService = new AlertNotificationSettingsService();
 const locationService = new LocationService();
@@ -72,6 +80,16 @@ function getDashboardCommandCenterUrl(): string {
     "http://localhost:5173"
   ).replace(/\/$/, "");
   return `${base}/dashboard/command-center`;
+}
+
+function getDashboardRatingsReviewsUrl(): string {
+  const base = (
+    process.env.CLIENT_URL ??
+    process.env.APP_URL ??
+    process.env.FRONTEND_URL ??
+    "http://localhost:5173"
+  ).replace(/\/$/, "");
+  return `${base}/dashboard/ratings-and-reviews`;
 }
 
 function getDashboardInventoryFoodCostUrl(): string {
@@ -221,6 +239,8 @@ async function sendAlert(params: {
   severity: "warning" | "critical";
   fireKey: string;
   data: Record<string, unknown>;
+  inAppMessage?: string;
+  smsBody?: string;
 }): Promise<void> {
   const logged = await tryLogAlert({
     locationId: params.locationId,
@@ -256,6 +276,8 @@ async function sendAlert(params: {
   const inventoryFoodCostUrl = getDashboardInventoryFoodCostUrl();
   const isDeliveryOverdueEmail = params.alertKind === "delivery_overdue";
   const isLowInventoryEmail = params.alertKind === "low_inventory";
+  const isLowRatingReviewEmail = params.alertKind === "low_rating_review";
+  const ratingsReviewsUrl = getDashboardRatingsReviewsUrl();
   const { overdueRowsForEmail, overdueMoreCount } = sliceDeliveryOverdueRowsForEmail(
     params.alertKind,
     params.data,
@@ -264,10 +286,18 @@ async function sendAlert(params: {
     params.category,
     params.data,
   );
-  const emailActionUrl = isDeliveryOverdueEmail ? inventoryFoodCostUrl : commandCenterUrl;
+  const emailActionUrl = isDeliveryOverdueEmail
+    ? inventoryFoodCostUrl
+    : isLowRatingReviewEmail
+      ? typeof params.data.ratingsUrl === "string"
+        ? params.data.ratingsUrl
+        : ratingsReviewsUrl
+      : commandCenterUrl;
   const emailPrimaryButtonText = isDeliveryOverdueEmail
     ? "Open Inventory & Food Cost"
-    : "Open Command Center";
+    : isLowRatingReviewEmail
+      ? "Open Ratings & Reviews"
+      : "Open Command Center";
   const sevStyles = alertEmailSeverityStyles(params.severity);
   const categoryLabel = ALERT_EMAIL_CATEGORY_LABELS[params.category];
   const detailRows = buildAlertEmailDetailRows(params.data);
@@ -281,6 +311,8 @@ async function sendAlert(params: {
       type: params.type,
       title: params.title,
       message: params.message,
+      ...(params.inAppMessage != null ? { inAppMessage: params.inAppMessage } : {}),
+      ...(params.smsBody != null ? { smsBody: params.smsBody } : {}),
       data: {
         ...params.data,
         locationId: params.locationId,
@@ -299,6 +331,7 @@ async function sendAlert(params: {
         sevStyles,
         detailRows,
         isLowInventoryEmail,
+        isLowRatingReviewEmail,
         data: params.data,
         storeName: params.storeName,
         overdueRowsForEmail,
@@ -442,6 +475,57 @@ async function evaluateInventory(
   }
 }
 
+export async function sendLowRatingReviewAlert(params: {
+  settings: IAlertNotificationSettings;
+  locationId: string;
+  storeName: string;
+  timezone: string;
+  review: GoogleBusinessReviewSyncDiffItem;
+}): Promise<void> {
+  const { review } = params;
+  const stars = review.starRatingNumeric;
+  const threshold = params.settings.reputationHr.lowRatingThreshold ?? 3;
+  const commentText = review.comment?.trim() ?? "";
+  const messageParams = {
+    storeName: params.storeName,
+    reviewerDisplayName: review.reviewerDisplayName,
+    starRatingNumeric: stars,
+    threshold,
+    comment: commentText,
+  };
+  const inAppMessage = buildLowRatingReviewInAppMessage(messageParams);
+  const smsBody = buildLowRatingReviewSmsMessage(messageParams);
+  await sendAlert({
+    settings: params.settings,
+    locationId: params.locationId,
+    storeName: params.storeName,
+    category: "reputation_hr",
+    roleBindingSubcategory: "low_rating_reviews",
+    type: "alert_low_rating_review",
+    title: "Low Google review rating",
+    message: inAppMessage,
+    inAppMessage,
+    smsBody,
+    alertKind: "low_rating_review",
+    severity: "warning",
+    fireKey: buildLowRatingReviewFireKey(review.googleReviewId, review.updateTime),
+    data: {
+      sourceKey: "low_rating_review",
+      googleReviewId: review.googleReviewId,
+      starRatingNumeric: stars,
+      reviewerDisplayName: review.reviewerDisplayName,
+      alertThreshold: threshold,
+      locationName: params.storeName,
+      reviewComment: commentText,
+      reviewUpdatedAt: formatLowRatingReviewUpdatedAtForEmail(
+        review.updateTime,
+        params.timezone,
+      ),
+      ratingsUrl: getDashboardRatingsReviewsUrl(),
+    },
+  });
+}
+
 async function evaluateReputationHr(
   loc: ILocationResponse,
   settings: IAlertNotificationSettings,
@@ -503,6 +587,39 @@ async function evaluateReputationHr(
       }
     }
   }
+
+  if (settings.reputationHr.lowRatingReviews) {
+    const lr = settings.reputationHr.lowRatingReviewsRun;
+    if (shouldRunAlertScheduleTick(lr, timezone, tickAnchorMs)) {
+      const threshold = settings.reputationHr.lowRatingThreshold ?? 3;
+      const im = intervalMinutesForSchedule(lr);
+      const since = new Date(tickAnchorMs - im * 60 * 1000);
+      const reviews = await GoogleBusinessReviewModel.find({
+        locationId,
+        starRatingNumeric: { $lt: threshold },
+        updateTime: { $gte: since },
+      })
+        .select("googleReviewId starRatingNumeric reviewer.displayName comment updateTime")
+        .lean();
+
+      for (const r of reviews) {
+        await sendLowRatingReviewAlert({
+          settings,
+          locationId,
+          storeName: loc.storeName ?? "Location",
+          timezone,
+          review: {
+            googleReviewId: r.googleReviewId,
+            starRatingNumeric: r.starRatingNumeric,
+            reviewerDisplayName: r.reviewer?.displayName ?? "Reviewer",
+            ...(r.comment != null ? { comment: r.comment } : {}),
+            updateTime: r.updateTime,
+            isNew: false,
+          },
+        });
+      }
+    }
+  }
 }
 
 function hasAnyAlertRule(settings: IAlertNotificationSettings): boolean {
@@ -510,6 +627,7 @@ function hasAnyAlertRule(settings: IAlertNotificationSettings): boolean {
   if (settings.inventorySupplyChain.deliveryOverdueNotReceived) return true;
   if (settings.inventorySupplyChain.lowInventoryEnabled) return true;
   if (settings.reputationHr.trainingOverdue || settings.reputationHr.pendingPips) return true;
+  if (settings.reputationHr.lowRatingReviews) return true;
   return false;
 }
 

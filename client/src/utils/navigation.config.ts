@@ -49,6 +49,11 @@ export const navigationConfig: NavigationConfig = [
         path: "/dashboard/activity-log",
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
       },
+      {
+        label: "Ratings and Reviews",
+        path: "/dashboard/ratings-and-reviews",
+        allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
+      },
     ],
   },
   {

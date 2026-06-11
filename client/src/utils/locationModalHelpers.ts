@@ -29,6 +29,8 @@ export function getLocationFormValidation(params: {
   timezone: string;
   businessStartTime: string;
   marketManBuyerGuid: string;
+  googleBusinessAccountId: string;
+  googleBusinessLocationId: string;
   squareAccessToken: string;
   homebaseApiKey: string;
   updateSquareCredentials: boolean;
@@ -100,6 +102,8 @@ export async function submitLocationForm(params: {
   timezone: string;
   businessStartTime: string;
   marketManBuyerGuid: string;
+  googleBusinessAccountId: string;
+  googleBusinessLocationId: string;
   squareAccessToken: string;
   homebaseApiKey: string;
   updateSquareCredentials: boolean;
@@ -122,6 +126,8 @@ export async function submitLocationForm(params: {
     timezone,
     businessStartTime,
     marketManBuyerGuid,
+    googleBusinessAccountId,
+    googleBusinessLocationId,
     squareAccessToken,
     homebaseApiKey,
     updateSquareCredentials,
@@ -148,6 +154,8 @@ export async function submitLocationForm(params: {
       timezone: timezone.trim(),
       businessStartTime: businessStartTime.trim(),
       marketManBuyerGuid: marketManBuyerGuid.trim(),
+      googleBusinessAccountId: googleBusinessAccountId.trim() || undefined,
+      googleBusinessLocationId: googleBusinessLocationId.trim() || undefined,
       ...((updateSquareCredentials || !hasStoredSquare) && squareAccessToken.trim() && { squareAccessToken: squareAccessToken.trim() }),
       ...((updateHomebaseCredentials || !hasStoredHomebase) && homebaseApiKey.trim() && { homebaseApiKey: homebaseApiKey.trim() }),
       ...squareWebhookPayload,
@@ -166,6 +174,12 @@ export async function submitLocationForm(params: {
     squareAccessToken: squareAccessToken.trim(),
     homebaseApiKey: homebaseApiKey.trim(),
     marketManBuyerGuid: marketManBuyerGuid.trim(),
+    ...(googleBusinessAccountId.trim()
+      ? { googleBusinessAccountId: googleBusinessAccountId.trim() }
+      : {}),
+    ...(googleBusinessLocationId.trim()
+      ? { googleBusinessLocationId: googleBusinessLocationId.trim() }
+      : {}),
     ...(logoId != null ? { logoId } : {}),
     ...(trimmedWebhookKey !== '' ? { squareWebhookSignatureKey: trimmedWebhookKey } : {}),
   });

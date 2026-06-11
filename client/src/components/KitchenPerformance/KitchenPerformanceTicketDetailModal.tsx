@@ -2,12 +2,14 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { KitchenPerformanceTicketRow } from "../../types/kitchenPerformance.types";
 import { parseItemsInTicket } from "../../utils/kitchenPerformanceItemsInTicket";
-import { formatDateTimeParts, formatDuration, isCompletedAfterDue } from "./kitchenPerformanceTicketUi";
+import { formatDateTimeParts } from "../../utils/dateTimeDisplayHelpers";
+import { formatDuration, isCompletedAfterDue } from "./kitchenPerformanceTicketUi";
 
 interface KitchenPerformanceTicketDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   row: KitchenPerformanceTicketRow | null;
+  displayTimezone: string;
 }
 
 function DetailRow({
@@ -22,8 +24,11 @@ function DetailRow({
   );
 }
 
-function DateTimeInline({ value }: Readonly<{ value: string | null }>) {
-  const parts = formatDateTimeParts(value);
+function DateTimeInline({
+  value,
+  displayTimezone,
+}: Readonly<{ value: string | null; displayTimezone: string }>) {
+  const parts = formatDateTimeParts(value, displayTimezone);
   if (parts.time === "—" && parts.date === "—") {
     return <span>—</span>;
   }
@@ -38,8 +43,13 @@ function DateTimeInline({ value }: Readonly<{ value: string | null }>) {
 function CompletedAtModalValue({
   timeCompleted,
   timeDue,
-}: Readonly<{ timeCompleted: string | null; timeDue: string | null }>) {
-  const parts = formatDateTimeParts(timeCompleted);
+  displayTimezone,
+}: Readonly<{
+  timeCompleted: string | null;
+  timeDue: string | null;
+  displayTimezone: string;
+}>) {
+  const parts = formatDateTimeParts(timeCompleted, displayTimezone);
   const late = isCompletedAfterDue(timeCompleted, timeDue);
   if (parts.time === "—" && parts.date === "—") {
     return <span>—</span>;
@@ -64,6 +74,7 @@ export const KitchenPerformanceTicketDetailModal = ({
   isOpen,
   onClose,
   row,
+  displayTimezone,
 }: KitchenPerformanceTicketDetailModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -117,19 +128,23 @@ export const KitchenPerformanceTicketDetailModal = ({
               <span>{row.orderSource?.trim() ? row.orderSource : "—"}</span>
             </DetailRow>
             <DetailRow label="Time in">
-              <DateTimeInline value={row.timeCreated} />
+              <DateTimeInline value={row.timeCreated} displayTimezone={displayTimezone} />
             </DetailRow>
             <DetailRow label="Time due">
-              <DateTimeInline value={row.timeDue} />
+              <DateTimeInline value={row.timeDue} displayTimezone={displayTimezone} />
             </DetailRow>
             <DetailRow label="Completed at">
-              <CompletedAtModalValue timeCompleted={row.timeCompleted} timeDue={row.timeDue} />
+              <CompletedAtModalValue
+                timeCompleted={row.timeCompleted}
+                timeDue={row.timeDue}
+                displayTimezone={displayTimezone}
+              />
             </DetailRow>
             <DetailRow label="Completion time">
               {formatDuration(row.completionTimeSeconds)}
             </DetailRow>
             <DetailRow label="Recalled at">
-              <DateTimeInline value={row.timeRecalled} />
+              <DateTimeInline value={row.timeRecalled} displayTimezone={displayTimezone} />
             </DetailRow>
             <DetailRow label="Items on ticket">
               {parsedItems.length === 0 ? (

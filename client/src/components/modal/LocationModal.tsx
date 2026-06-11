@@ -43,6 +43,8 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
   const [logoList, setLogoList] = useState<Logo[]>([]);
   const [logoListLoading, setLogoListLoading] = useState(false);
   const [marketManBuyerGuid, setMarketManBuyerGuid] = useState('');
+  const [googleBusinessAccountId, setGoogleBusinessAccountId] = useState('');
+  const [googleBusinessLocationId, setGoogleBusinessLocationId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const modalContentRef = useRef<HTMLDivElement>(null);
@@ -96,6 +98,8 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
     timezone,
     businessStartTime,
     marketManBuyerGuid,
+    googleBusinessAccountId,
+    googleBusinessLocationId,
     squareAccessToken,
     homebaseApiKey,
     updateSquareCredentials,
@@ -127,6 +131,8 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
       setLogoPreviewUrl(editLocation.logoUrl ?? null);
       setClearLogo(false);
       setMarketManBuyerGuid(editLocation.marketManBuyerGuid ?? '');
+      setGoogleBusinessAccountId(editLocation.googleBusinessAccountId ?? '');
+      setGoogleBusinessLocationId(editLocation.googleBusinessLocationId ?? '');
     } else {
       setStoreName('');
       setAddress('');
@@ -146,6 +152,8 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
       setLogoPreviewUrl(null);
       setClearLogo(false);
       setMarketManBuyerGuid('');
+      setGoogleBusinessAccountId('');
+      setGoogleBusinessLocationId('');
     }
     setError('');
   }, [editLocation, isOpen]);
@@ -199,6 +207,8 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
         timezone,
         businessStartTime,
         marketManBuyerGuid,
+        googleBusinessAccountId,
+        googleBusinessLocationId,
         squareAccessToken,
         homebaseApiKey,
         updateSquareCredentials,
@@ -293,6 +303,10 @@ export const LocationModal = ({ isOpen, onClose, onSaved, editLocation }: Locati
                 fileInputRef={fileInputRef}
                 marketManBuyerGuid={marketManBuyerGuid}
                 setMarketManBuyerGuid={setMarketManBuyerGuid}
+                googleBusinessAccountId={googleBusinessAccountId}
+                setGoogleBusinessAccountId={setGoogleBusinessAccountId}
+                googleBusinessLocationId={googleBusinessLocationId}
+                setGoogleBusinessLocationId={setGoogleBusinessLocationId}
                 squareLocationId={squareLocationId}
                 setSquareLocationId={setSquareLocationId}
                 hasStoredSquare={hasStoredSquare}

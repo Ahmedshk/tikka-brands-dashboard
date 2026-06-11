@@ -2,7 +2,10 @@ import { Worker } from "node:worker_threads";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { IntegrationSyncLogModel } from "../models/integrationSyncLog.model.js";
-import { resolveIntegrationSyncWorkerPath } from "../utils/integrationSyncWorkerPath.util.js";
+import {
+  integrationSyncWorkerSpawnOptions,
+  resolveIntegrationSyncWorkerPath,
+} from "../utils/integrationSyncWorkerPath.util.js";
 import { logger } from "../utils/logger.util.js";
 import type { IntegrationSyncWorkerMsg } from "./integrationSyncWorker.types.js";
 
@@ -55,7 +58,7 @@ interface WorkerLifecycleOptions {
 
 /**
  * Wires up the shared worker lifecycle: hard-kill timer, slot release on
- * exit/error, and consistent winston logging. Extracted so both spawn helpers
+ * exit/error, and consistent pino logging. Extracted so both spawn helpers
  * (manual and poll) stay short and don't drift.
  */
 function attachWorkerLifecycle(
@@ -135,8 +138,11 @@ export function spawnIntegrationSyncWorker(
     return { spawned: false, reason };
   }
 
-  const workerPath = resolveIntegrationSyncWorkerPath(__dirname);
-  const worker = new Worker(workerPath, { workerData: message });
+  const workerTarget = resolveIntegrationSyncWorkerPath(__dirname);
+  const worker = new Worker(
+    workerTarget.path,
+    integrationSyncWorkerSpawnOptions(workerTarget, message),
+  );
   attachWorkerLifecycle(worker, {
     pool: liveManualWorkers,
     logContext: { logId: message.logId, kind: message.kind },
@@ -172,9 +178,12 @@ export function spawnPoll15mWorker(): { spawned: boolean; reason?: string } {
     return { spawned: false, reason: "previous poll still running" };
   }
 
-  const workerPath = resolveIntegrationSyncWorkerPath(__dirname);
+  const workerTarget = resolveIntegrationSyncWorkerPath(__dirname);
   const message: IntegrationSyncWorkerMsg = { kind: "poll-15m" };
-  const worker = new Worker(workerPath, { workerData: message });
+  const worker = new Worker(
+    workerTarget.path,
+    integrationSyncWorkerSpawnOptions(workerTarget, message),
+  );
   attachWorkerLifecycle(worker, {
     pool: livePollWorkers,
     logContext: { kind: "poll-15m" },

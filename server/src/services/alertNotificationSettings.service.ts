@@ -57,6 +57,20 @@ function normalizeRunSchedule(
   };
 }
 
+function normalizeLowRatingReviewsRunSchedule(
+  raw: Partial<IAlertRunSchedule> | undefined,
+  fallback: IAlertRunSchedule,
+): IAlertRunSchedule {
+  const normalized = normalizeRunSchedule(raw, fallback);
+  if (normalized.scheduleMode === "interval") {
+    return {
+      ...normalized,
+      interval: { hours: normalized.interval.hours, minutes: 0 },
+    };
+  }
+  return normalized;
+}
+
 function mergeRunSchedule(base: IAlertRunSchedule, patch?: Partial<IAlertRunSchedule>): IAlertRunSchedule {
   if (!patch) {
     return {
@@ -162,6 +176,9 @@ function toPlain(doc: {
     trainingRun?: Partial<IAlertRunSchedule>;
     pendingPips?: boolean;
     pendingPipsRun?: Partial<IAlertRunSchedule>;
+    lowRatingReviews?: boolean;
+    lowRatingReviewsRun?: Partial<IAlertRunSchedule>;
+    lowRatingThreshold?: number;
   };
   roleBindings: Array<{
     category: string;
@@ -196,6 +213,17 @@ function toPlain(doc: {
   const rep = doc.reputationHr ?? {};
   const trainingRun = normalizeRunSchedule(rep.trainingRun, legacy ?? DEFAULT_ALERT_RUN_SCHEDULE);
   const pendingPipsRun = normalizeRunSchedule(rep.pendingPipsRun, legacy ?? DEFAULT_ALERT_RUN_SCHEDULE);
+  const lowRatingReviewsRun = normalizeLowRatingReviewsRunSchedule(
+    rep.lowRatingReviewsRun,
+    legacy ?? DEFAULT_ALERT_RUN_SCHEDULE,
+  );
+  const lowRatingThresholdRaw = rep.lowRatingThreshold;
+  const lowRatingThreshold =
+    typeof lowRatingThresholdRaw === "number" &&
+    lowRatingThresholdRaw >= 1 &&
+    lowRatingThresholdRaw <= 5
+      ? lowRatingThresholdRaw
+      : 3;
 
   const out: IAlertNotificationSettings = {
     _id: doc._id.toString(),
@@ -212,6 +240,9 @@ function toPlain(doc: {
       trainingRun,
       pendingPips: rep.pendingPips ?? false,
       pendingPipsRun,
+      lowRatingReviews: rep.lowRatingReviews ?? false,
+      lowRatingReviewsRun,
+      lowRatingThreshold,
     },
     roleBindings: (doc.roleBindings ?? []).map((b) => {
       const sub =
@@ -258,6 +289,9 @@ export class AlertNotificationSettingsService {
       trainingRun: Partial<IAlertRunSchedule>;
       pendingPips: boolean;
       pendingPipsRun: Partial<IAlertRunSchedule>;
+      lowRatingReviews: boolean;
+      lowRatingReviewsRun: Partial<IAlertRunSchedule>;
+      lowRatingThreshold: number;
     }>;
     roleBindings?: Array<{
       category: IAlertRoleBinding["category"];
@@ -321,6 +355,19 @@ export class AlertNotificationSettingsService {
           plainBefore.reputationHr.pendingPipsRun,
           data.reputationHr.pendingPipsRun,
         ) as never,
+        lowRatingReviews:
+          data.reputationHr.lowRatingReviews ?? doc.reputationHr?.lowRatingReviews ?? false,
+        lowRatingReviewsRun: (() => {
+          const merged = mergeRunSchedule(
+            plainBefore.reputationHr.lowRatingReviewsRun,
+            data.reputationHr.lowRatingReviewsRun,
+          );
+          return normalizeLowRatingReviewsRunSchedule(merged, merged) as never;
+        })(),
+        lowRatingThreshold:
+          data.reputationHr.lowRatingThreshold ??
+          doc.reputationHr?.lowRatingThreshold ??
+          3,
       };
     }
     if (data.roleBindings !== undefined) {

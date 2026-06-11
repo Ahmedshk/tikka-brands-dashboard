@@ -16,7 +16,7 @@ import { logger } from "../utils/logger.util.js";
  * thread, so HTTP requests don't hitch every 15 minutes.
  *
  * Mirrors the logic that previously lived in `agenda.define("integration:poll-15m", ...)`:
- * never throws (each segment has its own try/catch and logs to winston), so
+ * never throws (each segment has its own try/catch and logs via pino), so
  * the worker entry can call it safely.
  */
 export async function integrationPoll15mBackground(): Promise<void> {

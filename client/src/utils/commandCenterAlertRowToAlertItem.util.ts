@@ -12,6 +12,7 @@ export function commandCenterAlertRowToAlertItem(
   const includeLocationLine = options?.includeLocationLine ?? false;
   return {
     id: row.id,
+    alertType: row.type,
     locationLine:
       includeLocationLine && locationLine && locationLine.toLowerCase() !== "location"
         ? locationLine

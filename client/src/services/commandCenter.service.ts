@@ -17,6 +17,8 @@ export interface CommandCenterKPIsData {
   laborCostStatus?: LaborCostStatus;
   reviewRating?: number;
   reviewCount?: number;
+  reviewRatingOverall?: number | null;
+  reviewCountOverall?: number | null;
 }
 
 /** Today slice when backend returns dual-period (today + weekToDate). */
@@ -29,6 +31,8 @@ export interface CommandCenterKPIsTodaySlice {
   laborCostStatus?: LaborCostStatus;
   reviewRating?: number;
   reviewCount?: number;
+  reviewRatingOverall?: number | null;
+  reviewCountOverall?: number | null;
 }
 
 /** Week-to-date slice when backend returns dual-period. */
@@ -41,6 +45,8 @@ export interface CommandCenterKPIsWeekToDateSlice {
   laborCostStatusWeekToDate?: LaborCostStatus;
   reviewRating?: number;
   reviewCount?: number;
+  reviewRatingOverall?: number | null;
+  reviewCountOverall?: number | null;
 }
 
 export interface CommandCenterKPIsDataDual {

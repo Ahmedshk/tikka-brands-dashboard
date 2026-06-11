@@ -45,6 +45,8 @@ export const createLocation = async (
       logoId,
       marketManBuyerGuid,
       squareWebhookSignatureKey,
+      googleBusinessAccountId,
+      googleBusinessLocationId,
     } = req.body;
 
     let resolvedLogoId: string | undefined;
@@ -79,6 +81,14 @@ export const createLocation = async (
       ...(typeof squareWebhookSignatureKey === "string" &&
       squareWebhookSignatureKey.trim() !== ""
         ? { squareWebhookSignatureKey: squareWebhookSignatureKey.trim() }
+        : {}),
+      ...(typeof googleBusinessAccountId === "string" &&
+      googleBusinessAccountId.trim() !== ""
+        ? { googleBusinessAccountId: googleBusinessAccountId.trim() }
+        : {}),
+      ...(typeof googleBusinessLocationId === "string" &&
+      googleBusinessLocationId.trim() !== ""
+        ? { googleBusinessLocationId: googleBusinessLocationId.trim() }
         : {}),
     });
     res.status(201).json({

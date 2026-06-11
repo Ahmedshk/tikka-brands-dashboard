@@ -19,6 +19,7 @@ import {
   formatYmdShort,
   isValidYmd,
 } from "../../utils/kitchenPerformanceDetailsDateHelpers";
+import { resolveDisplayTimezone } from "../../utils/displayTimezoneHelpers";
 
 const DETAILS_PAGE_ID = "kitchen-performance-details";
 import type {
@@ -50,6 +51,10 @@ export const KitchenPerformanceDetails = () => {
     [],
   );
   const timezone = currentLocation?.timezone?.trim() || browserDefaultTz;
+  const displayTimezone = useMemo(
+    () => resolveDisplayTimezone(false, currentLocation?.timezone, browserDefaultTz),
+    [currentLocation?.timezone, browserDefaultTz],
+  );
 
   const startParam = searchParams.get("startDate");
   const endParam = searchParams.get("endDate");
@@ -84,9 +89,9 @@ export const KitchenPerformanceDetails = () => {
   const selectedDateLabel = useMemo(
     () =>
       startDate === endDate
-        ? formatYmdShort(startDate)
-        : `${formatYmdShort(startDate)} – ${formatYmdShort(endDate)}`,
-    [startDate, endDate],
+        ? formatYmdShort(startDate, displayTimezone)
+        : `${formatYmdShort(startDate, displayTimezone)} – ${formatYmdShort(endDate, displayTimezone)}`,
+    [startDate, endDate, displayTimezone],
   );
 
   const fetchDetails = useCallback(async () => {
@@ -215,6 +220,7 @@ export const KitchenPerformanceDetails = () => {
                 chartXAxis={chartXAxis}
                 chartSeriesData={chartSeriesData}
                 ticketsLatePercentageDisplay={ticketsLatePercentageDisplay}
+                displayTimezone={displayTimezone}
                 onViewTicketDetail={setTicketDetailRow}
               />
             ) : (
@@ -229,12 +235,14 @@ export const KitchenPerformanceDetails = () => {
               isOpen={ticketDetailRow != null}
               onClose={() => setTicketDetailRow(null)}
               row={ticketDetailRow}
+              displayTimezone={displayTimezone}
             />
             <KitchenPerformanceItemTicketsModal
               isOpen={itemTicketsModal != null}
               onClose={() => setItemTicketsModal(null)}
               itemName={itemTicketsModal?.itemName ?? ""}
               tickets={itemModalTickets}
+              displayTimezone={displayTimezone}
             />
           </>
         ) : (

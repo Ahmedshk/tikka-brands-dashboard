@@ -7,7 +7,7 @@ import type {
 export const ALERT_ROLE_SUBCATEGORIES: Record<AlertRoleBindingCategory, readonly string[]> = {
   financial_labor: ["sales", "laborCostPct", "hours", "spmh", "foodCostPct"],
   inventory_supply_chain: ["delivery_overdue", "low_inventory"],
-  reputation_hr: ["training_overdue", "pending_pips"],
+  reputation_hr: ["training_overdue", "pending_pips", "low_rating_reviews"],
 } as const;
 
 export function isValidRoleBindingSubcategory(

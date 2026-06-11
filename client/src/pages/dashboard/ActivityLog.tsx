@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { resolveDisplayTimezone } from "../../utils/displayTimezoneHelpers";
 import { useSelector } from "react-redux";
 import toast from "react-hot-toast";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -41,6 +42,10 @@ export const ActivityLog = () => {
   );
   const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
   const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
+  const displayTimezone = useMemo(
+    () => resolveDisplayTimezone(allLocationsSelected, currentLocation?.timezone),
+    [allLocationsSelected, currentLocation?.timezone],
+  );
   const canFullPage = useCanAccessComponent(PAGE_ID, "full-page");
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [rows, setRows] = useState<ActivityLogRow[]>([]);
@@ -133,6 +138,7 @@ export const ActivityLog = () => {
             <ActivityLogTableCard
               rows={filteredRows}
               loading={loading}
+              displayTimezone={displayTimezone}
               showLocationLabel={allLocationsSelected}
               onView={(row) => {
                 setSelectedRow(row);
@@ -142,6 +148,7 @@ export const ActivityLog = () => {
             <ActivityLogDetailsModal
               open={selectedRow != null}
               row={selectedRow}
+              displayTimezone={displayTimezone}
               onClose={() => setSelectedRow(null)}
             />
           </>
