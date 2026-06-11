@@ -9,7 +9,7 @@ const LOW_RATING_REVIEW_WITH_LOCATION_PREFIX_RE =
 function lowRatingReviewBodyWithoutLocationPrefix(text: string): string {
   const trimmed = text.trim();
   const withPrefix = LOW_RATING_REVIEW_WITH_LOCATION_PREFIX_RE.exec(trimmed);
-  return withPrefix ? withPrefix[1] : trimmed;
+  return withPrefix?.[1] ?? trimmed;
 }
 
 /** Renders low-rating alert body with the customer review in italics and quotes. */
