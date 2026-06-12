@@ -183,7 +183,7 @@ export const RatingsAndReviews = () => {
               className="h-4 w-4 text-primary md:h-5 md:w-5 2xl:h-6 2xl:w-6"
               aria-hidden
             />
-            Ratings and Reviews
+            Ratings & Reviews
           </h2>
 
           <div className="flex flex-wrap items-center gap-2">
