@@ -16,6 +16,7 @@ import {
   toAlertEntityCadenceSnapshot,
 } from "./alertEntityCadence.util.js";
 import {
+  buildEpisodeCadenceUpsertUpdate,
   loadAlertEntityCadenceStateMap,
   persistAlertEntityCadenceEpisodeState,
   resetAllActiveAlertEntityCadenceStates,
@@ -291,22 +292,15 @@ async function appendLowInventoryPayloadsIfDue(
     if (cadence === "once_per_episode") {
       await LowInventoryAlertStateModel.updateOne(
         { locationId: lowOid, itemId: row.itemId },
-        {
-          $set: {
-            isLow: true,
-            locationName: params.locStoreNameForDb.trim() || null,
-            itemName: row.name,
-            categoryName: row.categoryName || null,
-            uomName: row.uomName || null,
-            lastOnHand: row.onHand,
-            lastMinOnHand: row.minOnHand,
-            ...(plan.nextEpisodeStartedAt ? { episodeStartedAt: plan.nextEpisodeStartedAt } : {}),
-            ...(plan.nextLastAlertedAt ? { lastAlertedAt: plan.nextLastAlertedAt } : {}),
-          },
-          $setOnInsert: {
-            episodeStartedAt: new Date(params.tickAnchorMs),
-          },
-        },
+        buildEpisodeCadenceUpsertUpdate(plan, params.tickAnchorMs, {
+          isLow: true,
+          locationName: params.locStoreNameForDb.trim() || null,
+          itemName: row.name,
+          categoryName: row.categoryName || null,
+          uomName: row.uomName || null,
+          lastOnHand: row.onHand,
+          lastMinOnHand: row.minOnHand,
+        }),
         { upsert: true },
       ).exec();
     }

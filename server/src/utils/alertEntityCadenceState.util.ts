@@ -70,6 +70,29 @@ export async function resetAllActiveAlertEntityCadenceStates(
   ).exec();
 }
 
+/**
+ * Build an upsert update that never sets `episodeStartedAt` in both `$set` and `$setOnInsert`
+ * (MongoDB error code 40 if both are present).
+ */
+export function buildEpisodeCadenceUpsertUpdate(
+  plan: AlertEntityCadenceSendPlan,
+  tickAnchorMs: number,
+  setFields: Record<string, unknown>,
+): { $set: Record<string, unknown>; $setOnInsert?: Record<string, unknown> } {
+  const $set: Record<string, unknown> = {
+    ...setFields,
+    ...(plan.nextLastAlertedAt ? { lastAlertedAt: plan.nextLastAlertedAt } : {}),
+  };
+  if (plan.nextEpisodeStartedAt) {
+    $set.episodeStartedAt = plan.nextEpisodeStartedAt;
+    return { $set };
+  }
+  return {
+    $set,
+    $setOnInsert: { episodeStartedAt: new Date(tickAnchorMs) },
+  };
+}
+
 export async function persistAlertEntityCadenceEpisodeState(params: {
   locationId: string;
   alertKind: AlertEntityCadenceKind;
@@ -80,20 +103,7 @@ export async function persistAlertEntityCadenceEpisodeState(params: {
   const locOid = new mongoose.Types.ObjectId(params.locationId);
   await AlertEntityCadenceStateModel.updateOne(
     { locationId: locOid, alertKind: params.alertKind, entityId: params.entityId },
-    {
-      $set: {
-        isActive: true,
-        ...(params.plan.nextEpisodeStartedAt
-          ? { episodeStartedAt: params.plan.nextEpisodeStartedAt }
-          : {}),
-        ...(params.plan.nextLastAlertedAt
-          ? { lastAlertedAt: params.plan.nextLastAlertedAt }
-          : {}),
-      },
-      $setOnInsert: {
-        episodeStartedAt: new Date(params.tickAnchorMs),
-      },
-    },
+    buildEpisodeCadenceUpsertUpdate(params.plan, params.tickAnchorMs, { isActive: true }),
     { upsert: true },
   ).exec();
 }
