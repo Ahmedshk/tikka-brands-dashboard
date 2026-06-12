@@ -50,7 +50,7 @@ export const navigationConfig: NavigationConfig = [
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
       },
       {
-        label: "Ratings and Reviews",
+        label: "Ratings & Reviews",
         path: "/dashboard/ratings-and-reviews",
         allowedRoles: Object.values(UserRole), // Placeholder: allow all roles
       },
