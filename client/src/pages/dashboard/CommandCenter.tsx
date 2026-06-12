@@ -30,6 +30,7 @@ import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 import { formatCurrency, formatHourToAmPm } from '../../utils/commandCenterHelpers';
 import { buildCurrencyAxisFormatter } from '../../utils/chartAxis.util';
 import { buildCommandCenterKPIItems } from '../../utils/commandCenterKpiBuilder';
+import { REVIEW_RATING_KPI_SUBTITLE_STAR_CLASS } from '../../utils/reviewRatingDisplayHelpers';
 import { commandCenterAlertRowToAlertItem } from '../../utils/commandCenterAlertRowToAlertItem.util';
 import {
   tryCommandCenterRowFromNotificationNew,
@@ -314,8 +315,8 @@ export const CommandCenter = () => {
       icons: {
         dollar: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
         laborCost: <LaborCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
-        starTitle: <StarIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-quaternary" aria-hidden />,
-        starSubtitle: <StarIcon className="w-4 h-4 md:w-4 md:h-4 2xl:w-5 2xl:h-5 text-quaternary" aria-hidden />,
+        starTitle: <StarIcon className={REVIEW_RATING_KPI_SUBTITLE_STAR_CLASS} aria-hidden />,
+        starSubtitle: <StarIcon className={REVIEW_RATING_KPI_SUBTITLE_STAR_CLASS} aria-hidden />,
       },
     });
   }, [

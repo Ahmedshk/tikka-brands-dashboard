@@ -377,11 +377,6 @@ export function AddEditRoleModalBody(props: Readonly<AddEditRoleModalBodyProps>)
           </div>
         )}
 
-        <div className="pt-2 border-t border-gray-200">
-          <p className="text-xs text-secondary">
-            Notifications and alerts can be assigned to this role in a future update.
-          </p>
-        </div>
       </div>
 
       <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-6 py-4">

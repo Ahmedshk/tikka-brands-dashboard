@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import OperationsIcon from '@assets/icons/operations.svg?react';
-import ReviewsDueIcon from '@assets/icons/reviews_due.svg?react';
+import ReviewsDueIcon from '@assets/icons/review_count.svg?react';
 import StarIcon from '@assets/icons/star.svg?react';
 import { Layout } from '../../components/common/Layout';
 import { Spinner } from '../../components/common/Spinner';
@@ -30,6 +30,7 @@ import { resolveDisplayTimezone } from '../../utils/displayTimezoneHelpers';
 import { renderStars } from '../../utils/ratingsAndReviewsHelpers';
 import { resolveRatingsReviewRatingBounds } from '../../utils/ratingsReviewFilterHelpers';
 import { buildRatingsAndReviewsKPIItems } from '../../utils/ratingsAndReviewsKpiHelpers';
+import { REVIEW_RATING_KPI_SUBTITLE_STAR_CLASS } from '../../utils/reviewRatingDisplayHelpers';
 
 const PAGE_SIZE = 10;
 
@@ -164,7 +165,7 @@ export const RatingsAndReviews = () => {
         periodValue,
         loading,
         starSubtitleIcon: (
-          <StarIcon className="w-4 h-4 md:w-4 md:h-4 2xl:w-5 2xl:h-5 text-quaternary" aria-hidden />
+          <StarIcon className={REVIEW_RATING_KPI_SUBTITLE_STAR_CLASS} aria-hidden />
         ),
         reviewCountIcon: (
           <ReviewsDueIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" aria-hidden />
@@ -229,33 +230,33 @@ export const RatingsAndReviews = () => {
                       profilePhotoUrl={r.reviewer.profilePhotoUrl}
                     />
                     <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-primary">{r.reviewer.displayName}</span>
-                      <span
-                        className="text-amber-500 text-lg md:text-xl leading-none"
-                        aria-label={`${r.starRatingNumeric} stars`}
-                      >
-                        {renderStars(r.starRatingNumeric)}
-                      </span>
-                    </div>
-                    <ReviewDateWithUpdatedTag
-                      createTime={r.createTime}
-                      updateTime={r.updateTime}
-                      displayTimezone={displayTimezone}
-                    />
-                    {r.comment && (
-                      <p className="text-sm text-secondary mt-2 whitespace-pre-wrap leading-relaxed">
-                        {r.comment}
-                      </p>
-                    )}
-                    {r.reviewReply?.comment && (
-                      <GoogleReviewReplyCard
-                        comment={r.reviewReply.comment}
-                        updateTime={r.reviewReply.updateTime}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-primary">{r.reviewer.displayName}</span>
+                        <span
+                          className="text-amber-500 text-lg md:text-xl leading-none"
+                          aria-label={`${r.starRatingNumeric} stars`}
+                        >
+                          {renderStars(r.starRatingNumeric)}
+                        </span>
+                      </div>
+                      <ReviewDateWithUpdatedTag
+                        createTime={r.createTime}
+                        updateTime={r.updateTime}
                         displayTimezone={displayTimezone}
-                        locationName={r.locationName}
                       />
-                    )}
+                      {r.comment && (
+                        <p className="text-sm text-secondary mt-2 whitespace-pre-wrap leading-relaxed">
+                          {r.comment}
+                        </p>
+                      )}
+                      {r.reviewReply?.comment && (
+                        <GoogleReviewReplyCard
+                          comment={r.reviewReply.comment}
+                          updateTime={r.reviewReply.updateTime}
+                          displayTimezone={displayTimezone}
+                          locationName={r.locationName}
+                        />
+                      )}
                     </div>
                   </div>
                 </li>
