@@ -7,7 +7,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Tooltip } from "@mui/material";
 import toast from "react-hot-toast";
 import { FiPlus, FiTrash2, FiX } from "react-icons/fi";
 import { Layout } from "../../components/common/Layout";
@@ -37,7 +36,8 @@ import {
   notifyRolesRowLabel,
   subcategoryOptionsForNotifyRoles,
 } from "../../utils/alertRoleBindingNotify.util";
-import { getRoleNamesForBindingRow } from "../../utils/alertsNotificationsSettingsHelpers";
+import { getRoleNamesForBindingRow, normalizeAlertEntityCadence } from "../../utils/alertsNotificationsSettingsHelpers";
+import { AlertEntityCadenceField } from "../../utils/alertEntityCadenceField";
 import { validateLowRatingReviewsSchedule } from "../../utils/alertsNotificationsSettingsValidation";
 
 const fieldClass =
@@ -63,21 +63,6 @@ interface RoleOption {
   _id: string;
   name: string;
 }
-
-const InfoIcon = ({ className }: { className?: string }) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={className ?? "text-primary/70 shrink-0"}
-    aria-hidden
-  >
-    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
-    <path d="M12 16v-4M12 8h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-  </svg>
-);
 
 const DEFAULT_METRIC: Omit<AlertMetricTogglesDto, "run"> = {
   warnInToleranceZone: false,
@@ -136,12 +121,6 @@ const scheduleModeOptions: DropdownOption[] = [
   { value: "interval", label: "Regular interval" },
 ];
 
-const lowInventoryCadenceOptions: DropdownOption[] = [
-  { value: "every_run", label: "Every time the check runs" },
-  { value: "once_per_day", label: "Once per day" },
-  { value: "once_per_episode", label: "Once per low-inventory episode" },
-];
-
 const FINANCIAL_ROWS: Array<{ key: keyof AlertFinancialLaborDto; label: string }> = [
   { key: "sales", label: "Sales goal" },
   { key: "laborCostPct", label: "Labor cost %" },
@@ -175,20 +154,20 @@ function normalizeSettings(s: AlertNotificationSettingsDto): AlertNotificationSe
     inventorySupplyChain: {
       deliveryOverdueNotReceived: s.inventorySupplyChain?.deliveryOverdueNotReceived ?? false,
       run: normalizeRun(s.inventorySupplyChain?.run),
+      deliveryOverdueCadence: normalizeAlertEntityCadence(
+        s.inventorySupplyChain?.deliveryOverdueCadence,
+      ),
       lowInventoryEnabled: s.inventorySupplyChain?.lowInventoryEnabled ?? false,
       lowInventoryRun: normalizeRun(s.inventorySupplyChain?.lowInventoryRun),
-      lowInventoryCadence:
-        s.inventorySupplyChain?.lowInventoryCadence === "every_run" ||
-        s.inventorySupplyChain?.lowInventoryCadence === "once_per_day" ||
-        s.inventorySupplyChain?.lowInventoryCadence === "once_per_episode"
-          ? s.inventorySupplyChain.lowInventoryCadence
-          : "once_per_episode",
+      lowInventoryCadence: normalizeAlertEntityCadence(s.inventorySupplyChain?.lowInventoryCadence),
     },
     reputationHr: {
       trainingOverdue: s.reputationHr?.trainingOverdue ?? false,
       trainingRun: normalizeRun(s.reputationHr?.trainingRun),
+      trainingOverdueCadence: normalizeAlertEntityCadence(s.reputationHr?.trainingOverdueCadence),
       pendingPips: s.reputationHr?.pendingPips ?? false,
       pendingPipsRun: normalizeRun(s.reputationHr?.pendingPipsRun),
+      pendingPipsCadence: normalizeAlertEntityCadence(s.reputationHr?.pendingPipsCadence),
       lowRatingReviews: s.reputationHr?.lowRatingReviews ?? false,
       lowRatingReviewsRun: normalizeLowRatingReviewsRun(s.reputationHr?.lowRatingReviewsRun),
       lowRatingThreshold:
@@ -812,6 +791,21 @@ export const AlertsNotificationsSettings = () => {
                       />
                       <span>Notify when delivery date has passed and order is not received</span>
                     </label>
+                    <AlertEntityCadenceField
+                      label="Alert frequency"
+                      tooltip="This frequency applies per order, so you control how often you’re alerted for the same overdue order."
+                      episodeLabel="Once per overdue-delivery episode"
+                      value={settings.inventorySupplyChain.deliveryOverdueCadence ?? "once_per_episode"}
+                      onChange={(deliveryOverdueCadence) =>
+                        setSettings({
+                          ...settings,
+                          inventorySupplyChain: {
+                            ...settings.inventorySupplyChain,
+                            deliveryOverdueCadence,
+                          },
+                        })
+                      }
+                    />
                     <ScheduleEditor
                       idPrefix="inv"
                       schedule={settings.inventorySupplyChain.run}
@@ -841,46 +835,21 @@ export const AlertsNotificationsSettings = () => {
                       />
                       <span>Notify when inventory is below minimum on hand</span>
                     </label>
-                    <div className="max-w-md">
-                      <p className="block text-[10px] md:text-xs text-secondary mb-1">
-                        <span className="inline-flex items-center gap-1">
-                          Alert frequency
-                          <Tooltip
-                            title="This frequency applies per item, so you control how often you’re alerted for the same item being low."
-                            placement="top"
-                            arrow
-                            enterDelay={200}
-                          >
-                            <button
-                              type="button"
-                              className="inline-flex cursor-help p-0 border-0 bg-transparent"
-                              aria-label="Low inventory alert frequency info"
-                            >
-                              <InfoIcon />
-                            </button>
-                          </Tooltip>
-                        </span>
-                      </p>
-                      <Dropdown
-                        options={lowInventoryCadenceOptions}
-                        value={settings.inventorySupplyChain.lowInventoryCadence ?? "once_per_episode"}
-                        onChange={(v) =>
-                          setSettings({
-                            ...settings,
-                            inventorySupplyChain: {
-                              ...settings.inventorySupplyChain,
-                              lowInventoryCadence: v as
-                                | "every_run"
-                                | "once_per_day"
-                                | "once_per_episode",
-                            },
-                          })
-                        }
-                        placeholder="Alert frequency"
-                        aria-label="Low inventory alert frequency"
-                        allowEmpty={false}
-                      />
-                    </div>
+                    <AlertEntityCadenceField
+                      label="Alert frequency"
+                      tooltip="This frequency applies per item, so you control how often you’re alerted for the same item being low."
+                      episodeLabel="Once per low-inventory episode"
+                      value={settings.inventorySupplyChain.lowInventoryCadence ?? "once_per_episode"}
+                      onChange={(lowInventoryCadence) =>
+                        setSettings({
+                          ...settings,
+                          inventorySupplyChain: {
+                            ...settings.inventorySupplyChain,
+                            lowInventoryCadence,
+                          },
+                        })
+                      }
+                    />
                     <ScheduleEditor
                       idPrefix="inv-low"
                       schedule={settings.inventorySupplyChain.lowInventoryRun ?? defaultRunSchedule()}
@@ -928,6 +897,21 @@ export const AlertsNotificationsSettings = () => {
                         />
                         <span>Training overdue (assignments past module end date)</span>
                       </label>
+                      <AlertEntityCadenceField
+                        label="Alert frequency"
+                        tooltip="This frequency applies per assignment, so you control how often you’re alerted for the same overdue training."
+                        episodeLabel="Once per overdue-training episode"
+                        value={settings.reputationHr.trainingOverdueCadence ?? "once_per_episode"}
+                        onChange={(trainingOverdueCadence) =>
+                          setSettings({
+                            ...settings,
+                            reputationHr: {
+                              ...settings.reputationHr,
+                              trainingOverdueCadence,
+                            },
+                          })
+                        }
+                      />
                       <ScheduleEditor
                         idPrefix="hr-train"
                         schedule={settings.reputationHr.trainingRun}
@@ -957,6 +941,21 @@ export const AlertsNotificationsSettings = () => {
                         />
                         <span>Pending PIPs (disciplinary signatures pending)</span>
                       </label>
+                      <AlertEntityCadenceField
+                        label="Alert frequency"
+                        tooltip="This frequency applies per incident, so you control how often you’re alerted for the same pending signature."
+                        episodeLabel="Once per pending-signature episode"
+                        value={settings.reputationHr.pendingPipsCadence ?? "once_per_episode"}
+                        onChange={(pendingPipsCadence) =>
+                          setSettings({
+                            ...settings,
+                            reputationHr: {
+                              ...settings.reputationHr,
+                              pendingPipsCadence,
+                            },
+                          })
+                        }
+                      />
                       <ScheduleEditor
                         idPrefix="hr-pip"
                         schedule={settings.reputationHr.pendingPipsRun}

@@ -15,6 +15,7 @@ export interface AlertNotificationSettingsDocument extends Document {
   inventorySupplyChain: {
     deliveryOverdueNotReceived: boolean;
     run?: IAlertRunSchedule;
+    deliveryOverdueCadence: "every_run" | "once_per_day" | "once_per_episode";
     lowInventoryEnabled: boolean;
     lowInventoryRun?: IAlertRunSchedule;
     lowInventoryCadence: "every_run" | "once_per_day" | "once_per_episode";
@@ -22,8 +23,10 @@ export interface AlertNotificationSettingsDocument extends Document {
   reputationHr: {
     trainingOverdue: boolean;
     trainingRun?: IAlertRunSchedule;
+    trainingOverdueCadence: "every_run" | "once_per_day" | "once_per_episode";
     pendingPips: boolean;
     pendingPipsRun?: IAlertRunSchedule;
+    pendingPipsCadence: "every_run" | "once_per_day" | "once_per_episode";
     lowRatingReviews?: boolean;
     lowRatingReviewsRun?: IAlertRunSchedule;
     lowRatingThreshold?: number;
@@ -122,6 +125,11 @@ const alertNotificationSettingsSchema = new Schema<AlertNotificationSettingsDocu
         {
           deliveryOverdueNotReceived: { type: Boolean, default: false },
           run: { type: runScheduleSchema, default: () => ({}) },
+          deliveryOverdueCadence: {
+            type: String,
+            enum: ["every_run", "once_per_day", "once_per_episode"],
+            default: "once_per_episode",
+          },
           lowInventoryEnabled: { type: Boolean, default: false },
           lowInventoryRun: { type: runScheduleSchema, default: () => ({}) },
           lowInventoryCadence: {
@@ -139,8 +147,18 @@ const alertNotificationSettingsSchema = new Schema<AlertNotificationSettingsDocu
         {
           trainingOverdue: { type: Boolean, default: false },
           trainingRun: { type: runScheduleSchema, default: () => ({}) },
+          trainingOverdueCadence: {
+            type: String,
+            enum: ["every_run", "once_per_day", "once_per_episode"],
+            default: "once_per_episode",
+          },
           pendingPips: { type: Boolean, default: false },
           pendingPipsRun: { type: runScheduleSchema, default: () => ({}) },
+          pendingPipsCadence: {
+            type: String,
+            enum: ["every_run", "once_per_day", "once_per_episode"],
+            default: "once_per_episode",
+          },
           lowRatingReviews: { type: Boolean, default: false },
           lowRatingReviewsRun: { type: runScheduleSchema, default: () => ({}) },
           lowRatingThreshold: { type: Number, default: 3, min: 1, max: 5 },

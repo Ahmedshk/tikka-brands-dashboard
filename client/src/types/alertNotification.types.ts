@@ -31,21 +31,26 @@ export interface AlertFinancialLaborDto {
   foodCostPct: AlertMetricTogglesDto;
 }
 
+export type AlertEntityCadenceDto = "every_run" | "once_per_day" | "once_per_episode";
+
 export interface AlertNotificationSettingsDto {
   _id?: string;
   financialLabor: AlertFinancialLaborDto;
   inventorySupplyChain: {
     deliveryOverdueNotReceived: boolean;
     run: AlertRunScheduleDto;
+    deliveryOverdueCadence?: AlertEntityCadenceDto;
     lowInventoryEnabled?: boolean;
     lowInventoryRun?: AlertRunScheduleDto;
-    lowInventoryCadence?: "every_run" | "once_per_day" | "once_per_episode";
+    lowInventoryCadence?: AlertEntityCadenceDto;
   };
   reputationHr: {
     trainingOverdue: boolean;
     trainingRun: AlertRunScheduleDto;
+    trainingOverdueCadence?: AlertEntityCadenceDto;
     pendingPips: boolean;
     pendingPipsRun: AlertRunScheduleDto;
+    pendingPipsCadence?: AlertEntityCadenceDto;
     lowRatingReviews: boolean;
     lowRatingReviewsRun: AlertRunScheduleDto;
     lowRatingThreshold: number;

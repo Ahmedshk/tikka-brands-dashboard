@@ -1,4 +1,9 @@
-import type { AlertNotificationSettingsDto, AlertRoleBindingCategory } from "../types/alertNotification.types";
+import type {
+  AlertEntityCadenceDto,
+  AlertNotificationSettingsDto,
+  AlertRoleBindingCategory,
+} from "../types/alertNotification.types";
+import type { DropdownOption } from "../components/common/Dropdown";
 
 export function getRoleNamesForBindingRow(params: {
   roleBindings: AlertNotificationSettingsDto["roleBindings"];
@@ -16,3 +21,17 @@ export function getRoleNamesForBindingRow(params: {
     .join(", ");
 }
 
+export function normalizeAlertEntityCadence(value: unknown): AlertEntityCadenceDto {
+  if (value === "every_run" || value === "once_per_day" || value === "once_per_episode") {
+    return value;
+  }
+  return "once_per_episode";
+}
+
+export function alertEntityCadenceOptions(episodeLabel: string): DropdownOption[] {
+  return [
+    { value: "every_run", label: "Every time the check runs" },
+    { value: "once_per_day", label: "Once per day" },
+    { value: "once_per_episode", label: episodeLabel },
+  ];
+}

@@ -45,11 +45,15 @@ function buildAlertOrderRange(): OrderTrackerRange {
   };
 }
 
+export type OverdueDeliveryOrderRow = DeliveryOverdueOrderEmailRow & {
+  orderNumber: string;
+};
+
 export async function listOverdueDeliveryOrdersNotReceived(
   locationId: string,
   buyerGuid: string,
   timezone: string,
-): Promise<DeliveryOverdueOrderEmailRow[]> {
+): Promise<OverdueDeliveryOrderRow[]> {
   const range = buildAlertOrderRange();
   const useCache = isExternalDataCacheReadEnabled() && Boolean(locationId.trim());
   let orders: MarketManOrder[];
@@ -92,10 +96,14 @@ export async function listOverdueDeliveryOrdersNotReceived(
     return db.getTime() - da.getTime();
   });
 
-  return overdueRaw.map((o) => ({
-    poNumber: String(o.OrderNumber ?? "").trim() || "—",
-    supplier: String(o.VendorName ?? "").trim() || "—",
-    deliveryDate: formatOrderDateInTz(o.DeliveryDateUTC, timezone),
-    status: String(o.OrderStatusUIName ?? "").trim() || "—",
-  }));
+  return overdueRaw.map((o) => {
+    const orderNumber = String(o.OrderNumber ?? "").trim();
+    return {
+      orderNumber: orderNumber || "—",
+      poNumber: orderNumber || "—",
+      supplier: String(o.VendorName ?? "").trim() || "—",
+      deliveryDate: formatOrderDateInTz(o.DeliveryDateUTC, timezone),
+      status: String(o.OrderStatusUIName ?? "").trim() || "—",
+    };
+  });
 }

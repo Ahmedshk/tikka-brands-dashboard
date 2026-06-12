@@ -41,21 +41,27 @@ export interface IAlertFinancialLaborToggles {
   foodCostPct: IAlertMetricToggles;
 }
 
-export type LowInventoryCadence = "every_run" | "once_per_day" | "once_per_episode";
+export type AlertEntityCadence = "every_run" | "once_per_day" | "once_per_episode";
+
+/** @deprecated Use AlertEntityCadence */
+export type LowInventoryCadence = AlertEntityCadence;
 
 export interface IAlertInventorySupplyChainToggles {
   deliveryOverdueNotReceived: boolean;
   run: IAlertRunSchedule;
+  deliveryOverdueCadence: AlertEntityCadence;
   lowInventoryEnabled: boolean;
   lowInventoryRun: IAlertRunSchedule;
-  lowInventoryCadence: LowInventoryCadence;
+  lowInventoryCadence: AlertEntityCadence;
 }
 
 export interface IAlertReputationHrToggles {
   trainingOverdue: boolean;
   trainingRun: IAlertRunSchedule;
+  trainingOverdueCadence: AlertEntityCadence;
   pendingPips: boolean;
   pendingPipsRun: IAlertRunSchedule;
+  pendingPipsCadence: AlertEntityCadence;
   lowRatingReviews: boolean;
   lowRatingReviewsRun: IAlertRunSchedule;
   /** Alert when starRatingNumeric is strictly less than this threshold (1–5). */
@@ -119,6 +125,7 @@ export const DEFAULT_ALERT_NOTIFICATION_SETTINGS: Omit<
   inventorySupplyChain: {
     deliveryOverdueNotReceived: false,
     run: { ...DEFAULT_ALERT_RUN_SCHEDULE },
+    deliveryOverdueCadence: "once_per_episode",
     lowInventoryEnabled: false,
     lowInventoryRun: { ...DEFAULT_ALERT_RUN_SCHEDULE },
     lowInventoryCadence: "once_per_episode",
@@ -126,8 +133,10 @@ export const DEFAULT_ALERT_NOTIFICATION_SETTINGS: Omit<
   reputationHr: {
     trainingOverdue: false,
     trainingRun: { ...DEFAULT_ALERT_RUN_SCHEDULE },
+    trainingOverdueCadence: "once_per_episode",
     pendingPips: false,
     pendingPipsRun: { ...DEFAULT_ALERT_RUN_SCHEDULE },
+    pendingPipsCadence: "once_per_episode",
     lowRatingReviews: false,
     lowRatingReviewsRun: { ...DEFAULT_ALERT_RUN_SCHEDULE },
     lowRatingThreshold: 3,

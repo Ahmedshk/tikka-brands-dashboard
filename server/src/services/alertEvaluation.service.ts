@@ -4,9 +4,6 @@ import { NotificationService } from "./notification.service.js";
 import { AlertNotificationSettingsService } from "./alertNotificationSettings.service.js";
 import { LocationService } from "./location.service.js";
 import { GoalService } from "./goal.service.js";
-import { TrainingAssignmentService } from "./trainingAssignment.service.js";
-import { UserService } from "./user.service.js";
-import { DisciplinaryIncidentRepository } from "../repositories/disciplinaryIncident.repository.js";
 import { listUserIdsForRoleAtLocation } from "./calendarNotificationRecipients.service.js";
 import type { NotificationChannel, NotificationType } from "../types/notification.types.js";
 import type { IAlertNotificationSettings, IAlertRoleBinding } from "../types/alertNotification.types.js";
@@ -16,7 +13,6 @@ import {
   intervalMinutesForSchedule,
   shouldRunAlertScheduleTick,
 } from "../utils/alertScheduleRun.util.js";
-import { assignmentHasOverdueModule } from "../utils/trainingOverdue.util.js";
 import { getSalesLaborTimeRange, type LocationForSalesLabor } from "../utils/salesLaborControllerHelpers.js";
 import { logger } from "../utils/logger.util.js";
 import { loadFirstNamesByUserId } from "../utils/notificationRecipientFirstNames.util.js";
@@ -37,6 +33,7 @@ import {
 } from "../utils/alertEvaluationFinancialLaborHelpers.util.js";
 import { buildFireTimeKey } from "../utils/alertFireTimeKey.util.js";
 import { collectInventoryEvaluateAlertPayloads } from "../utils/alertEvaluationInventoryHelpers.util.js";
+import { collectReputationHrEvaluateAlertPayloads } from "../utils/alertEvaluationReputationHrHelpers.util.js";
 import { GoogleBusinessReviewModel } from "../models/googleBusinessReview.model.js";
 import { buildLowRatingReviewFireKey } from "../utils/googleBusinessReviewHelpers.js";
 import {
@@ -50,10 +47,6 @@ const alertSettingsService = new AlertNotificationSettingsService();
 const locationService = new LocationService();
 const goalService = new GoalService();
 const notificationService = new NotificationService();
-const trainingAssignmentService = new TrainingAssignmentService();
-const userService = new UserService();
-const disciplinaryRepo = new DisciplinaryIncidentRepository();
-
 function channelsToList(channels: {
   inApp: boolean;
   email: boolean;
@@ -200,29 +193,6 @@ async function tryLogAlert(params: {
     logger.error("AlertNotificationLog insert failed", { e, params });
     return false;
   }
-}
-
-async function countTrainingOverdueForLocation(locationId: string): Promise<number> {
-  const { list } = await trainingAssignmentService.listByLocationId(locationId);
-  let n = 0;
-  for (const row of list) {
-    if (row.status === "Complete") continue;
-    if (
-      assignmentHasOverdueModule(row.assignedAt, row.moduleDurations, row.moduleProgress)
-    ) {
-      n += 1;
-    }
-  }
-  return n;
-}
-
-async function countPendingPipsForLocation(locationId: string): Promise<number> {
-  const ids = await userService.getUserIdsWithAccessToLocation(locationId);
-  if (ids.length === 0) return 0;
-  const map = await disciplinaryRepo.aggregatePendingSignatureCountsByEmployeeIds(ids);
-  let s = 0;
-  for (const v of map.values()) s += v;
-  return s;
 }
 
 async function sendAlert(params: {
@@ -538,54 +508,15 @@ async function evaluateReputationHr(
 
   const timezone = loc.timezone?.trim() || "America/Denver";
 
-  if (settings.reputationHr.trainingOverdue) {
-    const tr = settings.reputationHr.trainingRun;
-    if (shouldRunAlertScheduleTick(tr, timezone, tickAnchorMs)) {
-      const n = await countTrainingOverdueForLocation(locationId);
-      if (n > 0) {
-        const im = intervalMinutesForSchedule(tr);
-        const fireKey = buildFireTimeKey(tr, timezone, im, tickAnchorMs);
-        await sendAlert({
-          settings,
-          locationId,
-          storeName: loc.storeName ?? "Location",
-          category: "reputation_hr",
-          roleBindingSubcategory: "training_overdue",
-          type: "alert_training_overdue",
-          title: "Training overdue",
-          message: `${loc.storeName ?? "Location"}: ${n} training assignment(s) are overdue.`,
-          alertKind: "training_overdue",
-          severity: "critical",
-          fireKey,
-          data: { sourceKey: "training_overdue", count: n },
-        });
-      }
-    }
-  }
-
-  if (settings.reputationHr.pendingPips) {
-    const pr = settings.reputationHr.pendingPipsRun;
-    if (shouldRunAlertScheduleTick(pr, timezone, tickAnchorMs)) {
-      const n = await countPendingPipsForLocation(locationId);
-      if (n > 0) {
-        const im = intervalMinutesForSchedule(pr);
-        const fireKey = buildFireTimeKey(pr, timezone, im, tickAnchorMs);
-        await sendAlert({
-          settings,
-          locationId,
-          storeName: loc.storeName ?? "Location",
-          category: "reputation_hr",
-          roleBindingSubcategory: "pending_pips",
-          type: "alert_pip_pending",
-          title: "Pending PIPs",
-          message: `${loc.storeName ?? "Location"}: ${n} pending signature(s) on disciplinary documents.`,
-          alertKind: "pip_pending",
-          severity: "warning",
-          fireKey,
-          data: { sourceKey: "pip_pending", count: n },
-        });
-      }
-    }
+  const hrPayloads = await collectReputationHrEvaluateAlertPayloads({
+    settings,
+    locationId,
+    timezone,
+    tickAnchorMs,
+    storeLabel: loc.storeName ?? "Location",
+  });
+  for (const p of hrPayloads) {
+    await sendAlert(p);
   }
 
   if (settings.reputationHr.lowRatingReviews) {

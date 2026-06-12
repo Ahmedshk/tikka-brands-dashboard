@@ -5,7 +5,7 @@ import {
   DEFAULT_ALERT_METRIC_TOGGLES,
   DEFAULT_ALERT_NOTIFICATION_SETTINGS,
   DEFAULT_ALERT_RUN_SCHEDULE,
-  type LowInventoryCadence,
+  type AlertEntityCadence,
   type IAlertFinancialLaborToggles,
   type IAlertMetricToggles,
   type IAlertNotificationSettings,
@@ -13,6 +13,7 @@ import {
   type IAlertRunSchedule,
 } from "../types/alertNotification.types.js";
 import { normalizeRoleBindingChannels } from "../utils/calendarRoleBindingChannels.util.js";
+import { normalizeAlertEntityCadence } from "../utils/alertEntityCadence.util.js";
 
 type LegacyDocFields = {
   scheduleMode?: string;
@@ -169,13 +170,16 @@ function toPlain(doc: {
     run?: Partial<IAlertRunSchedule>;
     lowInventoryEnabled?: boolean;
     lowInventoryRun?: Partial<IAlertRunSchedule>;
-    lowInventoryCadence?: LowInventoryCadence;
+    deliveryOverdueCadence?: AlertEntityCadence;
+    lowInventoryCadence?: AlertEntityCadence;
   };
   reputationHr: {
     trainingOverdue?: boolean;
     trainingRun?: Partial<IAlertRunSchedule>;
+    trainingOverdueCadence?: AlertEntityCadence;
     pendingPips?: boolean;
     pendingPipsRun?: Partial<IAlertRunSchedule>;
+    pendingPipsCadence?: AlertEntityCadence;
     lowRatingReviews?: boolean;
     lowRatingReviewsRun?: Partial<IAlertRunSchedule>;
     lowRatingThreshold?: number;
@@ -201,16 +205,20 @@ function toPlain(doc: {
   const lowInvEnabled =
     (doc.inventorySupplyChain as unknown as { lowInventoryEnabled?: boolean })?.lowInventoryEnabled ??
     false;
-  const lowInvCadenceRaw = (doc.inventorySupplyChain as unknown as { lowInventoryCadence?: unknown })
-    ?.lowInventoryCadence;
-  const lowInvCadence: LowInventoryCadence =
-    lowInvCadenceRaw === "every_run" ||
-    lowInvCadenceRaw === "once_per_day" ||
-    lowInvCadenceRaw === "once_per_episode"
-      ? (lowInvCadenceRaw as LowInventoryCadence)
-      : "once_per_episode";
+  const invSc = doc.inventorySupplyChain as unknown as {
+    deliveryOverdueCadence?: unknown;
+    lowInventoryCadence?: unknown;
+  };
+  const deliveryOverdueCadence = normalizeAlertEntityCadence(invSc?.deliveryOverdueCadence);
+  const lowInvCadence = normalizeAlertEntityCadence(invSc?.lowInventoryCadence);
 
   const rep = doc.reputationHr ?? {};
+  const repAny = rep as unknown as {
+    trainingOverdueCadence?: unknown;
+    pendingPipsCadence?: unknown;
+  };
+  const trainingOverdueCadence = normalizeAlertEntityCadence(repAny.trainingOverdueCadence);
+  const pendingPipsCadence = normalizeAlertEntityCadence(repAny.pendingPipsCadence);
   const trainingRun = normalizeRunSchedule(rep.trainingRun, legacy ?? DEFAULT_ALERT_RUN_SCHEDULE);
   const pendingPipsRun = normalizeRunSchedule(rep.pendingPipsRun, legacy ?? DEFAULT_ALERT_RUN_SCHEDULE);
   const lowRatingReviewsRun = normalizeLowRatingReviewsRunSchedule(
@@ -231,6 +239,7 @@ function toPlain(doc: {
     inventorySupplyChain: {
       deliveryOverdueNotReceived: doc.inventorySupplyChain?.deliveryOverdueNotReceived ?? false,
       run: invRun,
+      deliveryOverdueCadence,
       lowInventoryEnabled: lowInvEnabled,
       lowInventoryRun: lowInvRun,
       lowInventoryCadence: lowInvCadence,
@@ -238,8 +247,10 @@ function toPlain(doc: {
     reputationHr: {
       trainingOverdue: rep.trainingOverdue ?? false,
       trainingRun,
+      trainingOverdueCadence,
       pendingPips: rep.pendingPips ?? false,
       pendingPipsRun,
+      pendingPipsCadence,
       lowRatingReviews: rep.lowRatingReviews ?? false,
       lowRatingReviewsRun,
       lowRatingThreshold,
@@ -282,13 +293,16 @@ export class AlertNotificationSettingsService {
       run: Partial<IAlertRunSchedule>;
       lowInventoryEnabled: boolean;
       lowInventoryRun: Partial<IAlertRunSchedule>;
-      lowInventoryCadence: LowInventoryCadence;
+      deliveryOverdueCadence: AlertEntityCadence;
+      lowInventoryCadence: AlertEntityCadence;
     }>;
     reputationHr?: Partial<{
       trainingOverdue: boolean;
       trainingRun: Partial<IAlertRunSchedule>;
+      trainingOverdueCadence: AlertEntityCadence;
       pendingPips: boolean;
       pendingPipsRun: Partial<IAlertRunSchedule>;
+      pendingPipsCadence: AlertEntityCadence;
       lowRatingReviews: boolean;
       lowRatingReviewsRun: Partial<IAlertRunSchedule>;
       lowRatingThreshold: number;
@@ -315,14 +329,9 @@ export class AlertNotificationSettingsService {
       const prevAny = doc.inventorySupplyChain as unknown as {
         lowInventoryEnabled?: boolean;
         lowInventoryRun?: Partial<IAlertRunSchedule>;
+        deliveryOverdueCadence?: unknown;
         lowInventoryCadence?: unknown;
       };
-      const prevCadence =
-        prevAny.lowInventoryCadence === "every_run" ||
-        prevAny.lowInventoryCadence === "once_per_day" ||
-        prevAny.lowInventoryCadence === "once_per_episode"
-          ? (prevAny.lowInventoryCadence as LowInventoryCadence)
-          : "once_per_episode";
       doc.inventorySupplyChain = {
         deliveryOverdueNotReceived:
           data.inventorySupplyChain.deliveryOverdueNotReceived ??
@@ -332,6 +341,9 @@ export class AlertNotificationSettingsService {
           plainBefore.inventorySupplyChain.run,
           data.inventorySupplyChain.run,
         ) as never,
+        deliveryOverdueCadence:
+          data.inventorySupplyChain.deliveryOverdueCadence ??
+          normalizeAlertEntityCadence(prevAny.deliveryOverdueCadence),
         lowInventoryEnabled:
           data.inventorySupplyChain.lowInventoryEnabled ?? prevAny.lowInventoryEnabled ?? false,
         lowInventoryRun: mergeRunSchedule(
@@ -339,10 +351,15 @@ export class AlertNotificationSettingsService {
           data.inventorySupplyChain.lowInventoryRun,
         ) as never,
         lowInventoryCadence:
-          data.inventorySupplyChain.lowInventoryCadence ?? prevCadence,
+          data.inventorySupplyChain.lowInventoryCadence ??
+          normalizeAlertEntityCadence(prevAny.lowInventoryCadence),
       };
     }
     if (data.reputationHr !== undefined) {
+      const prevRep = doc.reputationHr as unknown as {
+        trainingOverdueCadence?: unknown;
+        pendingPipsCadence?: unknown;
+      };
       doc.reputationHr = {
         trainingOverdue:
           data.reputationHr.trainingOverdue ?? doc.reputationHr?.trainingOverdue ?? false,
@@ -350,11 +367,17 @@ export class AlertNotificationSettingsService {
           plainBefore.reputationHr.trainingRun,
           data.reputationHr.trainingRun,
         ) as never,
+        trainingOverdueCadence:
+          data.reputationHr.trainingOverdueCadence ??
+          normalizeAlertEntityCadence(prevRep.trainingOverdueCadence),
         pendingPips: data.reputationHr.pendingPips ?? doc.reputationHr?.pendingPips ?? false,
         pendingPipsRun: mergeRunSchedule(
           plainBefore.reputationHr.pendingPipsRun,
           data.reputationHr.pendingPipsRun,
         ) as never,
+        pendingPipsCadence:
+          data.reputationHr.pendingPipsCadence ??
+          normalizeAlertEntityCadence(prevRep.pendingPipsCadence),
         lowRatingReviews:
           data.reputationHr.lowRatingReviews ?? doc.reputationHr?.lowRatingReviews ?? false,
         lowRatingReviewsRun: (() => {

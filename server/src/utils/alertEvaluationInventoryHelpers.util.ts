@@ -11,6 +11,17 @@ import { buildFireTimeKey } from "./alertFireTimeKey.util.js";
 import { listOverdueDeliveryOrdersNotReceived } from "./alertEvaluationOverdueDelivery.util.js";
 import { getTodayInTimezoneAt } from "./timezone.util.js";
 import { logger } from "./logger.util.js";
+import {
+  computeAlertEntityCadenceSendPlan,
+  toAlertEntityCadenceSnapshot,
+} from "./alertEntityCadence.util.js";
+import {
+  loadAlertEntityCadenceStateMap,
+  persistAlertEntityCadenceEpisodeState,
+  resetAllActiveAlertEntityCadenceStates,
+  resolveStaleAlertEntityCadenceStates,
+} from "./alertEntityCadenceState.util.js";
+import type { AlertEntityCadence } from "../types/alertNotification.types.js";
 
 export type InventoryAlertDispatchPayload = {
   settings: IAlertNotificationSettings;
@@ -81,65 +92,6 @@ function collectLowInventoryRowsFromMarketManItems(
   return low;
 }
 
-function computeLowInventorySendPlan(
-  cadence: string,
-  prev: LowInventoryStateLean | undefined,
-  dayKey: string,
-  tickFireKey: string,
-  tickAnchorMs: number,
-  itemId: string,
-): {
-  shouldSend: boolean;
-  fireKey: string;
-  nextEpisodeStartedAt: Date | null;
-  nextLastAlertedAt: Date | null;
-} {
-  if (cadence === "every_run") {
-    return {
-      shouldSend: true,
-      fireKey: `${tickFireKey}|item:${itemId}`,
-      nextEpisodeStartedAt: null,
-      nextLastAlertedAt: null,
-    };
-  }
-  if (cadence === "once_per_day") {
-    return {
-      shouldSend: true,
-      fireKey: `${dayKey}|item:${itemId}`,
-      nextEpisodeStartedAt: null,
-      nextLastAlertedAt: null,
-    };
-  }
-  const wasLow = Boolean(prev?.isLow);
-  const alreadyAlerted = prev?.lastAlertedAt != null;
-  if (!wasLow) {
-    const now = new Date(tickAnchorMs);
-    return {
-      shouldSend: true,
-      fireKey: `${now.toISOString()}|item:${itemId}`,
-      nextEpisodeStartedAt: now,
-      nextLastAlertedAt: now,
-    };
-  }
-  if (!alreadyAlerted) {
-    const nextEpisodeStartedAt = prev?.episodeStartedAt
-      ? new Date(prev.episodeStartedAt)
-      : new Date(tickAnchorMs);
-    return {
-      shouldSend: true,
-      fireKey: `${nextEpisodeStartedAt.toISOString()}|item:${itemId}`,
-      nextEpisodeStartedAt,
-      nextLastAlertedAt: new Date(tickAnchorMs),
-    };
-  }
-  return {
-    shouldSend: false,
-    fireKey: "",
-    nextEpisodeStartedAt: null,
-    nextLastAlertedAt: null,
-  };
-}
-
 async function resetLowInventoryStatesWhenNoLowItems(locationId: string): Promise<void> {
   const lowOid = new mongoose.Types.ObjectId(locationId);
   const lowStates = await LowInventoryAlertStateModel.find({
@@ -203,29 +155,68 @@ async function appendDeliveryOverduePayloadIfDue(
     params.timezone,
   );
   if (overdueOrders.length === 0) {
+    await resetAllActiveAlertEntityCadenceStates(params.locationId, "delivery_overdue");
     return;
   }
+
+  const cadence = params.inventory.deliveryOverdueCadence ?? "once_per_episode";
+  const entityIds = overdueOrders.map((o) => o.orderNumber);
+  const activeSet = new Set(entityIds);
+  await resolveStaleAlertEntityCadenceStates(params.locationId, "delivery_overdue", activeSet);
+  const stateByEntityId = await loadAlertEntityCadenceStateMap(
+    params.locationId,
+    "delivery_overdue",
+    entityIds,
+  );
+
+  const dayKey = getTodayInTimezoneAt(params.timezone, params.tickAnchorMs);
   const im = intervalMinutesForSchedule(run);
-  const fireKey = buildFireTimeKey(run, params.timezone, im, params.tickAnchorMs);
-  const n = overdueOrders.length;
-  out.push({
-    settings: params.settings,
-    locationId: params.locationId,
-    storeName: params.storeLabel,
-    category: "inventory_supply_chain",
-    roleBindingSubcategory: "delivery_overdue",
-    type: "alert_inventory_delivery_overdue",
-    title: "Delivery overdue",
-    message: `${params.storeLabel}: ${n} order(s) have a past delivery date and are not marked received.`,
-    alertKind: "delivery_overdue",
-    severity: "critical",
-    fireKey,
-    data: {
-      sourceKey: "delivery_overdue",
-      count: n,
-      overdueOrderRows: overdueOrders,
-    },
-  });
+  const tickFireKey = buildFireTimeKey(run, params.timezone, im, params.tickAnchorMs);
+
+  for (const row of overdueOrders) {
+    const prev = stateByEntityId.get(row.orderNumber);
+    const plan = computeAlertEntityCadenceSendPlan(
+      cadence,
+      toAlertEntityCadenceSnapshot(prev),
+      dayKey,
+      tickFireKey,
+      params.tickAnchorMs,
+      `order:${row.orderNumber}`,
+    );
+
+    if (cadence === "once_per_episode") {
+      await persistAlertEntityCadenceEpisodeState({
+        locationId: params.locationId,
+        alertKind: "delivery_overdue",
+        entityId: row.orderNumber,
+        tickAnchorMs: params.tickAnchorMs,
+        plan,
+      });
+    }
+
+    if (!plan.shouldSend) {
+      continue;
+    }
+
+    out.push({
+      settings: params.settings,
+      locationId: params.locationId,
+      storeName: params.storeLabel,
+      category: "inventory_supply_chain",
+      roleBindingSubcategory: "delivery_overdue",
+      type: "alert_inventory_delivery_overdue",
+      title: "Delivery overdue",
+      message: `${params.storeLabel}: Order ${row.poNumber} has a past delivery date and is not marked received.`,
+      alertKind: "delivery_overdue",
+      severity: "critical",
+      fireKey: plan.fireKey,
+      data: {
+        sourceKey: "delivery_overdue",
+        count: 1,
+        overdueOrderRows: [row],
+      },
+    });
+  }
 }
 
 async function appendLowInventoryPayloadsIfDue(
@@ -288,13 +279,13 @@ async function appendLowInventoryPayloadsIfDue(
 
   for (const row of low) {
     const prev = stateByItemId.get(row.itemId);
-    const plan = computeLowInventorySendPlan(
-      cadence,
-      prev,
+    const plan = computeAlertEntityCadenceSendPlan(
+      cadence as AlertEntityCadence,
+      toAlertEntityCadenceSnapshot(prev),
       dayKey,
       tickFireKey,
       params.tickAnchorMs,
-      row.itemId,
+      `item:${row.itemId}`,
     );
 
     if (cadence === "once_per_episode") {
