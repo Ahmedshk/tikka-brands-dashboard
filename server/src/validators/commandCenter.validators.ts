@@ -2,7 +2,12 @@ import { z } from "zod";
 
 const commandCenterMetricEnum = z.enum(["netSales", "laborCost", "reviewRating"]);
 
-const commandCenterPeriodEnum = z.enum(["today", "weekToDate"]);
+const commandCenterPeriodEnum = z.enum([
+  "today",
+  "weekToDate",
+  "monthToDate",
+  "lastWeek",
+]);
 
 export const getCommandCenterKPIsQuerySchema = z.object({
   query: z.object({
@@ -27,7 +32,19 @@ export const getCommandCenterKPIsQuerySchema = z.object({
           ? s
               .split(",")
               .map((x) => x.trim().toLowerCase())
-              .filter((p) => p === "today" || p === "weekToDate")
+              .filter(
+                (p) =>
+                  p === "today" ||
+                  p === "weektodate" ||
+                  p === "monthtodate" ||
+                  p === "lastweek",
+              )
+              .map((p) => {
+                if (p === "weektodate") return "weekToDate";
+                if (p === "monthtodate") return "monthToDate";
+                if (p === "lastweek") return "lastWeek";
+                return "today";
+              })
           : undefined
       )
       .pipe(z.array(commandCenterPeriodEnum).optional()),

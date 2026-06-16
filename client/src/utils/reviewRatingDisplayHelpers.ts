@@ -1,22 +1,14 @@
-import type { ReviewRatingKPIPeriod } from '../components/CommandCenter/CommandCenterKPICards';
-
 /** Star icon beside the rating label (e.g. "Good") — matches Command Center Review Rating KPI. */
 export const REVIEW_RATING_KPI_SUBTITLE_STAR_CLASS =
   'w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-quaternary';
 
-export function reviewRatingPeriodLabel(period: ReviewRatingKPIPeriod): string {
-  switch (period) {
-    case 'today':
-      return 'Today';
-    case 'weekToDate':
-      return 'Week to date';
-    case 'overall':
-      return 'Overall';
-    default: {
-      const _exhaustive: never = period;
-      return _exhaustive;
-    }
-  }
+export function formatOverallRatingFooter(
+  overall: number | null | undefined,
+  count: number | null | undefined,
+): string {
+  if (overall == null) return 'Overall: —';
+  const countStr = count != null ? ` (${count} reviews)` : '';
+  return `Overall: ${overall.toFixed(1)}${countStr}`;
 }
 
 export function reviewRatingSubtitle(rating: number | null | undefined): string {

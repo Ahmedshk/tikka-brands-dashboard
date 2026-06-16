@@ -10,10 +10,8 @@ import {
   reputationAlertsIcon,
   type AlertCategory,
   type AlertItem,
-  type CommandCenterKPIItem,
-  type CommandCenterKPIPeriod,
-  type ReviewRatingKPIPeriod,
 } from '../../components/CommandCenter';
+import { Dropdown } from '../../components/common/Dropdown';
 import { CommandCenterAlertsHistoryModal } from '../../components/CommandCenter/CommandCenterAlertsHistoryModal';
 import CommandCenterIcon from '@assets/icons/command_center.svg?react';
 import DollarIcon from '@assets/icons/dollar.svg?react';
@@ -24,12 +22,16 @@ import type { RootState } from '../../store/store';
 import {
   commandCenterService,
   type HourlySalesRow,
-  isCommandCenterKPIsDual,
+  isCommandCenterKPIsMulti,
 } from '../../services/commandCenter.service';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 import { formatCurrency, formatHourToAmPm } from '../../utils/commandCenterHelpers';
 import { buildCurrencyAxisFormatter } from '../../utils/chartAxis.util';
 import { buildCommandCenterKPIItems } from '../../utils/commandCenterKpiBuilder';
+import {
+  COMMAND_CENTER_KPI_PERIOD_OPTIONS,
+  type CommandCenterKPIPeriod,
+} from '../../utils/commandCenterKpiPeriodHelpers';
 import { REVIEW_RATING_KPI_SUBTITLE_STAR_CLASS } from '../../utils/reviewRatingDisplayHelpers';
 import { commandCenterAlertRowToAlertItem } from '../../utils/commandCenterAlertRowToAlertItem.util';
 import {
@@ -86,9 +88,7 @@ export const CommandCenter = () => {
   const [kpis, setKpis] = useState<Awaited<ReturnType<typeof commandCenterService.getKPIs>> | null>(null);
   const [loading, setLoading] = useState(!!currentLocation?._id && shouldFetchKpis);
   const [error, setError] = useState<string | null>(null);
-  const [netSalesPeriod, setNetSalesPeriod] = useState<CommandCenterKPIPeriod>('today');
-  const [laborCostPeriod, setLaborCostPeriod] = useState<CommandCenterKPIPeriod>('today');
-  const [reviewRatingPeriod, setReviewRatingPeriod] = useState<ReviewRatingKPIPeriod>('today');
+  const [kpiPeriod, setKpiPeriod] = useState<CommandCenterKPIPeriod>('today');
   const [hourlySales, setHourlySales] = useState<HourlySalesRow[] | null>(null);
   const [hourlySalesLoading, setHourlySalesLoading] = useState(!!currentLocation?._id && shouldFetchHourly);
   const [hourlySalesError, setHourlySalesError] = useState<string | null>(null);
@@ -127,7 +127,7 @@ export const CommandCenter = () => {
     commandCenterService
       .getKPIs(locationId, {
         metrics: kpiMetrics,
-        periods: ['today', 'weekToDate'],
+        periods: ['today', 'weekToDate', 'monthToDate', 'lastWeek'],
         signal: controller.signal,
       })
       .then(setKpis)
@@ -299,19 +299,14 @@ export const CommandCenter = () => {
     handleSocketNotificationNew,
   ]);
 
-  const commandCenterKPIs = useMemo((): CommandCenterKPIItem[] => {
+  const commandCenterKPIs = useMemo(() => {
     return buildCommandCenterKPIItems({
       kpis,
       loading,
       canNetSales,
       canLaborCost,
       canReviewRating,
-      netSalesPeriod,
-      laborCostPeriod,
-      reviewRatingPeriod,
-      setNetSalesPeriod,
-      setLaborCostPeriod,
-      setReviewRatingPeriod,
+      kpiPeriod,
       icons: {
         dollar: <DollarIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
         laborCost: <LaborCostIcon className="w-7 h-7 md:w-8 md:h-8 2xl:w-9 2xl:h-9 text-white" />,
@@ -325,9 +320,7 @@ export const CommandCenter = () => {
     canNetSales,
     canLaborCost,
     canReviewRating,
-    netSalesPeriod,
-    laborCostPeriod,
-    reviewRatingPeriod,
+    kpiPeriod,
   ]);
 
   const hourlyChartData = useMemo(() => {
@@ -419,11 +412,22 @@ export const CommandCenter = () => {
   return (
     <Layout>
       <div className="p-6 min-h-[200px]">
-        <div className="mb-6">
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <h2 className="flex items-center gap-2 text-base md:text-lg 2xl:text-xl font-semibold text-primary">
             <CommandCenterIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
             Command Center
           </h2>
+          {commandCenterKPIs.length > 0 && (
+            <Dropdown
+              options={COMMAND_CENTER_KPI_PERIOD_OPTIONS}
+              value={kpiPeriod}
+              onChange={(v) => setKpiPeriod(v as CommandCenterKPIPeriod)}
+              placeholder="Today"
+              aria-label="Command Center KPI period"
+              className="min-w-[10rem] text-[10px] md:text-xs 2xl:text-sm"
+              allowEmpty={false}
+            />
+          )}
         </div>
 
         {!locationId && (
@@ -462,7 +466,7 @@ export const CommandCenter = () => {
             )}
             {canLaborGauge && (() => {
               const gaugeToday =
-                kpis != null && isCommandCenterKPIsDual(kpis) ? kpis.today : kpis;
+                kpis != null && isCommandCenterKPIsMulti(kpis) ? kpis.today : kpis;
               const pct = gaugeToday?.laborCostPercentToday ?? 0;
               const goal = gaugeToday?.laborCostGoal ?? null;
               const goalTolerance = gaugeToday?.laborCostGoalTolerance ?? null;

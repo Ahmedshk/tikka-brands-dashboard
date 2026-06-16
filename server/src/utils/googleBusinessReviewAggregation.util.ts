@@ -5,8 +5,8 @@ import type { GoogleBusinessReviewPeriod } from "../types/googleBusinessReview.t
 import type { TimeRange } from "./businessHours.util.js";
 import {
   getBusinessStartTimeRange,
-  getStartOfDayUtc,
-  getTodayInTimezone,
+  getLastWeekRange,
+  getMonthToDateRange,
   getWeekToDateRange,
 } from "./timezone.util.js";
 import type { LocationForKpi } from "../types/commandCenter.types.js";
@@ -144,19 +144,26 @@ export async function getReviewRatingSummariesForLocation(
 ): Promise<{
   today: ReviewRatingSummary;
   weekToDate: ReviewRatingSummary;
+  monthToDate: ReviewRatingSummary;
+  lastWeek: ReviewRatingSummary;
   overall: ReviewRatingSummary;
 }> {
   const loc = location;
-  const todayRange = getBusinessStartTimeRange(loc.timezone, loc.businessStartTime ?? "00:00");
-  const wtdRange = getWeekToDateRange(loc.timezone, loc.businessStartTime ?? "00:00");
+  const businessStart = loc.businessStartTime ?? "00:00";
+  const todayRange = getBusinessStartTimeRange(loc.timezone, businessStart);
+  const wtdRange = getWeekToDateRange(loc.timezone, businessStart);
+  const mtdRange = getMonthToDateRange(loc.timezone, businessStart);
+  const lastWeekRange = getLastWeekRange(loc.timezone);
 
-  const [today, weekToDate, overall] = await Promise.all([
+  const [today, weekToDate, monthToDate, lastWeek, overall] = await Promise.all([
     aggregateReviewRatingForRange([locationMongoId], todayRange),
     aggregateReviewRatingForRange([locationMongoId], wtdRange),
+    aggregateReviewRatingForRange([locationMongoId], mtdRange),
+    aggregateReviewRatingForRange([locationMongoId], lastWeekRange),
     aggregateOverallReviewRatingFromSyncState([locationMongoId]),
   ]);
 
-  return { today, weekToDate, overall };
+  return { today, weekToDate, monthToDate, lastWeek, overall };
 }
 
 export async function getReviewRatingSummariesForLocations(
@@ -165,46 +172,45 @@ export async function getReviewRatingSummariesForLocations(
 ): Promise<{
   today: ReviewRatingSummary;
   weekToDate: ReviewRatingSummary;
+  monthToDate: ReviewRatingSummary;
+  lastWeek: ReviewRatingSummary;
   overall: ReviewRatingSummary;
 }> {
+  const empty = { averageRating: null, reviewCount: 0 };
   if (locationIds.length === 0) {
     return {
-      today: { averageRating: null, reviewCount: 0 },
-      weekToDate: { averageRating: null, reviewCount: 0 },
-      overall: { averageRating: null, reviewCount: 0 },
+      today: empty,
+      weekToDate: empty,
+      monthToDate: empty,
+      lastWeek: empty,
+      overall: empty,
     };
   }
 
   const primary = locations[0];
   if (!primary) {
     return {
-      today: { averageRating: null, reviewCount: 0 },
-      weekToDate: { averageRating: null, reviewCount: 0 },
-      overall: { averageRating: null, reviewCount: 0 },
+      today: empty,
+      weekToDate: empty,
+      monthToDate: empty,
+      lastWeek: empty,
+      overall: empty,
     };
   }
 
-  const todayRange = getBusinessStartTimeRange(
-    primary.timezone,
-    primary.businessStartTime ?? "00:00",
-  );
-  const wtdRange = getWeekToDateRange(primary.timezone, primary.businessStartTime ?? "00:00");
+  const businessStart = primary.businessStartTime ?? "00:00";
+  const todayRange = getBusinessStartTimeRange(primary.timezone, businessStart);
+  const wtdRange = getWeekToDateRange(primary.timezone, businessStart);
+  const mtdRange = getMonthToDateRange(primary.timezone, businessStart);
+  const lastWeekRange = getLastWeekRange(primary.timezone);
 
-  const [today, weekToDate, overall] = await Promise.all([
+  const [today, weekToDate, monthToDate, lastWeek, overall] = await Promise.all([
     aggregateReviewRatingForRange(locationIds, todayRange),
     aggregateReviewRatingForRange(locationIds, wtdRange),
+    aggregateReviewRatingForRange(locationIds, mtdRange),
+    aggregateReviewRatingForRange(locationIds, lastWeekRange),
     aggregateOverallReviewRatingFromSyncState(locationIds),
   ]);
 
-  return { today, weekToDate, overall };
-}
-
-function getMonthToDateRange(timezone: string, businessStartTime: string): TimeRange {
-  const todayYmd = getTodayInTimezone(timezone);
-  const parts = todayYmd.split("-").map((v) => Number.parseInt(v, 10));
-  const y = parts[0] ?? 0;
-  const m = parts[1] ?? 1;
-  const startDate = getStartOfDayUtc(y, m - 1, 1, timezone);
-  const { endAt } = getBusinessStartTimeRange(timezone, businessStartTime);
-  return { startAt: startDate.toISOString(), endAt };
+  return { today, weekToDate, monthToDate, lastWeek, overall };
 }

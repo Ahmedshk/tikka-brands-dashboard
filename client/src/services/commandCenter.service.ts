@@ -35,7 +35,7 @@ export interface CommandCenterKPIsTodaySlice {
   reviewCountOverall?: number | null;
 }
 
-/** Week-to-date slice when backend returns dual-period. */
+/** Week-to-date slice when backend returns multi-period. */
 export interface CommandCenterKPIsWeekToDateSlice {
   netSalesWeekToDate?: number | null;
   laborCostWeekToDate?: number | null;
@@ -49,15 +49,64 @@ export interface CommandCenterKPIsWeekToDateSlice {
   reviewCountOverall?: number | null;
 }
 
+/** Month-to-date slice when backend returns multi-period. */
+export interface CommandCenterKPIsMonthToDateSlice {
+  netSalesMonthToDate?: number | null;
+  laborCostMonthToDate?: number | null;
+  laborCostPercentMonthToDate?: number | null;
+  laborCostGoal?: number;
+  laborCostGoalTolerance?: number;
+  laborCostStatusMonthToDate?: LaborCostStatus;
+  reviewRating?: number;
+  reviewCount?: number;
+  reviewRatingOverall?: number | null;
+  reviewCountOverall?: number | null;
+}
+
+/** Last week slice when backend returns multi-period. */
+export interface CommandCenterKPIsLastWeekSlice {
+  netSalesLastWeek?: number | null;
+  laborCostLastWeek?: number | null;
+  laborCostPercentLastWeek?: number | null;
+  laborCostGoal?: number;
+  laborCostGoalTolerance?: number;
+  laborCostStatusLastWeek?: LaborCostStatus;
+  reviewRating?: number;
+  reviewCount?: number;
+  reviewRatingOverall?: number | null;
+  reviewCountOverall?: number | null;
+}
+
+export type CommandCenterKPIPeriodSlice =
+  | CommandCenterKPIsTodaySlice
+  | CommandCenterKPIsWeekToDateSlice
+  | CommandCenterKPIsMonthToDateSlice
+  | CommandCenterKPIsLastWeekSlice;
+
+export interface CommandCenterKPIsDataMulti {
+  today: CommandCenterKPIsTodaySlice;
+  weekToDate?: CommandCenterKPIsWeekToDateSlice;
+  monthToDate?: CommandCenterKPIsMonthToDateSlice;
+  lastWeek?: CommandCenterKPIsLastWeekSlice;
+}
+
+/** @deprecated Use CommandCenterKPIsDataMulti */
 export interface CommandCenterKPIsDataDual {
   today: CommandCenterKPIsTodaySlice;
   weekToDate: CommandCenterKPIsWeekToDateSlice;
 }
 
+export function isCommandCenterKPIsMulti(
+  data: CommandCenterKPIsData | CommandCenterKPIsDataMulti,
+): data is CommandCenterKPIsDataMulti {
+  return typeof data === "object" && data !== null && "today" in data;
+}
+
+/** @deprecated Use isCommandCenterKPIsMulti */
 export function isCommandCenterKPIsDual(
-  data: CommandCenterKPIsData | CommandCenterKPIsDataDual,
+  data: CommandCenterKPIsData | CommandCenterKPIsDataDual | CommandCenterKPIsDataMulti,
 ): data is CommandCenterKPIsDataDual {
-  return typeof data === "object" && data !== null && "today" in data && "weekToDate" in data;
+  return isCommandCenterKPIsMulti(data) && "weekToDate" in data && !("monthToDate" in data) && !("lastWeek" in data);
 }
 
 export interface HourlySalesRow {
@@ -249,8 +298,17 @@ export function isSalesTrendStacked(
 export const commandCenterService = {
   async getKPIs(
     locationId: string,
-    options?: { metrics?: string[]; periods?: ("today" | "weekToDate")[]; signal?: AbortSignal }
-  ): Promise<CommandCenterKPIsData | CommandCenterKPIsDataDual> {
+    options?: {
+      metrics?: string[];
+      periods?: (
+        | "today"
+        | "weekToDate"
+        | "monthToDate"
+        | "lastWeek"
+      )[];
+      signal?: AbortSignal;
+    }
+  ): Promise<CommandCenterKPIsData | CommandCenterKPIsDataMulti> {
     const params: { locationId: string; metrics?: string; periods?: string } = { locationId };
     if (options?.metrics?.length) {
       params.metrics = options.metrics.join(",");
@@ -259,7 +317,7 @@ export const commandCenterService = {
       params.periods = options.periods.join(",");
     }
     const res = await api.get<
-      ApiResponse<CommandCenterKPIsData | CommandCenterKPIsDataDual>
+      ApiResponse<CommandCenterKPIsData | CommandCenterKPIsDataMulti>
     >(API_ENDPOINTS.COMMAND_CENTER.KPIS, { params, signal: options?.signal });
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch Command Center KPIs");

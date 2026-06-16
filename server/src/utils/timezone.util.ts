@@ -277,6 +277,72 @@ export function getWeekToDateRange(
 }
 
 /**
+ * Month-to-date range: 1st of the calendar month 00:00 in location TZ through end of current business day.
+ */
+export function getMonthToDateRange(
+  timezone: string,
+  businessStartTime: string,
+): { startAt: string; endAt: string } {
+  const tz = timezone.trim();
+  const todayYmd = getTodayInTimezone(tz);
+  const parts = todayYmd.split("-").map((v) => Number.parseInt(v, 10));
+  const y = parts[0] ?? 0;
+  const m = parts[1] ?? 1;
+  const startDate = getStartOfDayUtc(y, m - 1, 1, tz);
+  const { endAt } = getBusinessStartTimeRange(tz, businessStartTime);
+  return { startAt: startDate.toISOString(), endAt };
+}
+
+/**
+ * Previous calendar week (Sun 00:00 through Sat 23:59:59.999) in location TZ.
+ */
+export function getLastWeekRange(timezone: string): {
+  startAt: string;
+  endAt: string;
+} {
+  const tz = timezone.trim();
+  const now = new Date();
+  const formatter = getCachedDateTimeFormatter("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  });
+  const parts = formatter.formatToParts(now);
+  const get = (type: string) =>
+    parts.find((p) => p.type === type)?.value ?? "0";
+  const y = Number.parseInt(get("year"), 10);
+  const m = Number.parseInt(get("month"), 10) - 1;
+  const d = Number.parseInt(get("day"), 10);
+  const weekday = get("weekday");
+  const dayOfWeek = WEEKDAY_ORDER.indexOf(
+    weekday as (typeof WEEKDAY_ORDER)[number],
+  );
+  const dayOfWeekSafe = Math.max(0, Math.min(6, dayOfWeek));
+
+  const thisSunday = addDaysUtc(y, m, d, -dayOfWeekSafe);
+  const lastSunday = addDaysUtc(thisSunday.y, thisSunday.m, thisSunday.d, -7);
+  const lastSaturday = addDaysUtc(lastSunday.y, lastSunday.m, lastSunday.d, 6);
+  const startAt = getStartOfDayUtc(
+    lastSunday.y,
+    lastSunday.m,
+    lastSunday.d,
+    tz,
+  );
+  const endAt = getEndOfDayUtc(
+    lastSaturday.y,
+    lastSaturday.m,
+    lastSaturday.d,
+    tz,
+  );
+  return {
+    startAt: startAt.toISOString(),
+    endAt: endAt.toISOString(),
+  };
+}
+
+/**
  * Get business-day window for a specific calendar date (y, m, d) in timezone.
  * startAt = business start time on that day; endAt = last millisecond before next day's business start.
  * Use for custom date ranges so each day is from business start to end of business day.

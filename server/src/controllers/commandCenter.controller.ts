@@ -28,8 +28,10 @@ import {
   buildAllLocationsHourlySales,
 } from "../utils/commandCenterAllLocations.util.js";
 import {
+  buildMultiPeriodResponse,
   buildTodayOnlyData,
   buildWeekToDateData,
+  fetchKpisForPeriods,
   fetchReviewRatingKpiData,
   fetchTodayOnlyKpis,
   fetchWeekToDateKpis,
@@ -37,6 +39,7 @@ import {
   getRangeToday,
   getRangeWeekToDate,
 } from "../utils/commandCenterKpiLogic.js";
+import type { Period } from "../types/commandCenter.types.js";
 import { getBusinessStartTimeRange } from "../utils/timezone.util.js";
 import { serveDashboardWithCache } from "../services/dashboardCache.service.js";
 
@@ -104,12 +107,19 @@ export const getCommandCenterKPIs = async (
       params: { metrics: sortedMetrics, periods: sortedPeriods },
       compute: async () => {
         if (sortedMetrics.length === 0) {
-          const emptyToday: Record<string, unknown> = {};
-          const emptyWeekToDate: Record<string, unknown> = {};
-          if (Array.isArray(periods) && periods.includes("weekToDate")) {
-            return { today: emptyToday, weekToDate: emptyWeekToDate };
+          const requestedPeriods: Period[] =
+            Array.isArray(periods) && periods.length > 0 ? periods : ["today"];
+          if (requestedPeriods.length > 1) {
+            const emptyMulti: Record<string, unknown> = {};
+            for (const period of requestedPeriods) {
+              emptyMulti[period] = {};
+            }
+            return emptyMulti;
           }
-          return emptyToday;
+          if (requestedPeriods[0] === "weekToDate") {
+            return { today: {}, weekToDate: {} };
+          }
+          return {};
         }
 
         if (isAllLocationsId(locationId)) {
@@ -144,14 +154,36 @@ export const getCommandCenterKPIs = async (
           wantLaborCost,
         );
         const rangeToday = getRangeToday(loc);
-        const wantWeekToDate =
-          Array.isArray(periods) && periods.includes("weekToDate");
+        const requestedPeriods: Period[] =
+          Array.isArray(periods) && periods.length > 0 ? periods : ["today"];
+        const wantsMultiPeriod = requestedPeriods.length > 1;
 
         const reviewRating = wantReviewRating
           ? await fetchReviewRatingKpiData(locationId, loc)
           : undefined;
 
-        if (wantWeekToDate) {
+        if (wantsMultiPeriod) {
+          const kpisByPeriod = await fetchKpisForPeriods({
+            locationMongoId: locationId,
+            location: loc,
+            periods: requestedPeriods,
+            wantNetSales,
+            wantLaborCost,
+            laborCostGoal,
+          });
+          return buildMultiPeriodResponse(
+            metrics,
+            requestedPeriods,
+            kpisByPeriod,
+            wantReviewRating,
+            laborCostGoal,
+            laborCostGoalTolerance,
+            reviewRating,
+          );
+        }
+
+        const onlyPeriod = requestedPeriods[0] ?? "today";
+        if (onlyPeriod === "weekToDate") {
           const rangeWeekToDate = getRangeWeekToDate(loc);
           const kpis = await fetchWeekToDateKpis({
             locationMongoId: locationId,
@@ -173,6 +205,26 @@ export const getCommandCenterKPIs = async (
             reviewRating,
           );
           return { today: todayData, weekToDate: weekToDateData };
+        }
+
+        if (onlyPeriod !== "today") {
+          const kpisByPeriod = await fetchKpisForPeriods({
+            locationMongoId: locationId,
+            location: loc,
+            periods: [onlyPeriod],
+            wantNetSales,
+            wantLaborCost,
+            laborCostGoal,
+          });
+          return buildMultiPeriodResponse(
+            metrics,
+            [onlyPeriod],
+            kpisByPeriod,
+            wantReviewRating,
+            laborCostGoal,
+            laborCostGoalTolerance,
+            reviewRating,
+          );
         }
 
         const kpis = await fetchTodayOnlyKpis(

@@ -4,15 +4,15 @@ import type { LocationService } from '../services/location.service.js';
 import {
   fetchHourlyNetSalesCentsBySlotFromCache,
 } from '../services/integrationCacheRead.service.js';
-import type { LocationForKpi, HourlySalesRow, LaborCostStatus } from '../types/commandCenter.types.js';
+import type { LocationForKpi, HourlySalesRow, LaborCostStatus, Period } from '../types/commandCenter.types.js';
 import {
   getLaborCostGoals,
-  getRangeToday,
-  getRangeWeekToDate,
-  fetchTodayOnlyKpis,
-  fetchWeekToDateKpis,
+  getRangeForPeriod,
+  fetchKpisForRange,
+  buildMultiPeriodResponse,
   buildTodayOnlyData,
   buildWeekToDateData,
+  type PeriodRangeKpis,
   type ReviewRatingKpiData,
 } from './commandCenterKpiLogic.js';
 import { getReviewRatingSummariesForLocations } from './googleBusinessReviewAggregation.util.js';
@@ -107,10 +107,27 @@ function average(nums: number[]): number {
   return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
+function summariesToReviewRatingData(
+  summaries: Awaited<ReturnType<typeof getReviewRatingSummariesForLocations>>,
+): ReviewRatingKpiData {
+  return {
+    todayRating: summaries.today.averageRating,
+    todayCount: summaries.today.reviewCount,
+    weekToDateRating: summaries.weekToDate.averageRating,
+    weekToDateCount: summaries.weekToDate.reviewCount,
+    monthToDateRating: summaries.monthToDate.averageRating,
+    monthToDateCount: summaries.monthToDate.reviewCount,
+    lastWeekRating: summaries.lastWeek.averageRating,
+    lastWeekCount: summaries.lastWeek.reviewCount,
+    overallRating: summaries.overall.averageRating,
+    overallCount: summaries.overall.reviewCount,
+  };
+}
+
 export async function buildAllLocationsCommandCenterKpis(params: {
   req: Request;
   metrics: string[];
-  periods: Array<'today' | 'weekToDate'> | undefined;
+  periods: Period[] | undefined;
   wantNetSales: boolean;
   wantLaborCost: boolean;
   wantReviewRating: boolean;
@@ -135,11 +152,18 @@ export async function buildAllLocationsCommandCenterKpis(params: {
     toLocationForKpi,
   } = params;
 
-  const wantWeekToDate = Array.isArray(periods) && periods.includes('weekToDate');
+  const requestedPeriods: Period[] =
+    Array.isArray(periods) && periods.length > 0 ? periods : ['today'];
+  const wantsMultiPeriod = requestedPeriods.length > 1;
+  const wantLegacyWeekToDateDual =
+    requestedPeriods.length === 1 && requestedPeriods[0] === 'weekToDate';
+  const fetchPeriods: Period[] = wantLegacyWeekToDateDual
+    ? ['today', 'weekToDate']
+    : requestedPeriods;
   const tHandler = performance.now();
   const perLocationMs: number[] = [];
-  const route = wantWeekToDate
-    ? 'GET /command-center/kpis (weekToDate)'
+  const route = wantsMultiPeriod || wantLegacyWeekToDateDual
+    ? 'GET /command-center/kpis (multi-period)'
     : 'GET /command-center/kpis (today)';
 
   const perLoc = await loadPerLocationContext({
@@ -157,26 +181,27 @@ export async function buildAllLocationsCommandCenterKpis(params: {
       totalMs: Math.round(performance.now() - tHandler),
       perLocationMs,
     });
-    if (wantWeekToDate) return { dual: true, data: { today: {}, weekToDate: {} } };
+    if (wantsMultiPeriod) {
+      const emptyMulti: Record<string, unknown> = {};
+      for (const period of requestedPeriods) {
+        emptyMulti[period] = {};
+      }
+      return { dual: true, data: emptyMulti };
+    }
+    if (wantLegacyWeekToDateDual) {
+      return { dual: true, data: { today: {}, weekToDate: {} } };
+    }
     return { dual: false, data: {} };
   }
 
   const avgGoal = wantLaborCost ? average(perLoc.map((p) => p.laborCostGoal)) : 0;
   const avgTol = wantLaborCost ? average(perLoc.map((p) => p.laborCostGoalTolerance)) : 0;
 
-  // Up-front bulk prefetch: each per-location worker below pulls from daily
-  // rollups (SquareOrderDailyRollup, HomebaseTimecardDailyRollup) plus a
-  // raw-orders / timecards fallback. The default per-location pattern issues
-  // multiple Mongo round-trips, each ~240ms RTT, which dominates at 9
-  // locations. The prefetch collapses those into a handful of bulk queries
-  // that seed the in-process caches the readers consult.
   const prefetchInputs: AllLocationsPrefetchInput[] = perLoc.map((p) => {
-    const ranges = wantWeekToDate
-      ? [getRangeToday(p.loc), getRangeWeekToDate(p.loc)]
-      : [getRangeToday(p.loc)];
+    const uniqueRanges = fetchPeriods.map((period) => getRangeForPeriod(p.loc, period));
     return {
       locationMongoId: p.locationMongoId,
-      ranges,
+      ranges: uniqueRanges,
       timezone: p.loc.timezone ?? 'UTC',
       businessStartTime: p.loc.businessStartTime ?? '00:00',
     };
@@ -185,64 +210,62 @@ export async function buildAllLocationsCommandCenterKpis(params: {
     await prefetchAllLocationsDashboardData(prefetchInputs);
   }
 
-  if (wantWeekToDate) {
-    const rangeByLoc = perLoc.map((p) => ({
-      ...p,
-      rangeToday: getRangeToday(p.loc),
-      rangeWeekToDate: getRangeWeekToDate(p.loc),
-    }));
+  const kpisByPeriod: Partial<Record<Period, PeriodRangeKpis>> = {};
+  for (const period of fetchPeriods) {
     const results = await Promise.all(
-      rangeByLoc.map(async (p) => {
+      perLoc.map(async (p) => {
         const { value, ms } = await timedPerLocation(() =>
-          fetchWeekToDateKpis({
-            locationMongoId: p.locationMongoId,
-            location: p.loc,
-            rangeToday: p.rangeToday,
-            rangeWeekToDate: p.rangeWeekToDate,
+          fetchKpisForRange(
+            p.locationMongoId,
+            p.loc,
+            getRangeForPeriod(p.loc, period),
             wantNetSales,
             wantLaborCost,
-            laborCostGoal: avgGoal,
-          }),
+            avgGoal,
+            `${period} (all-locations)`,
+          ),
         );
         perLocationMs.push(ms);
         return value;
       }),
     );
 
-    const netSalesToday = sumNullable(results.map((r) => r.netSalesToday));
-    const netSalesWeekToDate = sumNullable(results.map((r) => r.netSalesWeekToDate));
-    const laborCostToday = sumNullable(results.map((r) => r.laborCostToday));
-    const laborCostWeekToDate = sumNullable(results.map((r) => r.laborCostWeekToDate));
+    const netSales = sumNullable(results.map((r) => r.netSales));
+    const laborCost = sumNullable(results.map((r) => r.laborCost));
+    const pct = laborPercent(netSales, laborCost);
+    kpisByPeriod[period] = {
+      netSales,
+      laborCost,
+      laborCostPercent: pct,
+      laborCostStatus: laborStatus(pct, avgGoal),
+    };
+  }
 
-    const pctToday = laborPercent(netSalesToday, laborCostToday);
-    const pctWtd = laborPercent(netSalesWeekToDate, laborCostWeekToDate);
+  let reviewRatingData: ReviewRatingKpiData | undefined;
+  if (wantReviewRating) {
+    const summaries = await getReviewRatingSummariesForLocations(
+      perLoc.map((p) => p.locationMongoId),
+      perLoc.map((p) => p.loc),
+    );
+    reviewRatingData = summariesToReviewRatingData(summaries);
+  }
 
-    let reviewRatingData: ReviewRatingKpiData | undefined;
-    if (wantReviewRating) {
-      const summaries = await getReviewRatingSummariesForLocations(
-        perLoc.map((p) => p.locationMongoId),
-        perLoc.map((p) => p.loc),
-      );
-      reviewRatingData = {
-        todayRating: summaries.today.averageRating,
-        todayCount: summaries.today.reviewCount,
-        weekToDateRating: summaries.weekToDate.averageRating,
-        weekToDateCount: summaries.weekToDate.reviewCount,
-        overallRating: summaries.overall.averageRating,
-        overallCount: summaries.overall.reviewCount,
-      };
-    }
-
+  let data: unknown;
+  if (wantLegacyWeekToDateDual) {
+    const todayKpis = kpisByPeriod.today;
+    const wtdKpis = kpisByPeriod.weekToDate;
+    const pctToday = todayKpis?.laborCostPercent ?? null;
+    const pctWtd = wtdKpis?.laborCostPercent ?? null;
     const { todayData, weekToDateData } = buildWeekToDateData(
       metrics,
       wantNetSales,
       wantLaborCost,
       wantReviewRating,
       {
-        netSalesToday,
-        netSalesWeekToDate,
-        laborCostToday,
-        laborCostWeekToDate,
+        netSalesToday: todayKpis?.netSales ?? null,
+        netSalesWeekToDate: wtdKpis?.netSales ?? null,
+        laborCostToday: todayKpis?.laborCost ?? null,
+        laborCostWeekToDate: wtdKpis?.laborCost ?? null,
         laborCostPercentToday: pctToday,
         laborCostStatusToday: laborStatus(pctToday, avgGoal),
         laborCostPercentWeekToDate: pctWtd,
@@ -252,68 +275,48 @@ export async function buildAllLocationsCommandCenterKpis(params: {
       avgTol,
       reviewRatingData,
     );
-
-    summarizeAllLocationsTimings({
-      route,
-      locationCount: perLoc.length,
-      totalMs: Math.round(performance.now() - tHandler),
-      perLocationMs,
-    });
-    return { dual: true, data: { today: todayData, weekToDate: weekToDateData } };
-  }
-
-  const results = await Promise.all(
-    perLoc.map(async (p) => {
-      const { value, ms } = await timedPerLocation(() =>
-        fetchTodayOnlyKpis(
-          p.locationMongoId,
-          p.loc,
-          getRangeToday(p.loc),
-          wantNetSales,
-          wantLaborCost,
-          avgGoal,
-        ),
-      );
-      perLocationMs.push(ms);
-      return value;
-    }),
-  );
-
-  const netSalesToday = sumNullable(results.map((r) => r.netSalesToday));
-  const laborCostToday = sumNullable(results.map((r) => r.laborCostToday));
-  const pct = laborPercent(netSalesToday, laborCostToday);
-
-  let reviewRatingData: ReviewRatingKpiData | undefined;
-  if (wantReviewRating) {
-    const summaries = await getReviewRatingSummariesForLocations(
-      perLoc.map((p) => p.locationMongoId),
-      perLoc.map((p) => p.loc),
+    data = { today: todayData, weekToDate: weekToDateData };
+  } else if (wantsMultiPeriod) {
+    data = buildMultiPeriodResponse(
+      metrics,
+      requestedPeriods,
+      kpisByPeriod,
+      wantReviewRating,
+      avgGoal,
+      avgTol,
+      reviewRatingData,
     );
-    reviewRatingData = {
-      todayRating: summaries.today.averageRating,
-      todayCount: summaries.today.reviewCount,
-      weekToDateRating: summaries.weekToDate.averageRating,
-      weekToDateCount: summaries.weekToDate.reviewCount,
-      overallRating: summaries.overall.averageRating,
-      overallCount: summaries.overall.reviewCount,
-    };
+  } else {
+    const onlyPeriod = requestedPeriods[0] ?? 'today';
+    const periodKpis = kpisByPeriod[onlyPeriod];
+    if (onlyPeriod === 'today' && periodKpis) {
+      data = buildTodayOnlyData(
+        metrics,
+        wantNetSales,
+        wantLaborCost,
+        wantReviewRating,
+        {
+          netSalesToday: periodKpis.netSales,
+          laborCostToday: periodKpis.laborCost,
+          laborCostPercentToday: periodKpis.laborCostPercent,
+          laborCostStatus: periodKpis.laborCostStatus,
+        },
+        avgGoal,
+        avgTol,
+        reviewRatingData,
+      );
+    } else {
+      data = buildMultiPeriodResponse(
+        metrics,
+        [onlyPeriod],
+        kpisByPeriod,
+        wantReviewRating,
+        avgGoal,
+        avgTol,
+        reviewRatingData,
+      );
+    }
   }
-
-  const data = buildTodayOnlyData(
-    metrics,
-    wantNetSales,
-    wantLaborCost,
-    wantReviewRating,
-    {
-      netSalesToday,
-      laborCostToday,
-      laborCostPercentToday: pct,
-      laborCostStatus: laborStatus(pct, avgGoal),
-    },
-    avgGoal,
-    avgTol,
-    reviewRatingData,
-  );
 
   summarizeAllLocationsTimings({
     route,
@@ -321,7 +324,7 @@ export async function buildAllLocationsCommandCenterKpis(params: {
     totalMs: Math.round(performance.now() - tHandler),
     perLocationMs,
   });
-  return { dual: false, data };
+  return { dual: wantsMultiPeriod || wantLegacyWeekToDateDual, data };
 }
 
 export async function buildAllLocationsHourlySales(params: {

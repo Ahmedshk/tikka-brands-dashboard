@@ -8,7 +8,7 @@ export const COMMAND_CENTER_METRICS = [
   "reviewRating",
 ] as const;
 
-export const PERIODS = ["today", "weekToDate"] as const;
+export const PERIODS = ["today", "weekToDate", "monthToDate", "lastWeek"] as const;
 export type Period = (typeof PERIODS)[number];
 
 export type CommandCenterMetric =

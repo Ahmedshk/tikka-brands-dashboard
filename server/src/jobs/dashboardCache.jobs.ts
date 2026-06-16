@@ -44,7 +44,7 @@ import {
   buildAllLocationsHourlySales,
 } from "../utils/commandCenterAllLocations.util.js";
 import { getAllMetricIdsForPage } from "../config/kpi-metrics.config.js";
-import type { LocationForKpi } from "../types/commandCenter.types.js";
+import type { LocationForKpi, Period } from "../types/commandCenter.types.js";
 import type {
   SalesTrendQueryParams,
   SalesTrendKpiQueryParams,
@@ -166,7 +166,7 @@ async function computeAllLocationsResponse(args: {
     case "command-center.kpis": {
       const metrics = Array.isArray(params.metrics) ? (params.metrics as string[]) : [];
       const periods = Array.isArray(params.periods)
-        ? (params.periods as Array<"today" | "weekToDate">)
+        ? (params.periods as Period[])
         : undefined;
       const result = await buildAllLocationsCommandCenterKpis({
         req,
@@ -249,7 +249,7 @@ const HARDCODED_DEFAULT_ENTRIES: ReadonlyArray<DefaultEntry> = [
     endpoint: "command-center.kpis",
     params: {
       metrics: [...getAllMetricIdsForPage("command-center")].sort(),
-      periods: ["today", "weekToDate"].sort(),
+      periods: ["today", "weekToDate", "monthToDate", "lastWeek"].sort(),
     },
   },
   { endpoint: "command-center.hourly-sales", params: {} },
