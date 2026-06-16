@@ -6,6 +6,7 @@ import {
   getStartOfDayUtc,
   getEndOfDayUtc,
   getLast52WeeksCivilBounds,
+  mapCurrentDayToWeekAlignedComparisonDay,
 } from "./salesTrendDateRange.util.js";
 
 const TZ = "America/New_York";
@@ -14,7 +15,7 @@ function partsAt(iso: string) {
   return getDatePartsInTz(new Date(iso), TZ);
 }
 
-test("thisMonth + samePeriodPreviousMonth is full previous calendar month", () => {
+test("thisMonth + samePeriodPreviousMonth uses aligned span (not full previous calendar month)", () => {
   const periodStart = getStartOfDayUtc(2026, 3, 1, TZ).toISOString();
   const periodEnd = getEndOfDayUtc(2026, 3, 8, TZ).toISOString();
   const r = getSalesTrendComparisonRange(
@@ -29,13 +30,14 @@ test("thisMonth + samePeriodPreviousMonth is full previous calendar month", () =
   const e = partsAt(r.endAt);
   assert.equal(s.y, 2026);
   assert.equal(s.m, 2);
-  assert.equal(s.d, 1);
+  assert.equal(s.d, 4);
   assert.equal(e.y, 2026);
   assert.equal(e.m, 2);
-  assert.equal(e.d, 31);
+  assert.equal(e.d, 11);
+  assert.ok(new Date(r.startAt).getTime() <= new Date(r.endAt).getTime());
 });
 
-test("thisMonth + priorYear is full same month in prior year", () => {
+test("thisMonth + priorYear uses aligned span (not full prior-year month)", () => {
   const periodStart = getStartOfDayUtc(2026, 3, 1, TZ).toISOString();
   const periodEnd = getEndOfDayUtc(2026, 3, 8, TZ).toISOString();
   const r = getSalesTrendComparisonRange("priorYear", periodStart, periodEnd, TZ, {
@@ -46,10 +48,20 @@ test("thisMonth + priorYear is full same month in prior year", () => {
   const e = partsAt(r.endAt);
   assert.equal(s.y, 2025);
   assert.equal(s.m, 3);
-  assert.equal(s.d, 1);
+  assert.equal(s.d, 2);
   assert.equal(e.y, 2025);
   assert.equal(e.m, 3);
-  assert.equal(e.d, 30);
+  assert.equal(e.d, 9);
+  assert.ok(new Date(r.startAt).getTime() <= new Date(r.endAt).getTime());
+});
+
+test("thisMonth + priorYear maps Jun 6 2026 Sat to Jun 7 2025 Sat (not same calendar date)", () => {
+  const aligned = mapCurrentDayToWeekAlignedComparisonDay(2026, 5, 6, "priorYear", TZ);
+  assert.ok(aligned);
+  assert.equal(aligned.y, 2025);
+  assert.equal(aligned.m, 5);
+  assert.equal(aligned.d, 7);
+  assert.notEqual(aligned.d, 6);
 });
 
 test("thisYear + priorYear is full prior calendar year", () => {

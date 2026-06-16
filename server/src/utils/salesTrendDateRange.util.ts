@@ -33,11 +33,30 @@ export interface PeriodRangeResult {
   granularity: Granularity;
   /** When set, chart x-axis and comparison use startAt..displayEndAt; current-period data is still startAt..endAt only. */
   displayEndAt?: string;
+  /** Civil start-of-day for legend labels when business-day startAt is after midnight. */
+  displayStartAt?: string;
 }
 
 export interface ComparisonRangeResult {
   startAt: string;
   endAt: string;
+  /** Civil end-of-day for legend labels when business-day endAt crosses midnight. */
+  displayEndAt?: string;
+  /** Civil start-of-day for legend labels when business-day startAt is after midnight. */
+  displayStartAt?: string;
+}
+
+/** API legend range: civil display bounds when set, else data bounds. */
+export function toLabelTimeRange(range: {
+  startAt: string;
+  endAt: string;
+  displayStartAt?: string;
+  displayEndAt?: string;
+}): { startAt: string; endAt: string } {
+  return {
+    startAt: range.displayStartAt ?? range.startAt,
+    endAt: range.displayEndAt ?? range.endAt,
+  };
 }
 
 /** Optional arguments for getSalesTrendComparisonRange (custom comparison dates and period type). */
@@ -47,6 +66,9 @@ export interface GetSalesTrendComparisonRangeOptions {
   customComparisonEnd?: string;
   businessStartTime?: string;
   periodType?: PeriodType;
+  /** Civil label bounds of the primary period (for comparison alignment). */
+  periodDisplayStartAt?: string;
+  periodDisplayEndAt?: string;
 }
 
 import {
@@ -59,6 +81,17 @@ import {
 } from "./timezone.util.js";
 
 export { getStartOfDayUtc, getEndOfDayUtc } from "./timezone.util.js";
+
+function civilSpanLabelBounds(
+  start: { y: number; m: number; d: number },
+  end: { y: number; m: number; d: number },
+  tz: string,
+): { displayStartAt: string; displayEndAt: string } {
+  return {
+    displayStartAt: getStartOfDayUtc(start.y, start.m, start.d, tz).toISOString(),
+    displayEndAt: getEndOfDayUtc(end.y, end.m, end.d, tz).toISOString(),
+  };
+}
 
 /** Get (year, month 0-based, day) of "now" in the given timezone. */
 function getTodayInTz(timezone: string): { y: number; m: number; d: number } {
@@ -217,8 +250,14 @@ function getTodayPeriodRange(
 ): PeriodRangeResult {
   const bizStart = (businessStartTime ?? "00:00").trim();
   if (businessDayBoundariesEnabled(businessStartTime)) {
-    const { startAt, endAt } = getBusinessStartTimeRange(tz, bizStart);
-    return { startAt, endAt: new Date().toISOString(), granularity: "hourly", displayEndAt: endAt };
+    const { startAt } = getBusinessStartTimeRange(tz, bizStart);
+    const civilLabel = civilSpanLabelBounds({ y, m, d }, { y, m, d }, tz);
+    return {
+      startAt,
+      endAt: new Date().toISOString(),
+      granularity: "hourly",
+      ...civilLabel,
+    };
   }
   const startDate = getStartOfDayUtc(y, m, d, tz);
   const displayEndDate = getEndOfDayUtc(y, m, d, tz);
@@ -226,6 +265,7 @@ function getTodayPeriodRange(
     startAt: startDate.toISOString(),
     endAt: new Date().toISOString(),
     granularity: "hourly",
+    displayStartAt: startDate.toISOString(),
     displayEndAt: displayEndDate.toISOString(),
   };
 }
@@ -381,7 +421,8 @@ function getCustomRangeBounds(
     const startRange = getBusinessDayRangeForDate(tz, bizStart, sy_, sm, sd);
     const endRange = getBusinessDayRangeForDate(tz, bizStart, ey_, em, ed);
     const endAt = endDayIsToday ? new Date().toISOString() : endRange.endAt;
-    return { startAt: startRange.startAt, endAt, displayEndAtIso: endRange.endAt };
+    const civilDisplayEnd = getEndOfDayUtc(ey_, em, ed, tz).toISOString();
+    return { startAt: startRange.startAt, endAt, displayEndAtIso: civilDisplayEnd };
   }
   const startAt = getStartOfDayUtc(sy_, sm, sd, tz).toISOString();
   const endOfEndDay = getEndOfDayUtc(ey_, em, ed, tz);
@@ -436,9 +477,13 @@ function getCustomPeriodRange(
   let granularity: Granularity = "daily";
   if (isSingleDay || days <= 1) granularity = "hourly";
   else if (days > 90) granularity = "weekly";
-  const withDisplayEnd =
-    endDayIsToday ? { displayEndAt: displayEndAtIso } : {};
-  return { startAt, endAt, granularity, ...withDisplayEnd };
+  return {
+    startAt,
+    endAt,
+    granularity,
+    displayStartAt: getStartOfDayUtc(sy, sm, sd, tz).toISOString(),
+    displayEndAt: displayEndAtIso,
+  };
 }
 
 /** Whole days between two civil dates in `timezone` (non-negative when `early` is on or before `late`). */
@@ -562,7 +607,7 @@ function getLastWeekOfMonth(
   return { start, end };
 }
 
-/** Calendar-bounded periods that may use week-of-month comparison (thisMonth/thisYear keep legacy week index). */
+/** Calendar-bounded periods that may use week-of-month comparison. */
 const CALENDAR_BOUNDED_PERIOD_TYPES_FOR_WEEK_COMPARISON = new Set<PeriodType>([
   "thisWeek",
   "thisMonth",
@@ -585,44 +630,11 @@ const COMPARISON_TYPES_WITH_WEEK_LOGIC = new Set<ComparisonType>([
  */
 const PERIOD_TYPES_MONTH_ANCHOR_WEEK_AND_SPAN_END = new Set<PeriodType>([
   "thisWeek",
+  "thisMonth",
   "last7days",
   "last30days",
   "custom",
 ]);
-
-/** Full previous calendar month in TZ (for thisMonth + samePeriodPreviousMonth). */
-function getFullPreviousCalendarMonthComparison(
-  periodEndAt: string,
-  tz: string,
-  bizStart: string,
-  useBiz: boolean,
-): ComparisonRangeResult {
-  const endParts = getDatePartsInTz(new Date(periodEndAt), tz);
-  let pm = endParts.m - 1;
-  let py = endParts.y;
-  if (pm < 0) {
-    pm += 12;
-    py -= 1;
-  }
-  const startCal = { y: py, m: pm, d: 1 };
-  const lastD = new Date(py, pm + 1, 0).getDate();
-  const endCal = { y: py, m: pm, d: lastD };
-  return rangeFromCalendar(tz, bizStart, useBiz, startCal, endCal);
-}
-
-/** Full same calendar month in year − 1 (for thisMonth + priorYear). */
-function getFullSameMonthPriorYearComparison(
-  periodStartAt: string,
-  tz: string,
-  bizStart: string,
-  useBiz: boolean,
-): ComparisonRangeResult {
-  const sp = getDatePartsInTz(new Date(periodStartAt), tz);
-  const y = sp.y - 1;
-  const m = sp.m;
-  const lastD = new Date(y, m + 1, 0).getDate();
-  return rangeFromCalendar(tz, bizStart, useBiz, { y, m, d: 1 }, { y, m, d: lastD });
-}
 
 /** Full prior calendar year Jan 1 – Dec 31 (for thisYear + priorYear). */
 function getFullPriorCalendarYearComparison(
@@ -665,6 +677,7 @@ function deriveWeekComparisonIndices(
   const useSevenDayBlockYoY =
     useMonthAnchorWeekAndSpanEnd &&
     periodType !== "thisWeek" &&
+    periodType !== "thisMonth" &&
     comparisonType !== "samePeriodPreviousMonth" &&
     (comparisonType === "priorYear" ||
       comparisonType === "52WeeksPrior" ||
@@ -711,7 +724,8 @@ function comparisonRangeFromCompYmdBounds(
   if (useBiz) {
     const startR = getBusinessDayRangeForDate(tz, bizStart, compStart.y, compStart.m, compStart.d);
     const endR = getBusinessDayRangeForDate(tz, bizStart, compEnd.y, compEnd.m, compEnd.d);
-    return { startAt: startR.startAt, endAt: endR.endAt };
+    const civilLabel = civilSpanLabelBounds(compStart, compEnd, tz);
+    return { startAt: startR.startAt, endAt: endR.endAt, ...civilLabel };
   }
   return {
     startAt: getStartOfDayUtc(compStart.y, compStart.m, compStart.d, tz).toISOString(),
@@ -1069,7 +1083,16 @@ function getCustomComparisonRangeByStartEnd(
   if (BUSINESS_START_REGEX.test(bizStart)) {
     const startRange = getBusinessDayRangeForDate(tz, bizStart, sy, sm, sd);
     const endRange = getBusinessDayRangeForDate(tz, bizStart, ey, em, ed);
-    return { startAt: startRange.startAt, endAt: endRange.endAt };
+    const civilLabel = civilSpanLabelBounds(
+      { y: sy, m: sm, d: sd },
+      { y: ey, m: em, d: ed },
+      tz,
+    );
+    return {
+      startAt: startRange.startAt,
+      endAt: endRange.endAt,
+      ...civilLabel,
+    };
   }
   return {
     startAt: getStartOfDayUtc(sy, sm, sd, tz).toISOString(),
@@ -1113,7 +1136,12 @@ function rangeFromCalendar(
   if (useBiz) {
     const startR = getBusinessDayRangeForDate(tz, bizStart, start.y, start.m, start.d);
     const endR = getBusinessDayRangeForDate(tz, bizStart, end.y, end.m, end.d);
-    return { startAt: startR.startAt, endAt: endR.endAt };
+    const civilLabel = civilSpanLabelBounds(start, end, tz);
+    return {
+      startAt: startR.startAt,
+      endAt: endR.endAt,
+      ...civilLabel,
+    };
   }
   return {
     startAt: getStartOfDayUtc(start.y, start.m, start.d, tz).toISOString(),
@@ -1125,6 +1153,8 @@ function getComparisonRangeFromSwitch(
   comparisonType: ComparisonType,
   start: Date,
   end: Date,
+  civilLabelStart: Date,
+  civilLabelEnd: Date,
   tz: string,
   bizStart: string,
   useBiz: boolean,
@@ -1146,29 +1176,28 @@ function getComparisonRangeFromSwitch(
     endParts: { y: number; m: number; d: number },
   ) => rangeFromCalendar(tz, bizStart, useBiz, startParts, endParts);
 
+  const startParts = getDatePartsInTz(civilLabelStart, tz);
+  const endParts = getDatePartsInTz(civilLabelEnd, tz);
+
   switch (comparisonType) {
     case "1DayPrior": {
-      const oneDayMs = 24 * 60 * 60 * 1000;
-      const startRef = new Date(start.getTime() - oneDayMs);
-      const endRef = new Date(end.getTime() - oneDayMs);
-      return fromCalendar(getDatePartsInTz(startRef, tz), getDatePartsInTz(endRef, tz));
+      return fromCalendar(
+        addDays(startParts.y, startParts.m, startParts.d, -1),
+        addDays(endParts.y, endParts.m, endParts.d, -1),
+      );
     }
     case "samePeriodPreviousWeek": {
-      const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
-      const startRef = new Date(start.getTime() - oneWeekMs);
-      const endRef = new Date(end.getTime() - oneWeekMs);
-      return fromCalendar(getDatePartsInTz(startRef, tz), getDatePartsInTz(endRef, tz));
+      return fromCalendar(
+        addDays(startParts.y, startParts.m, startParts.d, -7),
+        addDays(endParts.y, endParts.m, endParts.d, -7),
+      );
     }
     case "samePeriodPreviousMonth": {
-      const startParts = getDatePartsInTz(start, tz);
-      const endParts = getDatePartsInTz(end, tz);
       const startDate = prevMonthDate(startParts.y, startParts.m, startParts.d);
       const endDate = prevMonthDate(endParts.y, endParts.m, endParts.d);
       return fromCalendar(startDate, endDate);
     }
     case "priorYear": {
-      const startParts = getDatePartsInTz(start, tz);
-      const endParts = getDatePartsInTz(end, tz);
       const targetStartY = startParts.y - 1;
       const targetEndY = endParts.y - 1;
       const endLastDay = new Date(targetEndY, endParts.m + 1, 0).getDate();
@@ -1179,8 +1208,6 @@ function getComparisonRangeFromSwitch(
       );
     }
     case "52WeeksPrior": {
-      const startParts = getDatePartsInTz(start, tz);
-      const endParts = getDatePartsInTz(end, tz);
       if (periodType === "last52weeks") {
         const targetStartY = startParts.y - 1;
         const targetEndY = endParts.y - 1;
@@ -1198,12 +1225,11 @@ function getComparisonRangeFromSwitch(
     case "year2Before":
     case "year3Before":
     case "year4Before": {
-      const parts = getDatePartsInTz(end, tz);
       let n: number;
       if (comparisonType === "year2Before") n = 2;
       else if (comparisonType === "year3Before") n = 3;
       else n = 4;
-      const targetYear = parts.y - n;
+      const targetYear = endParts.y - n;
       return fromCalendar(
         { y: targetYear, m: 0, d: 1 },
         { y: targetYear, m: 11, d: 31 },
@@ -1241,9 +1267,59 @@ function prevMonthDate(
  * **last52weeks** + **52WeeksPrior** shifts both civil endpoints back one calendar year (same as priorYear on each bound).
  * Other periods + **52WeeksPrior** shift each civil endpoint back 364 days (52×7).
  * **thisWeek** uses the aligned Sun–Sat week in the comparison month/year (full 7 days).
- * Special cases: thisMonth + samePeriodPreviousMonth → full previous calendar month; thisMonth + priorYear →
- * full same month prior year; thisYear + priorYear → full prior calendar year.
+ * **thisMonth** uses week-of-month + DOW alignment with an equal-length span (not full calendar months).
+ * Special case: thisYear + priorYear → full prior calendar year.
  */
+export function mapCurrentDayToWeekAlignedComparisonDay(
+  y: number,
+  m: number,
+  d: number,
+  comparisonType: ComparisonType,
+  timezone: string,
+): YmdParts | null {
+  if (!COMPARISON_TYPES_WITH_WEEK_LOGIC.has(comparisonType)) return null;
+  const tz = timezone.trim();
+  const dayOfWeek = getDayOfWeekInTz(y, m, d, tz);
+  const W = getWeekOfMonthFromFirstOfMonth(y, m, d, tz);
+  const parts: YmdParts = { y, m, d };
+  const { prevStartY, prevStartM, targetW_start } = computeWeekLogicTargets(
+    comparisonType,
+    parts,
+    parts,
+    W,
+    W,
+  );
+  const sunStart = getSunStartForWeekLogic(
+    comparisonType,
+    prevStartY,
+    prevStartM,
+    targetW_start,
+    tz,
+    getSundayOfNthAnchorWeekInMonth,
+  );
+  return addDays(sunStart.y, sunStart.m, sunStart.d, dayOfWeek);
+}
+
+/** `YYYY-MM-DD` daily bucket key from civil YMD (month 0-based). */
+export function formatYmdBucketKey(y: number, m: number, d: number): string {
+  const mo = String(m + 1).padStart(2, "0");
+  const day = String(d).padStart(2, "0");
+  return `${y}-${mo}-${day}`;
+}
+
+const YMD_BUCKET_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** Parse `YYYY-MM-DD` bucket key to civil YMD (month 0-based). */
+export function parseYmdBucketKey(key: string): YmdParts | null {
+  const m = YMD_BUCKET_KEY_RE.exec(key.trim());
+  if (!m) return null;
+  return {
+    y: Number.parseInt(m[1]!, 10),
+    m: Number.parseInt(m[2]!, 10) - 1,
+    d: Number.parseInt(m[3]!, 10),
+  };
+}
+
 export function getSalesTrendComparisonRange(
   comparisonType: ComparisonType,
   periodStartAt: string,
@@ -1264,16 +1340,12 @@ export function getSalesTrendComparisonRange(
   const tz = timezone.trim();
   const start = new Date(periodStartAt);
   const end = new Date(periodEndAt);
+  const civilLabelStart = new Date(options.periodDisplayStartAt ?? periodStartAt);
+  const civilLabelEnd = new Date(options.periodDisplayEndAt ?? periodEndAt);
   const durationMs = end.getTime() - start.getTime();
   const bizStart = (businessStartTime ?? "00:00").trim();
   const useBiz = businessDayBoundariesEnabled(businessStartTime);
 
-  if (periodType === "thisMonth" && comparisonType === "samePeriodPreviousMonth") {
-    return getFullPreviousCalendarMonthComparison(periodEndAt, tz, bizStart, useBiz);
-  }
-  if (periodType === "thisMonth" && comparisonType === "priorYear") {
-    return getFullSameMonthPriorYearComparison(periodStartAt, tz, bizStart, useBiz);
-  }
   if (periodType === "thisYear" && comparisonType === "priorYear") {
     return getFullPriorCalendarYearComparison(periodStartAt, tz, bizStart, useBiz);
   }
@@ -1314,6 +1386,8 @@ export function getSalesTrendComparisonRange(
     comparisonType,
     start,
     end,
+    civilLabelStart,
+    civilLabelEnd,
     tz,
     bizStart,
     useBiz,

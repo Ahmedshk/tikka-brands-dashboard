@@ -51,6 +51,9 @@ import { buildSalesByCategoryAllLocations } from "../utils/salesByCategoryAllLoc
 import { getSalesByCategoryDataForLocation } from "../utils/salesByCategoryControllerHelpers.util.js";
 import { serveDashboardWithCache } from "../services/dashboardCache.service.js";
 
+/** Bumps dashboard cache keys when API response shape for legend date ranges changes. */
+const SALES_TREND_LABEL_RANGE_CACHE_V = 4;
+
 const locationService = new LocationService();
 
 export const getSalesLaborKPIs = async (
@@ -260,7 +263,7 @@ export const getSalesTrend = async (
       req,
       res,
       endpoint: "sales-labor.sales-trend",
-      params: cacheParams,
+      params: { ...cacheParams, labelRangeV: SALES_TREND_LABEL_RANGE_CACHE_V },
       compute: async () => {
         if (isAllLocationsId(params.locationId)) {
           return await buildAllLocationsSalesTrend({
@@ -315,7 +318,7 @@ export const getSalesTrendKpi = async (
       req,
       res,
       endpoint: "sales-labor.sales-trend-kpi",
-      params: cacheParams,
+      params: { ...cacheParams, labelRangeV: SALES_TREND_LABEL_RANGE_CACHE_V },
       compute: async () => {
         if (isAllLocationsId(params.locationId)) {
           return await buildAllLocationsSalesTrendKpi({
@@ -364,7 +367,7 @@ export const getSalesByCategory = async (
       req,
       res,
       endpoint: "sales-labor.sales-by-category",
-      params: cacheParams,
+      params: { ...cacheParams, labelRangeV: SALES_TREND_LABEL_RANGE_CACHE_V },
       compute: async () => {
         if (isAllLocationsId(params.locationId)) {
           return await buildSalesByCategoryAllLocations({ req, locationService });

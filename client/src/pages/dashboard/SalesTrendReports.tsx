@@ -35,6 +35,10 @@ import {
   padTooltipLabelsToAxisLength,
 } from '../../utils/salesTrendChartCardHelpers';
 import { buildCurrencyAxisFormatter } from '../../utils/chartAxis.util';
+import {
+  formatSalesTrendComparisonDateRangeDisplay,
+  formatSalesTrendPeriodDateRangeDisplay,
+} from '../../utils/salesTrendDateRangeDisplay.util';
 
 const PAGE_ID = 'sales-trend-reports';
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
@@ -166,51 +170,6 @@ function getCustomRangeDays(period: PeriodPickerValue): number | undefined {
   const e = parse(period.periodEnd, 'yyyy-MM-dd', new Date());
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return undefined;
   return differenceInCalendarDays(e, s);
-}
-
-/** Format a single ISO date in the given timezone as MM/dd/yy. */
-function formatDateInTz(iso: string, timezone: string): string {
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    month: '2-digit',
-    day: '2-digit',
-    year: '2-digit',
-  }).format(d);
-}
-
-/** Calendar date YYYY-MM-DD in the given timezone (for same-day check). */
-function getCalendarDateInTz(iso: string, timezone: string): string {
-  const d = new Date(iso);
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(d);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
-  return `${get('year')}-${get('month')}-${get('day')}`;
-}
-
-/** Format ISO range for display in location timezone: single date if same calendar day, else "Start – End". Uses MM/dd/yy. */
-function formatDateRange(startAt: string, endAt: string, locationTimezone?: string | null): string {
-  try {
-    const tz = (locationTimezone ?? '').trim() || undefined;
-    if (tz) {
-      const startDate = getCalendarDateInTz(startAt, tz);
-      const endDate = getCalendarDateInTz(endAt, tz);
-      const s = formatDateInTz(startAt, tz);
-      const e = formatDateInTz(endAt, tz);
-      return startDate === endDate ? s : `${s} – ${e}`;
-    }
-    const start = new Date(startAt);
-    const end = new Date(endAt);
-    const s = format(start, DATE_DISPLAY_FORMAT);
-    const e = format(end, DATE_DISPLAY_FORMAT);
-    return s === e ? s : `${s} – ${e}`;
-  } catch {
-    return '';
-  }
 }
 
 function buildKpiRows(data: SalesTrendKpiData | null): KPIsTableRow[] {
@@ -755,13 +714,22 @@ export const SalesTrendReports = () => {
             yAxis={chartProps?.yAxis}
             height={280}
             periodDateRange={
-              trendData && !isSalesTrendStacked(trendData) && trendData.periodRange
-                ? formatDateRange(trendData.periodRange.startAt, trendData.periodRange.endAt, currentLocation?.timezone)
+              trendData && !isSalesTrendStacked(trendData)
+                ? formatSalesTrendPeriodDateRangeDisplay(
+                    period,
+                    trendData.periodRange,
+                    currentLocation?.timezone,
+                  )
                 : undefined
             }
             comparisonDateRange={
-              trendData && !isSalesTrendStacked(trendData) && trendData.comparisonRange
-                ? formatDateRange(trendData.comparisonRange.startAt, trendData.comparisonRange.endAt, currentLocation?.timezone)
+              trendData && !isSalesTrendStacked(trendData)
+                ? formatSalesTrendComparisonDateRangeDisplay(
+                    period,
+                    comparison,
+                    trendData.comparisonRange,
+                    currentLocation?.timezone,
+                  )
                 : undefined
             }
             legendValueFormatter={getYAxisFormatter(metric)}
@@ -785,16 +753,17 @@ export const SalesTrendReports = () => {
                 title="KPIs"
                 currentPeriodLabel={getKpiPeriodLabel(kpiPeriod)}
                 comparisonPeriodLabel={getKpiComparisonLabel(kpiPeriod, kpiComparison)}
-                currentPeriodDateRange={
-                  kpiData?.periodRange
-                    ? formatDateRange(kpiData.periodRange.startAt, kpiData.periodRange.endAt, currentLocation?.timezone)
-                    : undefined
-                }
-                comparisonPeriodDateRange={
-                  kpiData?.comparisonRange
-                    ? formatDateRange(kpiData.comparisonRange.startAt, kpiData.comparisonRange.endAt, currentLocation?.timezone)
-                    : undefined
-                }
+                currentPeriodDateRange={formatSalesTrendPeriodDateRangeDisplay(
+                  kpiPeriod,
+                  kpiData?.periodRange,
+                  currentLocation?.timezone,
+                )}
+                comparisonPeriodDateRange={formatSalesTrendComparisonDateRangeDisplay(
+                  kpiPeriod,
+                  kpiComparison,
+                  kpiData?.comparisonRange,
+                  currentLocation?.timezone,
+                )}
                 periodValue={kpiPeriod}
                 comparisonValue={kpiComparison}
                 onPeriodChange={handleKpiPeriodChange}
@@ -823,16 +792,17 @@ export const SalesTrendReports = () => {
                 onPeriodChange={handleCategoryPeriodChange}
                 onComparisonChange={setCategoryComparison}
                 excludeNoneFromComparison
-                periodDateRange={
-                  categoryData?.periodRange
-                    ? formatDateRange(categoryData.periodRange.startAt, categoryData.periodRange.endAt, currentLocation?.timezone)
-                    : undefined
-                }
-                comparisonDateRange={
-                  categoryData?.comparisonRange
-                    ? formatDateRange(categoryData.comparisonRange.startAt, categoryData.comparisonRange.endAt, currentLocation?.timezone)
-                    : undefined
-                }
+                periodDateRange={formatSalesTrendPeriodDateRangeDisplay(
+                  categoryPeriod,
+                  categoryData?.periodRange,
+                  currentLocation?.timezone,
+                )}
+                comparisonDateRange={formatSalesTrendComparisonDateRangeDisplay(
+                  categoryPeriod,
+                  categoryComparison,
+                  categoryData?.comparisonRange,
+                  currentLocation?.timezone,
+                )}
               />
             </div>
           )}

@@ -22,12 +22,17 @@ import type {
   ComparisonRangeResult,
   GetSalesTrendComparisonRangeOptions,
   PeriodType,
+  ComparisonType,
 } from "../utils/salesTrendDateRange.util.js";
 import {
   getSalesTrendPeriodRange,
   getSalesTrendComparisonRange,
   getStartOfDayUtc,
   getCalendarDayCountInRange,
+  mapCurrentDayToWeekAlignedComparisonDay,
+  formatYmdBucketKey,
+  parseYmdBucketKey,
+  toLabelTimeRange,
 } from "../utils/salesTrendDateRange.util.js";
 import type { TimeRange } from "../utils/businessHours.util.js";
 import {
@@ -192,6 +197,8 @@ export function getPeriodAndComparison(
   if (params.comparisonStart !== undefined) comparisonOptions.customComparisonStart = params.comparisonStart;
   if (params.comparisonEnd !== undefined) comparisonOptions.customComparisonEnd = params.comparisonEnd;
   comparisonOptions.periodType = params.periodType as PeriodType;
+  comparisonOptions.periodDisplayStartAt = period.displayStartAt ?? period.startAt;
+  comparisonOptions.periodDisplayEndAt = period.displayEndAt ?? period.endAt;
   const comparison = getSalesTrendComparisonRange(
     params.comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
     period.startAt,
@@ -612,6 +619,7 @@ export interface AlignComparisonOptions {
   businessStartTime: string;
   seriesGranularity: SalesTrendGranularity;
   periodType: string;
+  comparisonType: string;
   xAxisLabels: string[];
   currentPeriod: (number | null)[];
   comparisonPeriod: (number | null)[];
@@ -652,21 +660,48 @@ export function alignComparisonAndMaskFuture(opts: AlignComparisonOptions): {
     const currentPeriodTooltipLabels = currentBuckets.keys.map((k) =>
       formatSalesTrendTooltipLabelFromBucketKey(k, opts.seriesGranularity, opts.timezone),
     );
+    const useThisMonthDowAlignment =
+      opts.periodType === "thisMonth" && opts.comparisonType !== "none";
+    const compByKey = new Map<string, number | null>();
+    compBuckets.keys.forEach((k, i) => compByKey.set(k, i < comp.length ? (comp[i] ?? null) : null));
     const comparisonPeriodTooltipLabels: string[] = [];
     const compKeysForMask: string[] = [];
     const compAligned: (number | null)[] = [];
     for (let i = 0; i < n; i++) {
+      const currentKey = currentBuckets.keys[i]!;
+      let alignedCompKey = i < compBuckets.keys.length ? compBuckets.keys[i]! : "";
+      if (useThisMonthDowAlignment && opts.seriesGranularity === "daily") {
+        const currentYmd = parseYmdBucketKey(currentKey);
+        if (currentYmd) {
+          const aligned = mapCurrentDayToWeekAlignedComparisonDay(
+            currentYmd.y,
+            currentYmd.m,
+            currentYmd.d,
+            opts.comparisonType as ComparisonType,
+            opts.timezone,
+          );
+          if (aligned) {
+            alignedCompKey = formatYmdBucketKey(aligned.y, aligned.m, aligned.d);
+          }
+        }
+      }
       comparisonPeriodTooltipLabels.push(
-        i < compBuckets.keys.length
+        alignedCompKey
           ? formatSalesTrendTooltipLabelFromBucketKey(
-              compBuckets.keys[i]!,
+              alignedCompKey,
               opts.seriesGranularity,
               opts.timezone,
             )
           : "",
       );
-      compKeysForMask.push(i < compBuckets.keys.length ? compBuckets.keys[i]! : "");
-      compAligned.push(i < comp.length ? comp[i] ?? null : null);
+      compKeysForMask.push(alignedCompKey);
+      let compValue: number | null = null;
+      if (useThisMonthDowAlignment && alignedCompKey) {
+        compValue = compByKey.get(alignedCompKey) ?? null;
+      } else if (i < comp.length) {
+        compValue = comp[i] ?? null;
+      }
+      compAligned.push(compValue);
     }
     comp = maskFutureBuckets(compAligned, compKeysForMask, opts.timezone, opts.seriesGranularity);
     return {
@@ -827,6 +862,7 @@ export async function getSalesTrendData(
     businessStartTime: ctx.businessStartTime,
     seriesGranularity,
     periodType,
+    comparisonType: params.comparisonType,
     xAxisLabels: seriesPayload.xAxisLabels,
     currentPeriod: seriesPayload.currentPeriod,
     comparisonPeriod: seriesPayload.comparisonPeriod,
@@ -861,8 +897,8 @@ export async function getSalesTrendData(
       granularity: period.granularity,
       currentPeriod: aligned.currentPeriod,
       comparisonPeriod: aligned.comparisonPeriod,
-      periodRange: { startAt: period.startAt, endAt: period.endAt },
-      comparisonRange,
+      periodRange: toLabelTimeRange(period),
+      comparisonRange: comparison ? toLabelTimeRange(comparison) : null,
       ...(currentPeriodTooltipLabels == null
         ? {}
         : { currentPeriodTooltipLabels }),
@@ -1099,8 +1135,8 @@ export async function getSalesTrendKpiData(
   }
 
   return {
-    periodRange: { startAt: period.startAt, endAt: period.endAt },
-    comparisonRange,
+    periodRange: toLabelTimeRange(period),
+    comparisonRange: comparison ? toLabelTimeRange(comparison) : null,
     current: {
       totalNetSales: totalNetSalesCurrent,
       totalTransactions: totalTransactionsCurrent,

@@ -9,6 +9,7 @@ import { getNetSalesByCategoryInRange, type SquareServiceOptions } from '../serv
 import {
   getSalesTrendComparisonRange,
   getSalesTrendPeriodRange,
+  toLabelTimeRange,
   type GetSalesTrendComparisonRangeOptions,
   type PeriodType,
 } from './salesTrendDateRange.util.js';
@@ -220,6 +221,8 @@ async function fetchSalesByCategoryForLocation(params: {
   if (query.comparisonStart) comparisonOptions.customComparisonStart = query.comparisonStart;
   if (query.comparisonEnd) comparisonOptions.customComparisonEnd = query.comparisonEnd;
   comparisonOptions.periodType = query.periodType as PeriodType;
+  comparisonOptions.periodDisplayStartAt = period.displayStartAt ?? period.startAt;
+  comparisonOptions.periodDisplayEndAt = period.displayEndAt ?? period.endAt;
   const comparison = getSalesTrendComparisonRange(
     query.comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
     period.startAt,
@@ -229,13 +232,16 @@ async function fetchSalesByCategoryForLocation(params: {
   );
   const dataRange = { startAt: period.startAt, endAt: period.endAt };
   const comparisonRange = comparison ? { startAt: comparison.startAt, endAt: comparison.endAt } : null;
+  const labelPeriod = toLabelTimeRange(period);
+  const comparisonLabelRange = comparison ? toLabelTimeRange(comparison) : null;
 
   const squareLocationId = location.squareLocationId?.trim();
   if (!squareLocationId) {
     return {
-      periodStartAt: period.startAt,
-      periodEndAt: period.endAt,
+      periodStartAt: labelPeriod.startAt,
+      periodEndAt: labelPeriod.endAt,
       comparisonRange,
+      comparisonLabelRange,
       current: { categories: [], totalNetSalesCents: 0 },
       comparison: { categories: [], totalNetSalesCents: 0 },
     };
@@ -281,9 +287,10 @@ async function fetchSalesByCategoryForLocation(params: {
   ]);
 
   return {
-    periodStartAt: period.startAt,
-    periodEndAt: period.endAt,
+    periodStartAt: labelPeriod.startAt,
+    periodEndAt: labelPeriod.endAt,
     comparisonRange,
+    comparisonLabelRange,
     current,
     comparison: comp,
   };
@@ -367,7 +374,7 @@ export async function buildSalesByCategoryAllLocations(params: {
     mergedComparison,
     first.periodStartAt,
     first.periodEndAt,
-    first.comparisonRange,
+    first.comparisonLabelRange ?? first.comparisonRange,
   );
   logTimingDone(usable.length);
   return out;

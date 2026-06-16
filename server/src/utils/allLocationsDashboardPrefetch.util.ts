@@ -80,6 +80,8 @@ export function buildPrefetchInputForLocation(params: {
   if (query.comparisonStart !== undefined) comparisonOptions.customComparisonStart = query.comparisonStart;
   if (query.comparisonEnd !== undefined) comparisonOptions.customComparisonEnd = query.comparisonEnd;
   comparisonOptions.periodType = query.periodType as PeriodType;
+  comparisonOptions.periodDisplayStartAt = period.displayStartAt ?? period.startAt;
+  comparisonOptions.periodDisplayEndAt = period.displayEndAt ?? period.endAt;
   const comparison = getSalesTrendComparisonRange(
     query.comparisonType as Parameters<typeof getSalesTrendComparisonRange>[0],
     period.startAt,

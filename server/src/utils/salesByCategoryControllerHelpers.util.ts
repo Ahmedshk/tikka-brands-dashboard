@@ -7,6 +7,7 @@ import { getNetSalesByCategoryInRange, type SquareServiceOptions } from "../serv
 import {
   getSalesTrendComparisonRange,
   getSalesTrendPeriodRange,
+  toLabelTimeRange,
   type GetSalesTrendComparisonRangeOptions,
   type PeriodType,
 } from "./salesTrendDateRange.util.js";
@@ -65,7 +66,11 @@ function buildSalesByCategoryRanges(args: {
     period.startAt,
     period.endAt,
     timezone,
-    buildComparisonOptions({ params, businessStartTime }),
+    {
+      ...buildComparisonOptions({ params, businessStartTime }),
+      periodDisplayStartAt: period.displayStartAt ?? period.startAt,
+      periodDisplayEndAt: period.displayEndAt ?? period.endAt,
+    },
   );
 
   return {
@@ -286,12 +291,15 @@ export async function getSalesByCategoryDataForLocation(args: {
     console.log(SALES_LABOR_DETAIL_API_LOG, "GET /sales-labor/sales-by-category", results.sources);
   }
 
+  const labelPeriod = toLabelTimeRange(period);
+  const labelComparison = comparisonRange ? toLabelTimeRange(comparisonRange) : null;
+
   return buildSalesByCategoryResponseData(
     currentResult,
     comparisonResult,
-    period.startAt,
-    period.endAt,
-    comparisonRange,
+    labelPeriod.startAt,
+    labelPeriod.endAt,
+    labelComparison,
   );
 }
 
