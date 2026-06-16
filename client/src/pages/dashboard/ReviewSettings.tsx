@@ -12,44 +12,19 @@ import { ConfirmDialog } from "../../components/modal/ConfirmDialog";
 import { useUnsavedChangesNavigationGuard } from "../../hooks/useUnsavedChangesNavigationGuard";
 import { reviewService } from "../../services/review.service";
 import api from "../../services/api.service";
-import type { ReviewSettings as ReviewSettingsType, Question } from "../../types/review.types";
+import type { ReviewSettings as ReviewSettingsType } from "../../types/review.types";
 import { stableJsonEqual } from "../../utils/settingsDirtyStateHelpers";
+import {
+  buildReviewSettingsSnapshot,
+  extractReviewRoleId,
+  EMPTY_REVIEW_SETTINGS_SNAPSHOT,
+  type ReviewSettingsSnapshot,
+} from "../../utils/reviewSettingsSnapshotHelpers";
 import AdminAndSettingsIcon from "@assets/icons/admin_and_settings.svg?react";
 
 interface RoleOption {
   _id: string;
   name: string;
-}
-
-function extractRoleId(item: string | { _id: string }): string {
-  return typeof item === "string" ? item : item._id;
-}
-
-interface ReviewSettingsSnapshot {
-  employeeRoleIds: string[];
-  managerRoleIds: string[];
-  directorRoleIds: string[];
-  selfReviewQuestions: Question[];
-  managerReviewQuestions: Question[];
-  checkInQuestions: Question[];
-}
-
-function buildReviewSnapshot(
-  employeeRoleIds: string[],
-  managerRoleIds: string[],
-  directorRoleIds: string[],
-  selfReviewQuestions: Question[],
-  managerReviewQuestions: Question[],
-  checkInQuestions: Question[],
-): ReviewSettingsSnapshot {
-  return {
-    employeeRoleIds: [...employeeRoleIds],
-    managerRoleIds: [...managerRoleIds],
-    directorRoleIds: [...directorRoleIds],
-    selfReviewQuestions,
-    managerReviewQuestions,
-    checkInQuestions,
-  };
 }
 
 export const ReviewSettings = () => {
@@ -59,10 +34,18 @@ export const ReviewSettings = () => {
   const [employeeRoleIds, setEmployeeRoleIds] = useState<string[]>([]);
   const [managerRoleIds, setManagerRoleIds] = useState<string[]>([]);
   const [directorRoleIds, setDirectorRoleIds] = useState<string[]>([]);
-  const [selfReviewQuestions, setSelfReviewQuestions] = useState<Question[]>([]);
-  const [managerReviewQuestions, setManagerReviewQuestions] = useState<Question[]>([]);
-  const [checkInQuestions, setCheckInQuestions] = useState<Question[]>([]);
-  const [savedSnapshot, setSavedSnapshot] = useState<ReviewSettingsSnapshot | null>(null);
+  const [selfReviewQuestions, setSelfReviewQuestions] = useState(
+    EMPTY_REVIEW_SETTINGS_SNAPSHOT.selfReviewQuestions,
+  );
+  const [managerReviewQuestions, setManagerReviewQuestions] = useState(
+    EMPTY_REVIEW_SETTINGS_SNAPSHOT.managerReviewQuestions,
+  );
+  const [checkInQuestions, setCheckInQuestions] = useState(
+    EMPTY_REVIEW_SETTINGS_SNAPSHOT.checkInQuestions,
+  );
+  const [savedSnapshot, setSavedSnapshot] = useState<ReviewSettingsSnapshot | null>(
+    null,
+  );
 
   const selfQuestionnaireRef = useRef<QuestionnaireBuilderHandle>(null);
   const managerQuestionnaireRef = useRef<QuestionnaireBuilderHandle>(null);
@@ -70,7 +53,7 @@ export const ReviewSettings = () => {
 
   const currentSnapshot = useMemo(
     () =>
-      buildReviewSnapshot(
+      buildReviewSettingsSnapshot(
         employeeRoleIds,
         managerRoleIds,
         directorRoleIds,
@@ -105,27 +88,29 @@ export const ReviewSettings = () => {
       const allRoles: RoleOption[] = (rolesRes.data as unknown as { success: boolean; data: { roles: RoleOption[] } }).data?.roles ?? [];
       setRoles(allRoles);
 
-      if (settingsRes) {
-        const employee = settingsRes.employeeRoleIds.map(extractRoleId);
-        const manager = settingsRes.managerRoleIds.map(extractRoleId);
-        const director = settingsRes.directorRoleIds.map(extractRoleId);
-        setEmployeeRoleIds(employee);
-        setManagerRoleIds(manager);
-        setDirectorRoleIds(director);
-        setSelfReviewQuestions(settingsRes.selfReviewQuestionnaire);
-        setManagerReviewQuestions(settingsRes.managerReviewQuestionnaire);
-        setCheckInQuestions(settingsRes.checkInQuestionnaire);
-        setSavedSnapshot(
-          buildReviewSnapshot(
-            employee,
-            manager,
-            director,
-            settingsRes.selfReviewQuestionnaire,
-            settingsRes.managerReviewQuestionnaire,
-            settingsRes.checkInQuestionnaire,
-          ),
-        );
-      }
+      const employee = (settingsRes?.employeeRoleIds ?? []).map(extractReviewRoleId);
+      const manager = (settingsRes?.managerRoleIds ?? []).map(extractReviewRoleId);
+      const director = (settingsRes?.directorRoleIds ?? []).map(extractReviewRoleId);
+      const selfReview = settingsRes?.selfReviewQuestionnaire ?? [];
+      const managerReview = settingsRes?.managerReviewQuestionnaire ?? [];
+      const checkIn = settingsRes?.checkInQuestionnaire ?? [];
+
+      setEmployeeRoleIds(employee);
+      setManagerRoleIds(manager);
+      setDirectorRoleIds(director);
+      setSelfReviewQuestions(selfReview);
+      setManagerReviewQuestions(managerReview);
+      setCheckInQuestions(checkIn);
+      setSavedSnapshot(
+        buildReviewSettingsSnapshot(
+          employee,
+          manager,
+          director,
+          selfReview,
+          managerReview,
+          checkIn,
+        ),
+      );
     } catch {
       toast.error("Failed to load review settings");
     } finally {
@@ -137,12 +122,12 @@ export const ReviewSettings = () => {
 
   const handleDiscard = useCallback(() => {
     if (!savedSnapshot) return;
-    setEmployeeRoleIds(savedSnapshot.employeeRoleIds);
-    setManagerRoleIds(savedSnapshot.managerRoleIds);
-    setDirectorRoleIds(savedSnapshot.directorRoleIds);
-    setSelfReviewQuestions(savedSnapshot.selfReviewQuestions);
-    setManagerReviewQuestions(savedSnapshot.managerReviewQuestions);
-    setCheckInQuestions(savedSnapshot.checkInQuestions);
+    setEmployeeRoleIds([...savedSnapshot.employeeRoleIds]);
+    setManagerRoleIds([...savedSnapshot.managerRoleIds]);
+    setDirectorRoleIds([...savedSnapshot.directorRoleIds]);
+    setSelfReviewQuestions(structuredClone(savedSnapshot.selfReviewQuestions));
+    setManagerReviewQuestions(structuredClone(savedSnapshot.managerReviewQuestions));
+    setCheckInQuestions(structuredClone(savedSnapshot.checkInQuestions));
   }, [savedSnapshot]);
 
   const handleSave = async () => {
@@ -164,21 +149,19 @@ export const ReviewSettings = () => {
         checkInQuestionnaire,
       };
       const saved = await reviewService.updateSettings(payload);
-      if (saved) {
-        setSelfReviewQuestions(saved.selfReviewQuestionnaire);
-        setManagerReviewQuestions(saved.managerReviewQuestionnaire);
-        setCheckInQuestions(saved.checkInQuestionnaire);
-        setSavedSnapshot(
-          buildReviewSnapshot(
-            employeeRoleIds,
-            managerRoleIds,
-            directorRoleIds,
-            saved.selfReviewQuestionnaire,
-            saved.managerReviewQuestionnaire,
-            saved.checkInQuestionnaire,
-          ),
-        );
-      }
+      setSelfReviewQuestions(saved.selfReviewQuestionnaire ?? []);
+      setManagerReviewQuestions(saved.managerReviewQuestionnaire ?? []);
+      setCheckInQuestions(saved.checkInQuestionnaire ?? []);
+      setSavedSnapshot(
+        buildReviewSettingsSnapshot(
+          employeeRoleIds,
+          managerRoleIds,
+          directorRoleIds,
+          saved.selfReviewQuestionnaire ?? [],
+          saved.managerReviewQuestionnaire ?? [],
+          saved.checkInQuestionnaire ?? [],
+        ),
+      );
       toast.success("Review settings saved");
     } catch {
       toast.error("Failed to save review settings");

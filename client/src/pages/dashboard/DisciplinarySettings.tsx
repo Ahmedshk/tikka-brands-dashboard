@@ -16,59 +16,42 @@ import {
   type DisciplineGuideline,
 } from "../../services/disciplinarySettings.service";
 import { stableJsonEqual } from "../../utils/settingsDirtyStateHelpers";
+import {
+  buildDisciplinarySettingsSnapshot,
+  DEFAULT_DISCIPLINARY_POINTS_TO_TERMINATION,
+  DEFAULT_DISCIPLINARY_ROLLING_PERIOD_DAYS,
+  EMPTY_DISCIPLINARY_SETTINGS_SNAPSHOT,
+  sortDisciplineGuidelinesByThreshold,
+  type DisciplinarySettingsSnapshot,
+} from "../../utils/disciplinarySettingsSnapshotHelpers";
 import AdminAndSettingsIcon from "@assets/icons/admin_and_settings.svg?react";
-
-function sortDisciplineGuidelinesByThreshold(
-  list: DisciplineGuideline[],
-): DisciplineGuideline[] {
-  return [...list].sort((a, b) => a.pointThreshold - b.pointThreshold);
-}
-
-interface DisciplinarySnapshot {
-  rollingPeriodDays: number;
-  pointsToTermination: number;
-  policySections: DisciplinaryPolicySection[];
-  immediateTerminationPolicies: ImmediateTerminationPolicy[];
-  disciplineGuidelines: DisciplineGuideline[];
-}
-
-function buildSnapshot(
-  rollingPeriodDays: number,
-  pointsToTermination: number,
-  policySections: DisciplinaryPolicySection[],
-  immediateTerminationPolicies: ImmediateTerminationPolicy[],
-  disciplineGuidelines: DisciplineGuideline[],
-): DisciplinarySnapshot {
-  return {
-    rollingPeriodDays,
-    pointsToTermination,
-    policySections,
-    immediateTerminationPolicies,
-    disciplineGuidelines: sortDisciplineGuidelinesByThreshold(disciplineGuidelines),
-  };
-}
 
 export const DisciplinarySettings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [rollingPeriodDays, setRollingPeriodDays] = useState(90);
-  const [pointsToTermination, setPointsToTermination] = useState(15);
-  const [policySections, setPolicySections] = useState<
-    DisciplinaryPolicySection[]
-  >([]);
-  const [immediateTerminationPolicies, setImmediateTerminationPolicies] =
-    useState<ImmediateTerminationPolicy[]>([]);
-  const [disciplineGuidelines, setDisciplineGuidelines] = useState<
-    DisciplineGuideline[]
-  >([]);
-  const [savedSnapshot, setSavedSnapshot] = useState<DisciplinarySnapshot | null>(
+  const [rollingPeriodDays, setRollingPeriodDays] = useState(
+    DEFAULT_DISCIPLINARY_ROLLING_PERIOD_DAYS,
+  );
+  const [pointsToTermination, setPointsToTermination] = useState(
+    DEFAULT_DISCIPLINARY_POINTS_TO_TERMINATION,
+  );
+  const [policySections, setPolicySections] = useState<DisciplinaryPolicySection[]>(
+    EMPTY_DISCIPLINARY_SETTINGS_SNAPSHOT.policySections,
+  );
+  const [immediateTerminationPolicies, setImmediateTerminationPolicies] = useState<
+    ImmediateTerminationPolicy[]
+  >(EMPTY_DISCIPLINARY_SETTINGS_SNAPSHOT.immediateTerminationPolicies);
+  const [disciplineGuidelines, setDisciplineGuidelines] = useState<DisciplineGuideline[]>(
+    EMPTY_DISCIPLINARY_SETTINGS_SNAPSHOT.disciplineGuidelines,
+  );
+  const [savedSnapshot, setSavedSnapshot] = useState<DisciplinarySettingsSnapshot | null>(
     null,
   );
 
   const currentSnapshot = useMemo(
     () =>
-      buildSnapshot(
+      buildDisciplinarySettingsSnapshot(
         rollingPeriodDays,
         pointsToTermination,
         policySections,
@@ -95,24 +78,28 @@ export const DisciplinarySettings = () => {
     setLoading(true);
     try {
       const settings = await disciplinarySettingsService.getSettings();
-      if (settings) {
-        setRollingPeriodDays(settings.rollingPeriodDays);
-        setPointsToTermination(settings.pointsToTermination);
-        setPolicySections(settings.policySections);
-        setImmediateTerminationPolicies(
-          settings.immediateTerminationPolicies,
-        );
-        setDisciplineGuidelines(settings.disciplineGuidelines);
-        setSavedSnapshot(
-          buildSnapshot(
-            settings.rollingPeriodDays,
-            settings.pointsToTermination,
-            settings.policySections,
-            settings.immediateTerminationPolicies,
-            settings.disciplineGuidelines,
-          ),
-        );
-      }
+      const rolling =
+        settings?.rollingPeriodDays ?? DEFAULT_DISCIPLINARY_ROLLING_PERIOD_DAYS;
+      const points =
+        settings?.pointsToTermination ?? DEFAULT_DISCIPLINARY_POINTS_TO_TERMINATION;
+      const sections = settings?.policySections ?? [];
+      const immediate = settings?.immediateTerminationPolicies ?? [];
+      const guidelines = settings?.disciplineGuidelines ?? [];
+
+      setRollingPeriodDays(rolling);
+      setPointsToTermination(points);
+      setPolicySections(sections);
+      setImmediateTerminationPolicies(immediate);
+      setDisciplineGuidelines(guidelines);
+      setSavedSnapshot(
+        buildDisciplinarySettingsSnapshot(
+          rolling,
+          points,
+          sections,
+          immediate,
+          guidelines,
+        ),
+      );
     } catch {
       toast.error("Failed to load disciplinary settings");
     } finally {
@@ -128,9 +115,11 @@ export const DisciplinarySettings = () => {
     if (!savedSnapshot) return;
     setRollingPeriodDays(savedSnapshot.rollingPeriodDays);
     setPointsToTermination(savedSnapshot.pointsToTermination);
-    setPolicySections(savedSnapshot.policySections);
-    setImmediateTerminationPolicies(savedSnapshot.immediateTerminationPolicies);
-    setDisciplineGuidelines(savedSnapshot.disciplineGuidelines);
+    setPolicySections(structuredClone(savedSnapshot.policySections));
+    setImmediateTerminationPolicies(
+      structuredClone(savedSnapshot.immediateTerminationPolicies),
+    );
+    setDisciplineGuidelines(structuredClone(savedSnapshot.disciplineGuidelines));
   }, [savedSnapshot]);
 
   const handleSave = async () => {
@@ -160,7 +149,7 @@ export const DisciplinarySettings = () => {
         sortDisciplineGuidelinesByThreshold(saved.disciplineGuidelines),
       );
       setSavedSnapshot(
-        buildSnapshot(
+        buildDisciplinarySettingsSnapshot(
           saved.rollingPeriodDays,
           saved.pointsToTermination,
           saved.policySections,
