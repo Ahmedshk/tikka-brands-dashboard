@@ -14,7 +14,6 @@ export interface CommandCenterKPIItem {
   badgeClassName?: string;
   subtitle?: string;
   subtitleIcon?: ReactNode;
-  valueFooter?: ReactNode;
   extra?: string;
   extraClassName?: string;
   loading?: boolean;

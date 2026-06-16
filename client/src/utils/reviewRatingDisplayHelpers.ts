@@ -2,13 +2,6 @@
 export const REVIEW_RATING_KPI_SUBTITLE_STAR_CLASS =
   'w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-quaternary';
 
-export function formatOverallRatingFooter(
-  overall: number | null | undefined,
-): string {
-  if (overall == null) return 'Overall: —';
-  return `Overall: ${overall.toFixed(1)}`;
-}
-
 export function reviewRatingSubtitle(rating: number | null | undefined): string {
   if (rating == null) return '—';
   if (rating >= 4.5) return 'Excellent';

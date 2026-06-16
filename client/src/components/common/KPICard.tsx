@@ -40,8 +40,6 @@ export interface KPICardProps {
   subtitle?: string;
   /** Optional icon before subtitle inside value container */
   subtitleIcon?: ReactNode;
-  /** Optional line under the main value on the left (e.g. overall rating) */
-  valueFooter?: ReactNode;
   /** Optional chip on the right inside value container (e.g. "272 Reviews") */
   extra?: string;
   /** Optional class for the extra chip (e.g. bg-yellow-100 text-gray-700) */
@@ -67,7 +65,6 @@ export const KPICard = ({
   badgeClassName = defaultBadgeClassName,
   subtitle,
   subtitleIcon,
-  valueFooter,
   extra,
   extraClassName = defaultExtraClassName,
   loading = false,
@@ -132,14 +129,7 @@ export const KPICard = ({
           </div>
         ) : (
           <>
-            <div className="min-w-0 flex-shrink-0">
-              <p className={`text-lg md:text-xl 2xl:text-2xl font-semibold ${valueClassName}`}>{value}</p>
-              {valueFooter != null && (
-                <p className="text-[10px] md:text-xs 2xl:text-sm font-normal text-primary mt-0.5">
-                  {valueFooter}
-                </p>
-              )}
-            </div>
+            <p className={`text-lg md:text-xl 2xl:text-2xl font-semibold min-w-0 flex-shrink-0 ${valueClassName}`}>{value}</p>
             {hasRightContent && <div className="flex-shrink-0 min-w-0">{renderRightContent()}</div>}
           </>
         )}
