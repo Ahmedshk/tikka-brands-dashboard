@@ -4,11 +4,9 @@ export const REVIEW_RATING_KPI_SUBTITLE_STAR_CLASS =
 
 export function formatOverallRatingFooter(
   overall: number | null | undefined,
-  count: number | null | undefined,
 ): string {
   if (overall == null) return 'Overall: —';
-  const countStr = count != null ? ` (${count} reviews)` : '';
-  return `Overall: ${overall.toFixed(1)}${countStr}`;
+  return `Overall: ${overall.toFixed(1)}`;
 }
 
 export function reviewRatingSubtitle(rating: number | null | undefined): string {

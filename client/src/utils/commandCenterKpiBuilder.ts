@@ -114,15 +114,12 @@ function getReviewCountStr(
 function getOverallFromSlice(
   slice: CommandCenterKPIPeriodSlice | undefined,
   kpis: KPIsInput,
-): { overall: number | null | undefined; count: number | null | undefined } {
+): number | null | undefined {
   const source =
     slice ??
     (kpis != null && isCommandCenterKPIsMulti(kpis) ? kpis.today : kpis) ??
     undefined;
-  return {
-    overall: source?.reviewRatingOverall,
-    count: source?.reviewCountOverall,
-  };
+  return source?.reviewRatingOverall;
 }
 
 export interface CommandCenterKpiBuilderIcons {
@@ -187,7 +184,7 @@ export function buildCommandCenterKPIItems(
 
   if (canReviewRating) {
     const raw = slice?.reviewRating;
-    const { overall, count: overallCount } = getOverallFromSlice(slice, kpis);
+    const overall = getOverallFromSlice(slice, kpis);
     items.push({
       title: "Review Rating",
       timePeriod: periodLabel,
@@ -195,7 +192,7 @@ export function buildCommandCenterKPIItems(
       accentColor: "gold",
       subtitle: reviewRatingSubtitle(raw),
       subtitleIcon: icons.starSubtitle,
-      valueFooter: formatOverallRatingFooter(overall, overallCount),
+      valueFooter: formatOverallRatingFooter(overall),
       extra: getReviewCountStr(slice),
       extraClassName: "bg-[rgba(253,185,14,0.2)] px-4",
       loading,
