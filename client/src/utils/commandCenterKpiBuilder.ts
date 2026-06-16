@@ -10,6 +10,7 @@ import type { CommandCenterKPIPeriod } from "./commandCenterKpiPeriodHelpers";
 import { commandCenterKpiPeriodLabel } from "./commandCenterKpiPeriodHelpers";
 import { formatCurrency } from "./commandCenterHelpers";
 import {
+  formatReviewCountLabel,
   formatStarRating,
   reviewRatingSubtitle,
 } from "./reviewRatingDisplayHelpers";
@@ -103,13 +104,6 @@ function getReviewRatingValue(
   return formatStarRating(slice?.reviewRating);
 }
 
-function getReviewCountStr(
-  slice: CommandCenterKPIPeriodSlice | undefined,
-): string {
-  if (slice?.reviewCount != null) return `${slice.reviewCount} Reviews`;
-  return "— Reviews";
-}
-
 export interface CommandCenterKpiBuilderIcons {
   dollar: ReactNode;
   laborCost: ReactNode;
@@ -179,7 +173,7 @@ export function buildCommandCenterKPIItems(
       accentColor: "gold",
       subtitle: reviewRatingSubtitle(raw),
       subtitleIcon: icons.starSubtitle,
-      extra: getReviewCountStr(slice),
+      extra: formatReviewCountLabel(slice?.reviewCount),
       extraClassName: "bg-[rgba(253,185,14,0.2)] px-4",
       loading,
     });

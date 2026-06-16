@@ -14,3 +14,9 @@ export function formatStarRating(value: number | null | undefined): string {
   if (value == null) return '—';
   return value.toFixed(1);
 }
+
+export function formatReviewCountLabel(count: number | null | undefined): string {
+  if (count == null) return '— Reviews';
+  const noun = count === 1 ? 'Review' : 'Reviews';
+  return `${count} ${noun}`;
+}
