@@ -1,5 +1,5 @@
 import { getTodayInTimezone } from '../services/goal.service';
-import type { GoalValues, GoalDayOfWeek, FutureWeekGoals } from '../types';
+import type { GoalValues, GoalDayOfWeek, FutureWeekGoals, GoalSetting } from '../types';
 
 export type { FutureWeekGoals, GoalDayOfWeek, GoalValues } from '../types';
 
@@ -53,6 +53,32 @@ export const DAY_NAMES: Record<GoalDayOfWeek, string> = {
 export const DAY_ORDER: GoalDayOfWeek[] = [0, 1, 2, 3, 4, 5, 6];
 
 export type TabId = 'default' | 'weekly' | 'future' | 'previous';
+
+/** Ensure every future week has a `days` object (API may omit or null it on legacy docs). */
+export function normalizeFutureWeeks(
+  futureWeeks: FutureWeekGoals[] | null | undefined
+): FutureWeekGoals[] {
+  return (futureWeeks ?? [])
+    .filter(
+      (week): week is FutureWeekGoals =>
+        week != null &&
+        typeof week.weekStartDate === 'string' &&
+        week.weekStartDate.trim() !== ''
+    )
+    .map((week) => ({
+      weekStartDate: week.weekStartDate,
+      days: week.days ?? {},
+    }));
+}
+
+/** Normalize API goal setting for client state and saved snapshots. */
+export function normalizeGoalSettingSnapshot(setting: GoalSetting): GoalSetting {
+  return {
+    ...setting,
+    weekly: setting.weekly ?? {},
+    futureWeeks: normalizeFutureWeeks(setting.futureWeeks),
+  };
+}
 
 export function goalValuesEqual(a: GoalValues, b: GoalValues): boolean {
   return (

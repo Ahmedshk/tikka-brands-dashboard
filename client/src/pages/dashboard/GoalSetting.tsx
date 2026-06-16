@@ -29,6 +29,7 @@ import {
   getCurrentWeekStartInTimezone,
   addDaysToDate,
   getSundayOfWeek,
+  normalizeGoalSettingSnapshot,
   type TabId,
 } from '../../utils/goalSettingHelpers';
 import {
@@ -130,11 +131,12 @@ export const GoalSetting = () => {
     goalService
       .getByLocationId(selectedLocation._id, { signal })
       .then((setting) => {
-        setDefaultGoals({ ...DEFAULT_GOAL_VALUES, ...setting.default });
-        setWeekly(setting.weekly ?? {});
-        setFutureWeeks(setting.futureWeeks ?? []);
+        const snapshot = normalizeGoalSettingSnapshot(setting);
+        setDefaultGoals({ ...DEFAULT_GOAL_VALUES, ...snapshot.default });
+        setWeekly(snapshot.weekly);
+        setFutureWeeks(snapshot.futureWeeks);
         setFutureWeeksExpanded({});
-        setSaved(setting);
+        setSaved(snapshot);
       })
       .catch((err) => {
         if (signal?.aborted) return;
@@ -310,7 +312,7 @@ export const GoalSetting = () => {
   const getFutureWeekDay = (weekIndex: number, day: GoalDayOfWeek): GoalValues => {
     const week = futureWeeks[weekIndex];
     if (!week) return { ...DEFAULT_GOAL_VALUES };
-    const dayValues = week.days[day];
+    const dayValues = week.days?.[day];
     return dayValues ? { ...DEFAULT_GOAL_VALUES, ...dayValues } : { ...DEFAULT_GOAL_VALUES };
   };
 
@@ -325,7 +327,7 @@ export const GoalSetting = () => {
       const next = [...prev];
       const existing = next[weekIndex];
       if (!existing) return prev;
-      const week = { ...existing, days: { ...existing.days } };
+      const week = { ...existing, days: { ...(existing.days ?? {}) } };
       const current = week.days[day] ?? { ...DEFAULT_GOAL_VALUES };
       week.days[day] = { ...current, [key]: Number.isNaN(num) ? current[key] : num };
       next[weekIndex] = week;
@@ -346,9 +348,10 @@ export const GoalSetting = () => {
 
   const handleReset = () => {
     if (saved) {
-      setDefaultGoals({ ...DEFAULT_GOAL_VALUES, ...saved.default });
-      setWeekly(saved.weekly ?? {});
-      setFutureWeeks(saved.futureWeeks ?? []);
+      const snapshot = normalizeGoalSettingSnapshot(saved);
+      setDefaultGoals({ ...DEFAULT_GOAL_VALUES, ...snapshot.default });
+      setWeekly(snapshot.weekly);
+      setFutureWeeks(snapshot.futureWeeks);
     }
     setError('');
   };
@@ -390,10 +393,11 @@ export const GoalSetting = () => {
           weeklyToSave && Object.keys(weeklyToSave).length > 0 ? weeklyToSave : undefined,
         futureWeeks: futureToSave,
       });
-      setSaved(updated);
-      setDefaultGoals({ ...DEFAULT_GOAL_VALUES, ...updated.default });
-      setWeekly(updated.weekly ?? {});
-      setFutureWeeks(updated.futureWeeks ?? []);
+      const snapshot = normalizeGoalSettingSnapshot(updated);
+      setSaved(snapshot);
+      setDefaultGoals({ ...DEFAULT_GOAL_VALUES, ...snapshot.default });
+      setWeekly(snapshot.weekly);
+      setFutureWeeks(snapshot.futureWeeks);
       toast.success('Goals saved successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save goals';

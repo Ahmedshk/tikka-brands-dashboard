@@ -5,6 +5,10 @@ import type {
   DayOfWeek,
   IDefaultGoalHistoryEntry,
 } from "../types/goal.types.js";
+import {
+  normalizeFutureWeeks,
+  normalizeWeekly,
+} from "../utils/goalSettingNormalize.util.js";
 
 export class GoalRepository {
   async findByLocationId(locationId: string): Promise<GoalDocument | null> {
@@ -63,8 +67,10 @@ export class GoalRepository {
     const merged = {
       locationId,
       default: data.default ?? existing?.default ?? defaultValues,
-      weekly: data.weekly ?? existing?.weekly ?? {},
-      futureWeeks: data.futureWeeks ?? existing?.futureWeeks ?? [],
+      weekly: normalizeWeekly(data.weekly ?? existing?.weekly),
+      futureWeeks: normalizeFutureWeeks(
+        data.futureWeeks ?? existing?.futureWeeks ?? [],
+      ),
     };
 
     const update: UpdateQuery<GoalDocument> = {

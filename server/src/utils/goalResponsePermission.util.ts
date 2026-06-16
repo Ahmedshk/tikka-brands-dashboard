@@ -7,6 +7,7 @@ import type {
   DayOfWeek,
 } from "../types/goal.types.js";
 import { getEffectivePagePermission } from "./permissions.util.js";
+import { normalizeFutureWeeks, normalizeWeekly, normalizeDefaultHistory } from "./goalSettingNormalize.util.js";
 
 /** Same shape as `GoalDailyActualsRow` in goalDailyActuals.service (avoid circular imports). */
 type GoalDailyActualsRow = {
@@ -135,30 +136,31 @@ export function sanitizeGoalDocument(goal: IGoal, allowed: GoalMetricKey[] | nul
 export function sanitizeGoalSetting(setting: IGoalSetting, allowed: GoalMetricKey[] | null): IGoalSetting {
   if (allowed == null) return setting;
   const weekly: IGoalSetting["weekly"] = {};
-  for (const [dayStr, dayVals] of Object.entries(setting.weekly)) {
+  for (const [dayStr, dayVals] of Object.entries(normalizeWeekly(setting.weekly))) {
     if (dayVals == null) continue;
     weekly[Number(dayStr) as DayOfWeek] = sanitizeGoalValues(dayVals, allowed);
   }
-  const futureWeeks: IFutureWeekGoals[] = setting.futureWeeks.map((w) => ({
-    weekStartDate: w.weekStartDate,
-    days: Object.fromEntries(
-      Object.entries(w.days).map(([d, v]) => [
-        d,
-        v == null ? v : sanitizeGoalValues(v, allowed),
-      ]),
-    ) as IFutureWeekGoals["days"],
+  const futureWeeks: IFutureWeekGoals[] = normalizeFutureWeeks(setting.futureWeeks).map(
+    (w) => ({
+      weekStartDate: w.weekStartDate,
+      days: Object.fromEntries(
+        Object.entries(w.days).map(([d, v]) => [
+          d,
+          v == null ? v : sanitizeGoalValues(v, allowed),
+        ]),
+      ) as IFutureWeekGoals["days"],
+    }),
+  );
+  const defaultHistory = normalizeDefaultHistory(setting.defaultHistory).map((row) => ({
+    ...row,
+    values: sanitizeGoalValues(row.values, allowed),
   }));
-  const defaultHistory =
-    setting.defaultHistory?.map((row) => ({
-      ...row,
-      values: sanitizeGoalValues(row.values, allowed),
-    })) ?? undefined;
   return {
     ...setting,
     default: sanitizeGoalValues(setting.default, allowed),
     weekly,
     futureWeeks,
-    ...(defaultHistory == null ? {} : { defaultHistory }),
+    ...(defaultHistory.length === 0 ? {} : { defaultHistory }),
   };
 }
 

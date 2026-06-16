@@ -78,10 +78,11 @@ export function mergeFutureWeeksForSave(
 ): FutureWeekGoals[] {
   return futureWeeks.map((week) => {
     const savedWeek = savedFutureWeeks?.find((w) => w.weekStartDate === week.weekStartDate);
-    const days: Partial<Record<GoalDayOfWeek, GoalValues>> = { ...week.days };
-    for (const dayStr of Object.keys(week.days)) {
+    const weekDays = week.days ?? {};
+    const days: Partial<Record<GoalDayOfWeek, GoalValues>> = { ...weekDays };
+    for (const dayStr of Object.keys(weekDays)) {
       const day = Number(dayStr) as GoalDayOfWeek;
-      const cur = week.days[day];
+      const cur = weekDays[day];
       if (!cur) continue;
       const baseline = { ...DEFAULT_GOAL_VALUES, ...savedWeek?.days?.[day] };
       days[day] = mergeGoalValuesForSave(cur, baseline, allowed);

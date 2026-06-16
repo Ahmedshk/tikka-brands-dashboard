@@ -9,6 +9,12 @@ import type {
 } from "../types/goal.types.js";
 import { getWeekStartAndDayOfWeek } from "../utils/timezone.util.js";
 import { goalValuesEqual } from "../utils/goalValuesCompare.util.js";
+import {
+  normalizeFutureWeeks,
+  normalizeWeekly,
+  normalizeDefaultHistory,
+  mergeGoalValuesWithBaseline,
+} from "../utils/goalSettingNormalize.util.js";
 
 const defaultGoalValues: IGoalValues = {
   salesGoal: 0,
@@ -75,7 +81,7 @@ export function resolveDefaultForDate(
   const best = candidates.at(-1)?.row ?? null;
   if (best != null) {
     return {
-      values: { ...defaultGoalValues, ...best.values },
+      values: mergeGoalValuesWithBaseline(best.values, defaultGoalValues),
       snapshotEffectiveFrom: best.effectiveFrom,
     };
   }
@@ -185,7 +191,10 @@ export class GoalService {
       !goalValuesEqual(mergedDefault, previousMergedDefault)
     ) {
       const effectiveFrom = options.defaultEffectiveFrom.trim();
-      const history = existing?.defaultHistory ?? [];
+      const history = normalizeDefaultHistory(
+        existing?.defaultHistory,
+        defaultGoalValues,
+      );
       const last = history.at(-1);
       const duplicateSameDay =
         last?.effectiveFrom === effectiveFrom &&
@@ -233,17 +242,16 @@ export class GoalService {
   }): IGoalSetting {
     const defaultVal = mergeDefaultFromRawDoc(doc);
 
-    const rawHistory = doc.defaultHistory ?? [];
-    const defaultHistory: IDefaultGoalHistoryEntry[] = rawHistory.map((e) => ({
-      effectiveFrom: e.effectiveFrom,
-      values: { ...defaultGoalValues, ...e.values },
-    }));
+    const defaultHistory = normalizeDefaultHistory(
+      doc.defaultHistory,
+      defaultGoalValues,
+    );
 
     return {
       locationId: doc.locationId,
       default: defaultVal,
-      weekly: doc.weekly ?? {},
-      futureWeeks: doc.futureWeeks ?? [],
+      weekly: normalizeWeekly(doc.weekly),
+      futureWeeks: normalizeFutureWeeks(doc.futureWeeks),
       defaultHistory,
     };
   }
