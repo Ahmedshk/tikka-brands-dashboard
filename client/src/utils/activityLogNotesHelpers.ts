@@ -1,4 +1,4 @@
-import type { ActivityLogOrderNoteHistoryEntry, ActivityLogRow } from "../types/activityLog.types";
+import type { ActivityLogOrderNoteHistoryEntry, ActivityLogOrderNote, ActivityLogRow } from "../types/activityLog.types";
 
 export const ACTIVITY_LOG_NOTES_PREVIEW_MAX_LENGTH = 40;
 
@@ -36,6 +36,36 @@ export function formatActivityLogNoteHistoryLabel(
       ? `${entry.updatedByName} (imported)`
       : `${entry.updatedByName} · ${entry.updatedByRole}`;
   return `${when} — ${who}`;
+}
+
+export function formatActivityLogCurrentNoteCreatedLabel(
+  note: Pick<
+    ActivityLogOrderNote,
+    | "currentNoteCreatedAt"
+    | "currentNoteCreatedByName"
+    | "currentNoteCreatedByRole"
+    | "currentNoteSource"
+  >,
+  displayTimezone: string,
+): string | null {
+  if (!note.currentNoteCreatedAt) return null;
+
+  const when = new Date(note.currentNoteCreatedAt).toLocaleString("en-US", {
+    timeZone: displayTimezone,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  if (note.currentNoteSource === "square") {
+    return `${when} — Square POS (imported)`;
+  }
+
+  const name = note.currentNoteCreatedByName?.trim() || "Unknown";
+  const role = note.currentNoteCreatedByRole?.trim() || "—";
+  return `${when} — ${name} · ${role}`;
 }
 
 export function resolveActivityLogRowLocationId(

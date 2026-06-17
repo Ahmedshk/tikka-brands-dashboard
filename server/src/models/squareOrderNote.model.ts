@@ -16,6 +16,11 @@ export interface SquareOrderNoteDocument extends Document {
   squareOrderId: string;
   locationId: Types.ObjectId;
   currentNote: string;
+  /** When `currentNote` was last saved in the dashboard. */
+  currentNoteSetAt?: Date;
+  currentNoteSetByUserId?: Types.ObjectId;
+  currentNoteSetByName?: string;
+  currentNoteSetByRole?: string;
   history: SquareOrderNoteHistoryEntry[];
   createdAt: Date;
   updatedAt: Date;
@@ -38,6 +43,10 @@ const squareOrderNoteSchema = new Schema<SquareOrderNoteDocument>(
     squareOrderId: { type: String, required: true, trim: true },
     locationId: { type: Schema.Types.ObjectId, ref: "Location", required: true },
     currentNote: { type: String, default: "" },
+    currentNoteSetAt: { type: Date, default: undefined },
+    currentNoteSetByUserId: { type: Schema.Types.ObjectId, ref: "User", default: undefined },
+    currentNoteSetByName: { type: String, trim: true, default: undefined },
+    currentNoteSetByRole: { type: String, trim: true, default: undefined },
     history: { type: [historyEntrySchema], default: [] },
   },
   { timestamps: true },

@@ -68,6 +68,10 @@ export interface ActivityLogOrderNote {
   locationId: string;
   currentNote: string;
   squareSeedNote: string | null;
+  currentNoteCreatedAt: string | null;
+  currentNoteCreatedByName?: string;
+  currentNoteCreatedByRole?: string;
+  currentNoteSource?: ActivityLogOrderNoteHistorySource;
   history: ActivityLogOrderNoteHistoryEntry[];
 }
 

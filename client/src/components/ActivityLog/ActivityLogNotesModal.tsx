@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { activityLogService } from "../../services/activityLog.service";
 import type { ActivityLogOrderNote, ActivityLogRow } from "../../types/activityLog.types";
 import {
+  formatActivityLogCurrentNoteCreatedLabel,
   formatActivityLogNoteHistoryLabel,
   sortActivityLogNoteHistoryNewestFirst,
 } from "../../utils/activityLogNotesHelpers";
@@ -91,6 +92,8 @@ export const ActivityLogNotesModal = ({
 
   const sortedHistory = sortActivityLogNoteHistoryNewestFirst(noteData?.history ?? []);
   const hasUnsavedChanges = noteData != null && draftNote !== noteData.currentNote;
+  const currentNoteCreatedLabel =
+    noteData != null ? formatActivityLogCurrentNoteCreatedLabel(noteData, displayTimezone) : null;
 
   return createPortal(
     <dialog
@@ -136,9 +139,14 @@ export const ActivityLogNotesModal = ({
             ) : (
               <>
                 <div className="space-y-2">
-                  <label htmlFor="activity-log-note-input" className="text-sm font-semibold text-primary">
-                    Current note
-                  </label>
+                  <div>
+                    <label htmlFor="activity-log-note-input" className="text-sm font-semibold text-primary">
+                      Current note
+                    </label>
+                    {currentNoteCreatedLabel && (
+                      <p className="mt-1 text-xs text-secondary">{currentNoteCreatedLabel}</p>
+                    )}
+                  </div>
                   <textarea
                     id="activity-log-note-input"
                     value={draftNote}

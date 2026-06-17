@@ -14,6 +14,11 @@ export interface SquareOrderNoteDto {
   locationId: string;
   currentNote: string;
   squareSeedNote: string | null;
+  /** When the displayed current note was authored (dashboard save or Square order time). */
+  currentNoteCreatedAt: string | null;
+  currentNoteCreatedByName?: string;
+  currentNoteCreatedByRole?: string;
+  currentNoteSource?: SquareOrderNoteHistorySource;
   history: SquareOrderNoteHistoryEntryDto[];
 }
 
