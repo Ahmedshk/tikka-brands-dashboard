@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import ViewIcon from "@assets/icons/view.svg?react";
+import EditIcon from "@assets/icons/edit.svg?react";
 import LocationIcon from "@assets/icons/location.svg?react";
 import type { ActivityLogRow } from "../../types/activityLog.types";
 import { formatDateTimeParts } from "../../utils/dateTimeDisplayHelpers";
@@ -23,6 +24,7 @@ interface ActivityLogTableCardProps {
   /** When true, group rows by location into bordered sections (all-locations view). */
   showLocationLabel?: boolean;
   onView?: (row: ActivityLogRow, index: number) => void;
+  onOpenNotes?: (row: ActivityLogRow, index: number) => void;
   pagination?: ActivityLogTableCardPagination;
 }
 
@@ -107,19 +109,47 @@ function LocationSectionHeader({ name }: Readonly<{ name: string }>) {
 
 function DesktopHeader({ topSpacing }: Readonly<{ topSpacing: boolean }>) {
   const topPad = topSpacing ? "pt-4" : "";
-  // Fixed column widths so per-location section tables align column-for-
-  // column. The Name column has no width and absorbs the remaining space
-  // (works with `table-fixed` on the parent `<table>`).
+  // Fixed column widths so per-location section tables align column-for-column.
+  // Name has no width and absorbs remaining space; Notes is one step wider than before.
   return (
     <thead>
       <tr className="text-left text-secondary border-b border-gray-200">
         <th className={`${topPad} pb-3 pr-4 pl-2 md:pl-5 font-semibold w-28 md:w-32`}>Event Type</th>
         <th className={`${topPad} pb-3 pr-4 font-semibold`}>Name</th>
-        <th className={`${topPad} pb-3 pr-4 font-semibold w-32 md:w-40`}>Applied By</th>
+        <th className={`${topPad} pb-3 pr-4 font-semibold w-40 md:w-48`}>Notes</th>
+        <th className={`${topPad} pb-3 pr-4 font-semibold text-center w-28 md:w-32`}>Applied By</th>
         <th className={`${topPad} pb-3 pr-4 font-semibold text-center w-24 md:w-32`}>Timestamp</th>
         <th className={`${topPad} pb-3 pr-2 md:pr-5 font-semibold text-center w-16 md:w-20`}>Action</th>
       </tr>
     </thead>
+  );
+}
+
+function ActivityLogNotesCell({
+  row,
+  onOpenNotes,
+  index,
+}: Readonly<{
+  row: ActivityLogRow;
+  onOpenNotes?: (row: ActivityLogRow, index: number) => void;
+  index: number;
+}>) {
+  const preview = row.hasNotes ? row.notesPreview : null;
+  return (
+    <div className="flex items-start gap-1.5 min-w-0 rounded-lg border border-gray-200 bg-white px-2 py-1.5">
+      <span className="min-w-0 flex-1 break-words leading-snug text-secondary">
+        {preview ?? "—"}
+      </span>
+      <button
+        type="button"
+        onClick={() => onOpenNotes?.(row, index)}
+        className="p-1 text-primary hover:bg-gray-100 rounded transition-colors inline-flex items-center justify-center shrink-0"
+        aria-label={preview ? "View or edit note" : "Add note"}
+        title={preview ? "View or edit note" : "Add note"}
+      >
+        <EditIcon className="w-3 h-3" />
+      </button>
+    </div>
   );
 }
 
@@ -129,12 +159,14 @@ function DesktopRow({
   rowKey,
   displayTimezone,
   onView,
+  onOpenNotes,
 }: Readonly<{
   row: ActivityLogRow;
   index: number;
   rowKey: string;
   displayTimezone: string;
   onView?: (row: ActivityLogRow, index: number) => void;
+  onOpenNotes?: (row: ActivityLogRow, index: number) => void;
 }>) {
   const appliedAt = formatDateTimeParts(row.appliedAt, displayTimezone);
   return (
@@ -142,17 +174,22 @@ function DesktopRow({
       <td className="py-3 pr-4 pl-2 md:pl-5 align-middle">
         <ActivityLogEventTypeBadge eventType={row.eventType} />
       </td>
-      <td className="py-3 pr-4">
+      <td className="py-3 pr-8 align-middle">
         <ActivityLogNameCell row={row} />
       </td>
-      <td className="py-3 pr-4">{row.appliedBy}</td>
-      <td className="py-3 pr-4 text-center">
+      <td className="py-3 pr-4 align-middle">
+        <ActivityLogNotesCell row={row} index={index} onOpenNotes={onOpenNotes} />
+      </td>
+      <td className="py-3 pr-4 align-middle text-center">
+        <span className="min-w-0 break-words leading-snug">{row.appliedBy}</span>
+      </td>
+      <td className="py-3 pr-4 align-middle text-center">
         <div className="flex flex-col leading-tight items-center">
           <span className="text-primary">{appliedAt.time}</span>
           <span className="text-secondary text-[11px]">{appliedAt.date}</span>
         </div>
       </td>
-      <td className="py-3 pr-2 md:pr-5 text-center">
+      <td className="py-3 pr-2 md:pr-5 align-middle text-center">
         <button
           type="button"
           onClick={() => onView?.(row, index)}
@@ -173,12 +210,14 @@ function DesktopTable({
   topSpacing,
   displayTimezone,
   onView,
+  onOpenNotes,
 }: Readonly<{
   rows: ActivityLogRow[];
   rowKeyPrefix: string;
   topSpacing: boolean;
   displayTimezone: string;
   onView?: (row: ActivityLogRow, index: number) => void;
+  onOpenNotes?: (row: ActivityLogRow, index: number) => void;
 }>) {
   return (
     <table className="w-full table-fixed border-collapse text-[10px] md:text-xs 2xl:text-sm">
@@ -194,6 +233,7 @@ function DesktopTable({
               index={index}
               displayTimezone={displayTimezone}
               onView={onView}
+              onOpenNotes={onOpenNotes}
             />
           );
         })}
@@ -208,12 +248,14 @@ function MobileRow({
   rowKey,
   displayTimezone,
   onView,
+  onOpenNotes,
 }: Readonly<{
   row: ActivityLogRow;
   index: number;
   rowKey: string;
   displayTimezone: string;
   onView?: (row: ActivityLogRow, index: number) => void;
+  onOpenNotes?: (row: ActivityLogRow, index: number) => void;
 }>) {
   const appliedAt = formatDateTimeParts(row.appliedAt, displayTimezone);
   return (
@@ -227,9 +269,15 @@ function MobileRow({
           <span className="text-secondary shrink-0">Event Type:</span>
           <ActivityLogEventTypeBadge eventType={row.eventType} />
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-secondary">Applied By:</span>
-          <span className="text-primary">{row.appliedBy}</span>
+        <div className="flex items-start gap-2">
+          <span className="text-secondary shrink-0">Notes:</span>
+          <div className="min-w-0 flex-1">
+            <ActivityLogNotesCell row={row} index={index} onOpenNotes={onOpenNotes} />
+          </div>
+        </div>
+        <div className="flex items-start gap-2">
+          <span className="text-secondary shrink-0">Applied By:</span>
+          <span className="text-primary min-w-0 break-words leading-snug">{row.appliedBy}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-secondary">Timestamp:</span>
@@ -256,11 +304,13 @@ function MobileList({
   rowKeyPrefix,
   displayTimezone,
   onView,
+  onOpenNotes,
 }: Readonly<{
   rows: ActivityLogRow[];
   rowKeyPrefix: string;
   displayTimezone: string;
   onView?: (row: ActivityLogRow, index: number) => void;
+  onOpenNotes?: (row: ActivityLogRow, index: number) => void;
 }>) {
   return (
     <div className="divide-y divide-gray-200">
@@ -274,6 +324,7 @@ function MobileList({
             index={index}
             displayTimezone={displayTimezone}
             onView={onView}
+            onOpenNotes={onOpenNotes}
           />
         );
       })}
@@ -287,6 +338,7 @@ export const ActivityLogTableCard = ({
   displayTimezone,
   showLocationLabel = false,
   onView,
+  onOpenNotes,
   pagination,
 }: ActivityLogTableCardProps) => {
   const groups = useMemo<LocationGroup[] | null>(() => {
@@ -327,6 +379,7 @@ export const ActivityLogTableCard = ({
                 topSpacing
                 displayTimezone={displayTimezone}
                 onView={onView}
+                onOpenNotes={onOpenNotes}
               />
             </div>
             <div className="md:hidden">
@@ -335,6 +388,7 @@ export const ActivityLogTableCard = ({
                 rowKeyPrefix={`l-${group.locationKey}`}
                 displayTimezone={displayTimezone}
                 onView={onView}
+                onOpenNotes={onOpenNotes}
               />
             </div>
           </div>
@@ -352,6 +406,7 @@ export const ActivityLogTableCard = ({
             topSpacing={false}
             displayTimezone={displayTimezone}
             onView={onView}
+            onOpenNotes={onOpenNotes}
           />
         </div>
         <div className="md:hidden overflow-y-auto min-h-0">
@@ -360,6 +415,7 @@ export const ActivityLogTableCard = ({
             rowKeyPrefix="flat"
             displayTimezone={displayTimezone}
             onView={onView}
+            onOpenNotes={onOpenNotes}
           />
         </div>
       </>

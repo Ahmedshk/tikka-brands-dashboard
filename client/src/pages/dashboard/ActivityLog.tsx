@@ -9,7 +9,7 @@ import TextField from "@mui/material/TextField";
 import OperationsIcon from "@assets/icons/operations.svg?react";
 import { Dropdown } from "../../components/common/Dropdown";
 import { Layout } from "../../components/common/Layout";
-import { ActivityLogDetailsModal, ActivityLogTableCard } from "../../components/ActivityLog";
+import { ActivityLogDetailsModal, ActivityLogNotesModal, ActivityLogTableCard } from "../../components/ActivityLog";
 import { activityLogService } from "../../services/activityLog.service";
 import type { RootState } from "../../store/store";
 import type { ActivityLogRow } from "../../types/activityLog.types";
@@ -52,6 +52,7 @@ export const ActivityLog = () => {
   const [loading, setLoading] = useState(true);
   const [eventFilter, setEventFilter] = useState<ActivityLogEventFilter>("all");
   const [selectedRow, setSelectedRow] = useState<ActivityLogRow | null>(null);
+  const [notesModalRow, setNotesModalRow] = useState<ActivityLogRow | null>(null);
 
   const filteredRows = useMemo(() => {
     if (eventFilter === "all") return rows;
@@ -87,6 +88,29 @@ export const ActivityLog = () => {
   useEffect(() => {
     fetchRows();
   }, [fetchRows]);
+
+  const handleNoteSaved = useCallback(
+    (squareOrderId: string, preview: string | null, hasNotes: boolean) => {
+      setRows((prev) =>
+        prev.map((row) =>
+          row.squareOrderId === squareOrderId
+            ? { ...row, notesPreview: preview, hasNotes }
+            : row,
+        ),
+      );
+      setNotesModalRow((prev) =>
+        prev?.squareOrderId === squareOrderId
+          ? { ...prev, notesPreview: preview, hasNotes }
+          : prev,
+      );
+      setSelectedRow((prev) =>
+        prev?.squareOrderId === squareOrderId
+          ? { ...prev, notesPreview: preview, hasNotes }
+          : prev,
+      );
+    },
+    [],
+  );
 
   return (
     <Layout>
@@ -143,6 +167,9 @@ export const ActivityLog = () => {
               onView={(row) => {
                 setSelectedRow(row);
               }}
+              onOpenNotes={(row) => {
+                setNotesModalRow(row);
+              }}
             />
 
             <ActivityLogDetailsModal
@@ -150,6 +177,15 @@ export const ActivityLog = () => {
               row={selectedRow}
               displayTimezone={displayTimezone}
               onClose={() => setSelectedRow(null)}
+            />
+
+            <ActivityLogNotesModal
+              open={notesModalRow != null}
+              row={notesModalRow}
+              locationId={locationId}
+              displayTimezone={displayTimezone}
+              onClose={() => setNotesModalRow(null)}
+              onSaved={handleNoteSaved}
             />
           </>
         ) : (

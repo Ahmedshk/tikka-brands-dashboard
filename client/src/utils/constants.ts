@@ -49,6 +49,7 @@ export const API_ENDPOINTS = {
   },
   ACTIVITY_LOG: {
     LIST: "/activity-log",
+    orderNotes: (squareOrderId: string) => `/activity-log/orders/${encodeURIComponent(squareOrderId)}/notes`,
   },
   CALENDAR: {
     EVENTS: "/calendar/events",

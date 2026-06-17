@@ -16,6 +16,7 @@ import type {
   ActivityLogRowDto,
 } from "../types/activityLog.types.js";
 import { buildActivityLogRowsForOrders, sortActivityLogRowsNewestFirst } from "../utils/activityLogRowsBuilder.util.js";
+import { SquareOrderNoteService } from "./squareOrderNote.service.js";
 
 type PaymentDetails = Awaited<
   ReturnType<typeof getSquarePaymentDetailsFromCache>
@@ -327,9 +328,11 @@ function buildRefundDetails(
 
 export class ActivityLogService {
   private readonly locationService: LocationService;
+  private readonly orderNoteService: SquareOrderNoteService;
 
   constructor() {
     this.locationService = new LocationService();
+    this.orderNoteService = new SquareOrderNoteService();
   }
 
   /**
@@ -668,6 +671,22 @@ export class ActivityLogService {
       buildRefundDetails,
     });
     sortActivityLogRowsNewestFirst(rows);
+
+    const squareOrderIds = [...new Set(rows.map((row) => row.squareOrderId))];
+    const notePreviews = await this.orderNoteService.getNotesPreviewForOrders(
+      locationId,
+      squareOrderIds,
+    );
+    for (const row of rows) {
+      const preview = notePreviews.get(row.squareOrderId);
+      if (preview) {
+        row.notesPreview = preview.notesPreview;
+        row.hasNotes = preview.hasNotes;
+      } else {
+        row.notesPreview = null;
+        row.hasNotes = false;
+      }
+    }
 
     const total = rows.length;
     return {

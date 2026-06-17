@@ -10,3 +10,22 @@ export const getActivityLogQuerySchema = z.object({
     date: ymdDateSchema,
   }),
 });
+
+export const getActivityLogOrderNoteQuerySchema = z.object({
+  params: z.object({
+    squareOrderId: z.string().min(1, "Square order ID is required"),
+  }),
+  query: z.object({
+    locationId: z.string().min(1, "Location ID is required"),
+  }),
+});
+
+export const putActivityLogOrderNoteSchema = z.object({
+  params: z.object({
+    squareOrderId: z.string().min(1, "Square order ID is required"),
+  }),
+  body: z.object({
+    locationId: z.string().min(1, "Location ID is required"),
+    note: z.string().max(2000, "Note must be at most 2000 characters"),
+  }),
+});

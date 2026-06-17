@@ -4,10 +4,15 @@ import {
   createActivityLogCaches,
 } from "../services/activityLog.service.js";
 import { LocationService } from "../services/location.service.js";
+import {
+  assertSquareOrderExistsForLocation,
+  SquareOrderNoteService,
+} from "../services/squareOrderNote.service.js";
 import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "../utils/locationScope.js";
 
 const service = new ActivityLogService();
 const locationService = new LocationService();
+const orderNoteService = new SquareOrderNoteService();
 
 export async function getActivityLog(
   req: Request,
@@ -61,6 +66,46 @@ export async function getActivityLog(
 
     const result = await service.getByLocationAndDate(locationId, date);
     res.json({ success: true, data: result.items, meta: result.meta });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getActivityLogOrderNote(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { squareOrderId } = req.params as { squareOrderId: string };
+    const { locationId } = req.query as { locationId: string };
+
+    await assertSquareOrderExistsForLocation(locationId, squareOrderId);
+    const data = await orderNoteService.getNoteForOrder(locationId, squareOrderId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function putActivityLogOrderNote(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ success: false, message: "Authentication required" });
+      return;
+    }
+
+    const { squareOrderId } = req.params as { squareOrderId: string };
+    const { locationId, note } = req.body as { locationId: string; note: string };
+
+    await assertSquareOrderExistsForLocation(locationId, squareOrderId);
+    const data = await orderNoteService.upsertNote(locationId, squareOrderId, note, userId);
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }

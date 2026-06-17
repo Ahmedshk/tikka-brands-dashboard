@@ -41,9 +41,34 @@ export interface ActivityLogRow {
   appliedByJobTitle?: string;
   appliedAt: string | null;
   details: ActivityLogDetails;
+  /** Square order id for notes modal and cross-row identity. */
+  squareOrderId: string;
+  /** Truncated effective note for list display. */
+  notesPreview?: string | null;
+  /** True when an effective note exists (dashboard or Square seed). */
+  hasNotes?: boolean;
   /** Set when activity log is loaded for all locations. */
   locationId?: string;
   locationName?: string;
+}
+
+export type ActivityLogOrderNoteHistorySource = "dashboard" | "square";
+
+export interface ActivityLogOrderNoteHistoryEntry {
+  note: string;
+  updatedAt: string;
+  updatedByUserId?: string;
+  updatedByName: string;
+  updatedByRole: string;
+  source: ActivityLogOrderNoteHistorySource;
+}
+
+export interface ActivityLogOrderNote {
+  squareOrderId: string;
+  locationId: string;
+  currentNote: string;
+  squareSeedNote: string | null;
+  history: ActivityLogOrderNoteHistoryEntry[];
 }
 
 export interface ActivityLogPaginationMeta {

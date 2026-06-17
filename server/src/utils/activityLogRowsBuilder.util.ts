@@ -89,6 +89,7 @@ export async function buildActivityLogRowsForOrders(args: {
       );
       rows.push({
         eventType: "Discounts",
+        squareOrderId: order.id,
         ...nameParts,
         appliedBy,
         ...appliedByJobTitleField(appliedByJobTitle),
@@ -103,6 +104,7 @@ export async function buildActivityLogRowsForOrders(args: {
       const nameParts = listNamePartsWithAmount(baseName, refund.refundAmountMoneyCents);
       rows.push({
         eventType: "Refunds",
+        squareOrderId: order.id,
         ...nameParts,
         appliedBy,
         ...appliedByJobTitleField(appliedByJobTitle),

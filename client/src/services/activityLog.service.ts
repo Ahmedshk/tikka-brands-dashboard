@@ -1,7 +1,11 @@
 import api from "./api.service";
 import { API_ENDPOINTS } from "../utils/constants";
 import type { ApiResponse } from "../types";
-import type { ActivityLogPaginationMeta, ActivityLogRow } from "../types/activityLog.types";
+import type {
+  ActivityLogOrderNote,
+  ActivityLogPaginationMeta,
+  ActivityLogRow,
+} from "../types/activityLog.types";
 
 interface ActivityLogListResponse {
   rows: ActivityLogRow[];
@@ -41,5 +45,31 @@ export const activityLogService = {
         totalPages: 1,
       },
     };
+  },
+
+  async getOrderNote(locationId: string, squareOrderId: string): Promise<ActivityLogOrderNote> {
+    const params = new URLSearchParams({ locationId });
+    const res = await api.get<ApiResponse<ActivityLogOrderNote>>(
+      `${API_ENDPOINTS.ACTIVITY_LOG.orderNotes(squareOrderId)}?${params.toString()}`,
+    );
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.message ?? "Failed to load order note.");
+    }
+    return res.data.data;
+  },
+
+  async updateOrderNote(
+    locationId: string,
+    squareOrderId: string,
+    note: string,
+  ): Promise<ActivityLogOrderNote> {
+    const res = await api.put<ApiResponse<ActivityLogOrderNote>>(
+      API_ENDPOINTS.ACTIVITY_LOG.orderNotes(squareOrderId),
+      { locationId, note },
+    );
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.message ?? "Failed to save order note.");
+    }
+    return res.data.data;
   },
 };

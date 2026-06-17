@@ -43,6 +43,12 @@ export interface ActivityLogRowDto {
   appliedByJobTitle?: string;
   appliedAt: string | null;
   details: ActivityLogDetailsDto;
+  /** Square order id for notes and cross-row identity. */
+  squareOrderId: string;
+  /** Truncated effective note for list display. */
+  notesPreview?: string | null;
+  /** True when an effective note exists (dashboard or Square seed). */
+  hasNotes?: boolean;
   /** Present when listing activity for multiple locations (e.g. `locationId=__all__`). */
   locationId?: string;
   locationName?: string;

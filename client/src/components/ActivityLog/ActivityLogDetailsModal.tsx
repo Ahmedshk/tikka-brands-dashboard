@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { ActivityLogDetailItem, ActivityLogRow } from "../../types/activityLog.types";
 import { formatReadableDateTime } from "../../utils/dateTimeDisplayHelpers";
+import { getActivityLogNoteDisplayText } from "../../utils/activityLogNotesHelpers";
 
 interface ActivityLogDetailsModalProps {
   open: boolean;
@@ -213,6 +214,12 @@ export const ActivityLogDetailsModal = ({
             <p className="text-lg font-semibold break-words">{row?.name ?? "—"}</p>
 
             <div className="space-y-3 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <span className="font-medium text-primary shrink-0">Notes</span>
+                <span className="text-right text-secondary max-w-[65%] min-w-0 text-sm leading-snug whitespace-pre-wrap break-words">
+                  {getActivityLogNoteDisplayText(row)}
+                </span>
+              </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="font-medium text-primary shrink-0">Applied By</span>
                 <div className="text-right text-secondary max-w-[65%] min-w-0 text-sm leading-snug">
