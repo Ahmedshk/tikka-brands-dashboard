@@ -18,7 +18,7 @@ import {
   loadHomebaseTimecardsForMongoRange,
 } from '../services/integrationCacheRead.service.js';
 import { mergeSourcesOfSalesFromDailyRollupDocs } from './squareSourcesOfSalesMerge.util.js';
-import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
+import { resolveTargetLocationIds } from './locationScope.js';
 import {
   getLocationFanoutConcurrency,
   mapWithConcurrency,
@@ -157,7 +157,7 @@ export async function buildAllLocationsSalesLaborKpis(params: {
   period: SalesLaborPeriodParams;
 }): Promise<Partial<SalesLaborKPIsData> | SalesLaborKPIsData> {
   const { req, metrics, locationService, period } = params;
-  const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+  const effectiveIds = await resolveTargetLocationIds(req);
   if (effectiveIds.length === 0) return buildEmptySalesLaborKPIs();
 
   const tHandler = performance.now();
@@ -337,7 +337,7 @@ export async function buildAllLocationsHourlyBreakdown(params: {
   period: SalesLaborPeriodParams;
 }): Promise<HourlyBreakdownResponseData> {
   const { req, locationService, period } = params;
-  const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+  const effectiveIds = await resolveTargetLocationIds(req);
   if (effectiveIds.length === 0) {
     const labels = buildHourlyBreakdownLabels('00:00');
     return buildEmptyHourlyBreakdownData(labels);
@@ -478,7 +478,7 @@ export async function buildAllLocationsTimesheetRows(params: {
   period: SalesLaborPeriodParams;
 }): Promise<unknown[]> {
   const { req, locationService, period } = params;
-  const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+  const effectiveIds = await resolveTargetLocationIds(req);
   if (effectiveIds.length === 0) return [];
 
   const tHandler = performance.now();

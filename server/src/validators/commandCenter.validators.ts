@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { withLocationQuery } from "./locationQuery.validators.js";
 
 const commandCenterMetricEnum = z.enum(["netSales", "laborCost", "reviewRating"]);
 
@@ -10,8 +11,7 @@ const commandCenterPeriodEnum = z.enum([
 ]);
 
 export const getCommandCenterKPIsQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, "Location ID is required"),
+  query: withLocationQuery({
     metrics: z
       .string()
       .optional()
@@ -52,7 +52,5 @@ export const getCommandCenterKPIsQuerySchema = z.object({
 });
 
 export const getHourlySalesQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, 'Location ID is required'),
-  }),
+  query: withLocationQuery({}),
 });

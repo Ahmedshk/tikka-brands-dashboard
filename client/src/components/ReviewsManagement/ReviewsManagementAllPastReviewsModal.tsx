@@ -18,7 +18,7 @@ export const ReviewsManagementAllPastReviewsModal = (props: {
   page: number;
   totalPages: number;
   onPageChange: (p: number) => void;
-  allLocationsSelected: boolean;
+  isMultiLocationView: boolean;
   onViewPastDetail: (cycleId: string) => void;
 }) => {
   const {
@@ -31,7 +31,7 @@ export const ReviewsManagementAllPastReviewsModal = (props: {
     page,
     totalPages,
     onPageChange,
-    allLocationsSelected,
+    isMultiLocationView,
     onViewPastDetail,
   } = props;
 
@@ -136,7 +136,7 @@ export const ReviewsManagementAllPastReviewsModal = (props: {
                       {cycles.map((c, i) => {
                         const globalIndex = (page - 1) * MODAL_PAGE_SIZE + i;
                         const emp = typeof c.employeeId === "object" ? c.employeeId : null;
-                        const locLabel = allLocationsSelected
+                        const locLabel = isMultiLocationView
                           ? c.locationName?.trim()
                           : undefined;
                         const roleLabel = emp?.role?.trim() || "—";

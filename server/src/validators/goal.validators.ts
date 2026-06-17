@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { withLocationQuery } from "./locationQuery.validators.js";
 
 const goalValueSchema = z.number().min(0, "Goal must be 0 or greater");
 const toleranceSchema = z.number().min(0, "Tolerance must be 0 or greater").max(100, "Tolerance must be 100 or less").optional();
@@ -36,22 +37,18 @@ const futureWeekSchema = z.object({
 const ymdRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 export const getGoalsQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, "Location ID is required"),
+  query: withLocationQuery({
     date: z.string().optional(),
   }),
 });
 
 export const getGoalRangeQuerySchema = z.object({
-  query: z
-    .object({
-      locationId: z.string().min(1, "Location ID is required"),
-      startDate: z.string().regex(ymdRegex, "startDate must be YYYY-MM-DD"),
-      endDate: z.string().regex(ymdRegex, "endDate must be YYYY-MM-DD"),
-    })
-    .refine((d) => d.startDate <= d.endDate, {
-      message: "startDate must be on or before endDate",
-    }),
+  query: withLocationQuery({
+    startDate: z.string().regex(ymdRegex, "startDate must be YYYY-MM-DD"),
+    endDate: z.string().regex(ymdRegex, "endDate must be YYYY-MM-DD"),
+  }).refine((d) => d.startDate <= d.endDate, {
+    message: "startDate must be on or before endDate",
+  }),
 });
 
 export const getGoalDailyActualsQuerySchema = z.object({

@@ -26,7 +26,12 @@ import {
   type SalesByCategoryData,
 } from '../../services/commandCenter.service';
 import type { TimeSeriesSeries } from '../../components/charts/TimeSeriesLineChart';
-import type { RootState } from '../../store/store';
+import {
+  selectCurrentLocation,
+  selectSelectedLocationIds,
+  selectLocationApiParams,
+} from '../../store/locationSelectors';
+import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 import {
   sumTimeSeriesDataPoints,
@@ -245,8 +250,10 @@ const defaultComparison: ComparisonPeriodPickerValue = {
 };
 
 export const SalesTrendReports = () => {
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
-  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const selectedLocationIds = useSelector(selectSelectedLocationIds);
+  const currentLocation = useSelector(selectCurrentLocation);
+  const hasLocationScope = hasLocationSelection(locationApiParams);
   const canTrendsChart = useCanAccessComponent(PAGE_ID, 'trends-chart');
   const canKpis = useCanAccessComponent(PAGE_ID, 'kpis');
   const canNetSalesByCategory = useCanAccessComponent(PAGE_ID, 'net-sales-by-category');
@@ -256,21 +263,19 @@ export const SalesTrendReports = () => {
   const [metric, setMetric] = useState<SalesTrendMetric>('netSales');
   const [groupBy, setGroupBy] = useState<SalesTrendGroupBy>('none');
   const [trendData, setTrendData] = useState<SalesTrendData | null>(null);
-  const [loading, setLoading] = useState(!!currentLocation?._id && canTrendsChart);
+  const [loading, setLoading] = useState(hasLocationScope && canTrendsChart);
   const [error, setError] = useState<string | null>(null);
 
   const [kpiPeriod, setKpiPeriod] = useState<PeriodPickerValue>({ periodType: 'today' });
   const [kpiComparison, setKpiComparison] = useState<ComparisonPeriodPickerValue>({ comparisonType: '1DayPrior' });
   const [kpiData, setKpiData] = useState<SalesTrendKpiData | null>(null);
-  const [kpiLoading, setKpiLoading] = useState(!!currentLocation?._id && canKpis);
+  const [kpiLoading, setKpiLoading] = useState(hasLocationScope && canKpis);
   const [kpiError, setKpiError] = useState<string | null>(null);
   const [categoryPeriod, setCategoryPeriod] = useState<PeriodPickerValue>(defaultPeriod);
   const [categoryComparison, setCategoryComparison] = useState<ComparisonPeriodPickerValue>(defaultComparison);
   const [categoryData, setCategoryData] = useState<SalesByCategoryData | null>(null);
-  const [categoryLoading, setCategoryLoading] = useState(!!currentLocation?._id && canNetSalesByCategory);
+  const [categoryLoading, setCategoryLoading] = useState(hasLocationScope && canNetSalesByCategory);
   const [categoryError, setCategoryError] = useState<string | null>(null);
-
-  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
 
   /** When KPI period changes, sync comparison in the same tick so only one API call is made. */
   const handleKpiPeriodChange = (newPeriod: PeriodPickerValue) => {
@@ -327,7 +332,7 @@ export const SalesTrendReports = () => {
   };
 
   useEffect(() => {
-    if (!locationId || !canTrendsChart) {
+    if (!hasLocationScope || !canTrendsChart) {
       setTrendData(null);
       setError(null);
       setLoading(false);
@@ -366,7 +371,7 @@ export const SalesTrendReports = () => {
       groupBy: metric === 'netSales' ? groupBy : ('none' as SalesTrendGroupBy),
     };
     commandCenterService
-      .getSalesTrend(locationId, params, { signal: controller.signal })
+      .getSalesTrend(locationApiParams, params, { signal: controller.signal })
       .then((data) => {
         if (!aborted) setTrendData(data);
       })
@@ -396,7 +401,8 @@ export const SalesTrendReports = () => {
       controller.abort();
     };
   }, [
-    locationId,
+    locationApiParams,
+    hasLocationScope,
     canTrendsChart,
     period.periodType,
     period.periodStart,
@@ -409,7 +415,7 @@ export const SalesTrendReports = () => {
   ]);
 
   useEffect(() => {
-    if (!locationId || !canKpis) {
+    if (!hasLocationScope || !canKpis) {
       setKpiData(null);
       setKpiError(null);
       setKpiLoading(false);
@@ -448,7 +454,7 @@ export const SalesTrendReports = () => {
       }),
     };
     commandCenterService
-      .getSalesTrendKpi(locationId, kpiParams, { signal: controller.signal })
+      .getSalesTrendKpi(locationApiParams, kpiParams, { signal: controller.signal })
       .then((data) => {
         if (!aborted) setKpiData(data);
       })
@@ -472,7 +478,8 @@ export const SalesTrendReports = () => {
       controller.abort();
     };
   }, [
-    locationId,
+    locationApiParams,
+    hasLocationScope,
     canKpis,
     kpiPeriod.periodType,
     kpiPeriod.periodStart,
@@ -483,7 +490,7 @@ export const SalesTrendReports = () => {
   ]);
 
   useEffect(() => {
-    if (!locationId || !canNetSalesByCategory) {
+    if (!hasLocationScope || !canNetSalesByCategory) {
       setCategoryData(null);
       setCategoryError(null);
       setCategoryLoading(false);
@@ -522,7 +529,7 @@ export const SalesTrendReports = () => {
       }),
     };
     commandCenterService
-      .getSalesByCategory(locationId, categoryParams, { signal: controller.signal })
+      .getSalesByCategory(locationApiParams, categoryParams, { signal: controller.signal })
       .then((data) => {
         if (!aborted) setCategoryData(data);
       })
@@ -546,7 +553,8 @@ export const SalesTrendReports = () => {
       controller.abort();
     };
   }, [
-    locationId,
+    locationApiParams,
+    hasLocationScope,
     canNetSalesByCategory,
     categoryPeriod.periodType,
     categoryPeriod.periodStart,
@@ -633,7 +641,7 @@ export const SalesTrendReports = () => {
   const selectClass =
     'border border-gray-300 rounded-lg px-3 py-2 text-sm text-primary bg-white focus:outline-none focus:ring-2 focus:ring-quaternary/30';
 
-  if (!currentLocation && !allLocationsSelected) {
+  if (selectedLocationIds.length === 0) {
     return (
       <Layout>
         <div className="p-6">
@@ -701,7 +709,7 @@ export const SalesTrendReports = () => {
           <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
         )}
 
-        {canTrendsChart && locationId && (
+        {canTrendsChart && hasLocationScope && (
           <SalesTrendChartCard
             loading={loading}
             title={`${METRIC_OPTIONS.find((o) => o.value === metric)?.label ?? 'Sales'} Trend`}

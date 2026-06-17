@@ -1,4 +1,6 @@
 import api from "./api.service";
+import type { LocationApiParams } from "../utils/locationSelectionHelpers";
+import { locationApiParamsToQueryRecord } from "../utils/locationSelectionHelpers";
 import { API_ENDPOINTS } from "../utils/constants";
 import type { ApiResponse } from "../types";
 import type {
@@ -20,9 +22,9 @@ function formatDateToIso(date: Date): string {
 }
 
 export const activityLogService = {
-  async getRows(locationId: string, date: Date): Promise<ActivityLogListResponse> {
+  async getRows(apiParams: LocationApiParams, date: Date): Promise<ActivityLogListResponse> {
     const params = new URLSearchParams({
-      locationId,
+      ...locationApiParamsToQueryRecord(apiParams),
       date: formatDateToIso(date),
     });
     const res = await api.get<

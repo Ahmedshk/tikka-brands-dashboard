@@ -13,7 +13,7 @@ export const ReviewsManagementPastReviewsCard = (props: {
   pastReviewsSearchDebounced: string;
   setPastReviewsSearchInput: (v: string) => void;
   pastPreviewCycles: ReviewCycle[];
-  allLocationsSelected: boolean;
+  isMultiLocationView: boolean;
   onViewPastDetail: (cycleId: string) => void;
   onViewAll: () => void;
 }) => {
@@ -24,7 +24,7 @@ export const ReviewsManagementPastReviewsCard = (props: {
     pastReviewsSearchDebounced,
     setPastReviewsSearchInput,
     pastPreviewCycles,
-    allLocationsSelected,
+    isMultiLocationView,
     onViewPastDetail,
     onViewAll,
   } = props;
@@ -138,7 +138,7 @@ export const ReviewsManagementPastReviewsCard = (props: {
                     <tbody className="text-primary">
                       {pastPreviewCycles.map((c, i) => {
                         const emp = typeof c.employeeId === "object" ? c.employeeId : null;
-                        const locLabel = allLocationsSelected
+                        const locLabel = isMultiLocationView
                           ? c.locationName?.trim()
                           : undefined;
                         const roleLabel = emp?.role?.trim() || "—";

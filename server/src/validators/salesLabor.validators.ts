@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { withLocationQuery } from "./locationQuery.validators.js";
 
 const salesLaborMetricEnum = z.enum([
   "actualTotalSales",
@@ -37,49 +38,40 @@ function refineCustomPeriod(
 }
 
 export const getSalesLaborKPIsQuerySchema = z.object({
-  query: z
-    .object({
-      locationId: z.string().min(1, "Location ID is required"),
-      metrics: z
-        .string()
-        .optional()
-        .transform((s) =>
-          s ? s.split(",").map((x) => x.trim()).filter(Boolean) : undefined
-        )
-        .pipe(z.array(salesLaborMetricEnum).optional()),
-      periodType: periodTypeSchema.default("today"),
-      periodStart: z.string().optional(),
-      periodEnd: z.string().optional(),
-    })
-    .refine(refineCustomPeriod, {
-      message: "periodStart and periodEnd required when periodType is custom",
-    }),
+  query: withLocationQuery({
+    metrics: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((x) => x.trim()).filter(Boolean) : undefined
+      )
+      .pipe(z.array(salesLaborMetricEnum).optional()),
+    periodType: periodTypeSchema.default("today"),
+    periodStart: z.string().optional(),
+    periodEnd: z.string().optional(),
+  }).refine(refineCustomPeriod, {
+    message: "periodStart and periodEnd required when periodType is custom",
+  }),
 });
 
 export const getHourlyBreakdownQuerySchema = z.object({
-  query: z
-    .object({
-      locationId: z.string().min(1, "Location ID is required"),
-      periodType: periodTypeSchema.default("today"),
-      periodStart: z.string().optional(),
-      periodEnd: z.string().optional(),
-    })
-    .refine(refineCustomPeriod, {
-      message: "periodStart and periodEnd required when periodType is custom",
-    }),
+  query: withLocationQuery({
+    periodType: periodTypeSchema.default("today"),
+    periodStart: z.string().optional(),
+    periodEnd: z.string().optional(),
+  }).refine(refineCustomPeriod, {
+    message: "periodStart and periodEnd required when periodType is custom",
+  }),
 });
 
 export const getTimesheetQuerySchema = z.object({
-  query: z
-    .object({
-      locationId: z.string().min(1, "Location ID is required"),
-      periodType: periodTypeSchema.default("today"),
-      periodStart: z.string().optional(),
-      periodEnd: z.string().optional(),
-    })
-    .refine(refineCustomPeriod, {
-      message: "periodStart and periodEnd required when periodType is custom",
-    }),
+  query: withLocationQuery({
+    periodType: periodTypeSchema.default("today"),
+    periodStart: z.string().optional(),
+    periodEnd: z.string().optional(),
+  }).refine(refineCustomPeriod, {
+    message: "periodStart and periodEnd required when periodType is custom",
+  }),
 });
 const comparisonTypeSchema = z.enum([
   "none",
@@ -103,10 +95,8 @@ const metricSchema = z.enum([
 const groupBySchema = z.enum(["none", "source"]);
 
 export const getSalesTrendQuerySchema = z.object({
-  query: z
-    .object({
-      locationId: z.string().min(1, "Location ID is required"),
-      periodType: periodTypeSchema.default("last30days"),
+  query: withLocationQuery({
+    periodType: periodTypeSchema.default("last30days"),
       periodStart: z.string().optional(),
       periodEnd: z.string().optional(),
       comparisonType: comparisonTypeSchema.default("priorYear"),
@@ -151,10 +141,8 @@ export const getSalesTrendQuerySchema = z.object({
 
 /** Same as getSalesTrend but without metric/groupBy (for sales-trend-kpi). */
 export const getSalesTrendKpiQuerySchema = z.object({
-  query: z
-    .object({
-      locationId: z.string().min(1, "Location ID is required"),
-      periodType: periodTypeSchema.default("last30days"),
+  query: withLocationQuery({
+    periodType: periodTypeSchema.default("last30days"),
       periodStart: z.string().optional(),
       periodEnd: z.string().optional(),
       comparisonType: comparisonTypeSchema.default("priorYear"),
@@ -193,10 +181,8 @@ export const getSalesTrendKpiQuerySchema = z.object({
 
 /** Same as getSalesTrendKpi (for sales-by-category). */
 export const getSalesByCategoryQuerySchema = z.object({
-  query: z
-    .object({
-      locationId: z.string().min(1, "Location ID is required"),
-      periodType: periodTypeSchema.default("last30days"),
+  query: withLocationQuery({
+    periodType: periodTypeSchema.default("last30days"),
       periodStart: z.string().optional(),
       periodEnd: z.string().optional(),
       comparisonType: comparisonTypeSchema.default("priorYear"),

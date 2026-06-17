@@ -54,7 +54,7 @@ export async function loadLocationsForRollupScript(
   if (ids.length === 0) {
     const docs = await LocationModel.find({})
       .select({ timezone: 1, businessStartTime: 1, marketManBuyerGuid: 1 })
-      .sort({ createdAt: -1 })
+      .sort({ sortOrder: 1, createdAt: -1 })
       .lean()
       .exec();
     return docs.map((doc) => toRollupContext(doc));

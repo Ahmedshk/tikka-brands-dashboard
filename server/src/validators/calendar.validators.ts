@@ -1,8 +1,8 @@
 import { z } from "zod";
+import { withLocationQuery } from "./locationQuery.validators.js";
 
 export const listCalendarEventsQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, "locationId is required"),
+  query: withLocationQuery({
     timeMin: z.coerce.date().optional(),
     timeMax: z.coerce.date().optional(),
   }),

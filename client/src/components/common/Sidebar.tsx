@@ -1,7 +1,7 @@
 import { useState, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { RootState } from '../../store/store';
+import { selectCurrentLocation } from '../../store/locationSelectors';
 import { useFilteredNavigation } from '../../hooks/useFilteredNavigation';
 import type { NavigationItem } from '../../types/navigation.types';
 import MainLogo from '@assets/logos/main_logo.svg?react';
@@ -28,7 +28,7 @@ interface SidebarProps {
 const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, onClose, onToggle }: SidebarProps) => {
   const navigate = useNavigate();
   const filteredNav = useFilteredNavigation();
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const currentLocation = useSelector(selectCurrentLocation);
   const useDefaultLogo = SIDEBAR_DEFAULT_LOGO_PATHS.has(activePath);
   const [isMobile, setIsMobile] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);

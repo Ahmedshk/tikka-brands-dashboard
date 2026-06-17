@@ -1,6 +1,7 @@
 import api from "./api.service";
 import { API_ENDPOINTS } from "../utils/constants";
 import { ApiResponse } from "../types";
+import { resolveLocationQuery, type LocationApiParams } from "../utils/locationSelectionHelpers";
 import type {
   CommandCenterAlertBuckets,
   CommandCenterAlertRow,
@@ -297,7 +298,7 @@ export function isSalesTrendStacked(
 
 export const commandCenterService = {
   async getKPIs(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     options?: {
       metrics?: string[];
       periods?: (
@@ -309,7 +310,7 @@ export const commandCenterService = {
       signal?: AbortSignal;
     }
   ): Promise<CommandCenterKPIsData | CommandCenterKPIsDataMulti> {
-    const params: { locationId: string; metrics?: string; periods?: string } = { locationId };
+    const params: Record<string, string> = { ...resolveLocationQuery(locationQuery) };
     if (options?.metrics?.length) {
       params.metrics = options.metrics.join(",");
     }
@@ -325,10 +326,10 @@ export const commandCenterService = {
     return res.data.data;
   },
 
-  async getHourlySales(locationId: string, options?: { signal?: AbortSignal }): Promise<HourlySalesRow[]> {
+  async getHourlySales(locationQuery: LocationApiParams | string, options?: { signal?: AbortSignal }): Promise<HourlySalesRow[]> {
     const res = await api.get<ApiResponse<HourlySalesRow[]>>(
       API_ENDPOINTS.COMMAND_CENTER.HOURLY_SALES,
-      { params: { locationId }, signal: options?.signal }
+      { params: resolveLocationQuery(locationQuery), signal: options?.signal }
     );
     if (!res.data.success || res.data.data == null) {
       throw new Error(res.data.message ?? "Failed to fetch hourly sales");
@@ -337,7 +338,7 @@ export const commandCenterService = {
   },
 
   async getSalesLaborKPIs(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     options?: {
       metrics?: string[];
       periodType?: SalesTrendPeriodType;
@@ -346,13 +347,7 @@ export const commandCenterService = {
       signal?: AbortSignal;
     }
   ): Promise<SalesLaborKPIsData> {
-    const params: {
-      locationId: string;
-      metrics?: string;
-      periodType?: SalesTrendPeriodType;
-      periodStart?: string;
-      periodEnd?: string;
-    } = { locationId };
+    const params: Record<string, string> = { ...resolveLocationQuery(locationQuery) };
     if (options?.metrics?.length) {
       params.metrics = options.metrics.join(",");
     }
@@ -374,7 +369,7 @@ export const commandCenterService = {
   },
 
   async getHourlyBreakdown(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     options?: {
       periodType?: SalesTrendPeriodType;
       periodStart?: string;
@@ -382,12 +377,7 @@ export const commandCenterService = {
       signal?: AbortSignal;
     }
   ): Promise<HourlyBreakdownData> {
-    const params: {
-      locationId: string;
-      periodType?: SalesTrendPeriodType;
-      periodStart?: string;
-      periodEnd?: string;
-    } = { locationId };
+    const params: Record<string, string> = { ...resolveLocationQuery(locationQuery) };
     if (options?.periodType) {
       params.periodType = options.periodType;
       if (options.periodType === "custom") {
@@ -408,7 +398,7 @@ export const commandCenterService = {
   },
 
   async getTimesheet(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     options?: {
       periodType?: SalesTrendPeriodType;
       periodStart?: string;
@@ -416,12 +406,7 @@ export const commandCenterService = {
       signal?: AbortSignal;
     }
   ): Promise<TimesheetRow[]> {
-    const params: {
-      locationId: string;
-      periodType?: SalesTrendPeriodType;
-      periodStart?: string;
-      periodEnd?: string;
-    } = { locationId };
+    const params: Record<string, string> = { ...resolveLocationQuery(locationQuery) };
     if (options?.periodType) {
       params.periodType = options.periodType;
       if (options.periodType === "custom") {
@@ -440,7 +425,7 @@ export const commandCenterService = {
   },
 
   async getSalesTrend(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     params: SalesTrendParams,
     options?: { signal?: AbortSignal }
   ): Promise<SalesTrendData> {
@@ -448,7 +433,7 @@ export const commandCenterService = {
       API_ENDPOINTS.SALES_LABOR.SALES_TREND,
       {
         params: {
-          locationId,
+          ...resolveLocationQuery(locationQuery),
           periodType: params.periodType,
           ...(params.periodStart && { periodStart: params.periodStart }),
           ...(params.periodEnd && { periodEnd: params.periodEnd }),
@@ -474,7 +459,7 @@ export const commandCenterService = {
   },
 
   async getSalesTrendKpi(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     params: SalesTrendKpiParams,
     options?: { signal?: AbortSignal }
   ): Promise<SalesTrendKpiData> {
@@ -482,7 +467,7 @@ export const commandCenterService = {
       API_ENDPOINTS.SALES_LABOR.SALES_TREND_KPI,
       {
         params: {
-          locationId,
+          ...resolveLocationQuery(locationQuery),
           periodType: params.periodType,
           ...(params.periodStart && { periodStart: params.periodStart }),
           ...(params.periodEnd && { periodEnd: params.periodEnd }),
@@ -504,7 +489,7 @@ export const commandCenterService = {
   },
 
   async getSalesByCategory(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     params: SalesByCategoryParams,
     options?: { signal?: AbortSignal }
   ): Promise<SalesByCategoryData> {
@@ -512,7 +497,7 @@ export const commandCenterService = {
       API_ENDPOINTS.SALES_LABOR.SALES_BY_CATEGORY,
       {
         params: {
-          locationId,
+          ...resolveLocationQuery(locationQuery),
           periodType: params.periodType,
           ...(params.periodStart && { periodStart: params.periodStart }),
           ...(params.periodEnd && { periodEnd: params.periodEnd }),
@@ -536,12 +521,12 @@ export const commandCenterService = {
   },
 
   async getAlerts(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     options?: { signal?: AbortSignal },
   ): Promise<CommandCenterAlertBuckets> {
     const res = await api.get<ApiResponse<{ alerts: CommandCenterAlertBuckets }>>(
       API_ENDPOINTS.COMMAND_CENTER.ALERTS,
-      { params: { locationId }, signal: options?.signal },
+      { params: resolveLocationQuery(locationQuery), signal: options?.signal },
     );
     if (!res.data.success || res.data.data?.alerts == null) {
       throw new Error(res.data.message ?? "Failed to fetch Command Center alerts");
@@ -550,13 +535,13 @@ export const commandCenterService = {
   },
 
   async getAlertHistory(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     category: "financial_labor" | "inventory_supply_chain" | "reputation_hr",
     options?: { signal?: AbortSignal },
   ): Promise<CommandCenterAlertRow[]> {
     const res = await api.get<ApiResponse<{ alerts: CommandCenterAlertRow[] }>>(
       API_ENDPOINTS.COMMAND_CENTER.ALERTS_HISTORY,
-      { params: { locationId, category }, signal: options?.signal },
+      { params: { ...resolveLocationQuery(locationQuery), category }, signal: options?.signal },
     );
     if (!res.data.success || res.data.data?.alerts == null) {
       throw new Error(res.data.message ?? "Failed to fetch alert history");

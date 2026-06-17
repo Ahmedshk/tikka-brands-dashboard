@@ -21,6 +21,7 @@
     "seed-google-business-reviews": "tsx src/scripts/seed-google-business-reviews.ts",
     "backfill-calendar-notification-jobs": "tsx src/scripts/backfill-calendar-notification-jobs.ts",
     "backfill-integration-cache-index-fields": "tsx src/scripts/backfill-integration-cache-index-fields.ts",
+    "backfill-location-sort-order": "tsx src/scripts/backfill-location-sort-order.ts",
     "reconcile-marketman-order-status-siblings": "tsx src/scripts/reconcile-marketman-order-status-siblings.ts",
     "test:marketman-order-cache-status-sync": "tsx --test src/utils/marketmanOrderCacheStatusSync.util.test.ts",
     "test:marketman-monthly-sync-window": "tsx --test src/utils/marketmanMonthlySyncWindow.util.test.ts",

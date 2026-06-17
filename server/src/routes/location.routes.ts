@@ -6,6 +6,7 @@ import {
   getLocationById,
   updateLocation,
   deleteLocation,
+  reorderLocations,
 } from '../controllers/location.controller.js';
 import { validate } from '../utils/zod.util.js';
 import {
@@ -14,6 +15,7 @@ import {
   getLocationSchema,
   deleteLocationSchema,
   getLocationsQuerySchema,
+  reorderLocationsSchema,
 } from '../validators/location.validators.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { attachUserContext } from '../middleware/user-context.middleware.js';
@@ -41,9 +43,10 @@ router.use(attachUserContext);
 // List locations: any authenticated user (for navbar switcher). Controller filters by allowedLocationIds.
 router.get('/', validate(getLocationsQuerySchema), getLocations);
 
-// Create, read one, update, delete: require location-management permission and location access
+// Create, read one, update, delete, reorder: require location-management permission and location access
 router.use(requirePermission('location-management'));
 router.use(requireLocationAccess);
+router.put('/order', validate(reorderLocationsSchema), reorderLocations);
 router.get('/:id', validate(getLocationSchema), getLocationById);
 router.post('/', uploadLogo, validate(createLocationSchema), createLocation);
 router.put('/:id', uploadLogo, validate(updateLocationSchema), updateLocation);

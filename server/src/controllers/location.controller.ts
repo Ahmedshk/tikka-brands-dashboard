@@ -215,3 +215,20 @@ export const deleteLocation = async (
     next(error);
   }
 };
+
+export const reorderLocations = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const { locationIds } = req.body as { locationIds: string[] };
+    await locationService.reorderLocations(locationIds);
+    res.status(200).json({
+      success: true,
+      message: 'Location order saved',
+    });
+  } catch (error) {
+    next(error);
+  }
+};

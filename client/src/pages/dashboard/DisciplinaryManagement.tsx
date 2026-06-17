@@ -4,7 +4,8 @@ import { useSelector } from 'react-redux';
 import { Layout } from '../../components/common/Layout';
 import { CommandCenterKPICards } from '../../components/CommandCenter';
 import { DisciplinaryToolbar, DisciplinaryTableCard } from '../../components/DisciplinaryManagement';
-import type { RootState } from '../../store/store';
+import { selectLocationApiParams } from '../../store/locationSelectors';
+import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
 import TeamHrIcon from '@assets/icons/team_and_hr.svg?react';
 import CriticalIcon from '@assets/icons/critical.svg?react';
 import DisciplinaryReviewsDueIcon from '@assets/icons/disciplinary_reviews_due.svg?react';
@@ -18,9 +19,8 @@ const PAGE_ID = 'disciplinary-management';
 
 export const DisciplinaryManagement = () => {
   const navigate = useNavigate();
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
-  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
-  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const hasLocationScope = hasLocationSelection(locationApiParams);
   const canTotalTeamKpi = useCanAccessComponent(PAGE_ID, 'total-team-members-kpi');
   const canPendingPipsKpi = useCanAccessComponent(PAGE_ID, 'pending-pips-kpi');
   const canCriticalKpi = useCanAccessComponent(PAGE_ID, 'critical-kpi');
@@ -40,7 +40,7 @@ export const DisciplinaryManagement = () => {
     pendingCount,
     totalActive,
   } = useDisciplinaryManagementData({
-    locationId,
+    locationQuery: hasLocationScope ? locationApiParams : null,
     canDisciplinaryRecords,
     needsKpiData,
     debouncedSearch,

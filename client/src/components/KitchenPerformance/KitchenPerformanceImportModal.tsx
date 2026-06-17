@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import UploadIcon from "@assets/icons/upload.svg?react";
+import { Dropdown } from "../common/Dropdown";
 import {
   PENDING_LOCAL_FILE_ROW_CLASSNAME,
   PENDING_UPLOAD_TAG_CLASSNAME,
 } from "../../utils/createTrainingModalHelpers";
+import type { LocationListItem } from "../../types";
 import type { KitchenPerformancePeriodValue } from "../../utils/kitchenPerformancePeriodRange";
 import { periodToDateRange } from "../../utils/kitchenPerformancePeriodRange";
 import { KitchenPerformancePeriodPicker } from "./KitchenPerformancePeriodPicker";
@@ -13,11 +15,13 @@ interface KitchenPerformanceImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImport: (
+    locationId: string,
     range: { startDate: string; endDate: string },
     file: File,
   ) => Promise<void>;
   defaultPeriod: KitchenPerformancePeriodValue;
   timezone: string;
+  locations: LocationListItem[];
 }
 
 export const KitchenPerformanceImportModal = ({
@@ -26,27 +30,52 @@ export const KitchenPerformanceImportModal = ({
   onImport,
   defaultPeriod,
   timezone,
+  locations,
 }: KitchenPerformanceImportModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [period, setPeriod] = useState<KitchenPerformancePeriodValue>(defaultPeriod);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importLocationId, setImportLocationId] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const showLocationPicker = locations.length > 1;
+  const locationOptions = useMemo(
+    () => locations.map((loc) => ({ value: loc._id, label: loc.storeName })),
+    [locations],
+  );
+
+  const importLocation = useMemo(
+    () => locations.find((loc) => loc._id === importLocationId) ?? null,
+    [importLocationId, locations],
+  );
+
+  const importTimezone = importLocation?.timezone?.trim() || timezone;
 
   useEffect(() => {
     if (isOpen) {
       dialogRef.current?.showModal();
       setPeriod(defaultPeriod);
       setSelectedFile(null);
+      setImportLocationId(locations.length === 1 ? (locations[0]?._id ?? "") : "");
       setError("");
       return;
     }
     dialogRef.current?.close();
-  }, [defaultPeriod, isOpen]);
+  }, [defaultPeriod, isOpen, locations]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
+    if (showLocationPicker && !importLocationId) {
+      setError("Please select a location for this import.");
+      return;
+    }
+    const locationId = importLocationId || locations[0]?._id;
+    if (!locationId) {
+      setError("Please select a location for this import.");
+      return;
+    }
     if (period.periodType === "custom" && (!period.periodStart || !period.periodEnd)) {
       setError("Please select a start and end date for the import period.");
       return;
@@ -58,7 +87,7 @@ export const KitchenPerformanceImportModal = ({
 
     let range: { startDate: string; endDate: string };
     try {
-      range = periodToDateRange(period, timezone);
+      range = periodToDateRange(period, importTimezone);
     } catch {
       setError("Please select a valid start and end date for the import period.");
       return;
@@ -66,7 +95,7 @@ export const KitchenPerformanceImportModal = ({
 
     try {
       setSubmitting(true);
-      await onImport(range, selectedFile);
+      await onImport(locationId, range, selectedFile);
       onClose();
     } catch (importError) {
       const message =
@@ -116,6 +145,26 @@ export const KitchenPerformanceImportModal = ({
                 </p>
               )}
 
+              {showLocationPicker ? (
+                <div>
+                  <p className="text-sm font-medium text-primary mb-2">
+                    Location <span className="text-red-600">*</span>
+                  </p>
+                  <p className="text-xs text-secondary mb-2">
+                    CSV data will be imported for the selected location only.
+                  </p>
+                  <Dropdown
+                    options={locationOptions}
+                    value={importLocationId}
+                    onChange={setImportLocationId}
+                    placeholder="Select location"
+                    aria-label="Import location"
+                    className="w-full"
+                    allowEmpty
+                  />
+                </div>
+              ) : null}
+
               <div>
                 <p className="text-sm font-medium text-primary mb-2">Import period</p>
                 <p className="text-xs text-secondary mb-2">
@@ -127,7 +176,7 @@ export const KitchenPerformanceImportModal = ({
                 <KitchenPerformancePeriodPicker
                   value={period}
                   onChange={setPeriod}
-                  timezone={timezone}
+                  timezone={importTimezone}
                   className="w-full sm:w-auto"
                   disablePortal
                 />

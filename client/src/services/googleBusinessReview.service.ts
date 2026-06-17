@@ -1,4 +1,6 @@
 import api from './api.service';
+import type { LocationApiParams } from '../utils/locationSelectionHelpers';
+import { resolveLocationQuery } from '../utils/locationSelectionHelpers';
 import { API_ENDPOINTS } from '../utils/constants';
 
 export type GoogleBusinessReviewPeriod =
@@ -31,7 +33,7 @@ export interface GoogleBusinessReviewsResponse {
 
 export const googleBusinessReviewService = {
   async list(params: {
-    locationId: string;
+    locationQuery: LocationApiParams | string;
     period?: GoogleBusinessReviewPeriod;
     startDate?: string;
     endDate?: string;
@@ -40,9 +42,10 @@ export const googleBusinessReviewService = {
     minRating?: number;
     maxRating?: number;
   }): Promise<GoogleBusinessReviewsResponse> {
+    const { locationQuery, ...rest } = params;
     const { data } = await api.get<GoogleBusinessReviewsResponse>(
       API_ENDPOINTS.GOOGLE_BUSINESS_REVIEWS,
-      { params }
+      { params: { ...resolveLocationQuery(locationQuery), ...rest } }
     );
     return data;
   },

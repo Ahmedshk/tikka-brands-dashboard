@@ -11,6 +11,8 @@ import type {
   AlertRoleBindingCategory,
   CommandCenterAlertRow,
 } from "../../types/alertNotification.types";
+import type { LocationApiParams } from "../../utils/locationSelectionHelpers";
+import { hasLocationSelection } from "../../utils/locationSelectionHelpers";
 import { Spinner } from "../common/Spinner";
 
 const NEW_BADGE_MS = 15 * 60 * 1000;
@@ -24,7 +26,7 @@ export interface CommandCenterAlertsHistoryModalProps {
   onClose: () => void;
   categoryId: AlertRoleBindingCategory;
   categoryTitle: string;
-  locationId: string;
+  locationQuery: LocationApiParams;
 }
 
 export function CommandCenterAlertsHistoryModal({
@@ -32,7 +34,7 @@ export function CommandCenterAlertsHistoryModal({
   onClose,
   categoryId,
   categoryTitle,
-  locationId,
+  locationQuery,
 }: CommandCenterAlertsHistoryModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [rows, setRows] = useState<CommandCenterAlertRow[]>([]);
@@ -64,12 +66,12 @@ export function CommandCenterAlertsHistoryModal({
   }, [open]);
 
   useEffect(() => {
-    if (!open || !locationId) return;
+    if (!open || !hasLocationSelection(locationQuery)) return;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
     commandCenterService
-      .getAlertHistory(locationId, categoryId, { signal: controller.signal })
+      .getAlertHistory(locationQuery, categoryId, { signal: controller.signal })
       .then(setRows)
       .catch((err) => {
         if (controller.signal.aborted) return;
@@ -80,7 +82,7 @@ export function CommandCenterAlertsHistoryModal({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [open, locationId, categoryId]);
+  }, [open, locationQuery, categoryId]);
 
   if (!open) return null;
 

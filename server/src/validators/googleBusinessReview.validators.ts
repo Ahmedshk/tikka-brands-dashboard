@@ -1,10 +1,10 @@
 import { z } from "zod";
+import { withLocationQuery } from "./locationQuery.validators.js";
 
 const periodEnum = z.enum(["today", "weekToDate", "month", "custom", "all"]);
 
 export const listGoogleBusinessReviewsQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, "locationId is required"),
+  query: withLocationQuery({
     period: periodEnum.default("all"),
     startDate: z.string().optional(),
     endDate: z.string().optional(),

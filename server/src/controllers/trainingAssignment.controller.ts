@@ -4,7 +4,7 @@ import { CLOUDINARY_FOLDERS } from '../config/upload.config.js';
 import { TrainingAssignmentService } from '../services/trainingAssignment.service.js';
 import { ValidationError } from '../utils/errors.util.js';
 import { getFileFormat } from '../utils/training.util.js';
-import { isAllLocationsId } from '../utils/locationScope.js';
+import { resolveTargetLocationIds } from '../utils/locationScope.js';
 import { listTrainingAssignmentsAllLocations } from '../utils/trainingAssignmentsAllLocations.util.js';
 
 const assignmentService = new TrainingAssignmentService();
@@ -45,7 +45,6 @@ export const listAssignments = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const locationId = (req.query.locationId as string) ?? '';
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
     const limitRaw = req.query.limit;
     const limit =
@@ -53,7 +52,8 @@ export const listAssignments = async (
         ? undefined
         : Number(limitRaw);
 
-    if (isAllLocationsId(locationId)) {
+    const targetIds = await resolveTargetLocationIds(req);
+    if (targetIds.length > 1) {
       const result = await listTrainingAssignmentsAllLocations({
         req,
         assignmentService,
@@ -63,6 +63,8 @@ export const listAssignments = async (
       res.status(200).json({ success: true, data: result });
       return;
     }
+
+    const locationId = targetIds[0] ?? '';
 
     const { list, total } = await assignmentService.listByLocationId(locationId, {
       ...(search != null && search !== '' && { search }),

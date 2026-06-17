@@ -6,7 +6,7 @@ import OperationsIcon from "@assets/icons/operations.svg?react";
 import { Layout } from "../../components/common/Layout";
 import { kitchenPerformanceService } from "../../services/kitchenPerformance.service";
 import { zonedWallTodayYmd } from "../../utils/kitchenPerformancePeriodRange";
-import type { RootState } from "../../store/store";
+import { selectCurrentLocation } from "../../store/locationSelectors";
 import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
 import { KitchenPerformanceDetailsItemTab } from "../../components/KitchenPerformance/KitchenPerformanceDetailsItemTab";
 import { KitchenPerformanceDetailsTicketTab } from "../../components/KitchenPerformance/KitchenPerformanceDetailsTicketTab";
@@ -33,9 +33,7 @@ export const KitchenPerformanceDetails = () => {
   const navigate = useNavigate();
   const { deviceName: encodedDeviceName } = useParams<{ deviceName: string }>();
   const [searchParams] = useSearchParams();
-  const currentLocation = useSelector(
-    (state: RootState) => state.location.currentLocation,
-  );
+  const currentLocation = useSelector(selectCurrentLocation);
   const canFullPage = useCanAccessComponent(DETAILS_PAGE_ID, "full-page");
   const [activeTab, setActiveTab] = useState<DetailsTab>("ticket-performance");
   const [loading, setLoading] = useState(true);

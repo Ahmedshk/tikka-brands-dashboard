@@ -15,7 +15,7 @@ export const ReviewsManagementReviewCyclesCard = (props: {
   reviewCyclesSearchDebounced: string;
   setReviewCyclesSearchInput: (v: string) => void;
   activePreviewCycles: ReviewCycle[];
-  allLocationsSelected: boolean;
+  isMultiLocationView: boolean;
   currentUserId: string | null;
   isDirector: boolean;
   isOwner: boolean;
@@ -32,7 +32,7 @@ export const ReviewsManagementReviewCyclesCard = (props: {
     reviewCyclesSearchDebounced,
     setReviewCyclesSearchInput,
     activePreviewCycles,
-    allLocationsSelected,
+    isMultiLocationView,
     currentUserId,
     isDirector,
     isOwner,
@@ -227,7 +227,7 @@ export const ReviewsManagementReviewCyclesCard = (props: {
                         const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                         const employeeId =
                           typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
-                        const locLabel = allLocationsSelected
+                        const locLabel = isMultiLocationView
                           ? c.locationName?.trim()
                           : undefined;
                         const roleLabel = emp?.role?.trim() || "—";

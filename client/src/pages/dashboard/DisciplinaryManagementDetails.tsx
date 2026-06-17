@@ -7,6 +7,7 @@ import { Spinner } from '../../components/common/Spinner';
 import { AssignPointsModal } from '../../components/modal/AssignPointsModal';
 import { EmbeddedAdobeSignModal } from '../../components/modal/EmbeddedAdobeSignModal';
 import { IncidentDetailsModal } from '../../components/modal/IncidentDetailsModal';
+import { selectCurrentLocation } from '../../store/locationSelectors';
 import type { RootState } from '../../store/store';
 import {
   DetailsPageHeader,
@@ -234,7 +235,7 @@ export const DisciplinaryManagementDetails = () => {
   const canIncidentHistory90 = useCanAccessComponent(PAGE_ID, 'incident-history-90-days');
   const canRequiredProtocol = useCanAccessComponent(PAGE_ID, 'required-protocol');
   const canPriorIncidents = useCanAccessComponent(PAGE_ID, 'prior-incidents');
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const currentLocation = useSelector(selectCurrentLocation);
   const notifications = useSelector((state: RootState) => state.notification.notifications);
   const [incidentModalOpen, setIncidentModalOpen] = useState(false);
   const [priorIncidentModalOpen, setPriorIncidentModalOpen] = useState(false);

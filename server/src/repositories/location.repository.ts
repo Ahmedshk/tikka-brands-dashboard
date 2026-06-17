@@ -48,6 +48,8 @@ function buildListMatchQuery(filter?: LocationListFilter): Record<string, unknow
   return { $and: parts };
 }
 
+const LIST_SORT = { sortOrder: 1 as const, createdAt: -1 as const };
+
 const LIST_PROJECTION = {
   storeName: 1,
   address: 1,
@@ -68,11 +70,11 @@ export class LocationRepository {
   }
 
   async findAll(): Promise<LocationDocument[]> {
-    return await LocationModel.find().sort({ createdAt: -1 }).lean().exec() as LocationDocument[];
+    return await LocationModel.find().sort(LIST_SORT).lean().exec() as LocationDocument[];
   }
 
   async findPaginated(skip: number, limit: number): Promise<LocationDocument[]> {
-    return await LocationModel.find().select(LIST_PROJECTION).sort({ createdAt: -1 }).skip(skip).limit(limit).lean().exec() as LocationDocument[];
+    return await LocationModel.find().select(LIST_PROJECTION).sort(LIST_SORT).skip(skip).limit(limit).lean().exec() as LocationDocument[];
   }
 
   async findPaginatedWithFilter(
@@ -83,7 +85,7 @@ export class LocationRepository {
     const q = buildListMatchQuery(filter);
     return await LocationModel.find(q)
       .select(LIST_PROJECTION)
-      .sort({ createdAt: -1 })
+      .sort(LIST_SORT)
       .skip(skip)
       .limit(limit)
       .lean()
@@ -99,6 +101,35 @@ export class LocationRepository {
     return await LocationModel.countDocuments(q);
   }
 
+  async getMaxSortOrder(): Promise<number> {
+    const doc = await LocationModel.findOne()
+      .sort({ sortOrder: -1 })
+      .select({ sortOrder: 1 })
+      .lean()
+      .exec();
+    const n = doc?.sortOrder;
+    return typeof n === 'number' && Number.isFinite(n) ? n : -1;
+  }
+
+  async findAllIds(): Promise<string[]> {
+    const docs = await LocationModel.find()
+      .select({ _id: 1 })
+      .sort(LIST_SORT)
+      .lean()
+      .exec();
+    return docs.map((d) => String(d._id));
+  }
+
+  async bulkUpdateSortOrder(orderedIds: string[]): Promise<void> {
+    if (orderedIds.length === 0) return;
+    const ops = orderedIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: new mongoose.Types.ObjectId(id) },
+        update: { $set: { sortOrder: index } },
+      },
+    }));
+    await LocationModel.bulkWrite(ops);
+  }
   async updateById(
     id: string,
     updateData: UpdateQuery<LocationDocument> | Partial<Omit<ILocation, '_id' | 'createdAt' | 'updatedAt'>>,

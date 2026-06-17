@@ -3,7 +3,7 @@ import { GoalService } from "../services/goal.service.js";
 import { getGoalDailyActualsByDates } from "../services/goalDailyActuals.service.js";
 import { LocationService } from "../services/location.service.js";
 import { getTodayInTimezone } from "../utils/timezone.util.js";
-import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "../utils/locationScope.js";
+import { resolveTargetLocationIds } from "../utils/locationScope.js";
 import {
   getAllowedGoalMetricKeys,
   sanitizeGoalSetting,
@@ -35,8 +35,9 @@ export const getGoals = async (
     const allowedKeys = getAllowedGoalMetricKeys(req);
 
     if (date) {
-      if (isAllLocationsId(locationId)) {
-        const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+      const targetIds = await resolveTargetLocationIds(req);
+      if (targetIds.length > 1) {
+        const effectiveIds = targetIds;
         if (effectiveIds.length === 0) {
           res.status(200).json({
             success: true,
@@ -109,7 +110,8 @@ export const getGoals = async (
         });
         return;
       }
-      const result = await goalService.getByLocationIdAndDate(locationId, date);
+      const singleLocationId = targetIds[0] ?? locationId;
+      const result = await goalService.getByLocationIdAndDate(singleLocationId, date);
       const filtered = sanitizeResolvedGoalResult(result, allowedKeys);
       const data: Record<string, unknown> = {
         goals: filtered.goals,
@@ -156,8 +158,9 @@ export const getGoalRange = async (
     const allowedKeys = getAllowedGoalMetricKeys(req);
     const dates = enumerateDateRange(startDate, endDate);
 
-    if (isAllLocationsId(locationId)) {
-      const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+    const targetIds = await resolveTargetLocationIds(req);
+    if (targetIds.length > 1) {
+      const effectiveIds = targetIds;
       if (effectiveIds.length === 0) {
         const empty = aggregatePerDayGoals(locationId, []);
         const filtered = sanitizeResolvedGoalResult(
@@ -191,8 +194,9 @@ export const getGoalRange = async (
       return;
     }
 
-    const days = await goalService.getByLocationIdForDates(locationId, dates);
-    const aggregated = aggregatePerDayGoals(locationId, days);
+    const singleLocationId = targetIds[0] ?? locationId;
+    const days = await goalService.getByLocationIdForDates(singleLocationId, dates);
+    const aggregated = aggregatePerDayGoals(singleLocationId, days);
     const filtered = sanitizeResolvedGoalResult(
       { goals: aggregated, source: "default" },
       allowedKeys,

@@ -1172,6 +1172,8 @@ export class ReviewCycleService {
     limit?: number;
     /** When set (navbar location), only cycles for employees assigned this location on role + overrides. */
     locationId?: string;
+    /** When set (navbar multi-select), union of employees for any listed location. */
+    locationIds?: string[];
     /** Case-insensitive match on employee first or last name (visible employees only). */
     employeeNameSearch?: string;
   }) {
@@ -1184,6 +1186,7 @@ export class ReviewCycleService {
       userId: query.userId,
       actorUserId: query.actorUserId,
       locationId: query.locationId,
+      locationIds: query.locationIds,
       employeeNameSearch: query.employeeNameSearch,
       filter,
       escapeRegex: escapeRegexForEmployeeNameSearch,

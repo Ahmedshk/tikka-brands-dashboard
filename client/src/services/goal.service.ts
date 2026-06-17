@@ -1,6 +1,8 @@
 import api from "./api.service";
 import { API_ENDPOINTS } from "../utils/constants";
 import { ApiResponse } from "../types";
+import type { LocationApiParams } from "../utils/locationSelectionHelpers";
+import { resolveLocationQuery } from "../utils/locationSelectionHelpers";
 import type {
   Goal,
   GoalSetting,
@@ -51,8 +53,12 @@ export const goalService = {
   /**
    * Get resolved goals for a specific date (YYYY-MM-DD in location timezone).
    */
-  async getResolved(locationId: string, date: string, options?: { signal?: AbortSignal }): Promise<Goal> {
-    const { goal } = await this.getResolvedWithSource(locationId, date, options);
+  async getResolved(
+    locationQuery: LocationApiParams | string,
+    date: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<Goal> {
+    const { goal } = await this.getResolvedWithSource(locationQuery, date, options);
     return goal;
   },
 
@@ -61,7 +67,7 @@ export const goalService = {
    * and averages rates/tolerances across the range (and across locations for __all__).
    */
   async getResolvedRange(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     startDate: string,
     endDate: string,
     options?: { signal?: AbortSignal },
@@ -69,7 +75,7 @@ export const goalService = {
     const res = await api.get<ApiResponse<{ goals: Goal; source?: string }>>(
       `${BASE}/range`,
       {
-        params: { locationId, startDate, endDate },
+        params: { ...resolveLocationQuery(locationQuery), startDate, endDate },
         signal: options?.signal,
       },
     );
@@ -83,7 +89,7 @@ export const goalService = {
    * Get resolved goals and source for a date (for Previous goals tab).
    */
   async getResolvedWithSource(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     date: string,
     options?: { signal?: AbortSignal }
   ): Promise<ResolvedGoalWithSource> {
@@ -94,7 +100,7 @@ export const goalService = {
         defaultSnapshotEffectiveFrom?: string;
       }>
     >(BASE, {
-      params: { locationId, date },
+      params: { ...resolveLocationQuery(locationQuery), date },
       signal: options?.signal,
     });
     if (!res.data.success || res.data.data?.goals == null) {

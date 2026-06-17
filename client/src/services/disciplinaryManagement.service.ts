@@ -1,4 +1,6 @@
 import api from "./api.service";
+import type { LocationApiParams } from "../utils/locationSelectionHelpers";
+import { resolveLocationQuery } from "../utils/locationSelectionHelpers";
 import type {
   DisciplinaryRow,
   DisciplinaryStatus,
@@ -109,7 +111,7 @@ function formatDate(isoDate: string | null): string {
 
 export const disciplinaryManagementService = {
   async getEmployees(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     options: { page?: number; limit?: number; search?: string } = {},
     config?: { signal?: AbortSignal },
   ): Promise<{
@@ -128,7 +130,7 @@ export const disciplinaryManagementService = {
     const limit = options.limit ?? 10;
     const search = options.search?.trim() ?? '';
     const params = new URLSearchParams({
-      locationId,
+      ...resolveLocationQuery(locationQuery),
       page: String(page),
       limit: String(limit),
     });

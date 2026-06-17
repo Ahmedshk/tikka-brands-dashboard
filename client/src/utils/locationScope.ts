@@ -18,6 +18,14 @@ const ALL_LOCATIONS_ROUTE_ALLOWLIST: readonly string[] = [
   '/dashboard/calendar-events',
 ] as const;
 
+const SINGLE_LOCATION_ONLY_ROUTES: readonly string[] = [
+  '/dashboard/inventory-food-cost',
+] as const;
+
+export function isSingleLocationOnlyRoute(pathname: string): boolean {
+  return SINGLE_LOCATION_ONLY_ROUTES.includes(pathname);
+}
+
 export function shouldShowAllLocationsOption(pathname: string): boolean {
   return ALL_LOCATIONS_ROUTE_ALLOWLIST.includes(pathname);
 }

@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { ValidationError, ForbiddenError } from "../utils/errors.util.js";
 import { KitchenPerformanceService } from "../services/kitchenPerformance.service.js";
 import { uploadKitchenPerformanceCsvMulter } from "../middleware/upload-kitchen-performance.middleware.js";
-import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "../utils/locationScope.js";
+import { resolveTargetLocationIds } from "../utils/locationScope.js";
 
 const service = new KitchenPerformanceService();
 
@@ -40,13 +40,12 @@ export async function getKitchenPerformance(
 ): Promise<void> {
   try {
     const {
-      locationId,
       startDate,
       endDate,
       page: pageRaw,
       limit: limitRaw,
     } = req.query as {
-      locationId: string;
+      locationId?: string;
       startDate: string;
       endDate: string;
       page?: string;
@@ -56,10 +55,10 @@ export async function getKitchenPerformance(
     const page = Number.parseInt(pageRaw ?? "1", 10);
     const limit = Number.parseInt(limitRaw ?? "10", 10);
 
-    if (isAllLocationsId(locationId)) {
-      const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+    const targetIds = await resolveTargetLocationIds(req);
+    if (targetIds.length > 1) {
       const results = await Promise.all(
-        effectiveIds.map((id) =>
+        targetIds.map((id) =>
           service.getByLocationAndDateRange(id, startDate, endDate, 1, 10_000),
         ),
       );
@@ -78,8 +77,9 @@ export async function getKitchenPerformance(
       return;
     }
 
+    const singleLocationId = targetIds[0]!;
     const result = await service.getByLocationAndDateRange(
-      locationId,
+      singleLocationId,
       startDate,
       endDate,
       Number.isNaN(page) ? 1 : page,

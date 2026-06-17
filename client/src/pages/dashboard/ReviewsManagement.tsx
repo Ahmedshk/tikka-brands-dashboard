@@ -15,6 +15,12 @@ import type {
   ReviewCycleStatus,
   ReviewSettings,
 } from "../../types/review.types";
+import {
+  selectAllLocationsSelected,
+  selectIsMultiLocationView,
+  selectLocationApiParams,
+} from "../../store/locationSelectors";
+import { reviewCycleLocationQueryParams } from "../../utils/locationSelectionHelpers";
 import type { RootState } from "../../store/store";
 import TeamHrIcon from "@assets/icons/team_and_hr.svg?react";
 import { useReviewsManagementSectionAccess } from "../../utils/reviewsManagementPermissionHelpers";
@@ -48,9 +54,17 @@ const CLOSED_CYCLE_STATUSES = new Set<ReviewCycleStatus>([
 ]);
 
 export const ReviewsManagement = () => {
-  const currentLocation = useSelector((s: RootState) => s.location.currentLocation);
-  const allLocationsSelected = useSelector((s: RootState) => s.location.allLocationsSelected);
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const allLocationsSelected = useSelector(selectAllLocationsSelected);
+  const isMultiLocationView = useSelector(selectIsMultiLocationView);
   const user = useSelector((s: RootState) => s.auth.user);
+
+  const applyLocationParams = useCallback(
+    (params: Record<string, string>) => {
+      Object.assign(params, reviewCycleLocationQueryParams(locationApiParams, allLocationsSelected));
+    },
+    [locationApiParams, allLocationsSelected],
+  );
 
   const [cycles, setCycles] = useState<ReviewCycle[]>([]);
   const [pastPreviewCycles, setPastPreviewCycles] = useState<ReviewCycle[]>([]);
@@ -89,7 +103,7 @@ export const ReviewsManagement = () => {
         page: "1",
         limit: "100",
       };
-      if (currentLocation?._id) params.locationId = currentLocation._id;
+      applyLocationParams(params);
       const [cyclesRes, settingsRes] = await Promise.all([
         reviewService.getCycles(params, { signal }),
         reviewService.getSettings({ signal }).catch(() => null),
@@ -105,7 +119,7 @@ export const ReviewsManagement = () => {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [currentLocation?._id]);
+  }, [applyLocationParams]);
 
   useEffect(() => {
     const t = globalThis.setTimeout(() => {
@@ -129,7 +143,7 @@ export const ReviewsManagement = () => {
         page: "1",
         limit: String(CARD_ROW_LIMIT),
       };
-      if (currentLocation?._id) params.locationId = currentLocation._id;
+      applyLocationParams(params);
       if (search) params.search = search;
       const res = await reviewService.getCycles(params, { signal });
       if (signal?.aborted) return;
@@ -144,7 +158,7 @@ export const ReviewsManagement = () => {
     } finally {
       if (!signal?.aborted) setActiveListLoading(false);
     }
-  }, [currentLocation?._id]);
+  }, [applyLocationParams]);
 
   const loadActiveCyclesModalPage = useCallback(
     async (page: number, search: string, signal?: AbortSignal) => {
@@ -155,7 +169,7 @@ export const ReviewsManagement = () => {
           page: String(page),
           limit: String(MODAL_PAGE_SIZE),
         };
-        if (currentLocation?._id) params.locationId = currentLocation._id;
+        applyLocationParams(params);
         if (search) params.search = search;
         const res = await reviewService.getCycles(params, { signal });
         if (signal?.aborted) return;
@@ -170,7 +184,7 @@ export const ReviewsManagement = () => {
         if (!signal?.aborted) setActiveModalLoading(false);
       }
     },
-    [currentLocation?._id],
+    [applyLocationParams],
   );
 
   const loadPastReviews = useCallback(async (search: string, signal?: AbortSignal) => {
@@ -181,7 +195,7 @@ export const ReviewsManagement = () => {
         page: "1",
         limit: String(CARD_ROW_LIMIT),
       };
-      if (currentLocation?._id) params.locationId = currentLocation._id;
+      applyLocationParams(params);
       if (search) params.search = search;
       const pastRes = await reviewService.getCycles(params, { signal });
       if (signal?.aborted) return;
@@ -196,7 +210,7 @@ export const ReviewsManagement = () => {
     } finally {
       if (!signal?.aborted) setPastListLoading(false);
     }
-  }, [currentLocation?._id]);
+  }, [applyLocationParams]);
 
   const loadPastModalPage = useCallback(
     async (page: number, search: string, signal?: AbortSignal) => {
@@ -207,7 +221,7 @@ export const ReviewsManagement = () => {
           page: String(page),
           limit: String(MODAL_PAGE_SIZE),
         };
-        if (currentLocation?._id) params.locationId = currentLocation._id;
+        applyLocationParams(params);
         if (search) params.search = search;
         const res = await reviewService.getCycles(params, { signal });
         if (signal?.aborted) return;
@@ -222,7 +236,7 @@ export const ReviewsManagement = () => {
         if (!signal?.aborted) setPastModalLoading(false);
       }
     },
-    [currentLocation?._id],
+    [applyLocationParams],
   );
 
   useEffect(() => {
@@ -387,7 +401,7 @@ export const ReviewsManagement = () => {
             reviewCyclesSearchDebounced={reviewCyclesSearchDebounced}
             setReviewCyclesSearchInput={setReviewCyclesSearchInput}
             activePreviewCycles={activePreviewCycles}
-            allLocationsSelected={allLocationsSelected}
+            isMultiLocationView={isMultiLocationView}
             currentUserId={currentUserId}
             isDirector={isDirector}
             isOwner={user?.role === "Owner"}
@@ -412,7 +426,7 @@ export const ReviewsManagement = () => {
             pastReviewsSearchDebounced={pastReviewsSearchDebounced}
             setPastReviewsSearchInput={setPastReviewsSearchInput}
             pastPreviewCycles={pastPreviewCycles}
-            allLocationsSelected={allLocationsSelected}
+            isMultiLocationView={isMultiLocationView}
             onViewPastDetail={(cycleId) => {
               setDetailViewType("past");
               setPastDetailCycleId(cycleId);
@@ -437,7 +451,7 @@ export const ReviewsManagement = () => {
           page={reviewCyclesPage}
           totalPages={reviewCyclesTotalPages}
           onPageChange={setReviewCyclesPage}
-          allLocationsSelected={allLocationsSelected}
+          isMultiLocationView={isMultiLocationView}
           currentUserId={currentUserId}
           isDirector={isDirector}
           isOwner={user?.role === "Owner"}
@@ -465,7 +479,7 @@ export const ReviewsManagement = () => {
           page={pastReviewsPage}
           totalPages={pastReviewsTotalPages}
           onPageChange={setPastReviewsPage}
-          allLocationsSelected={allLocationsSelected}
+          isMultiLocationView={isMultiLocationView}
           onViewPastDetail={(cycleId) => {
             setDetailViewType("past");
             setPastDetailCycleId(cycleId);

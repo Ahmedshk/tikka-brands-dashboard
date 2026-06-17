@@ -13,7 +13,7 @@ import {
   type CommandCenterAlertCategory,
   type CommandCenterCardRow,
 } from "./commandCenterAlertsCollect.util.js";
-import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "./locationScope.js";
+import { parseLocationIdsFromQuery, resolveTargetLocationIds } from "./locationScope.js";
 import {
   getLocationFanoutConcurrency,
   mapWithConcurrency,
@@ -112,7 +112,13 @@ function collectBucketsForLocationFromNotifications(args: {
 }
 
 export function parseLocationId(req: Request): string {
+  const explicit = parseLocationIdsFromQuery(req);
+  if (explicit.length > 0) return explicit[0]!;
   return typeof req.query.locationId === "string" ? req.query.locationId.trim() : "";
+}
+
+export function hasLocationQuery(req: Request): boolean {
+  return parseLocationIdsFromQuery(req).length > 0 || parseLocationId(req).length > 0;
 }
 
 export function componentPermissionsFromRequest(req: Request): AlertsAccessFlags {
@@ -186,15 +192,15 @@ export async function getAlertsBucketsForRequest(args: {
 > {
   const { req, locationService } = args;
   const locationId = parseLocationId(req);
-  if (!locationId) return { kind: "bad_request", message: "locationId is required" };
+  if (!hasLocationQuery(req)) return { kind: "bad_request", message: "locationId is required" };
 
-  if (isAllLocationsId(locationId)) {
+  const targetIds = await resolveTargetLocationIds(req);
+  if (targetIds.length > 1) {
     const tHandler = performance.now();
     const userId = req.user!.userId;
     const flags = componentPermissionsFromRequest(req);
 
-    const [effectiveIds, dismissed, notifications] = await Promise.all([
-      resolveEffectiveAllowedLocationIds(req),
+    const [dismissed, notifications] = await Promise.all([
       loadDismissedNotificationIds(userId),
       loadCommandCenterNotificationsForUser(userId),
     ]);
@@ -203,7 +209,7 @@ export async function getAlertsBucketsForRequest(args: {
     const perLocationMs: number[] = [];
 
     const perLoc = await mapWithConcurrency(
-      effectiveIds,
+      targetIds,
       getLocationFanoutConcurrency(),
       async (lid) => {
         const { value, ms } = await timedPerLocation(async () => {
@@ -231,7 +237,7 @@ export async function getAlertsBucketsForRequest(args: {
 
     summarizeAllLocationsTimings({
       route: "GET /command-center/alerts",
-      locationCount: effectiveIds.length,
+      locationCount: targetIds.length,
       totalMs: Math.round(performance.now() - tHandler),
       perLocationMs,
     });
@@ -294,7 +300,7 @@ export async function getAlertHistoryForRequest(args: {
   const { req, locationService } = args;
 
   const locationId = parseLocationId(req);
-  if (!locationId) return { kind: "bad_request", message: "locationId is required" };
+  if (!hasLocationQuery(req)) return { kind: "bad_request", message: "locationId is required" };
 
   const category = parseCategory(req) as CommandCenterAlertCategory;
 
@@ -306,16 +312,14 @@ export async function getAlertHistoryForRequest(args: {
   const userId = req.user!.userId;
   const dismissed = await loadDismissedNotificationIds(userId);
 
-  if (isAllLocationsId(locationId)) {
+  const targetIds = await resolveTargetLocationIds(req);
+  if (targetIds.length > 1) {
     const tHandler = performance.now();
-    const [effectiveIds, notifications] = await Promise.all([
-      resolveEffectiveAllowedLocationIds(req),
-      loadCommandCenterNotificationsForUser(userId),
-    ]);
+    const notifications = await loadCommandCenterNotificationsForUser(userId);
     const perLocationMs: number[] = [];
 
     const perLoc = await mapWithConcurrency(
-      effectiveIds,
+      targetIds,
       getLocationFanoutConcurrency(),
       async (lid) => {
         const { value, ms } = await timedPerLocation(async () => {
@@ -348,7 +352,7 @@ export async function getAlertHistoryForRequest(args: {
 
     summarizeAllLocationsTimings({
       route: `GET /command-center/alerts/history (${category})`,
-      locationCount: effectiveIds.length,
+      locationCount: targetIds.length,
       totalMs: Math.round(performance.now() - tHandler),
       perLocationMs,
     });

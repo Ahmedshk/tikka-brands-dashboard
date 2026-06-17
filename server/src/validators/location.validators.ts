@@ -67,3 +67,11 @@ export const getLocationsQuerySchema = z.object({
       .default(10),
   }),
 });
+
+export const reorderLocationsSchema = z.object({
+  body: z.object({
+    locationIds: z
+      .array(z.string().min(1, "Location ID is required"))
+      .min(1, "At least one location id is required"),
+  }),
+});

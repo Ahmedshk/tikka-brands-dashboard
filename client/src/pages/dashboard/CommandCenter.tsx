@@ -18,7 +18,12 @@ import DollarIcon from '@assets/icons/dollar.svg?react';
 import LaborCostIcon from '@assets/icons/actual_labor_cost.svg?react';
 import StarIcon from '@assets/icons/star.svg?react';
 import { useSelector } from 'react-redux';
-import type { RootState } from '../../store/store';
+import {
+  selectCurrentLocation,
+  selectIsMultiLocationView,
+  selectLocationApiParams,
+} from '../../store/locationSelectors';
+import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
 import {
   commandCenterService,
   type HourlySalesRow,
@@ -62,9 +67,10 @@ function sortAlertItemsNewestFirst<T extends { createdAt?: string }>(items: T[])
 }
 
 export const CommandCenter = () => {
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
-  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
-  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const isMultiLocationView = useSelector(selectIsMultiLocationView);
+  const currentLocation = useSelector(selectCurrentLocation);
+  const hasLocationScope = hasLocationSelection(locationApiParams);
   const canNetSales = useCanAccessComponent(PAGE_ID, 'net-sales-kpi');
   const canLaborCost = useCanAccessComponent(PAGE_ID, 'labor-cost-kpi');
   const canReviewRating = useCanAccessComponent(PAGE_ID, 'review-rating-kpi');
@@ -86,11 +92,11 @@ export const CommandCenter = () => {
   const showAlerts = canAlertsFinancial || canAlertsInventory || canAlertsReputation;
 
   const [kpis, setKpis] = useState<Awaited<ReturnType<typeof commandCenterService.getKPIs>> | null>(null);
-  const [loading, setLoading] = useState(!!currentLocation?._id && shouldFetchKpis);
+  const [loading, setLoading] = useState(hasLocationScope && shouldFetchKpis);
   const [error, setError] = useState<string | null>(null);
   const [kpiPeriod, setKpiPeriod] = useState<CommandCenterKPIPeriod>('today');
   const [hourlySales, setHourlySales] = useState<HourlySalesRow[] | null>(null);
-  const [hourlySalesLoading, setHourlySalesLoading] = useState(!!currentLocation?._id && shouldFetchHourly);
+  const [hourlySalesLoading, setHourlySalesLoading] = useState(hasLocationScope && shouldFetchHourly);
   const [hourlySalesError, setHourlySalesError] = useState<string | null>(null);
   const [alertBuckets, setAlertBuckets] = useState<CommandCenterAlertBuckets | null>(null);
   const [alertsLoading, setAlertsLoading] = useState(false);
@@ -100,8 +106,8 @@ export const CommandCenter = () => {
   // avoids 3 parallel endpoints contending for the same Mongo scans.
   const [kpisSettled, setKpisSettled] = useState(false);
   const [hourlySettled, setHourlySettled] = useState(false);
-  const canStartHourly = !allLocationsSelected || kpisSettled;
-  const canStartAlerts = !allLocationsSelected || hourlySettled;
+  const canStartHourly = !isMultiLocationView || kpisSettled;
+  const canStartAlerts = !isMultiLocationView || hourlySettled;
   const dismissedAlertIdsRef = useRef<Set<string>>(new Set());
   const [historyModal, setHistoryModal] = useState<{
     categoryId: AlertRoleBindingCategory;
@@ -111,10 +117,10 @@ export const CommandCenter = () => {
   useEffect(() => {
     setKpisSettled(false);
     setHourlySettled(false);
-  }, [locationId, allLocationsSelected]);
+  }, [locationApiParams, isMultiLocationView]);
 
   useEffect(() => {
-    if (!locationId || !shouldFetchKpis || kpiMetrics.length === 0) {
+    if (!hasLocationScope || !shouldFetchKpis || kpiMetrics.length === 0) {
       setKpis(null);
       setError(null);
       setLoading(false);
@@ -125,7 +131,7 @@ export const CommandCenter = () => {
     setLoading(true);
     setError(null);
     commandCenterService
-      .getKPIs(locationId, {
+      .getKPIs(locationApiParams, {
         metrics: kpiMetrics,
         periods: ['today', 'weekToDate', 'monthToDate', 'lastWeek'],
         signal: controller.signal,
@@ -142,10 +148,10 @@ export const CommandCenter = () => {
         }
       });
     return () => controller.abort();
-  }, [locationId, shouldFetchKpis, kpiMetrics.join(",")]);
+  }, [locationApiParams, hasLocationScope, shouldFetchKpis, kpiMetrics.join(",")]);
 
   useEffect(() => {
-    if (!locationId || !shouldFetchHourly) {
+    if (!hasLocationScope || !shouldFetchHourly) {
       setHourlySales(null);
       setHourlySalesError(null);
       setHourlySalesLoading(false);
@@ -157,7 +163,7 @@ export const CommandCenter = () => {
     setHourlySalesLoading(true);
     setHourlySalesError(null);
     commandCenterService
-      .getHourlySales(locationId, { signal: controller.signal })
+      .getHourlySales(locationApiParams, { signal: controller.signal })
       .then(setHourlySales)
       .catch((err) => {
         if (controller.signal.aborted) return;
@@ -171,10 +177,10 @@ export const CommandCenter = () => {
         }
       });
     return () => controller.abort();
-  }, [locationId, shouldFetchHourly, canStartHourly]);
+  }, [locationApiParams, hasLocationScope, shouldFetchHourly, canStartHourly]);
 
   useEffect(() => {
-    if (!locationId || !showAlerts) {
+    if (!hasLocationScope || !showAlerts) {
       setAlertBuckets(null);
       setAlertsError(null);
       setAlertsLoading(false);
@@ -185,7 +191,7 @@ export const CommandCenter = () => {
     setAlertsLoading(true);
     setAlertsError(null);
     commandCenterService
-      .getAlerts(locationId, { signal: controller.signal })
+      .getAlerts(locationApiParams, { signal: controller.signal })
       .then(setAlertBuckets)
       .catch((err) => {
         if (controller.signal.aborted) return;
@@ -196,7 +202,7 @@ export const CommandCenter = () => {
         if (!controller.signal.aborted) setAlertsLoading(false);
       });
     return () => controller.abort();
-  }, [locationId, showAlerts, canStartAlerts]);
+  }, [locationApiParams, hasLocationScope, showAlerts, canStartAlerts]);
 
   const dismissAlertById = useCallback(async (notificationId: string) => {
     await commandCenterService.dismissAlerts([notificationId]);
@@ -225,7 +231,7 @@ export const CommandCenter = () => {
   const handleSocketNotificationNew = useCallback((payload: unknown) => {
     if (payload == null || typeof payload !== 'object') return;
     if (!currentLocation?._id) return;
-    if (allLocationsSelected) return;
+    if (isMultiLocationView) return;
 
     const timezone = currentLocation.timezone?.trim() || 'America/Denver';
     const todayKey = getTodayInTimezone(timezone);
@@ -272,7 +278,7 @@ export const CommandCenter = () => {
   }, [
     currentLocation?._id,
     currentLocation?.timezone,
-    allLocationsSelected,
+    isMultiLocationView,
     canAlertsFinancial,
     canAlertsInventory,
     canAlertsReputation,
@@ -280,7 +286,7 @@ export const CommandCenter = () => {
 
   useEffect(() => {
     if (!showAlerts || currentLocation?._id == null) return;
-    if (allLocationsSelected) return;
+    if (isMultiLocationView) return;
     const sock = getSocket();
     if (sock == null) return;
 
@@ -292,7 +298,7 @@ export const CommandCenter = () => {
     showAlerts,
     currentLocation?._id,
     currentLocation?.timezone,
-    allLocationsSelected,
+    isMultiLocationView,
     canAlertsFinancial,
     canAlertsInventory,
     canAlertsReputation,
@@ -363,7 +369,7 @@ export const CommandCenter = () => {
 
   const alertCategories = useMemo((): AlertCategory[] => {
     const cats: AlertCategory[] = [];
-    const includeLocationLine = allLocationsSelected;
+    const includeLocationLine = isMultiLocationView;
     if (canAlertsFinancial) {
       cats.push({
         id: 'financial_labor',
@@ -406,7 +412,7 @@ export const CommandCenter = () => {
     canAlertsFinancial,
     canAlertsInventory,
     canAlertsReputation,
-    allLocationsSelected,
+    isMultiLocationView,
   ]);
 
   return (
@@ -430,7 +436,7 @@ export const CommandCenter = () => {
           )}
         </div>
 
-        {!locationId && (
+        {!hasLocationScope && (
           <p className="text-sm text-secondary mb-4">Select a location from the navbar to view KPIs.</p>
         )}
         {error && (
@@ -479,7 +485,7 @@ export const CommandCenter = () => {
                   value={pct}
                   goal={goal}
                   goalTolerance={goalTolerance}
-                  subtitle={allLocationsSelected ? "Labor Cost as % of Net Sales (Avg goal)" : "Labor Cost as % of Net Sales"}
+                  subtitle={isMultiLocationView ? "Labor Cost as % of Net Sales (Avg goal)" : "Labor Cost as % of Net Sales"}
                   overTarget={overTarget}
                   loading={loading}
                   size={340}
@@ -505,13 +511,13 @@ export const CommandCenter = () => {
           />
         )}
 
-        {showAlerts && historyModal != null && locationId != null && (
+        {showAlerts && historyModal != null && hasLocationScope && (
           <CommandCenterAlertsHistoryModal
             open
             onClose={() => setHistoryModal(null)}
             categoryId={historyModal.categoryId}
             categoryTitle={historyModal.title}
-            locationId={locationId}
+            locationQuery={locationApiParams}
           />
         )}
       </div>

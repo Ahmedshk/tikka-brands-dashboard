@@ -9,7 +9,11 @@ import { Spinner } from "../common/Spinner";
 import { sortPastReviewCyclesByRecentFirst } from "../../utils/reviewCycleHelpers";
 import { getStatusColor, getStatusLabel } from "../../types/review.types";
 import type { ReviewCycle } from "../../types/review.types";
-import type { RootState } from "../../store/store";
+import {
+  selectAllLocationsSelected,
+  selectLocationApiParams,
+} from "../../store/locationSelectors";
+import { reviewCycleLocationQueryParams } from "../../utils/locationSelectionHelpers";
 
 const PAGE_SIZE = 10;
 
@@ -26,7 +30,8 @@ export function EmployeePastReviewsListModal({
   employeeId,
   onViewCycle,
 }: EmployeePastReviewsListModalProps) {
-  const currentLocation = useSelector((s: RootState) => s.location.currentLocation);
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const allLocationsSelected = useSelector(selectAllLocationsSelected);
   const [loading, setLoading] = useState(false);
   const [cycles, setCycles] = useState<ReviewCycle[]>([]);
   const [page, setPage] = useState(1);
@@ -46,7 +51,7 @@ export function EmployeePastReviewsListModal({
           employeeId: employeeId.trim(),
           limit: "100",
         };
-        if (currentLocation?._id) params.locationId = currentLocation._id;
+        Object.assign(params, reviewCycleLocationQueryParams(locationApiParams, allLocationsSelected));
         const res = await reviewService.getCycles(params);
         const sorted = sortPastReviewCyclesByRecentFirst(res.cycles);
         if (!cancelled) {
@@ -65,7 +70,7 @@ export function EmployeePastReviewsListModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, employeeId, currentLocation?._id]);
+  }, [isOpen, employeeId, locationApiParams, allLocationsSelected]);
 
   const totalPages = Math.max(1, Math.ceil(cycles.length / PAGE_SIZE));
   const pageRows = useMemo(() => {

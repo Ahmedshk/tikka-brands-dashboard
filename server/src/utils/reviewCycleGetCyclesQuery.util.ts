@@ -23,6 +23,7 @@ export type ResolveReviewCycleListEmployeeIdsOptions = {
   userId: string | undefined;
   actorUserId: string | undefined;
   locationId: string | undefined;
+  locationIds?: string[] | undefined;
   employeeNameSearch: string | undefined;
   filter: Record<string, unknown>;
   escapeRegex: (s: string) => string;
@@ -106,6 +107,7 @@ export async function resolveReviewCycleListEmployeeIds(
     userId,
     actorUserId,
     locationId,
+    locationIds,
     employeeNameSearch,
     filter,
     escapeRegex,
@@ -117,14 +119,41 @@ export async function resolveReviewCycleListEmployeeIds(
     ? [userId]
     : await getVisibleEmployeeIds(actorUserId ?? null);
 
-  const locResult = await narrowEmployeeIdsByNavbarLocationId(
-    employeeIdFilter,
-    locationId ?? "",
-    filter,
-    filterEmployeeIdsByNavbarLocation,
-  );
-  if (locResult.empty) return locResult;
-  employeeIdFilter = locResult.employeeIdFilter;
+  const locIds =
+    locationIds && locationIds.length > 0
+      ? locationIds
+      : locationId?.trim()
+        ? [locationId.trim()]
+        : [];
+
+  if (locIds.length > 1) {
+    const union = new Set<string>();
+    for (const lid of locIds) {
+      const locResult = await narrowEmployeeIdsByNavbarLocationId(
+        employeeIdFilter,
+        lid,
+        filter,
+        filterEmployeeIdsByNavbarLocation,
+      );
+      if (locResult.empty) continue;
+      for (const id of locResult.employeeIdFilter ?? []) {
+        union.add(id);
+      }
+    }
+    if (union.size === 0) {
+      return { employeeIdFilter: null, empty: true };
+    }
+    employeeIdFilter = [...union];
+  } else {
+    const locResult = await narrowEmployeeIdsByNavbarLocationId(
+      employeeIdFilter,
+      locIds[0] ?? "",
+      filter,
+      filterEmployeeIdsByNavbarLocation,
+    );
+    if (locResult.empty) return locResult;
+    employeeIdFilter = locResult.employeeIdFilter;
+  }
 
   const nameResult = await narrowEmployeeIdsByNameSearch(
     employeeIdFilter,

@@ -196,4 +196,12 @@ export const locationService = {
       throw new Error(res.data.message ?? "Failed to delete location");
     }
   },
+
+  async reorderLocations(locationIds: string[]): Promise<void> {
+    const res = await api.put<ApiResponse>(`${BASE}/order`, { locationIds });
+    if (!res.data.success) {
+      throw new Error(res.data.message ?? "Failed to save location order");
+    }
+    invalidateLocationListCache();
+  },
 };

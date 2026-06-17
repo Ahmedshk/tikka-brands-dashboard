@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "./locationScope.js";
+import { parseLocationIdsFromQuery, resolveTargetLocationIds } from "./locationScope.js";
 import type { DisciplinaryIncidentService } from "../services/disciplinaryIncident.service.js";
 import type { DisciplinaryEmployeeListItem } from "../types/disciplinary.types.js";
 
@@ -87,11 +87,21 @@ export async function getEmployeesForRequest(args: {
   | { kind: "ok"; result: EmployeesResult }
 > {
   const { req, actorUserId, service } = args;
-  const { locationId, page, limit, search } = parseQuery(req);
-  if (!locationId) return { kind: "bad_request", message: "locationId is required" };
+  const { page, limit, search } = parseQuery(req);
+  const explicitIds = parseLocationIdsFromQuery(req);
+  const locationId =
+    explicitIds.length > 0
+      ? explicitIds[0]!
+      : typeof req.query.locationId === "string"
+        ? req.query.locationId
+        : "";
+  if (!locationId && explicitIds.length === 0) {
+    return { kind: "bad_request", message: "locationId is required" };
+  }
 
-  if (!isAllLocationsId(locationId)) {
-    const result = await service.getEmployeesForLocation(actorUserId, locationId, {
+  const targetIds = await resolveTargetLocationIds(req);
+  if (targetIds.length === 1) {
+    const result = await service.getEmployeesForLocation(actorUserId, targetIds[0]!, {
       page,
       limit,
       ...(search ? { search } : {}),
@@ -99,9 +109,8 @@ export async function getEmployeesForRequest(args: {
     return { kind: "ok", result };
   }
 
-  const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
   const results = await Promise.all(
-    effectiveIds.map((id) =>
+    targetIds.map((id) =>
       service.getEmployeesForLocation(actorUserId, id, {
         page: 1,
         limit: 10_000,

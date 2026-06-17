@@ -19,15 +19,23 @@ import OverdueIcon from '@assets/icons/overdue.svg?react';
 import AddIcon from '@assets/icons/add.svg?react';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 import { useTrainingHierarchyAllowed } from '../../hooks/useTrainingHierarchyAllowed';
-import type { RootState } from '../../store/store';
+import {
+  selectCurrentLocation,
+  selectIsMultiLocationView,
+  selectLocationApiParams,
+  selectSelectedLocationIds,
+} from '../../store/locationSelectors';
+import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
 
 const PAGE_ID = 'training-management';
 const PAGE_SIZE = 10;
 
 export const TrainingManagement = () => {
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
-  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
-  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const isMultiLocationView = useSelector(selectIsMultiLocationView);
+  const currentLocation = useSelector(selectCurrentLocation);
+  const selectedLocationIds = useSelector(selectSelectedLocationIds);
+  const hasLocationScope = hasLocationSelection(locationApiParams);
   const [page, setPage] = useState(1);
   const [assignTrainingModalOpen, setAssignTrainingModalOpen] = useState(false);
   const [viewAssignmentId, setViewAssignmentId] = useState<string | null>(null);
@@ -46,8 +54,7 @@ export const TrainingManagement = () => {
    */
   const loadAssignments = useCallback(
     async (signal?: AbortSignal) => {
-      const id = locationId;
-      if (!id?.trim()) {
+      if (!hasLocationScope) {
         setAssignmentRows([]);
         setSearchAssignmentRows([]);
         setSearchAssignmentsLoading(false);
@@ -56,7 +63,7 @@ export const TrainingManagement = () => {
       const search = employeeTrainingSearchDebounced.trim();
       setSearchAssignmentsLoading(true);
       try {
-        const { rows } = await trainingAssignmentService.listAssignments(id, {
+        const { rows } = await trainingAssignmentService.listAssignments(locationApiParams, {
           ...(search ? { search } : {}),
           signal,
         });
@@ -76,7 +83,7 @@ export const TrainingManagement = () => {
         if (!signal?.aborted) setSearchAssignmentsLoading(false);
       }
     },
-    [locationId, employeeTrainingSearchDebounced],
+    [locationApiParams, hasLocationScope, employeeTrainingSearchDebounced],
   );
 
   const refreshAssignments = useCallback(() => {
@@ -88,7 +95,7 @@ export const TrainingManagement = () => {
     setEmployeeTrainingSearchInput('');
     setEmployeeTrainingSearchDebounced('');
     setPage(1);
-  }, [locationId]);
+  }, [locationApiParams]);
 
   useEffect(() => {
     const t = globalThis.setTimeout(() => {
@@ -175,7 +182,7 @@ export const TrainingManagement = () => {
   }, [canStaffInTraining, canTrainingsOverdue, canTrainingCompletion, kpiValues]);
 
   const tableLoading =
-    Boolean(locationId) && (searchAssignmentsLoading || hierarchyLoading);
+    Boolean(hasLocationScope) && (searchAssignmentsLoading || hierarchyLoading);
 
   return (
     <Layout>
@@ -195,7 +202,7 @@ export const TrainingManagement = () => {
 
         {canEmployeeTraining ? (
           <>
-            {!allLocationsSelected && !currentLocation && (
+            {selectedLocationIds.length === 0 && (
               <p className="text-secondary text-sm mb-2">Select a location in the navbar to see assignments.</p>
             )}
             <DisciplinaryToolbar
@@ -204,7 +211,7 @@ export const TrainingManagement = () => {
               placeholder="Search by name…"
               searchAriaLabel="Search employee training by name"
               trailing={
-                allLocationsSelected ? undefined : (
+                isMultiLocationView ? undefined : (
                   <button
                     type="button"
                     disabled={!currentLocation?._id}
@@ -221,7 +228,7 @@ export const TrainingManagement = () => {
             <EmployeeTrainingCard
               rows={paginatedTableRows}
               loading={tableLoading}
-              showLocationLabel={allLocationsSelected}
+              showLocationLabel={isMultiLocationView}
               debouncedSearch={employeeTrainingSearchDebounced}
               searchMatchCount={searchMatchCount}
               filteredTotal={filteredTotal}
@@ -245,9 +252,9 @@ export const TrainingManagement = () => {
       </div>
 
       <AssignTrainingModal
-        isOpen={assignTrainingModalOpen && !allLocationsSelected}
+        isOpen={assignTrainingModalOpen && !isMultiLocationView}
         onClose={() => setAssignTrainingModalOpen(false)}
-        locationId={allLocationsSelected ? null : (currentLocation?._id ?? null)}
+        locationId={currentLocation?._id ?? null}
         allowedRoleIds={allowedRoleIds}
         hierarchyLoading={hierarchyLoading}
         onAssigned={refreshAssignments}

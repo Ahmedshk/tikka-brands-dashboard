@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { RootState, AppDispatch } from "../store/store";
 import { setUser, clearUser, setLoading } from "../store/slices/auth.slice";
-import { setCurrentLocation, setLocationListHydrated } from "../store/slices/location.slice";
+import { resetLocationState } from "../store/slices/location.slice";
 import { clearNotifications } from "../store/slices/notification.slice";
+import { invalidateLocationListCache } from "../services/location.service";
 import { connectSocket, disconnectSocket } from "../services/socket.service";
 import api from "../services/api.service";
 import { ApiResponse, User } from "../types";
@@ -39,6 +40,8 @@ export const useAuth = () => {
       );
 
       if (response.data.success && response.data.data) {
+        invalidateLocationListCache();
+        dispatch(resetLocationState());
         dispatch(setUser(response.data.data.user));
         if (response.data.data.socketToken) {
           connectSocket(response.data.data.socketToken);
@@ -74,9 +77,9 @@ export const useAuth = () => {
       console.error("Logout error:", error);
     } finally {
       disconnectSocket();
+      invalidateLocationListCache();
       dispatch(clearUser());
-      dispatch(setCurrentLocation(null));
-      dispatch(setLocationListHydrated(false));
+      dispatch(resetLocationState());
       dispatch(clearNotifications());
       const toastMsg = options?.toastMessage;
       if (toastMsg !== null) {

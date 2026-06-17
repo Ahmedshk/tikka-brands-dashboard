@@ -2,33 +2,35 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { disciplinaryManagementService } from "../services/disciplinaryManagement.service";
+import type { LocationApiParams } from "./locationSelectionHelpers";
+import { hasLocationSelection } from "./locationSelectionHelpers";
 import type { DisciplinaryRow } from "../types/disciplinaryManagement.types";
 
 const PAGE_SIZE = 10;
 
 async function runDisciplinaryLoad(params: {
-  locationId: string;
+  locationQuery: LocationApiParams;
   pageParam: number;
   searchParam: string;
   signal: AbortSignal;
 }): Promise<Awaited<ReturnType<typeof disciplinaryManagementService.getEmployees>>> {
-  const { locationId, pageParam, searchParam, signal } = params;
+  const { locationQuery, pageParam, searchParam, signal } = params;
   return disciplinaryManagementService.getEmployees(
-    locationId,
+    locationQuery,
     { page: pageParam, limit: PAGE_SIZE, search: searchParam },
     { signal },
   );
 }
 
 export function useDisciplinaryManagementData(params: {
-  locationId: string | null;
+  locationQuery: LocationApiParams | null;
   canDisciplinaryRecords: boolean;
   needsKpiData: boolean;
   debouncedSearch: string;
   page: number;
   setPage: (page: number) => void;
 }) {
-  const { locationId, canDisciplinaryRecords, needsKpiData, debouncedSearch, page, setPage } = params;
+  const { locationQuery, canDisciplinaryRecords, needsKpiData, debouncedSearch, page, setPage } = params;
 
   const [rows, setRows] = useState<DisciplinaryRow[]>([]);
   const [tableLoading, setTableLoading] = useState(true);
@@ -42,7 +44,7 @@ export function useDisciplinaryManagementData(params: {
   const requirements = useMemo(() => {
     const needTable = canDisciplinaryRecords;
     const needKpi = needsKpiData;
-    const shouldLoad = Boolean(locationId && (needTable || needKpi));
+    const shouldLoad = Boolean(locationQuery && hasLocationSelection(locationQuery) && (needTable || needKpi));
     return {
       shouldLoad,
       needTable,
@@ -50,7 +52,7 @@ export function useDisciplinaryManagementData(params: {
       pageParam: needTable ? page : 1,
       searchParam: needTable ? debouncedSearch : "",
     };
-  }, [canDisciplinaryRecords, needsKpiData, locationId, page, debouncedSearch]);
+  }, [canDisciplinaryRecords, needsKpiData, locationQuery, page, debouncedSearch]);
 
   const resetTable = () => {
     setRows([]);
@@ -89,10 +91,10 @@ export function useDisciplinaryManagementData(params: {
 
     (async () => {
       try {
-        const locId = locationId;
-        if (!locId) return;
+        const locQuery = locationQuery;
+        if (!locQuery || !hasLocationSelection(locQuery)) return;
         const data = await runDisciplinaryLoad({
-          locationId: locId,
+          locationQuery: locQuery,
           pageParam,
           searchParam,
           signal: ac.signal,
@@ -127,7 +129,7 @@ export function useDisciplinaryManagementData(params: {
     })();
 
     return () => ac.abort();
-  }, [requirements, locationId, page, setPage]);
+  }, [requirements, locationQuery, page, setPage]);
 
   return {
     rows,

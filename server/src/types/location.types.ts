@@ -17,6 +17,8 @@ export interface ILocation {
   googleBusinessAccountId?: string;
   /** Google Business Profile location id segment (locations/{id}). */
   googleBusinessLocationId?: string;
+  /** Global display order (ascending) for lists and dropdowns. */
+  sortOrder?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }

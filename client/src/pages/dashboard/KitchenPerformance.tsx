@@ -5,7 +5,13 @@ import toast from "react-hot-toast";
 import OperationsIcon from "@assets/icons/operations.svg?react";
 import ImportIcon from "@assets/icons/import.svg?react";
 import { Layout } from "../../components/common/Layout";
-import type { RootState } from "../../store/store";
+import {
+  selectCurrentLocation,
+  selectIsMultiLocationView,
+  selectLocationApiParams,
+  selectSelectedLocations,
+} from "../../store/locationSelectors";
+import { hasLocationSelection } from "../../utils/locationSelectionHelpers";
 import type { KitchenPerformanceRow } from "../../types/kitchenPerformance.types";
 import { kitchenPerformanceService } from "../../services/kitchenPerformance.service";
 import {
@@ -33,11 +39,11 @@ function isValidYmd(s: string | null): boolean {
 export const KitchenPerformance = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const currentLocation = useSelector(
-    (state: RootState) => state.location.currentLocation,
-  );
-  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
-  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const isMultiLocationView = useSelector(selectIsMultiLocationView);
+  const currentLocation = useSelector(selectCurrentLocation);
+  const selectedLocations = useSelector(selectSelectedLocations);
+  const hasLocationScope = hasLocationSelection(locationApiParams);
   const canImportCsv = useCanAccessComponent(PAGE_ID, "import-csv");
   const canKitchenTable = useCanAccessComponent(PAGE_ID, "kitchen-performance");
   const [rows, setRows] = useState<KitchenPerformanceRow[]>([]);
@@ -52,8 +58,8 @@ export const KitchenPerformance = () => {
     [],
   );
   const timezone = useMemo(
-    () => resolveDisplayTimezone(allLocationsSelected, currentLocation?.timezone, browserDefaultTz),
-    [allLocationsSelected, currentLocation?.timezone, browserDefaultTz],
+    () => resolveDisplayTimezone(isMultiLocationView, currentLocation?.timezone, browserDefaultTz),
+    [isMultiLocationView, currentLocation?.timezone, browserDefaultTz],
   );
 
   const startParam = searchParams.get("startDate");
@@ -83,7 +89,7 @@ export const KitchenPerformance = () => {
   );
 
   const fetchKitchenRows = useCallback(async () => {
-    if (!locationId || !canKitchenTable) {
+    if (!hasLocationScope || !canKitchenTable) {
       setRows([]);
       setTotalItems(0);
       setTotalPages(1);
@@ -94,7 +100,7 @@ export const KitchenPerformance = () => {
     setLoading(true);
     try {
       const data = await kitchenPerformanceService.getRows(
-        locationId,
+        locationApiParams,
         { startDate, endDate },
         { page, limit: PAGE_SIZE },
       );
@@ -112,7 +118,7 @@ export const KitchenPerformance = () => {
     } finally {
       setLoading(false);
     }
-  }, [locationId, page, startDate, endDate, canKitchenTable]);
+  }, [locationApiParams, hasLocationScope, page, startDate, endDate, canKitchenTable]);
 
   useEffect(() => {
     fetchKitchenRows();
@@ -137,12 +143,12 @@ export const KitchenPerformance = () => {
     }
   };
 
-  const handleImport = async (range: { startDate: string; endDate: string }, file: File) => {
-    if (!currentLocation?._id || allLocationsSelected) {
-      toast.error("Please select a location first.");
-      return;
-    }
-    const result = await kitchenPerformanceService.importCsv(currentLocation._id, range, file);
+  const handleImport = async (
+    locationId: string,
+    range: { startDate: string; endDate: string },
+    file: File,
+  ) => {
+    const result = await kitchenPerformanceService.importCsv(locationId, range, file);
     toast.success(
       result.daysUpdated?.length
         ? `Kitchen performance imported (${result.importedRows} rows, ${result.daysUpdated.length} day(s)).`
@@ -173,7 +179,7 @@ export const KitchenPerformance = () => {
                 className="min-w-[10rem]"
               />
             ) : null}
-            {canImportCsv && !allLocationsSelected ? (
+            {canImportCsv && selectedLocations.length > 0 ? (
               <button
                 type="button"
                 onClick={() => setImportModalOpen(true)}
@@ -212,11 +218,12 @@ export const KitchenPerformance = () => {
       </div>
 
       <KitchenPerformanceImportModal
-        isOpen={canImportCsv && importModalOpen && !allLocationsSelected}
+        isOpen={canImportCsv && importModalOpen}
         onClose={() => setImportModalOpen(false)}
         onImport={handleImport}
         defaultPeriod={period}
         timezone={timezone}
+        locations={selectedLocations}
       />
     </Layout>
   );

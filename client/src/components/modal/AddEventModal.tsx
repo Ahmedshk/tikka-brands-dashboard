@@ -8,6 +8,7 @@ import { QuarterHourTimeSelect } from '../common/QuarterHourTimeSelect';
 import { Spinner } from '../common/Spinner';
 import { calendarService } from '../../services/calendar.service';
 import type { CalendarEventTypeDto, IntegratedGoogleCalendarDto } from '../../types/calendar.types';
+import type { LocationListItem } from '../../types';
 import {
   combineDateTimeInTimezone,
   computeAddEventModalRangeAdjustmentsOnOpen,
@@ -21,16 +22,16 @@ import { QUARTER_HOUR_HH_MM } from '../../utils/quarterHourTimeOptions';
 export interface AddEventModalProps {
   isOpen: boolean;
   onClose: () => void;
-  locationId: string | null;
-  locationTimezone?: string;
+  locations: LocationListItem[];
+  fallbackTimezone?: string;
   onCreated?: () => void;
 }
 
 export const AddEventModal = ({
   isOpen,
   onClose,
-  locationId,
-  locationTimezone,
+  locations,
+  fallbackTimezone,
   onCreated,
 }: AddEventModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -50,6 +51,23 @@ export const AddEventModal = ({
   const [integrations, setIntegrations] = useState<IntegratedGoogleCalendarDto[]>([]);
   const [integrationsLoading, setIntegrationsLoading] = useState(false);
   const [googleCalendarId, setGoogleCalendarId] = useState('');
+  const [eventLocationId, setEventLocationId] = useState('');
+
+  const showLocationPicker = locations.length > 1;
+  const locationOptions = useMemo(
+    () => locations.map((loc) => ({ value: loc._id, label: loc.storeName })),
+    [locations],
+  );
+  const activeLocation = useMemo(
+    () => locations.find((loc) => loc._id === eventLocationId) ?? null,
+    [eventLocationId, locations],
+  );
+  const effectiveLocationId = activeLocation?._id ?? (locations.length === 1 ? locations[0]?._id : undefined);
+  const locationTimezone =
+    activeLocation?.timezone?.trim() ||
+    (locations.length === 1 ? locations[0]?.timezone?.trim() : undefined) ||
+    fallbackTimezone?.trim() ||
+    Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const setDialogEl = (el: HTMLDialogElement | null) => {
     dialogRef.current = el;
@@ -68,6 +86,7 @@ export const AddEventModal = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    setEventLocationId(locations.length === 1 ? (locations[0]?._id ?? '') : '');
     const r = defaultEventRange(locationTimezone);
     setStartDate(r.startDate);
     setStartTime(r.startTime);
@@ -101,7 +120,7 @@ export const AddEventModal = ({
         setGoogleCalendarId('');
       })
       .finally(() => setIntegrationsLoading(false));
-  }, [isOpen, locationTimezone]);
+  }, [isOpen, locationTimezone, locations]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -279,8 +298,13 @@ export const AddEventModal = ({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (showLocationPicker && !eventLocationId) {
+      toast.error('Please select a location for this event.');
+      return;
+    }
+    const locationId = effectiveLocationId;
     if (!locationId) {
-      toast.error('Select a location first.');
+      toast.error('Please select a location for this event.');
       return;
     }
     if (!title.trim()) {
@@ -382,17 +406,31 @@ export const AddEventModal = ({
               </div>
             ) : (
               <>
-                {!locationId && (
-                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                    Select a location in the header to add an event.
-                  </p>
-                )}
-                {locationId && (
+                {showLocationPicker ? (
+                  <div>
+                    <span className="block text-xs font-semibold text-primary mb-2">
+                      Location <span className="text-red-600">*</span>
+                    </span>
+                    <p className="text-xs text-secondary mb-2 leading-relaxed">
+                      The event will be created for the selected location only.
+                    </p>
+                    <Dropdown
+                      options={locationOptions}
+                      value={eventLocationId}
+                      onChange={setEventLocationId}
+                      placeholder="Select location"
+                      aria-label="Event location"
+                      className="w-full"
+                      allowEmpty
+                    />
+                  </div>
+                ) : null}
+                {effectiveLocationId ? (
                   <p className="text-xs text-secondary leading-relaxed">
-                    {locationTimezone?.trim() ? (
+                    {locationTimezone ? (
                       <>
                         Date and time use this location&apos;s timezone:{' '}
-                        <span className="font-medium text-primary">{locationTimezone.trim()}</span>
+                        <span className="font-medium text-primary">{locationTimezone}</span>
                       </>
                     ) : (
                       <>
@@ -401,7 +439,11 @@ export const AddEventModal = ({
                       </>
                     )}
                   </p>
-                )}
+                ) : showLocationPicker ? (
+                  <p className="text-xs text-secondary leading-relaxed">
+                    Select a location to set the event timezone and save.
+                  </p>
+                ) : null}
                 <div>
                   <label htmlFor="add-event-title" className="block text-xs font-semibold text-primary mb-2">
                     Title
@@ -526,7 +568,7 @@ export const AddEventModal = ({
                     type="submit"
                     disabled={
                       saving ||
-                      !locationId ||
+                      !effectiveLocationId ||
                       typesLoading ||
                       integrationsLoading ||
                       integrations.length === 0 ||

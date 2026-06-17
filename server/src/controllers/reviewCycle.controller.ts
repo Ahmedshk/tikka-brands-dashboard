@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { parseLocationIdsFromQuery } from "../utils/locationScope.js";
 import { ReviewCycleService } from "../services/reviewCycle.service.js";
 import { ReviewCycleModel } from "../models/reviewCycle.model.js";
 import { SelfReviewModel } from "../models/selfReview.model.js";
@@ -31,6 +32,7 @@ export async function getCycles(req: Request, res: Response, next: NextFunction)
     const locationIdRaw = req.query.locationId;
     const locationId =
       typeof locationIdRaw === "string" && locationIdRaw.trim() !== "" ? locationIdRaw.trim() : undefined;
+    const locationIds = parseLocationIdsFromQuery(req);
     const searchRaw = req.query.search;
     const employeeNameSearch =
       typeof searchRaw === "string" && searchRaw.trim() !== "" ? searchRaw.trim() : undefined;
@@ -44,6 +46,7 @@ export async function getCycles(req: Request, res: Response, next: NextFunction)
       ...(status != null && status !== "" ? { status } : {}),
       ...(activeOnly && pastOnly === false ? { activeOnly: true } : {}),
       ...(locationId ? { locationId } : {}),
+      ...(locationIds.length > 0 ? { locationIds } : {}),
       ...(employeeNameSearch ? { employeeNameSearch } : {}),
     });
     res.json({ success: true, data: result });

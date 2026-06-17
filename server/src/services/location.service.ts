@@ -10,7 +10,7 @@ import {
   type UpdateLocationData,
   type LocationWithCredentials,
 } from '../types/location.types.js';
-import { NotFoundError } from '../utils/errors.util.js';
+import { NotFoundError, BadRequestError } from '../utils/errors.util.js';
 import { encryptCredentials, decryptCredentials } from '../utils/credentialsEncryption.util.js';
 import { buildLocationMongoUpdateQuery } from '../utils/locationUpdateMongoMutationHelpers.util.js';
 import { invalidateLocationCredentials } from '../utils/locationCredentialsCache.util.js';
@@ -62,6 +62,7 @@ export class LocationService {
   }
 
   async create(data: CreateLocationData): Promise<ILocationResponse> {
+    const maxSortOrder = await this.locationRepository.getMaxSortOrder();
     const squareAccessTokenEnc = encryptCredentials(data.squareAccessToken);
     const homebaseApiKeyEnc = encryptCredentials(data.homebaseApiKey);
     const doc = await this.locationRepository.create({
@@ -92,6 +93,7 @@ export class LocationService {
       ...(data.googleBusinessLocationId?.trim()
         ? { googleBusinessLocationId: data.googleBusinessLocationId.trim() }
         : {}),
+      sortOrder: maxSortOrder + 1,
     } as Omit<ILocation, '_id' | 'createdAt' | 'updatedAt'>);
     return this.enrichWithLogoUrl(this.toLocationResponse(doc));
   }
@@ -195,6 +197,28 @@ export class LocationService {
       throw new NotFoundError('Location not found');
     }
     invalidateLocationCredentials(id);
+  }
+
+  /** Persist global display order (complete permutation of all location ids). */
+  async reorderLocations(orderedIds: string[]): Promise<void> {
+    const existingIds = await this.locationRepository.findAllIds();
+    if (orderedIds.length !== existingIds.length) {
+      throw new BadRequestError(
+        'locationIds must include every location exactly once.',
+      );
+    }
+    const existingSet = new Set(existingIds);
+    const seen = new Set<string>();
+    for (const id of orderedIds) {
+      const trimmed = id.trim();
+      if (!existingSet.has(trimmed) || seen.has(trimmed)) {
+        throw new BadRequestError(
+          'locationIds must include every location exactly once.',
+        );
+      }
+      seen.add(trimmed);
+    }
+    await this.locationRepository.bulkUpdateSortOrder(orderedIds.map((id) => id.trim()));
   }
 
   /** Populate logoUrl from the Logo collection for a single location. */

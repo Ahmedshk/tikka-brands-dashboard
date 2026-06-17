@@ -8,7 +8,7 @@ import {
   assertSquareOrderExistsForLocation,
   SquareOrderNoteService,
 } from "../services/squareOrderNote.service.js";
-import { isAllLocationsId, resolveEffectiveAllowedLocationIds } from "../utils/locationScope.js";
+import { resolveTargetLocationIds } from "../utils/locationScope.js";
 
 const service = new ActivityLogService();
 const locationService = new LocationService();
@@ -20,13 +20,10 @@ export async function getActivityLog(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { locationId, date } = req.query as {
-      locationId: string;
-      date: string;
-    };
+    const { date } = req.query as { date: string };
 
-    if (isAllLocationsId(locationId)) {
-      const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+    const targetIds = await resolveTargetLocationIds(req);
+    if (targetIds.length > 1) {
       // Single cache pair shared across the per-location fan-out: each unique
       // payment id / team member id only triggers one Mongo lookup (or live
       // Square API hit) per HTTP request, even when many locations reference
@@ -34,7 +31,7 @@ export async function getActivityLog(
       // order + its refund pair.
       const caches = createActivityLogCaches();
       const perLocation = await Promise.all(
-        effectiveIds.map(async (id) => {
+        targetIds.map(async (id) => {
           const [result, loc] = await Promise.all([
             service.getByLocationAndDate(id, date, caches),
             locationService.getById(id),
@@ -64,6 +61,7 @@ export async function getActivityLog(
       return;
     }
 
+    const locationId = targetIds[0]!;
     const result = await service.getByLocationAndDate(locationId, date);
     res.json({ success: true, data: result.items, meta: result.meta });
   } catch (err) {

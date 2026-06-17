@@ -1,14 +1,23 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/store';
 import {
-  setAllLocationsSelected,
+  setLocationCatalog,
+  syncLocationCatalog,
+  setSelectedLocationIds,
+  toggleLocationId,
+  selectAllLocationIds,
+  clearToSingleLocation,
   setCurrentLocation,
   setLocationListHydrated,
   getStoredLocationId,
-  ALL_LOCATIONS_ID,
 } from '../../store/slices/location.slice';
+import {
+  selectCurrentLocation,
+  selectSelectedLocationIds,
+} from '../../store/locationSelectors';
+import { formatLocationTriggerLabel } from '../../utils/locationSelectionHelpers';
 import {
   setUnreadCount,
   setNotifications,
@@ -32,15 +41,15 @@ import {
   renderLowRatingReviewAlertBody,
 } from '../../utils/lowRatingReviewAlertDisplay.util';
 import {
-  isAllLocationsId,
   shouldHideLocationSelector,
   shouldOfferAllLocationsOption,
-  shouldShowAllLocationsOption,
+  isSingleLocationOnlyRoute,
 } from '../../utils/locationScope';
 import { getUserProfileProxyImageUrl } from '../../utils/employeeBioHelpers';
 import toast from 'react-hot-toast';
 import { Spinner } from './Spinner';
 import { Dropdown } from './Dropdown';
+import { LocationMultiSelectDropdown } from './LocationMultiSelectDropdown';
 import LocationIcon from '@assets/icons/location.svg?react';
 import NotificationIcon from '@assets/icons/notification.svg?react';
 import ArrowDownIcon from '@assets/icons/arrow_down.svg?react';
@@ -86,16 +95,14 @@ function getLocationPlaceholder(locationsLoading: boolean, locationsCount: numbe
 
 type LocationTriggerContentProps = {
   locationsLoading: boolean;
-  allLocationsSelected: boolean;
-  currentLocation: LocationListItem | null;
-  locationsCount: number;
+  selectedIds: string[];
+  locations: LocationListItem[];
 };
 
 function LocationTriggerContent({
   locationsLoading,
-  allLocationsSelected,
-  currentLocation,
-  locationsCount,
+  selectedIds,
+  locations,
 }: Readonly<LocationTriggerContentProps>) {
   if (locationsLoading) {
     return (
@@ -106,28 +113,12 @@ function LocationTriggerContent({
     );
   }
 
-  if (allLocationsSelected) {
-    return (
-      <span className="text-xs md:text-sm 2xl:text-base text-primary truncate" title="All locations">
-        All
-      </span>
-    );
-  }
-
-  if (currentLocation) {
-    const title = currentLocation.storeName;
-    return (
-      <span className="text-xs md:text-sm 2xl:text-base text-primary truncate" title={title}>
-        {currentLocation.storeName}
-      </span>
-    );
-  }
-
-  if (locationsCount === 0) {
-    return <span className="text-xs md:text-sm 2xl:text-base text-primary">No locations</span>;
-  }
-
-  return <span className="text-xs md:text-sm 2xl:text-base text-secondary">Select location</span>;
+  const label = formatLocationTriggerLabel(selectedIds, locations, locations.length);
+  return (
+    <span className="text-xs md:text-sm 2xl:text-base text-primary truncate" title={label}>
+      {label}
+    </span>
+  );
 }
 
 type NavbarNotificationListProps = {
@@ -268,8 +259,8 @@ export const Navbar = () => {
   const dispatch = useDispatch();
   const { logout } = useAuth();
   const user = useSelector((state: RootState) => state.auth.user);
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
-  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
+  const currentLocation = useSelector(selectCurrentLocation);
+  const selectedLocationIds = useSelector(selectSelectedLocationIds);
   const currentLocationRef = useRef(currentLocation);
   currentLocationRef.current = currentLocation;
   const [locations, setLocations] = useState<LocationListItem[]>([]);
@@ -403,7 +394,7 @@ export const Navbar = () => {
         n.data && typeof n.data.locationId === 'string' ? n.data.locationId.trim() : '';
       if (lid) {
         const loc = locations.find((l) => l._id === lid);
-        if (loc) dispatch(setCurrentLocation(loc));
+        if (loc) dispatch(clearToSingleLocation(loc));
       }
       navigate(target.path);
       setNotificationDropdownOpen(false);
@@ -423,7 +414,14 @@ export const Navbar = () => {
     ? user.allowedLocationIds.join(',')
     : user?.allowedLocationIds ?? '';
   const locationRemovalsKey = (user?.locationRemovals ?? []).join(',');
+  const userId = user?._id ?? '';
   useEffect(() => {
+    if (!user) {
+      setLocations([]);
+      setLocationsLoading(false);
+      dispatch(setLocationListHydrated(false));
+      return;
+    }
     if (hideLocationSelector) {
       setLocationsLoading(false);
       dispatch(setLocationListHydrated(true));
@@ -433,22 +431,13 @@ export const Navbar = () => {
     (async () => {
       setLocationsLoading(true);
       try {
-        const data = await locationService.getAll({ signal: controller.signal });
+        const data = await locationService.getAll({
+          signal: controller.signal,
+          bustCache: true,
+        });
         if (controller.signal.aborted) return;
         setLocations(data);
-        const storedId = getStoredLocationId();
-        if (isAllLocationsId(storedId) && shouldOfferAllLocationsOption(pathname, data.length)) {
-          dispatch(setAllLocationsSelected());
-        } else if (isAllLocationsId(storedId) && data.length === 1) {
-          dispatch(setCurrentLocation(data[0] ?? null));
-        } else {
-          const match = data.find((loc) => loc._id === storedId);
-          if (match) {
-            dispatch(setCurrentLocation(match));
-          } else if (data.length > 0 && !currentLocationRef.current && !allLocationsSelected) {
-            dispatch(setCurrentLocation(data[0] ?? null));
-          }
-        }
+        dispatch(setLocationCatalog({ locations: data, storedId: getStoredLocationId() }));
       } catch {
         if (!controller.signal.aborted) setLocations([]);
       } finally {
@@ -459,31 +448,42 @@ export const Navbar = () => {
       }
     })();
     return () => controller.abort();
-  }, [dispatch, allowedLocationIdsKey, locationRemovalsKey, hideLocationSelector, pathname, allLocationsSelected]);
+  }, [dispatch, userId, allowedLocationIdsKey, locationRemovalsKey, hideLocationSelector]);
 
-  // Keep current location in sync if it was removed from list (e.g. deleted elsewhere)
-  useEffect(() => {
-    if (allLocationsSelected) return;
-    if (!currentLocation || locations.length === 0) return;
-    const stillExists = locations.some((loc) => loc._id === currentLocation._id);
-    if (!stillExists) dispatch(setCurrentLocation(locations[0] ?? null));
-  }, [locations, currentLocation, dispatch, allLocationsSelected]);
+  const locationIds = useMemo(() => locations.map((l) => l._id), [locations]);
+  const offerMultiSelect = shouldOfferAllLocationsOption(pathname, locations.length);
+  const singleLocationOnly = isSingleLocationOnlyRoute(pathname);
+  const showMultiLocationSelector =
+    !singleLocationOnly && (offerMultiSelect || selectedLocationIds.length > 1);
 
-  // If "All" is no longer offered (e.g. only one location left), fall back to that location.
+  // Keep selection in sync if locations were removed from list
   useEffect(() => {
-    if (!shouldShowAllLocationsOption(pathname)) return;
-    if (locations.length > 1 || !allLocationsSelected) return;
-    const first = locations[0];
-    if (first) dispatch(setCurrentLocation(first));
-  }, [pathname, locations, allLocationsSelected, dispatch]);
+    if (locations.length === 0 || selectedLocationIds.length === 0) return;
+    const normalized = selectedLocationIds.filter((id) => locationIds.includes(id));
+    if (normalized.length !== selectedLocationIds.length || normalized.length === 0) {
+      dispatch(
+        setSelectedLocationIds(
+          normalized.length > 0 ? normalized : locationIds.slice(0, 1),
+        ),
+      );
+    }
+  }, [locations, selectedLocationIds, locationIds, dispatch]);
 
-  // If "All" is selected but not allowed on this route, fall back to the first location.
+  // Single-location pages (e.g. Inventory & Food Cost) — collapse multi/all to one location
   useEffect(() => {
-    if (!allLocationsSelected) return;
-    if (shouldShowAllLocationsOption(pathname)) return;
-    const first = locations[0];
-    if (first) dispatch(setCurrentLocation(first));
-  }, [pathname, locations, allLocationsSelected, dispatch]);
+    if (!singleLocationOnly) return;
+    if (selectedLocationIds.length <= 1) return;
+    const first = selectedLocationIds[0] ?? locations[0]?._id;
+    if (first) dispatch(setSelectedLocationIds([first]));
+  }, [singleLocationOnly, selectedLocationIds, locations, dispatch]);
+
+  // Only one location available — always select it
+  useEffect(() => {
+    if (locations.length !== 1) return;
+    if (selectedLocationIds.length === 1 && selectedLocationIds[0] === locations[0]?._id) return;
+    const only = locations[0];
+    if (only) dispatch(setSelectedLocationIds([only._id]));
+  }, [locations, selectedLocationIds, dispatch]);
 
   const locationsRefreshController = useRef<AbortController | null>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
@@ -559,59 +559,92 @@ export const Navbar = () => {
         {/* Location Selector - hidden on Location Management so updates apply to the store being edited */}
         {!hideLocationSelector && (
           <div className="min-w-0 flex-1 w-full lg:flex-initial lg:max-w-md xl:max-w-xl">
-            <Dropdown
-              options={[
-                ...(shouldOfferAllLocationsOption(pathname, locations.length)
-                  ? [{ value: ALL_LOCATIONS_ID, label: 'All' }]
-                  : []),
-                ...locations.map((loc) => ({ value: loc._id, label: loc.storeName })),
-              ]}
-              value={
-                allLocationsSelected && shouldOfferAllLocationsOption(pathname, locations.length)
-                  ? ALL_LOCATIONS_ID
-                  : (currentLocation?._id ?? '')
-              }
-              onChange={(id) => {
-                if (!id) return;
-                if (isAllLocationsId(id) && shouldOfferAllLocationsOption(pathname, locations.length)) {
-                  dispatch(setAllLocationsSelected());
-                  return;
+            {showMultiLocationSelector ? (
+              <LocationMultiSelectDropdown
+                locations={locations}
+                selectedIds={selectedLocationIds}
+                onToggleLocation={(id) =>
+                  dispatch(toggleLocationId({ id, allAvailableIds: locationIds }))
                 }
-                const loc = locations.find((l) => l._id === id);
-                if (loc) dispatch(setCurrentLocation(loc));
-              }}
-              placeholder={locationPlaceholder}
-              aria-label="Select location"
-              className="w-full"
-              allowEmpty={false}
-              disabled={locationsLoading}
-              triggerLabel={
-                <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
-                  <LocationIcon className="w-4 h-4 md:w-4.5 md:h-4.5 2xl:w-5 2xl:h-5 flex-shrink-0" />
-                  <LocationTriggerContent
-                    locationsLoading={locationsLoading}
-                    allLocationsSelected={allLocationsSelected}
-                    currentLocation={currentLocation}
-                    locationsCount={locations.length}
-                  />
-                </span>
-              }
-              onOpenChange={(open) => {
-                if (open) {
+                onMasterCheckboxChange={() => {
+                  if (selectedLocationIds.length === locations.length && locations[0]) {
+                    dispatch(setSelectedLocationIds([locations[0]._id]));
+                  } else {
+                    dispatch(selectAllLocationIds(locationIds));
+                  }
+                }}
+                disabled={locationsLoading}
+                triggerLabel={
+                  <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
+                    <LocationIcon className="w-4 h-4 md:w-4.5 md:h-4.5 2xl:w-5 2xl:h-5 flex-shrink-0" />
+                    <LocationTriggerContent
+                      locationsLoading={locationsLoading}
+                      selectedIds={selectedLocationIds}
+                      locations={locations}
+                    />
+                  </span>
+                }
+                onOpenChange={(open) => {
+                  if (!open) return;
                   locationsRefreshController.current?.abort();
                   const controller = new AbortController();
                   locationsRefreshController.current = controller;
                   locationService
                     .getAll({ signal: controller.signal, bustCache: true })
                     .then((data) => {
-                    if (controller.signal.aborted) return;
-                    setLocations(data);
-                    const stillExists = currentLocation && data.some((loc) => loc._id === currentLocation._id);
-                    if (currentLocation && !stillExists && data.length > 0) dispatch(setCurrentLocation(data[0] ?? null));
-                  }).catch(() => {});
+                      if (controller.signal.aborted) return;
+                      setLocations(data);
+                      dispatch(syncLocationCatalog({ locations: data }));
+                    })
+                    .catch(() => {});
+                }}
+              />
+            ) : (
+              <Dropdown
+                options={locations.map((loc) => ({ value: loc._id, label: loc.storeName }))}
+                value={currentLocation?._id ?? ''}
+                onChange={(id) => {
+                  if (!id) return;
+                  const loc = locations.find((l) => l._id === id);
+                  if (loc) dispatch(setCurrentLocation(loc));
+                }}
+                placeholder={locationPlaceholder}
+                aria-label="Select location"
+                className="w-full"
+                allowEmpty={false}
+                disabled={locationsLoading}
+                triggerLabel={
+                  <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
+                    <LocationIcon className="w-4 h-4 md:w-4.5 md:h-4.5 2xl:w-5 2xl:h-5 flex-shrink-0" />
+                    <LocationTriggerContent
+                      locationsLoading={locationsLoading}
+                      selectedIds={selectedLocationIds}
+                      locations={locations}
+                    />
+                  </span>
                 }
-              }}
-            />
+                onOpenChange={(open) => {
+                  if (open) {
+                    locationsRefreshController.current?.abort();
+                    const controller = new AbortController();
+                    locationsRefreshController.current = controller;
+                    locationService
+                      .getAll({ signal: controller.signal, bustCache: true })
+                      .then((data) => {
+                        if (controller.signal.aborted) return;
+                        setLocations(data);
+                        dispatch(syncLocationCatalog({ locations: data }));
+                        const stillExists =
+                          currentLocation && data.some((loc) => loc._id === currentLocation._id);
+                        if (currentLocation && !stillExists && data.length > 0) {
+                          dispatch(setCurrentLocation(data[0] ?? null));
+                        }
+                      })
+                      .catch(() => {});
+                  }
+                }}
+              />
+            )}
           </div>
         )}
 

@@ -1,4 +1,6 @@
 import api from "./api.service";
+import type { LocationApiParams } from "../utils/locationSelectionHelpers";
+import { resolveLocationQuery } from "../utils/locationSelectionHelpers";
 import { API_ENDPOINTS } from "../utils/constants";
 import type { ApiResponse } from "../types";
 import type {
@@ -31,12 +33,12 @@ export interface KitchenPerformanceImportResult {
 
 export const kitchenPerformanceService = {
   async getRows(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     range: KitchenPerformanceDateRange,
     options: { page?: number; limit?: number } = {},
   ): Promise<KitchenPerformanceListResponse> {
     const params = new URLSearchParams({
-      locationId,
+      ...resolveLocationQuery(locationQuery),
       startDate: range.startDate,
       endDate: range.endDate,
       page: String(options.page ?? 1),

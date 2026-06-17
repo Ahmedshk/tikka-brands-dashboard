@@ -19,7 +19,7 @@ export const ReviewsManagementAllReviewCyclesModal = (props: {
   page: number;
   totalPages: number;
   onPageChange: (p: number) => void;
-  allLocationsSelected: boolean;
+  isMultiLocationView: boolean;
   currentUserId: string | null;
   isDirector: boolean;
   isOwner: boolean;
@@ -37,7 +37,7 @@ export const ReviewsManagementAllReviewCyclesModal = (props: {
     page,
     totalPages,
     onPageChange,
-    allLocationsSelected,
+    isMultiLocationView,
     currentUserId,
     isDirector,
     isOwner,
@@ -200,7 +200,7 @@ export const ReviewsManagementAllReviewCyclesModal = (props: {
                         const emp = typeof c.employeeId === "object" ? c.employeeId : null;
                         const employeeId =
                           typeof c.employeeId === "object" ? c.employeeId._id : c.employeeId;
-                        const locLabel = allLocationsSelected
+                        const locLabel = isMultiLocationView
                           ? c.locationName?.trim()
                           : undefined;
                         const roleLabel = emp?.role?.trim() || "—";

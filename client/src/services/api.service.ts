@@ -8,7 +8,8 @@ import { API_BASE_URL, API_ENDPOINTS } from "../utils/constants";
 import { ApiResponse } from "../types";
 import { store } from "../store/store";
 import { clearUser, updateUserContext } from "../store/slices/auth.slice";
-import { setLocationListHydrated } from "../store/slices/location.slice";
+import { resetLocationState, setLocationListHydrated } from "../store/slices/location.slice";
+import { invalidateLocationListCache } from "./location.service";
 
 export function getErrorMessage(error: AxiosError<ApiResponse>): string {
   const message = error.response?.data?.message;
@@ -81,7 +82,9 @@ api.interceptors.response.use(
       const isRefreshRequest =
         originalRequest.url?.includes("/auth/refresh") === true;
       if (isRefreshRequest) {
+        invalidateLocationListCache();
         store.dispatch(clearUser());
+        store.dispatch(resetLocationState());
         store.dispatch(setLocationListHydrated(false));
         // Don't toast: no refresh cookie is normal on login/set-password/forgot-password
         throw error;
@@ -92,7 +95,9 @@ api.interceptors.response.use(
         await doRefresh();
         return api(originalRequest);
       } catch {
+        invalidateLocationListCache();
         store.dispatch(clearUser());
+        store.dispatch(resetLocationState());
         store.dispatch(setLocationListHydrated(false));
         toast.error(getErrorMessage(error));
         throw error;

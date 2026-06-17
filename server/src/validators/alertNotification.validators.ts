@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isValidRoleBindingSubcategory } from "../utils/alertRoleBindingSubcategory.util.js";
 import type { AlertRoleBindingCategory } from "../types/alertNotification.types.js";
+import { withLocationQuery } from "./locationQuery.validators.js";
 
 const timeLocalSchema = z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/);
 
@@ -120,14 +121,11 @@ export const dismissCommandCenterAlertsBodySchema = z.object({
 });
 
 export const getCommandCenterAlertsQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, "locationId is required"),
-  }),
+  query: withLocationQuery({}),
 });
 
 export const getCommandCenterAlertHistoryQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, "locationId is required"),
+  query: withLocationQuery({
     category: z.enum(["financial_labor", "inventory_supply_chain", "reputation_hr"]),
   }),
 });

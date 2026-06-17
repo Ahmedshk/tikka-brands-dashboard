@@ -8,7 +8,7 @@ import {
   type SalesTrendKpiQueryParams,
   type SalesTrendResult,
 } from './salesTrendControllerHelpers.js';
-import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
+import { resolveTargetLocationIds } from './locationScope.js';
 import { generateDistinctColors } from './colorPalette.util.js';
 import {
   getLocationFanoutConcurrency,
@@ -197,7 +197,7 @@ export async function buildAllLocationsSalesTrend(params: {
   locationService: LocationService;
 }): Promise<SalesTrendResult['data']> {
   const { req, query, locationService } = params;
-  const ids = await resolveEffectiveAllowedLocationIds(req);
+  const ids = await resolveTargetLocationIds(req);
   if (ids.length === 0) return emptyTrendData(query);
 
   const tHandler = performance.now();
@@ -234,7 +234,7 @@ export async function buildAllLocationsSalesTrendKpi(params: {
   locationService: LocationService;
 }): Promise<unknown> {
   const { req, query, locationService } = params;
-  const ids = await resolveEffectiveAllowedLocationIds(req);
+  const ids = await resolveTargetLocationIds(req);
   if (ids.length === 0) {
     return {
       current: { totalNetSales: 0, totalTransactions: 0, totalHours: 0, numDays: 0 },

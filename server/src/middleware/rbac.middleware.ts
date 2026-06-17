@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserRole } from '../types/user.types.js';
 import { logger } from '../utils/logger.util.js';
-import { isAllLocationsId } from '../utils/locationScope.js';
+import { isAllLocationsId, parseLocationIdsFromQuery } from '../utils/locationScope.js';
 
 export const requireRole = (allowedRoles: UserRole[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -168,6 +168,47 @@ export const requireLocationAccess = (
   res: Response,
   next: NextFunction
 ): void => {
+  const explicitIds = parseLocationIdsFromQuery(req);
+  if (explicitIds.length > 0) {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+      return;
+    }
+
+    const allowed = req.user.allowedLocationIds;
+    const locationRemovals = req.user.locationRemovals ?? [];
+
+    for (const locationId of explicitIds) {
+      if (locationRemovals.includes(locationId)) {
+        logger.warn(`Access denied: location ${locationId} removed for user`, {
+          userId: req.user.userId,
+        });
+        res.status(403).json({
+          success: false,
+          message: "You do not have access to this location.",
+        });
+        return;
+      }
+      if (allowed === "all") continue;
+      if (!allowed) continue;
+      if (!allowed.includes(locationId)) {
+        logger.warn(`Access denied: location ${locationId} not in role's allowed locations`, {
+          userId: req.user.userId,
+        });
+        res.status(403).json({
+          success: false,
+          message: "You do not have access to this location.",
+        });
+        return;
+      }
+    }
+    next();
+    return;
+  }
+
   const locationId =
     (typeof req.query.locationId === "string" ? req.query.locationId : null) ??
     (typeof req.params.id === "string" ? req.params.id : null);

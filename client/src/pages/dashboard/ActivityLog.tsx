@@ -11,7 +11,11 @@ import { Dropdown } from "../../components/common/Dropdown";
 import { Layout } from "../../components/common/Layout";
 import { ActivityLogDetailsModal, ActivityLogNotesModal, ActivityLogTableCard } from "../../components/ActivityLog";
 import { activityLogService } from "../../services/activityLog.service";
-import type { RootState } from "../../store/store";
+import {
+  selectCurrentLocation,
+  selectIsMultiLocationView,
+  selectLocationApiParams,
+} from "../../store/locationSelectors";
 import type { ActivityLogRow } from "../../types/activityLog.types";
 import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
 
@@ -37,14 +41,13 @@ const GREY_FOCUS_FIELD_SX = {
 } as const;
 
 export const ActivityLog = () => {
-  const currentLocation = useSelector(
-    (state: RootState) => state.location.currentLocation,
-  );
-  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
-  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const isMultiLocationView = useSelector(selectIsMultiLocationView);
+  const currentLocation = useSelector(selectCurrentLocation);
+  const hasLocationScope = Object.keys(locationApiParams).length > 0;
   const displayTimezone = useMemo(
-    () => resolveDisplayTimezone(allLocationsSelected, currentLocation?.timezone),
-    [allLocationsSelected, currentLocation?.timezone],
+    () => resolveDisplayTimezone(isMultiLocationView, currentLocation?.timezone),
+    [isMultiLocationView, currentLocation?.timezone],
   );
   const canFullPage = useCanAccessComponent(PAGE_ID, "full-page");
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -68,14 +71,14 @@ export const ActivityLog = () => {
   }, [eventFilter]);
 
   const fetchRows = useCallback(async () => {
-    if (!locationId || !canFullPage) {
+    if (!hasLocationScope || !canFullPage) {
       setRows([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const data = await activityLogService.getRows(locationId, selectedDate);
+      const data = await activityLogService.getRows(locationApiParams, selectedDate);
       setRows(data.rows);
     } catch {
       setRows([]);
@@ -83,7 +86,7 @@ export const ActivityLog = () => {
     } finally {
       setLoading(false);
     }
-  }, [locationId, selectedDate, canFullPage]);
+  }, [locationApiParams, hasLocationScope, selectedDate, canFullPage]);
 
   useEffect(() => {
     fetchRows();
@@ -163,7 +166,7 @@ export const ActivityLog = () => {
               rows={filteredRows}
               loading={loading}
               displayTimezone={displayTimezone}
-              showLocationLabel={allLocationsSelected}
+              showLocationLabel={isMultiLocationView}
               onView={(row) => {
                 setSelectedRow(row);
               }}
@@ -182,7 +185,7 @@ export const ActivityLog = () => {
             <ActivityLogNotesModal
               open={notesModalRow != null}
               row={notesModalRow}
-              locationId={locationId}
+              locationId={currentLocation?._id ?? null}
               displayTimezone={displayTimezone}
               onClose={() => setNotesModalRow(null)}
               onSaved={handleNoteSaved}

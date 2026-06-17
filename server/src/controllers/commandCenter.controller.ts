@@ -22,7 +22,7 @@ import {
   businessDateKeyForInstant,
   businessDayUtcRangeIsoStrings,
 } from "../utils/businessDayUtcRange.util.js";
-import { isAllLocationsId } from "../utils/locationScope.js";
+import { resolveTargetLocationIds } from "../utils/locationScope.js";
 import {
   buildAllLocationsCommandCenterKpis,
   buildAllLocationsHourlySales,
@@ -66,8 +66,6 @@ export const getCommandCenterKPIs = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const locationId =
-      typeof req.query.locationId === "string" ? req.query.locationId : "";
     const queryMetrics = parseMetricsQuery(req.query.metrics);
     const periods = parsePeriodsQuery(req.query.periods);
 
@@ -122,7 +120,8 @@ export const getCommandCenterKPIs = async (
           return {};
         }
 
-        if (isAllLocationsId(locationId)) {
+        const targetIds = await resolveTargetLocationIds(req);
+        if (targetIds.length > 1) {
           const { wantNetSales, wantLaborCost, wantReviewRating } = getWantFlags(metrics);
           const result = await buildAllLocationsCommandCenterKpis({
             req,
@@ -138,7 +137,8 @@ export const getCommandCenterKPIs = async (
           return result.data;
         }
 
-        const withCreds = await locationService.getByIdWithCredentials(locationId);
+        const singleLocationId = targetIds[0]!;
+        const withCreds = await locationService.getByIdWithCredentials(singleLocationId);
         if (!withCreds) {
           throw new NotFoundError("Location not found");
         }
@@ -149,7 +149,7 @@ export const getCommandCenterKPIs = async (
           getWantFlags(metrics);
         const { laborCostGoal, laborCostGoalTolerance } = await getLaborCostGoals(
           goalService,
-          locationId,
+          singleLocationId,
           loc,
           wantLaborCost,
         );
@@ -159,12 +159,12 @@ export const getCommandCenterKPIs = async (
         const wantsMultiPeriod = requestedPeriods.length > 1;
 
         const reviewRating = wantReviewRating
-          ? await fetchReviewRatingKpiData(locationId, loc)
+          ? await fetchReviewRatingKpiData(singleLocationId, loc)
           : undefined;
 
         if (wantsMultiPeriod) {
           const kpisByPeriod = await fetchKpisForPeriods({
-            locationMongoId: locationId,
+            locationMongoId: singleLocationId,
             location: loc,
             periods: requestedPeriods,
             wantNetSales,
@@ -186,7 +186,7 @@ export const getCommandCenterKPIs = async (
         if (onlyPeriod === "weekToDate") {
           const rangeWeekToDate = getRangeWeekToDate(loc);
           const kpis = await fetchWeekToDateKpis({
-            locationMongoId: locationId,
+            locationMongoId: singleLocationId,
             location: loc,
             rangeToday,
             rangeWeekToDate,
@@ -209,7 +209,7 @@ export const getCommandCenterKPIs = async (
 
         if (onlyPeriod !== "today") {
           const kpisByPeriod = await fetchKpisForPeriods({
-            locationMongoId: locationId,
+            locationMongoId: singleLocationId,
             location: loc,
             periods: [onlyPeriod],
             wantNetSales,
@@ -228,7 +228,7 @@ export const getCommandCenterKPIs = async (
         }
 
         const kpis = await fetchTodayOnlyKpis(
-          locationId,
+          singleLocationId,
           loc,
           rangeToday,
           wantNetSales,
@@ -276,18 +276,18 @@ export const getHourlySales = async (
       return;
     }
 
-    const locationId =
-      typeof req.query.locationId === "string" ? req.query.locationId : "";
     await serveDashboardWithCache({
       req,
       res,
       endpoint: "command-center.hourly-sales",
       params: {},
       compute: async () => {
-        if (isAllLocationsId(locationId)) {
+        const targetIds = await resolveTargetLocationIds(req);
+        if (targetIds.length > 1) {
           return await buildAllLocationsHourlySales({ req, locationService });
         }
-        const withCreds = await locationService.getByIdWithCredentials(locationId);
+        const singleLocationId = targetIds[0]!;
+        const withCreds = await locationService.getByIdWithCredentials(singleLocationId);
         if (!withCreds) {
           throw new NotFoundError("Location not found");
         }
@@ -314,14 +314,14 @@ export const getHourlySales = async (
 
         const [todaySlots, lastWeekSlots] = await Promise.all([
           fetchHourlyNetSalesCentsBySlotFromCache(
-            locationId,
+            singleLocationId,
             todayRange,
             timezone,
             businessStartTime,
             "GET /command-center/hourly-sales today (current business day)",
           ),
           fetchHourlyNetSalesCentsBySlotFromCache(
-            locationId,
+            singleLocationId,
             lastWeekRange,
             timezone,
             businessStartTime,

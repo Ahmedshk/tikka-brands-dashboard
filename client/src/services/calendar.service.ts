@@ -1,4 +1,6 @@
 import api from "./api.service";
+import type { LocationApiParams } from "../utils/locationSelectionHelpers";
+import { resolveLocationQuery } from "../utils/locationSelectionHelpers";
 import { API_ENDPOINTS } from "../utils/constants";
 import type { ApiResponse } from "../types";
 import type {
@@ -16,12 +18,12 @@ function toIso(d: Date): string {
 
 export const calendarService = {
   async listEvents(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     timeMin: Date,
     timeMax: Date,
   ): Promise<CalendarEventDto[]> {
     const params = new URLSearchParams({
-      locationId,
+      ...resolveLocationQuery(locationQuery),
       timeMin: toIso(timeMin),
       timeMax: toIso(timeMax),
     });

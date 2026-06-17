@@ -14,7 +14,7 @@ import {
   type PeriodType,
 } from './salesTrendDateRange.util.js';
 import { buildSalesByCategoryResponseData, parseSalesByCategoryQuery } from './salesLaborControllerHelpers.js';
-import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
+import { resolveTargetLocationIds } from './locationScope.js';
 import { getByIdWithCredentialsCached } from './perRequestCache.util.js';
 import {
   getLocationFanoutConcurrency,
@@ -302,7 +302,7 @@ export async function buildSalesByCategoryAllLocations(params: {
 }): Promise<ReturnType<typeof buildSalesByCategoryResponseData>> {
   const { req, locationService } = params;
   const q = parseSalesByCategoryQuery(req.query as Record<string, unknown>);
-  const ids = await resolveEffectiveAllowedLocationIds(req);
+  const ids = await resolveTargetLocationIds(req);
   if (ids.length === 0) {
     return emptyResponse();
   }

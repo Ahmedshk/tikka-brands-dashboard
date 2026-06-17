@@ -80,18 +80,53 @@ export function normalizeGoalSettingSnapshot(setting: GoalSetting): GoalSetting 
   };
 }
 
-export function goalValuesEqual(a: GoalValues, b: GoalValues): boolean {
+/** Merge partial goal values onto defaults (weekly/future day rows may omit unset metrics). */
+export function mergeGoalValuesWithDefaults(
+  values: Partial<GoalValues> | null | undefined
+): GoalValues {
+  return { ...DEFAULT_GOAL_VALUES, ...(values ?? {}) };
+}
+
+export function goalValuesEqual(
+  a: Partial<GoalValues> | null | undefined,
+  b: Partial<GoalValues> | null | undefined
+): boolean {
+  const na = mergeGoalValuesWithDefaults(a);
+  const nb = mergeGoalValuesWithDefaults(b);
   return (
-    Number(a.salesGoal) === Number(b.salesGoal) &&
-    Number(a.laborCostGoal) === Number(b.laborCostGoal) &&
-    Number(a.hoursGoal) === Number(b.hoursGoal) &&
-    Number(a.spmhGoal) === Number(b.spmhGoal) &&
-    Number(a.foodCostGoal) === Number(b.foodCostGoal) &&
-    Number(a.salesGoalTolerance ?? 0) === Number(b.salesGoalTolerance ?? 0) &&
-    Number(a.laborCostGoalTolerance ?? 0) === Number(b.laborCostGoalTolerance ?? 0) &&
-    Number(a.hoursGoalTolerance ?? 0) === Number(b.hoursGoalTolerance ?? 0) &&
-    Number(a.spmhGoalTolerance ?? 0) === Number(b.spmhGoalTolerance ?? 0) &&
-    Number(a.foodCostGoalTolerance ?? 0) === Number(b.foodCostGoalTolerance ?? 0)
+    na.salesGoal === nb.salesGoal &&
+    na.laborCostGoal === nb.laborCostGoal &&
+    na.hoursGoal === nb.hoursGoal &&
+    na.spmhGoal === nb.spmhGoal &&
+    na.foodCostGoal === nb.foodCostGoal &&
+    na.salesGoalTolerance === nb.salesGoalTolerance &&
+    na.laborCostGoalTolerance === nb.laborCostGoalTolerance &&
+    na.hoursGoalTolerance === nb.hoursGoalTolerance &&
+    na.spmhGoalTolerance === nb.spmhGoalTolerance &&
+    na.foodCostGoalTolerance === nb.foodCostGoalTolerance
+  );
+}
+
+/** True when form state matches the last loaded/saved snapshot (no user edits). */
+export function goalSettingFormEquals(
+  form: {
+    defaultGoals: GoalValues;
+    weekly: Partial<Record<GoalDayOfWeek, GoalValues>>;
+    futureWeeks: FutureWeekGoals[];
+  },
+  saved: GoalSetting | null
+): boolean {
+  if (!saved) {
+    return (
+      goalValuesEqual(form.defaultGoals, DEFAULT_GOAL_VALUES) &&
+      Object.keys(form.weekly).length === 0 &&
+      form.futureWeeks.length === 0
+    );
+  }
+  return (
+    goalValuesEqual(form.defaultGoals, saved.default) &&
+    weeklyEqual(form.weekly, saved.weekly ?? {}) &&
+    futureWeeksEqual(form.futureWeeks, saved.futureWeeks ?? [])
   );
 }
 

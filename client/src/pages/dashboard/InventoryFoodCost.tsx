@@ -26,7 +26,7 @@ import CurrentFoodCostIcon from '@assets/icons/current_food_cost.svg?react';
 import InventoryValueIcon from '@assets/icons/inventory_value.svg?react';
 import WasteCostIcon from '@assets/icons/waste_cost.svg?react';
 import PendingOrdersIcon from '@assets/icons/pending_orders.svg?react';
-import type { RootState } from '../../store/store';
+import { selectCurrentLocation } from '../../store/locationSelectors';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 
 const PAGE_ID = 'inventory-food-cost';
@@ -63,7 +63,7 @@ const defaultOrderTrackerPeriod: OrderTrackerPeriodValue = {
 };
 
 export const InventoryFoodCost = () => {
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const currentLocation = useSelector(selectCurrentLocation);
   const canKpiFoodCost = useCanAccessComponent(PAGE_ID, 'kpi-current-food-cost');
   const canKpiInventory = useCanAccessComponent(PAGE_ID, 'kpi-inventory-value');
   const canKpiWaste = useCanAccessComponent(PAGE_ID, 'kpi-waste-cost');

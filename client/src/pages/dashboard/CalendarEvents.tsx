@@ -15,7 +15,13 @@ import { AddEventModal } from '../../components/modal/AddEventModal';
 import { EditEventModal } from '../../components/modal/EditEventModal';
 import { ConfirmDialog } from '../../components/modal/ConfirmDialog';
 import CalendarEventsIcon from '@assets/icons/calendar_and_events.svg?react';
-import { RootState } from '../../store/store';
+import {
+  selectCurrentLocation,
+  selectIsMultiLocationView,
+  selectLocationApiParams,
+  selectSelectedLocations,
+} from '../../store/locationSelectors';
+import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
 import { calendarService } from '../../services/calendar.service';
 import type { CalendarEventDto, CalendarEventTypeDto } from '../../types/calendar.types';
 import { colorHexToCalendarBackground } from '../../utils/calendarColors';
@@ -47,9 +53,11 @@ function dtoToCalendarItems(
 }
 
 export const CalendarEvents = () => {
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
-  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
-  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const isMultiLocationView = useSelector(selectIsMultiLocationView);
+  const currentLocation = useSelector(selectCurrentLocation);
+  const selectedLocations = useSelector(selectSelectedLocations);
+  const hasLocationScope = hasLocationSelection(locationApiParams);
   const canAddEvents = useCanAccessComponent(PAGE_ID, 'add-events');
   const canCalendar = useCanAccessComponent(PAGE_ID, 'calendar');
   const canUpcomingEvents = useCanAccessComponent(PAGE_ID, 'upcoming-events');
@@ -58,7 +66,7 @@ export const CalendarEvents = () => {
     [],
   );
   const hasCalendarScope =
-    Boolean(locationId?.trim()) && (canCalendar || canUpcomingEvents);
+    hasLocationScope && (canCalendar || canUpcomingEvents);
   const calendarTimezone =
     currentLocation?.timezone?.trim() || browserDefaultTz;
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
@@ -86,7 +94,7 @@ export const CalendarEvents = () => {
   const upcomingRows = useMemo(() => buildUpcomingEventRows(events), [events]);
 
   const loadData = useCallback(async () => {
-    if (!locationId || (!canCalendar && !canUpcomingEvents)) {
+    if (!hasLocationScope || (!canCalendar && !canUpcomingEvents)) {
       setEvents([]);
       setEventTypes([]);
       setLoading(false);
@@ -97,7 +105,7 @@ export const CalendarEvents = () => {
     try {
       const [typeList, eventList] = await Promise.all([
         calendarService.listEventTypesActive(),
-        calendarService.listEvents(locationId, timeMin, timeMax),
+        calendarService.listEvents(locationApiParams, timeMin, timeMax),
       ]);
       setEventTypes(typeList);
       setEvents(eventList);
@@ -107,17 +115,17 @@ export const CalendarEvents = () => {
     } finally {
       setLoading(false);
     }
-  }, [locationId, currentDate, canCalendar, canUpcomingEvents]);
+  }, [locationApiParams, hasLocationScope, currentDate, canCalendar, canUpcomingEvents]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   useEffect(() => {
-    if (!locationId || (!canCalendar && !canUpcomingEvents)) return;
+    if (!hasLocationScope || (!canCalendar && !canUpcomingEvents)) return;
     const { timeMin, timeMax } = visibleRange(currentDate);
     calendarService.syncEvents(timeMin, timeMax).catch(() => {});
-  }, [locationId, currentDate, canCalendar, canUpcomingEvents]);
+  }, [locationApiParams, hasLocationScope, currentDate, canCalendar, canUpcomingEvents]);
 
   const handleNavigate = (date: Date) => {
     setCurrentDate(date);
@@ -150,7 +158,7 @@ export const CalendarEvents = () => {
             <CalendarEventsIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
             Calendar & Events
           </h2>
-          {canAddEvents && !allLocationsSelected ? (
+          {canAddEvents && selectedLocations.length > 0 ? (
             <button
               type="button"
               onClick={() => setAddEventModalOpen(true)}
@@ -188,7 +196,7 @@ export const CalendarEvents = () => {
               <UpcomingEventsCard
                 rows={upcomingRows}
                 pageSize={5}
-                showLocationLabel={allLocationsSelected}
+                showLocationLabel={isMultiLocationView}
                 onEdit={(row) => setEditingEvent(row.event)}
                 onDelete={(row) => setDeletingRow(row)}
               />
@@ -198,10 +206,10 @@ export const CalendarEvents = () => {
       </div>
 
       <AddEventModal
-        isOpen={canAddEvents && addEventModalOpen && !allLocationsSelected}
+        isOpen={canAddEvents && addEventModalOpen}
         onClose={() => setAddEventModalOpen(false)}
-        locationId={allLocationsSelected ? null : (currentLocation?._id ?? null)}
-        locationTimezone={calendarTimezone}
+        locations={selectedLocations}
+        fallbackTimezone={browserDefaultTz}
         onCreated={loadData}
       />
       <EditEventModal

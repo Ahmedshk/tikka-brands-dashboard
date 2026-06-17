@@ -18,14 +18,13 @@ import type {
   ResolvedGoalWithSource,
 } from '../../types';
 import { RootState } from '../../store/store';
+import { selectCurrentLocation } from '../../store/locationSelectors';
 import { getStoredLocationId } from '../../store/slices/location.slice';
 import AdminAndSettingsIcon from '@assets/icons/admin_and_settings.svg?react';
 import {
   DEFAULT_GOAL_VALUES,
   DAY_ORDER,
-  goalValuesEqual,
-  weeklyEqual,
-  futureWeeksEqual,
+  goalSettingFormEquals,
   getCurrentWeekStartInTimezone,
   addDaysToDate,
   getSundayOfWeek,
@@ -51,7 +50,8 @@ import { GoalSettingMainContent } from '../../components/GoalSetting/GoalSetting
 export const GoalSetting = () => {
   const allowedGoalKeys = useGoalSettingAllowedGoalKeys();
   const canEditAnyGoalMetric = allowedGoalKeys.size > 0;
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
+  const authUserId = useSelector((state: RootState) => state.auth.user?._id);
+  const currentLocation = useSelector(selectCurrentLocation);
   /** Location selected on this page for viewing/editing goals; independent of navbar location. */
   const [selectedLocation, setSelectedLocation] = useState<LocationListItem | null>(null);
   const [locations, setLocations] = useState<LocationListItem[]>([]);
@@ -81,19 +81,7 @@ export const GoalSetting = () => {
 
   const hasUnsavedChanges = useMemo(() => {
     if (!selectedLocation?._id || loading) return false;
-    if (!saved) {
-      return (
-        !goalValuesEqual(defaultGoals, DEFAULT_GOAL_VALUES) ||
-        Object.keys(weekly).length > 0 ||
-        futureWeeks.length > 0
-      );
-    }
-    const savedDefault = { ...DEFAULT_GOAL_VALUES, ...saved.default };
-    return (
-      !goalValuesEqual(defaultGoals, savedDefault) ||
-      !weeklyEqual(weekly, saved.weekly ?? {}) ||
-      !futureWeeksEqual(futureWeeks, saved.futureWeeks ?? [])
-    );
+    return !goalSettingFormEquals({ defaultGoals, weekly, futureWeeks }, saved);
   }, [selectedLocation?._id, loading, saved, defaultGoals, weekly, futureWeeks]);
 
   const blocker = useBlocker(hasUnsavedChanges);
@@ -145,7 +133,7 @@ export const GoalSetting = () => {
       .finally(() => {
         if (!signal?.aborted) setLoading(false);
       });
-  }, [selectedLocation?._id]);
+  }, [selectedLocation?._id, authUserId]);
 
   useEffect(() => {
     const controller = new AbortController();

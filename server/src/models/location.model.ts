@@ -85,12 +85,19 @@ const locationSchema = new Schema<LocationDocument>(
       trim: true,
       default: undefined,
     },
+    /** Global display order (ascending) for admin lists and navbar dropdowns. */
+    sortOrder: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
   },
   {
     timestamps: true,
   }
 );
 
+locationSchema.index({ sortOrder: 1 });
 locationSchema.index({ createdAt: -1 });
 
 export const LocationModel = mongoose.model<LocationDocument>('Location', locationSchema);

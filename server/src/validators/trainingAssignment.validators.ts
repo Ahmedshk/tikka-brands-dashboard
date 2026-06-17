@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { withLocationQuery } from './locationQuery.validators.js';
 import { parseModuleProgressCompletedAtInput } from '../utils/trainingAssignmentValidatorsHelpers.util.js';
 
 const extraFileSchema = z.object({
@@ -26,8 +27,7 @@ export const createAssignmentsSchema = z.object({
 });
 
 export const listAssignmentsSchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, 'locationId is required'),
+  query: withLocationQuery({
     search: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(500).optional(),
   }),

@@ -37,7 +37,7 @@ import {
   SALES_LABOR_DETAIL_API_LOG,
   type LocationForSalesLabor,
 } from "../utils/salesLaborControllerHelpers.js";
-import { isAllLocationsId } from "../utils/locationScope.js";
+import { resolveTargetLocationIds } from "../utils/locationScope.js";
 import {
   buildAllLocationsHourlyBreakdown,
   buildAllLocationsSalesLaborKpis,
@@ -62,8 +62,6 @@ export const getSalesLaborKPIs = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const locationId =
-      typeof req.query.locationId === "string" ? req.query.locationId : "";
     const queryMetrics = parseMetricsQuery(req.query.metrics);
     const period = parseSalesLaborPeriodQuery(req.query as Record<string, unknown>);
 
@@ -97,7 +95,8 @@ export const getSalesLaborKPIs = async (
       endpoint: "sales-labor.kpis",
       params: { metrics: sortedMetrics, period },
       compute: async () => {
-        if (isAllLocationsId(locationId)) {
+        const targetIds = await resolveTargetLocationIds(req);
+        if (targetIds.length > 1) {
           if (sortedMetrics.length === 0) {
             return buildEmptySalesLaborKPIs();
           }
@@ -109,7 +108,8 @@ export const getSalesLaborKPIs = async (
           });
         }
 
-        const withCreds = await locationService.getByIdWithCredentials(locationId);
+        const singleLocationId = targetIds[0]!;
+        const withCreds = await locationService.getByIdWithCredentials(singleLocationId);
         if (!withCreds) {
           throw new NotFoundError("Location not found");
         }
@@ -139,7 +139,7 @@ export const getSalesLaborKPIs = async (
                 squareLocationId,
                 range,
                 squareAccessToken ?? undefined,
-                locationId,
+                singleLocationId,
                 {
                   timezone,
                   businessStartTime: location.businessStartTime?.trim() ?? "00:00",
@@ -151,7 +151,7 @@ export const getSalesLaborKPIs = async (
                 homebaseLocationId,
                 range,
                 homebaseApiKey ?? undefined,
-                locationId,
+                singleLocationId,
                 {
                   timezone,
                   businessStartTime: location.businessStartTime?.trim() ?? "00:00",
@@ -175,8 +175,6 @@ export const getHourlyBreakdown = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const locationId =
-      typeof req.query.locationId === "string" ? req.query.locationId : "";
     const period = parseSalesLaborPeriodQuery(req.query as Record<string, unknown>);
     await serveDashboardWithCache({
       req,
@@ -184,10 +182,12 @@ export const getHourlyBreakdown = async (
       endpoint: "sales-labor.hourly-breakdown",
       params: { period },
       compute: async () => {
-        if (isAllLocationsId(locationId)) {
+        const targetIds = await resolveTargetLocationIds(req);
+        if (targetIds.length > 1) {
           return await buildAllLocationsHourlyBreakdown({ req, locationService, period });
         }
-        const withCreds = await locationService.getByIdWithCredentials(locationId);
+        const singleLocationId = targetIds[0]!;
+        const withCreds = await locationService.getByIdWithCredentials(singleLocationId);
         if (!withCreds) {
           throw new NotFoundError("Location not found");
         }
@@ -218,7 +218,7 @@ export const getHourlyBreakdown = async (
                 timezone,
                 businessStartTime,
                 squareAccessToken ?? undefined,
-                locationId,
+                singleLocationId,
               )
             : Promise.resolve(new Array<number>(24).fill(0)),
           homebaseLocationId
@@ -228,7 +228,7 @@ export const getHourlyBreakdown = async (
                 timezone,
                 businessStartTime,
                 homebaseApiKey ?? undefined,
-                locationId,
+                singleLocationId,
               )
             : Promise.resolve(new Array<number>(24).fill(0)),
         ]);
@@ -265,14 +265,16 @@ export const getSalesTrend = async (
       endpoint: "sales-labor.sales-trend",
       params: { ...cacheParams, labelRangeV: SALES_TREND_LABEL_RANGE_CACHE_V },
       compute: async () => {
-        if (isAllLocationsId(params.locationId)) {
+        const targetIds = await resolveTargetLocationIds(req);
+        if (targetIds.length > 1) {
           return await buildAllLocationsSalesTrend({
             req,
             query: params,
             locationService,
           });
         }
-        const withCreds = await locationService.getByIdWithCredentials(params.locationId);
+        const singleLocationId = targetIds[0]!;
+        const withCreds = await locationService.getByIdWithCredentials(singleLocationId);
         if (!withCreds) {
           throw new NotFoundError("Location not found");
         }
@@ -320,14 +322,16 @@ export const getSalesTrendKpi = async (
       endpoint: "sales-labor.sales-trend-kpi",
       params: { ...cacheParams, labelRangeV: SALES_TREND_LABEL_RANGE_CACHE_V },
       compute: async () => {
-        if (isAllLocationsId(params.locationId)) {
+        const targetIds = await resolveTargetLocationIds(req);
+        if (targetIds.length > 1) {
           return await buildAllLocationsSalesTrendKpi({
             req,
             query: params,
             locationService,
           });
         }
-        const withCreds = await locationService.getByIdWithCredentials(params.locationId);
+        const singleLocationId = targetIds[0]!;
+        const withCreds = await locationService.getByIdWithCredentials(singleLocationId);
         if (!withCreds) {
           throw new NotFoundError("Location not found");
         }
@@ -369,10 +373,12 @@ export const getSalesByCategory = async (
       endpoint: "sales-labor.sales-by-category",
       params: { ...cacheParams, labelRangeV: SALES_TREND_LABEL_RANGE_CACHE_V },
       compute: async () => {
-        if (isAllLocationsId(params.locationId)) {
+        const targetIds = await resolveTargetLocationIds(req);
+        if (targetIds.length > 1) {
           return await buildSalesByCategoryAllLocations({ req, locationService });
         }
-        const withCreds = await locationService.getByIdWithCredentials(params.locationId);
+        const singleLocationId = targetIds[0]!;
+        const withCreds = await locationService.getByIdWithCredentials(singleLocationId);
         if (!withCreds) {
           throw new NotFoundError("Location not found");
         }
@@ -391,8 +397,6 @@ export const getTimesheet = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const locationId =
-      typeof req.query.locationId === "string" ? req.query.locationId : "";
     const period = parseSalesLaborPeriodQuery(req.query as Record<string, unknown>);
     await serveDashboardWithCache({
       req,
@@ -400,11 +404,13 @@ export const getTimesheet = async (
       endpoint: "sales-labor.timesheet",
       params: { period },
       compute: async () => {
-        if (isAllLocationsId(locationId)) {
+        const targetIds = await resolveTargetLocationIds(req);
+        if (targetIds.length > 1) {
           const rows = await buildAllLocationsTimesheetRows({ req, locationService, period });
           return { rows };
         }
-        const withCreds = await locationService.getByIdWithCredentials(locationId);
+        const singleLocationId = targetIds[0]!;
+        const withCreds = await locationService.getByIdWithCredentials(singleLocationId);
         if (!withCreds) {
           throw new NotFoundError("Location not found");
         }
@@ -423,7 +429,7 @@ export const getTimesheet = async (
         };
         const { startAt, endAt } = getSalesLaborRangeForPeriod(loc, period);
 
-        const timecards = await loadHomebaseTimecardsForMongoRange(locationId, {
+        const timecards = await loadHomebaseTimecardsForMongoRange(singleLocationId, {
           startAt,
           endAt,
         });

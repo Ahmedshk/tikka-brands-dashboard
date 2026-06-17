@@ -15,8 +15,12 @@ import {
   ReviewLocationPill,
   ReviewerAvatar,
 } from '../../components/RatingsAndReviews';
-import type { RootState } from '../../store/store';
-import { ALL_LOCATIONS_ID } from '../../store/slices/location.slice';
+import {
+  selectCurrentLocation,
+  selectIsMultiLocationView,
+  selectLocationApiParams,
+} from '../../store/locationSelectors';
+import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
 import {
   googleBusinessReviewService,
   type GoogleBusinessReviewRow,
@@ -35,13 +39,14 @@ import { REVIEW_RATING_KPI_SUBTITLE_STAR_CLASS } from '../../utils/reviewRatingD
 const PAGE_SIZE = 10;
 
 export const RatingsAndReviews = () => {
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
-  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
-  const locationId = allLocationsSelected ? ALL_LOCATIONS_ID : (currentLocation?._id ?? '');
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const isMultiLocationView = useSelector(selectIsMultiLocationView);
+  const currentLocation = useSelector(selectCurrentLocation);
+  const hasLocationScope = hasLocationSelection(locationApiParams);
 
   const displayTimezone = useMemo(
-    () => resolveDisplayTimezone(allLocationsSelected, currentLocation?.timezone),
-    [allLocationsSelected, currentLocation?.timezone],
+    () => resolveDisplayTimezone(isMultiLocationView, currentLocation?.timezone),
+    [isMultiLocationView, currentLocation?.timezone],
   );
 
   const [periodValue, setPeriodValue] = useState<RatingsReviewsPeriodValue>(DEFAULT_RATINGS_PERIOD);
@@ -72,7 +77,7 @@ export const RatingsAndReviews = () => {
   const filterKey = useMemo(
     () =>
       [
-        locationId,
+        JSON.stringify(locationApiParams),
         periodValue.periodType,
         periodValue.periodStart ?? '',
         periodValue.periodEnd ?? '',
@@ -80,7 +85,7 @@ export const RatingsAndReviews = () => {
         appliedMaxRating,
       ].join('|'),
     [
-      locationId,
+      locationApiParams,
       periodValue.periodType,
       periodValue.periodStart,
       periodValue.periodEnd,
@@ -95,7 +100,7 @@ export const RatingsAndReviews = () => {
   }
 
   useEffect(() => {
-    if (!locationId) {
+    if (!hasLocationScope) {
       setReviews([]);
       setLoading(false);
       return;
@@ -105,7 +110,7 @@ export const RatingsAndReviews = () => {
       return;
     }
     const query: Parameters<typeof googleBusinessReviewService.list>[0] = {
-      locationId,
+      locationQuery: locationApiParams,
       period: periodValue.periodType,
       page,
       limit: PAGE_SIZE,
@@ -144,7 +149,8 @@ export const RatingsAndReviews = () => {
       cancelled = true;
     };
   }, [
-    locationId,
+    locationApiParams,
+    hasLocationScope,
     periodValue.periodType,
     periodValue.periodStart,
     periodValue.periodEnd,
@@ -208,7 +214,7 @@ export const RatingsAndReviews = () => {
           </div>
         </div>
 
-        {locationId ? <RatingsAndReviewsKPICards items={ratingsKPIs} /> : null}
+        {hasLocationScope ? <RatingsAndReviewsKPICards items={ratingsKPIs} /> : null}
 
         <div className="bg-card-background rounded-xl border border-gray-200 overflow-hidden">
           {loading ? (
@@ -221,7 +227,7 @@ export const RatingsAndReviews = () => {
             <ul className="divide-y divide-gray-200">
               {reviews.map((r) => (
                 <li key={r._id} className="p-4 md:p-5">
-                  {allLocationsSelected && r.locationName ? (
+                  {isMultiLocationView && r.locationName ? (
                     <ReviewLocationPill name={r.locationName} />
                   ) : null}
                   <div className="flex gap-4">

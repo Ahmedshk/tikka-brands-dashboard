@@ -10,9 +10,7 @@ import crypto from "node:crypto";
 import type { Request } from "express";
 import {
   ALL_LOCATIONS_ID,
-  isAllLocationsRequest,
-  resolveEffectiveAllowedLocationIds,
-  getLocationIdFromRequest,
+  resolveTargetLocationIds,
 } from "./locationScope.js";
 
 function hashIdList(ids: readonly string[]): string {
@@ -31,12 +29,11 @@ function hashIdList(ids: readonly string[]): string {
  *    permission differences produce distinct cache entries.
  */
 export async function resolveLocationScopeForRequest(req: Request): Promise<string> {
-  if (isAllLocationsRequest(req)) {
-    const ids = await resolveEffectiveAllowedLocationIds(req);
-    return `${ALL_LOCATIONS_ID}|${hashIdList(ids)}`;
+  const targetIds = await resolveTargetLocationIds(req);
+  if (targetIds.length === 1) {
+    return targetIds[0]!;
   }
-  const single = getLocationIdFromRequest(req);
-  return single ?? ALL_LOCATIONS_ID;
+  return `${ALL_LOCATIONS_ID}|${hashIdList(targetIds)}`;
 }
 
 /**

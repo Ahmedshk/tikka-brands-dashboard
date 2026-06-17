@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import type { TrainingAssignmentService } from '../services/trainingAssignment.service.js';
-import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
+import { resolveTargetLocationIds } from './locationScope.js';
 
 export async function listTrainingAssignmentsAllLocations(params: {
   req: Request;
@@ -9,7 +9,7 @@ export async function listTrainingAssignmentsAllLocations(params: {
   limit?: number;
 }): Promise<{ assignments: unknown[]; total: number }> {
   const { req, assignmentService, search, limit } = params;
-  const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+  const effectiveIds = await resolveTargetLocationIds(req);
   const searchTrim = search?.trim();
 
   const results = await Promise.all(

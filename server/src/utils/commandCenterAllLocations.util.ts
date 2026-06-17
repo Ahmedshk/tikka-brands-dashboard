@@ -23,7 +23,7 @@ import {
   businessDateKeyForInstant,
   businessDayUtcRangeIsoStrings,
 } from './businessDayUtcRange.util.js';
-import { resolveEffectiveAllowedLocationIds } from './locationScope.js';
+import { resolveTargetLocationIds } from './locationScope.js';
 import {
   getLocationFanoutConcurrency,
   mapWithConcurrency,
@@ -80,7 +80,7 @@ async function loadPerLocationContext(params: {
   }>
 > {
   const { req, wantLaborCost, goalService, locationService, toLocationForKpi } = params;
-  const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+  const effectiveIds = await resolveTargetLocationIds(req);
 
   const settled = await mapWithConcurrency(
     effectiveIds,
@@ -332,7 +332,7 @@ export async function buildAllLocationsHourlySales(params: {
   locationService: LocationService;
 }): Promise<HourlySalesRow[]> {
   const { req, locationService } = params;
-  const effectiveIds = await resolveEffectiveAllowedLocationIds(req);
+  const effectiveIds = await resolveTargetLocationIds(req);
   if (effectiveIds.length === 0) return buildEmptyHourlySalesRows();
 
   const perLoc = await Promise.all(

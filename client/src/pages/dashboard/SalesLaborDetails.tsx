@@ -25,7 +25,12 @@ import {
 } from '../../services/commandCenter.service';
 import { goalService } from '../../services/goal.service';
 import type { Goal } from '../../types';
-import type { RootState } from '../../store/store';
+import {
+  selectCurrentLocation,
+  selectIsMultiLocationView,
+  selectLocationApiParams,
+} from '../../store/locationSelectors';
+import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 import {
   formatCurrency,
@@ -42,9 +47,10 @@ const PAGE_ID = 'sales-labor-detail';
 const defaultPeriod: PeriodPickerValue = { periodType: 'today' };
 
 export const SalesLaborDetails = () => {
-  const currentLocation = useSelector((state: RootState) => state.location.currentLocation);
-  const allLocationsSelected = useSelector((state: RootState) => state.location.allLocationsSelected);
-  const locationId = allLocationsSelected ? '__all__' : (currentLocation?._id ?? null);
+  const locationApiParams = useSelector(selectLocationApiParams);
+  const isMultiLocationView = useSelector(selectIsMultiLocationView);
+  const currentLocation = useSelector(selectCurrentLocation);
+  const hasLocationScope = hasLocationSelection(locationApiParams);
   const canKpi1 = useCanAccessComponent(PAGE_ID, 'kpi-actual-total-net-sales');
   const canKpi2 = useCanAccessComponent(PAGE_ID, 'kpi-actual-labor-cost');
   const canKpi3 = useCanAccessComponent(PAGE_ID, 'kpi-total-hours');
@@ -84,16 +90,16 @@ export const SalesLaborDetails = () => {
   const [kpis, setKpis] = useState<SalesLaborKPIsData | null>(null);
   const [hourlyBreakdown, setHourlyBreakdown] = useState<HourlyBreakdownData | null>(null);
   const [goals, setGoals] = useState<Goal | null>(null);
-  const [loading, setLoading] = useState(!!locationId && shouldFetch);
+  const [loading, setLoading] = useState(hasLocationScope && shouldFetch);
   const [error, setError] = useState<string | null>(null);
   const [timesheetRows, setTimesheetRows] = useState<TimesheetRow[]>([]);
-  const [timesheetLoading, setTimesheetLoading] = useState(!!locationId && canStaff);
+  const [timesheetLoading, setTimesheetLoading] = useState(hasLocationScope && canStaff);
 
   const periodIsCustomIncomplete =
     period.periodType === 'custom' && (!period.periodStart || !period.periodEnd);
 
   useEffect(() => {
-    if (!locationId || !shouldFetch || periodIsCustomIncomplete) {
+    if (!hasLocationScope || !shouldFetch || periodIsCustomIncomplete) {
       setKpis(null);
       setHourlyBreakdown(null);
       setGoals(null);
@@ -113,7 +119,7 @@ export const SalesLaborDetails = () => {
     const promises: Promise<unknown>[] = [];
     if (kpiMetrics.length > 0) {
       promises.push(
-        commandCenterService.getSalesLaborKPIs(locationId, {
+        commandCenterService.getSalesLaborKPIs(locationApiParams, {
           metrics: kpiMetrics,
           ...periodOptions,
           signal: controller.signal,
@@ -124,7 +130,7 @@ export const SalesLaborDetails = () => {
     }
     if (canHourly) {
       promises.push(
-        commandCenterService.getHourlyBreakdown(locationId, {
+        commandCenterService.getHourlyBreakdown(locationApiParams, {
           ...periodOptions,
           signal: controller.signal,
         }),
@@ -138,7 +144,7 @@ export const SalesLaborDetails = () => {
       if (bounds) {
         if (bounds.start === bounds.end) {
           promises.push(
-            goalService.getResolved(locationId, bounds.start, { signal: controller.signal }).catch((err) => {
+            goalService.getResolved(locationApiParams, bounds.start, { signal: controller.signal }).catch((err) => {
               if (controller.signal.aborted) throw err;
               return null;
             }),
@@ -146,7 +152,7 @@ export const SalesLaborDetails = () => {
         } else {
           promises.push(
             goalService
-              .getResolvedRange(locationId, bounds.start, bounds.end, { signal: controller.signal })
+              .getResolvedRange(locationApiParams, bounds.start, bounds.end, { signal: controller.signal })
               .catch((err) => {
                 if (controller.signal.aborted) throw err;
                 return null;
@@ -177,7 +183,8 @@ export const SalesLaborDetails = () => {
       });
     return () => controller.abort();
   }, [
-    locationId,
+    locationApiParams,
+    hasLocationScope,
     shouldFetch,
     canHourly,
     canDaily,
@@ -190,7 +197,7 @@ export const SalesLaborDetails = () => {
   ]);
 
   useEffect(() => {
-    if (!locationId || !canStaff || periodIsCustomIncomplete) {
+    if (!hasLocationScope || !canStaff || periodIsCustomIncomplete) {
       setTimesheetRows([]);
       setTimesheetLoading(false);
       return;
@@ -204,7 +211,7 @@ export const SalesLaborDetails = () => {
         : {}),
     };
     commandCenterService
-      .getTimesheet(locationId, { ...periodOptions, signal: controller.signal })
+      .getTimesheet(locationApiParams, { ...periodOptions, signal: controller.signal })
       .then(setTimesheetRows)
       .catch(() => {
         if (!controller.signal.aborted) setTimesheetRows([]);
@@ -214,7 +221,8 @@ export const SalesLaborDetails = () => {
       });
     return () => controller.abort();
   }, [
-    locationId,
+    locationApiParams,
+    hasLocationScope,
     canStaff,
     period.periodType,
     period.periodStart,
@@ -265,11 +273,11 @@ export const SalesLaborDetails = () => {
   const dailyTargetsSuffix = useMemo(() => {
     const tz = currentLocation?.timezone ?? 'UTC';
     const singleDay = isSingleDayPeriod(period, tz);
-    if (allLocationsSelected) {
+    if (isMultiLocationView) {
       return singleDay ? '(Avg goal)' : '(Avg goal, period total)';
     }
     return singleDay ? undefined : '(Period total)';
-  }, [allLocationsSelected, period.periodType, period.periodStart, period.periodEnd, currentLocation?.timezone]);
+  }, [isMultiLocationView, period.periodType, period.periodStart, period.periodEnd, currentLocation?.timezone]);
 
   return (
     <Layout>
@@ -291,7 +299,7 @@ export const SalesLaborDetails = () => {
           </div>
         </div>
 
-        {!locationId && (
+        {!hasLocationScope && (
           <p className="text-sm text-secondary mb-4">Select a location from the navbar to view Sales & Labor data.</p>
         )}
         {error && (
@@ -347,7 +355,7 @@ export const SalesLaborDetails = () => {
                 loading={timesheetLoading}
                 className={canDaily ? 'lg:col-span-2' : ''}
                 periodLabel={periodLabel}
-                groupByLocation={allLocationsSelected}
+                groupByLocation={isMultiLocationView}
               />
             )}
             {canDaily && (

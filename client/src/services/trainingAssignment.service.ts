@@ -1,4 +1,6 @@
 import api from './api.service';
+import type { LocationApiParams } from '../utils/locationSelectionHelpers';
+import { resolveLocationQuery } from '../utils/locationSelectionHelpers';
 import { API_ENDPOINTS } from '../utils/constants';
 import { ApiResponse } from '../types';
 import type {
@@ -136,13 +138,14 @@ export interface ListAssignmentsOptions {
 
 export const trainingAssignmentService = {
   async listAssignments(
-    locationId: string,
+    locationQuery: LocationApiParams | string,
     options?: ListAssignmentsOptions
   ): Promise<{ rows: EmployeeTrainingRow[]; total: number }> {
-    if (!locationId?.trim()) return { rows: [], total: 0 };
-    const params: Record<string, string | number> = {
-      locationId: locationId.trim(),
-    };
+    const locationParams = resolveLocationQuery(locationQuery);
+    if (!locationParams.locationId && !locationParams.locationIds) {
+      return { rows: [], total: 0 };
+    }
+    const params: Record<string, string | number> = { ...locationParams };
     const search = options?.search?.trim();
     if (search) params.search = search;
     if (options?.limit != null && options.limit > 0) params.limit = options.limit;

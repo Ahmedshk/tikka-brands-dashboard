@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { withLocationQuery } from "./locationQuery.validators.js";
 
 const policySchema = z.object({
   id: z.string().min(1),
@@ -76,8 +77,7 @@ export const getEmployeeParamsSchema = z.object({
 });
 
 export const getEmployeesQuerySchema = z.object({
-  query: z.object({
-    locationId: z.string().min(1, "Location ID is required"),
+  query: withLocationQuery({
     page: z.string().optional(),
     limit: z.string().optional(),
     search: z.string().optional(),
