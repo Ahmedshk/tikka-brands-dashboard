@@ -148,9 +148,7 @@ export const KitchenPerformanceDetails = () => {
 
   const itemModalTickets = useMemo(() => {
     if (!itemTicketsModal) return [];
-    return allTicketRows.filter((t) =>
-      ticketRowIncludesItemName(t.itemsInTicket, itemTicketsModal.itemName),
-    );
+    return allTicketRows.filter((t) => ticketRowIncludesItemName(t, itemTicketsModal.itemName));
   }, [itemTicketsModal, allTicketRows]);
 
   const showTicketPerformance = activeTab === "ticket-performance";

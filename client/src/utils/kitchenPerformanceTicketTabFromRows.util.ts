@@ -65,7 +65,7 @@ export function computeKitchenPerformanceTicketTabKpisFromRows(
   const completionTimes = ticketRows
     .map((row) => getTicketCompletionTimeForDisplay(row))
     .filter((value): value is number => value != null);
-  const completedTickets = completionTimes.length;
+  const completedTickets = ticketRows.length;
 
   const completedItems = ticketRows.reduce((sum, ticket) => {
     if (ticket.numberOfItems != null) return sum + ticket.numberOfItems;

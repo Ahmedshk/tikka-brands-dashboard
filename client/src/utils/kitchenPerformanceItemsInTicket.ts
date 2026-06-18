@@ -1,3 +1,9 @@
+import type { KitchenPerformanceTicketLineItem } from "../types/kitchenPerformance.types";
+import {
+  formatKitchenPerformanceItemName,
+  itemNamesMatchKitchenPerformanceFilter,
+} from "./kitchenPerformanceItemName.util";
+
 export interface ParsedTicketLineItem {
   itemName: string;
   quantity: number;
@@ -25,18 +31,45 @@ export function parseItemsInTicket(itemsInTicket: string | null): ParsedTicketLi
     .filter((x) => x.itemName.length > 0);
 }
 
-function normalizeItemKey(name: string): string {
-  return name.trim().toLowerCase();
-}
-
-/** True if any parsed line item matches `selectedItemName` (case-insensitive trim). */
-export function ticketRowIncludesItemName(
-  itemsInTicket: string | null,
+function ticketLineItemMatchesSelection(
+  line: KitchenPerformanceTicketLineItem,
   selectedItemName: string,
 ): boolean {
-  const key = normalizeItemKey(selectedItemName);
-  if (!key) return false;
-  return parseItemsInTicket(itemsInTicket).some(
-    (p) => normalizeItemKey(p.itemName) === key,
+  if (itemNamesMatchKitchenPerformanceFilter(line.itemName, selectedItemName)) {
+    return true;
+  }
+
+  for (const option of line.options) {
+    if (
+      itemNamesMatchKitchenPerformanceFilter(
+        formatKitchenPerformanceItemName(line.itemName, option),
+        selectedItemName,
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/** True if the ticket includes the selected item performance row name. */
+export function ticketRowIncludesItemName(
+  row: {
+    itemsInTicket: string | null;
+    ticketLineItems?: KitchenPerformanceTicketLineItem[] | null;
+  },
+  selectedItemName: string,
+): boolean {
+  if (!selectedItemName.trim()) return false;
+
+  if (row.ticketLineItems?.length) {
+    return row.ticketLineItems.some((line) =>
+      ticketLineItemMatchesSelection(line, selectedItemName),
+    );
+  }
+
+  return parseItemsInTicket(row.itemsInTicket).some((parsed) =>
+    itemNamesMatchKitchenPerformanceFilter(parsed.itemName, selectedItemName),
   );
 }

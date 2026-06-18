@@ -29,7 +29,11 @@ describe("buildKdsDateFilters", () => {
 
 describe("buildKdsItemPerformanceQuery", () => {
   it("does not restrict to prep items so expeditor stations return data", () => {
-    const query = buildKdsItemPerformanceQuery("LOC1", "2026-06-15", "2026-06-15");
+    const query = buildKdsItemPerformanceQuery(
+      "LOC1",
+      "2026-06-15",
+      "2026-06-15",
+    );
     assert.equal("segments" in query, false);
     assert.deepEqual(query.dimensions, [
       "KDS.device_code_name",

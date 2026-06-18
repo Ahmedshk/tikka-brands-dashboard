@@ -19,15 +19,18 @@ import {
   normalizeKitchenPerformanceTicketLateFlag,
   normalizeKitchenPerformanceTimeDue,
 } from "./kitchenPerformanceTimeDue.util.js";
-import { formatKitchenPerformanceItemName } from "./kitchenPerformanceItemName.util.js";
+import { formatKitchenPerformanceItemPerformanceName } from "./kitchenPerformanceItemName.util.js";
+import {
+  buildKitchenPerformanceItemQuantityKey,
+  resolveKitchenPerformanceItemTotalQuantity,
+  sumDedupedKdsItemQuantitiesByItemKey,
+} from "./kitchenPerformanceItemQuantity.util.js";
 import { roundKitchenPerformanceAvgItemsPerTicket } from "./kitchenPerformanceKpiValues.util.js";
 import { mapKitchenPerformanceStationType } from "./kitchenPerformanceStationType.util.js";
 import {
-  accumulateItemPerformanceAggregate,
+  averageKdsItemCompletionSeconds,
   averageKdsTicketCompletionSeconds,
   computeKdsCompletionSeconds,
-  finalizeItemPerformanceAggregate,
-  type ItemPerformanceAggregate,
 } from "./kitchenPerformanceItemDuration.util.js";
 import {
   buildItemSalesModifierLookup,
@@ -51,7 +54,8 @@ function kdsStr(row: Record<string, unknown>, key: string): string | null {
 function kdsNum(row: Record<string, unknown>, key: string): number | null {
   const value = row[key];
   if (value == null || value === "") return null;
-  const parsed = typeof value === "number" ? value : Number.parseFloat(String(value));
+  const parsed =
+    typeof value === "number" ? value : Number.parseFloat(String(value));
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -102,7 +106,8 @@ function computeAvgCompletionSecondsFromTicketRows(
   const durationByTicketKey = new Map<string, number>();
 
   for (const row of ticketRows) {
-    if (normalizeDeviceName(kdsStr(row, "KDS.device_code_name")) !== deviceName) continue;
+    if (normalizeDeviceName(kdsStr(row, "KDS.device_code_name")) !== deviceName)
+      continue;
 
     const duration = computeKdsCompletionSeconds(
       kdsStr(row, "KDS.display_on_kds_at"),
@@ -110,13 +115,62 @@ function computeAvgCompletionSecondsFromTicketRows(
     );
     if (duration == null) continue;
 
-    const ticketKey =
-      kdsStr(row, "KDS.ticket_key") ??
-      `${kdsStr(row, "KDS.ticket_name") ?? ""}::${kdsStr(row, "KDS.display_on_kds_at") ?? ""}`;
+    const ticketKey = ticketKeyFromKdsRow(row);
+    if (!ticketKey) continue;
     durationByTicketKey.set(ticketKey, duration);
   }
 
   return averageKdsTicketCompletionSeconds([...durationByTicketKey.values()]);
+}
+
+function ticketKeyFromKdsRow(row: Record<string, unknown>): string | null {
+  const explicit = kdsStr(row, "KDS.ticket_key");
+  if (explicit) return explicit;
+  const ticketName = kdsStr(row, "KDS.ticket_name");
+  const displayOnKdsAt = kdsStr(row, "KDS.display_on_kds_at");
+  if (!ticketName && !displayOnKdsAt) return null;
+  return `${ticketName ?? ""}::${displayOnKdsAt ?? ""}`;
+}
+
+/** Unique completed tickets per device (matches details tab dedupe by ticket_key). */
+export function countUniqueKdsTicketsByDevice(
+  ticketRows: Record<string, unknown>[],
+): Map<string, number> {
+  const keysByDevice = new Map<string, Set<string>>();
+
+  for (const row of ticketRows) {
+    const deviceName = normalizeDeviceName(kdsStr(row, "KDS.device_code_name"));
+    const ticketKey = ticketKeyFromKdsRow(row);
+    if (!deviceName || !ticketKey) continue;
+
+    const keys = keysByDevice.get(deviceName) ?? new Set<string>();
+    keys.add(ticketKey);
+    keysByDevice.set(deviceName, keys);
+  }
+
+  return new Map(
+    [...keysByDevice.entries()].map(([deviceName, keys]) => [
+      deviceName,
+      keys.size,
+    ]),
+  );
+}
+
+/** Station summary `ticket_count` can be 2x expeditor totals; align list with deduped ticket rows. */
+export function applyDedupedTicketCountsToStationSummaryRows(
+  listRows: KitchenPerformanceRowDto[],
+  ticketRows: Record<string, unknown>[],
+  mongoLocationId: string,
+): void {
+  const countByDevice = countUniqueKdsTicketsByDevice(ticketRows);
+
+  for (const row of listRows) {
+    if (row.locationId !== mongoLocationId) continue;
+    const dedupedCount = countByDevice.get(row.deviceName);
+    if (dedupedCount != null) {
+      row.completedTickets = dedupedCount;
+    }
+  }
 }
 
 export function applyFlooredAvgCompletionToStationSummaryRows(
@@ -126,7 +180,10 @@ export function applyFlooredAvgCompletionToStationSummaryRows(
 ): void {
   for (const row of listRows) {
     if (row.locationId !== mongoLocationId) continue;
-    const avg = computeAvgCompletionSecondsFromTicketRows(ticketRows, row.deviceName);
+    const avg = computeAvgCompletionSecondsFromTicketRows(
+      ticketRows,
+      row.deviceName,
+    );
     if (avg != null) {
       row.avgCompletionTimeSeconds = avg;
     }
@@ -195,7 +252,8 @@ function buildLineItemsByTicket(
     const recalledAt = kdsStr(row, "KDS.recalled_at");
     const orderId = kdsStr(row, "KDS.order_id");
 
-    const deviceMap = byDevice.get(deviceName) ?? new Map<string, LineItemParts[]>();
+    const deviceMap =
+      byDevice.get(deviceName) ?? new Map<string, LineItemParts[]>();
     const ticketItems = deviceMap.get(ticketKey) ?? [];
     ticketItems.push({ itemName, variation, quantity, recalledAt, orderId });
     deviceMap.set(ticketKey, ticketItems);
@@ -249,11 +307,11 @@ function mapTicketRowsForDevice(
   const byTicketKey = new Map<string, KitchenPerformanceTicketRowDto>();
 
   for (const row of ticketRows) {
-    if (normalizeDeviceName(kdsStr(row, "KDS.device_code_name")) !== deviceName) continue;
+    if (normalizeDeviceName(kdsStr(row, "KDS.device_code_name")) !== deviceName)
+      continue;
 
-    const ticketKey =
-      kdsStr(row, "KDS.ticket_key") ??
-      `${kdsStr(row, "KDS.ticket_name") ?? ""}::${kdsStr(row, "KDS.display_on_kds_at") ?? ""}`;
+    const ticketKey = ticketKeyFromKdsRow(row);
+    if (!ticketKey) continue;
     const lineParts = kdsStr(row, "KDS.ticket_key")
       ? (lineItemsByTicket.get(kdsStr(row, "KDS.ticket_key")!) ?? [])
       : [];
@@ -281,7 +339,10 @@ function mapTicketRowsForDevice(
       timeCompleted,
       timeDue,
       timeRecalled: normalizeTimestampField(earliestRecall(lineParts)),
-      completionTimeSeconds: computeKdsCompletionSeconds(rawCreated, rawCompleted),
+      completionTimeSeconds: computeKdsCompletionSeconds(
+        rawCreated,
+        rawCompleted,
+      ),
       isLate: normalizeKitchenPerformanceTicketLateFlag(
         parseKdsIsLate(row["KDS.is_late"]),
         timeDue,
@@ -296,16 +357,25 @@ function mapTicketRowsForDevice(
 
     byTicketKey.set(ticketKey, {
       ...existing,
-      isLate: mergeKitchenPerformanceTicketLateFlag(existing.isLate, mapped.isLate),
+      isLate: mergeKitchenPerformanceTicketLateFlag(
+        existing.isLate,
+        mapped.isLate,
+      ),
       timeDue: existing.timeDue ?? mapped.timeDue,
-      numberOfItems: Math.max(existing.numberOfItems ?? 0, mapped.numberOfItems ?? 0),
+      numberOfItems: Math.max(
+        existing.numberOfItems ?? 0,
+        mapped.numberOfItems ?? 0,
+      ),
       itemsInTicket: existing.itemsInTicket ?? mapped.itemsInTicket,
       ticketLineItems: existing.ticketLineItems ?? mapped.ticketLineItems,
       timeRecalled: existing.timeRecalled ?? mapped.timeRecalled,
     });
   }
 
-  return sortKitchenPerformanceTicketsByTimeCreatedAsc([...byTicketKey.values()], timezone);
+  return sortKitchenPerformanceTicketsByTimeCreatedAsc(
+    [...byTicketKey.values()],
+    timezone,
+  );
 }
 
 function mergeTicketKpisWithLateStats(
@@ -314,11 +384,17 @@ function mergeTicketKpisWithLateStats(
 ): KitchenPerformanceTicketKpisDto {
   const computed = computeKpisFromTicketRows(ticketRows);
   const completedTickets =
-    baseKpis.completedTickets > 0 ? baseKpis.completedTickets : computed.completedTickets;
+    ticketRows.length > 0
+      ? ticketRows.length
+      : baseKpis.completedTickets > 0
+        ? baseKpis.completedTickets
+        : computed.completedTickets;
 
   return {
     ...baseKpis,
+    completedTickets,
     avgCompletionTimeSeconds: computed.avgCompletionTimeSeconds,
+    recalledTickets: computed.recalledTickets,
     ...computeKitchenPerformanceLateKpis(ticketRows, completedTickets),
   };
 }
@@ -329,14 +405,16 @@ function computeKpisFromTicketRows(
   const completionTimes = ticketRows
     .map((row) => row.completionTimeSeconds)
     .filter((value): value is number => value != null);
-  const completedTickets = completionTimes.length;
+  const completedTickets = ticketRows.length;
 
   const completedItems = ticketRows.reduce((sum, ticket) => {
     if (ticket.numberOfItems != null) return sum + ticket.numberOfItems;
     return sum;
   }, 0);
 
-  const recalledTickets = ticketRows.filter((ticket) => ticket.timeRecalled != null).length;
+  const recalledTickets = ticketRows.filter(
+    (ticket) => ticket.timeRecalled != null,
+  ).length;
   const completedTicketsForLate =
     completedTickets > 0 ? completedTickets : ticketRows.length;
 
@@ -350,7 +428,9 @@ function computeKpisFromTicketRows(
     recalledTickets,
     avgItemsPerTicket:
       completedTickets > 0
-        ? roundKitchenPerformanceAvgItemsPerTicket(completedItems / completedTickets)
+        ? roundKitchenPerformanceAvgItemsPerTicket(
+            completedItems / completedTickets,
+          )
         : null,
     ...computeKitchenPerformanceLateKpis(ticketRows, completedTicketsForLate),
   };
@@ -362,10 +442,12 @@ function mapHourlyForDevice(
 ): KitchenPerformanceHourlyPointDto[] {
   const counts = new Array<number>(24).fill(0);
   for (const row of hourlyRows) {
-    if (normalizeDeviceName(kdsStr(row, "KDS.device_code_name")) !== deviceName) continue;
+    if (normalizeDeviceName(kdsStr(row, "KDS.device_code_name")) !== deviceName)
+      continue;
     const hour = kdsNum(row, "KDS.local_hour");
     if (hour == null || hour < 0 || hour > 23) continue;
-    counts[hour] = (counts[hour] ?? 0) + Math.round(kdsNum(row, "KDS.ticket_count") ?? 0);
+    counts[hour] =
+      (counts[hour] ?? 0) + Math.round(kdsNum(row, "KDS.ticket_count") ?? 0);
   }
   return counts.map((completedTickets, hour24) => ({
     hour24,
@@ -374,44 +456,69 @@ function mapHourlyForDevice(
   }));
 }
 
-function mapItemPerformanceFromLineItems(
+function mapKdsItemBoundaryTimeSeconds(raw: number | null): number | null {
+  if (raw == null || !Number.isFinite(raw) || raw < 0) return null;
+  return Math.floor(raw);
+}
+
+function mapKdsItemAvgTimeSeconds(raw: number | null): number | null {
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
+  return averageKdsItemCompletionSeconds([raw]);
+}
+
+export function mapKdsItemPerformanceRows(
+  rows: Record<string, unknown>[],
   lineItemRows: Record<string, unknown>[],
   deviceName: string,
 ): KitchenPerformanceItemPerformanceRowDto[] {
-  const byItem = new Map<string, ItemPerformanceAggregate>();
+  const quantityByItemKey = sumDedupedKdsItemQuantitiesByItemKey(
+    lineItemRows,
+    deviceName,
+  );
+  const useDedupedQuantities = quantityByItemKey.size > 0;
+  const mapped: KitchenPerformanceItemPerformanceRowDto[] = [];
 
-  for (const row of lineItemRows) {
-    if (normalizeDeviceName(kdsStr(row, "KDS.device_code_name")) !== deviceName) continue;
+  for (const row of rows) {
+    if (normalizeDeviceName(kdsStr(row, "KDS.device_code_name")) !== deviceName) {
+      continue;
+    }
 
-    const itemName = formatKitchenPerformanceItemName(
-      kdsStr(row, "KDS.item_name"),
-      kdsStr(row, "KDS.variation"),
-    );
-    if (!itemName) continue;
+    const itemNameRaw = kdsStr(row, "KDS.item_name");
+    const variation = kdsStr(row, "KDS.variation");
+    const itemName = formatKitchenPerformanceItemPerformanceName(itemNameRaw, variation);
+    if (!itemName || !itemNameRaw) continue;
 
-    const quantity = Math.max(1, Math.round(kdsNum(row, "KDS.quantity") ?? 1));
-    const completionTimeSeconds = computeKdsCompletionSeconds(
-      kdsStr(row, "KDS.display_on_kds_at"),
-      kdsStr(row, "KDS.completed_at"),
-    );
+    const quantityKey = buildKitchenPerformanceItemQuantityKey(itemNameRaw, variation);
+    const dedupedQuantity = quantityByItemKey.get(quantityKey) ?? 0;
+    const totalQuantity = useDedupedQuantities
+      ? resolveKitchenPerformanceItemTotalQuantity(
+          kdsNum(row, "KDS.quantity_sold") ?? 0,
+          dedupedQuantity,
+        )
+      : Math.round(kdsNum(row, "KDS.quantity_sold") ?? 0);
+    if (totalQuantity <= 0) continue;
 
-    const aggregate = byItem.get(itemName) ?? { completionTimes: [], totalQuantity: 0 };
-    accumulateItemPerformanceAggregate(aggregate, completionTimeSeconds, quantity);
-    byItem.set(itemName, aggregate);
+    mapped.push({
+      itemName,
+      totalQuantity,
+      avgCompletionTimeSeconds: mapKdsItemAvgTimeSeconds(
+        kdsNum(row, "KDS.avg_item_time_seconds"),
+      ),
+      minCompletionTimeSeconds: mapKdsItemBoundaryTimeSeconds(
+        kdsNum(row, "KDS.min_item_time_seconds"),
+      ),
+      maxCompletionTimeSeconds: mapKdsItemBoundaryTimeSeconds(
+        kdsNum(row, "KDS.max_item_time_seconds"),
+      ),
+    });
   }
 
-  return Array.from(byItem.entries())
-    .map(([itemName, aggregate]) => ({
-      itemName,
-      ...finalizeItemPerformanceAggregate(aggregate),
-    }))
-    .filter((row) => row.itemName.length > 0)
-    .sort((a, b) => {
-      if (b.totalQuantity !== a.totalQuantity) {
-        return b.totalQuantity - a.totalQuantity;
-      }
-      return a.itemName.localeCompare(b.itemName);
-    });
+  return mapped.sort((a, b) => {
+    if (b.totalQuantity !== a.totalQuantity) {
+      return b.totalQuantity - a.totalQuantity;
+    }
+    return a.itemName.localeCompare(b.itemName);
+  });
 }
 
 export function buildKitchenPerformanceDetailsByDevice(
@@ -419,6 +526,7 @@ export function buildKitchenPerformanceDetailsByDevice(
   ticketRows: Record<string, unknown>[],
   hourlyRows: Record<string, unknown>[],
   lineItemRows: Record<string, unknown>[],
+  itemPerformanceRows: Record<string, unknown>[],
   deviceKpiRows: Record<string, unknown>[],
   itemSalesRows: Record<string, unknown>[],
   mongoLocationId: string,
@@ -441,14 +549,21 @@ export function buildKitchenPerformanceDetailsByDevice(
       timezone,
     );
 
-    detailsByKey[buildKitchenPerformanceDetailsCacheKey(mongoLocationId, deviceName)] = {
+    detailsByKey[
+      buildKitchenPerformanceDetailsCacheKey(mongoLocationId, deviceName)
+    ] = {
       kpis: mergeTicketKpisWithLateStats(
-        deviceKpisByName.get(deviceName) ?? computeKpisFromTicketRows(mappedTickets),
+        deviceKpisByName.get(deviceName) ??
+          computeKpisFromTicketRows(mappedTickets),
         mappedTickets,
       ),
       hourlyCompletedTickets: mapHourlyForDevice(hourlyRows, deviceName),
       ticketRows: mappedTickets,
-      itemPerformanceRows: mapItemPerformanceFromLineItems(lineItemRows, deviceName),
+      itemPerformanceRows: mapKdsItemPerformanceRows(
+        itemPerformanceRows,
+        lineItemRows,
+        deviceName,
+      ),
     };
   }
 

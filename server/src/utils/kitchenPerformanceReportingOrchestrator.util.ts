@@ -7,11 +7,13 @@ import {
   buildItemSalesModifiersQuery,
   buildKdsDeviceKpisQuery,
   buildKdsHourlyQuery,
+  buildKdsItemPerformanceQuery,
   buildKdsLineItemsPerTicketQuery,
   buildKdsStationSummaryQuery,
   buildKdsTicketRowsQuery,
 } from "./kitchenPerformanceReportingQueries.util.js";
 import {
+  applyDedupedTicketCountsToStationSummaryRows,
   applyFlooredAvgCompletionToStationSummaryRows,
   buildKitchenPerformanceDetailsByDevice,
   mapKdsStationSummaryRows,
@@ -60,7 +62,15 @@ export async function runKitchenPerformanceReportingForLocation(
     },
     {
       name: "kds.lineItemsPerTicket",
-      query: buildKdsLineItemsPerTicketQuery(squareLocationId, startDate, endDate),
+      query: buildKdsLineItemsPerTicketQuery(
+        squareLocationId,
+        startDate,
+        endDate,
+      ),
+    },
+    {
+      name: "kds.itemPerformance",
+      query: buildKdsItemPerformanceQuery(squareLocationId, startDate, endDate),
     },
     {
       name: "kds.deviceKpis",
@@ -82,8 +92,9 @@ export async function runKitchenPerformanceReportingForLocation(
   const ticketResult = results[1]!;
   const hourlyResult = results[2]!;
   const lineItemResult = results[3]!;
-  const deviceKpiResult = results[4]!;
-  const itemSalesResult = results[5]!;
+  const itemPerformanceResult = results[4]!;
+  const deviceKpiResult = results[5]!;
+  const itemSalesResult = results[6]!;
 
   const listRows = mapKdsStationSummaryRows(
     stationResult.data,
@@ -96,13 +107,23 @@ export async function runKitchenPerformanceReportingForLocation(
     ticketResult.data,
     hourlyResult.data,
     lineItemResult.data,
+    itemPerformanceResult.data,
     deviceKpiResult.data,
     itemSalesResult.data,
     mongoLocationId,
     timezone,
   );
 
-  applyFlooredAvgCompletionToStationSummaryRows(listRows, ticketResult.data, mongoLocationId);
+  applyFlooredAvgCompletionToStationSummaryRows(
+    listRows,
+    ticketResult.data,
+    mongoLocationId,
+  );
+  applyDedupedTicketCountsToStationSummaryRows(
+    listRows,
+    ticketResult.data,
+    mongoLocationId,
+  );
 
   return { listRows, detailsByKey };
 }
@@ -150,7 +171,8 @@ export async function runKitchenPerformanceReportingForLocations(
 
   listRows.sort(
     (a, b) =>
-      a.location.localeCompare(b.location) || a.deviceName.localeCompare(b.deviceName),
+      a.location.localeCompare(b.location) ||
+      a.deviceName.localeCompare(b.deviceName),
   );
 
   return { listRows, detailsByKey };

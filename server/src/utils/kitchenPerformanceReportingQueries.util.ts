@@ -13,7 +13,10 @@ function buildLocationFilter(squareLocationId: string): ReportingFilter {
 }
 
 /** Square Reporting API date filters for KDS.local_date (business day in store TZ). */
-export function buildKdsDateFilters(startDate: string, endDate: string): ReportingFilter[] {
+export function buildKdsDateFilters(
+  startDate: string,
+  endDate: string,
+): ReportingFilter[] {
   if (startDate === endDate) {
     return [
       {
@@ -38,7 +41,10 @@ function baseQuery(
   endDate: string,
 ): { filters: ReportingFilter[] } {
   return {
-    filters: [buildLocationFilter(squareLocationId), ...buildKdsDateFilters(startDate, endDate)],
+    filters: [
+      buildLocationFilter(squareLocationId),
+      ...buildKdsDateFilters(startDate, endDate),
+    ],
   };
 }
 
@@ -50,7 +56,11 @@ export function buildKdsStationSummaryQuery(
   return {
     ...baseQuery(squareLocationId, startDate, endDate),
     measures: ["KDS.ticket_count", "KDS.avg_ticket_time_seconds"],
-    dimensions: ["KDS.device_code_name", "KDS.station_type", "KDS.location_name"],
+    dimensions: [
+      "KDS.device_code_name",
+      "KDS.station_type",
+      "KDS.location_name",
+    ],
   };
 }
 
@@ -149,7 +159,10 @@ export function buildKdsLineItemsPerTicketQuery(
   };
 }
 
-function buildItemSalesDateFilters(startDate: string, endDate: string): ReportingFilter[] {
+function buildItemSalesDateFilters(
+  startDate: string,
+  endDate: string,
+): ReportingFilter[] {
   if (startDate === endDate) {
     return [
       {
