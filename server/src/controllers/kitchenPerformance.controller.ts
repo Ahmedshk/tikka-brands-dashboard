@@ -152,3 +152,21 @@ export async function getKitchenPerformanceDetails(
     next(err);
   }
 }
+
+export async function runKitchenPerformanceReport(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { startDate, endDate } = req.body as {
+      startDate: string;
+      endDate: string;
+    };
+    const targetIds = await resolveTargetLocationIds(req);
+    const data = await service.runReportFromSquare(targetIds, startDate, endDate);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}

@@ -16,6 +16,7 @@ export interface KitchenPerformanceTableCardPagination {
 interface KitchenPerformanceTableCardProps {
   rows: KitchenPerformanceRow[];
   loading?: boolean;
+  emptyMessage?: string;
   onView?: (row: KitchenPerformanceRow, index: number) => void;
   pagination?: KitchenPerformanceTableCardPagination;
 }
@@ -34,6 +35,7 @@ function formatDuration(seconds: number): string {
 export const KitchenPerformanceTableCard = ({
   rows,
   loading = false,
+  emptyMessage = "No data available",
   onView,
   pagination,
 }: KitchenPerformanceTableCardProps) => {
@@ -49,7 +51,7 @@ export const KitchenPerformanceTableCard = ({
   } else if (rows.length === 0) {
     content = (
       <div className="h-full min-h-[280px] flex items-center justify-center text-primary/80 text-sm">
-        No data available
+        {emptyMessage}
       </div>
     );
   } else {
@@ -63,6 +65,7 @@ export const KitchenPerformanceTableCard = ({
             >
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-primary truncate">{row.deviceName}</p>
+                <p className="text-[11px] text-secondary mt-0.5">{row.type}</p>
               </div>
               <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
                 <div className="flex items-center gap-2">
@@ -98,6 +101,7 @@ export const KitchenPerformanceTableCard = ({
             <thead>
               <tr className="text-left text-secondary border-b border-gray-200">
                 <th className="pb-3 pr-4 pl-2 font-semibold">Device Name</th>
+                <th className="pb-3 pr-4 font-semibold">Type</th>
                 <th className="pb-3 pr-4 font-semibold">Location</th>
                 <th className="pb-3 pr-4 font-semibold text-center">Completed Tickets</th>
                 <th className="pb-3 pr-4 font-semibold text-center">Avg. Completion Time</th>
@@ -111,6 +115,7 @@ export const KitchenPerformanceTableCard = ({
                   className={index % 2 === 1 ? "bg-[#F3F5F7]" : ""}
                 >
                   <td className="py-3 pr-4 pl-2 font-semibold">{row.deviceName}</td>
+                  <td className="py-3 pr-4">{row.type}</td>
                   <td className="py-3 pr-4">{row.location}</td>
                   <td className="py-3 pr-4 text-center font-semibold">{row.completedTickets}</td>
                   <td className="py-3 pr-4 text-center">{formatDuration(row.avgCompletionTimeSeconds)}</td>

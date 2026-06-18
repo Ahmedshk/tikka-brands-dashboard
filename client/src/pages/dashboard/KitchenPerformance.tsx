@@ -1,21 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import OperationsIcon from "@assets/icons/operations.svg?react";
-import ImportIcon from "@assets/icons/import.svg?react";
 import { Layout } from "../../components/common/Layout";
 import {
   selectCurrentLocation,
   selectIsMultiLocationView,
   selectLocationApiParams,
-  selectSelectedLocations,
 } from "../../store/locationSelectors";
 import { hasLocationSelection } from "../../utils/locationSelectionHelpers";
 import type { KitchenPerformanceRow } from "../../types/kitchenPerformance.types";
-import { kitchenPerformanceService } from "../../services/kitchenPerformance.service";
 import {
-  KitchenPerformanceImportModal,
   KitchenPerformancePeriodPicker,
   KitchenPerformanceTableCard,
 } from "../../components/KitchenPerformance";
@@ -27,6 +23,8 @@ import {
   zonedWallTodayYmd,
 } from "../../utils/kitchenPerformancePeriodRange";
 import { resolveDisplayTimezone } from "../../utils/displayTimezoneHelpers";
+import { useKitchenPerformanceReport } from "../../context/KitchenPerformanceReportContext";
+import { buildKitchenPerformanceReportCacheKey } from "../../utils/kitchenPerformanceReportCache.util";
 
 const PAGE_SIZE = 10;
 const PAGE_ID = "kitchen-performance";
@@ -42,16 +40,11 @@ export const KitchenPerformance = () => {
   const locationApiParams = useSelector(selectLocationApiParams);
   const isMultiLocationView = useSelector(selectIsMultiLocationView);
   const currentLocation = useSelector(selectCurrentLocation);
-  const selectedLocations = useSelector(selectSelectedLocations);
   const hasLocationScope = hasLocationSelection(locationApiParams);
-  const canImportCsv = useCanAccessComponent(PAGE_ID, "import-csv");
   const canKitchenTable = useCanAccessComponent(PAGE_ID, "kitchen-performance");
-  const [rows, setRows] = useState<KitchenPerformanceRow[]>([]);
+  const { reportPayload, cacheKey, loading, runReport, clearReport } =
+    useKitchenPerformanceReport();
   const [page, setPage] = useState(1);
-  const [totalItems, setTotalItems] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const browserDefaultTz = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -88,47 +81,53 @@ export const KitchenPerformance = () => {
     [startDate, endDate, timezone],
   );
 
-  const fetchKitchenRows = useCallback(async () => {
-    if (!hasLocationScope || !canKitchenTable) {
-      setRows([]);
-      setTotalItems(0);
-      setTotalPages(1);
-      setLoading(false);
-      return;
-    }
+  const activeCacheKey = useMemo(
+    () => buildKitchenPerformanceReportCacheKey(locationApiParams, startDate, endDate),
+    [locationApiParams, startDate, endDate],
+  );
 
-    setLoading(true);
-    try {
-      const data = await kitchenPerformanceService.getRows(
-        locationApiParams,
-        { startDate, endDate },
-        { page, limit: PAGE_SIZE },
-      );
-      setRows(data.rows);
-      setTotalItems(data.meta.total);
-      setTotalPages(data.meta.totalPages);
-      if (data.meta.page !== page) {
-        setPage(data.meta.page);
-      }
-    } catch {
-      setRows([]);
-      setTotalItems(0);
-      setTotalPages(1);
-      toast.error("Failed to load kitchen performance.");
-    } finally {
-      setLoading(false);
-    }
-  }, [locationApiParams, hasLocationScope, page, startDate, endDate, canKitchenTable]);
+  const hasCachedReport = cacheKey === activeCacheKey && reportPayload != null;
 
+  const prevActiveCacheKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    fetchKitchenRows();
-  }, [fetchKitchenRows]);
+    const prevKey = prevActiveCacheKeyRef.current;
+    prevActiveCacheKeyRef.current = activeCacheKey;
+    if (prevKey != null && prevKey !== activeCacheKey) {
+      setPage(1);
+      clearReport();
+    }
+  }, [activeCacheKey, clearReport]);
+
+  const allRows = hasCachedReport ? reportPayload.listRows : [];
+  const totalItems = allRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const rows = useMemo(() => {
+    const startIndex = (page - 1) * PAGE_SIZE;
+    return allRows.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [allRows, page]);
 
   useEffect(() => {
     if (page > totalPages) {
       setPage(1);
     }
   }, [page, totalPages]);
+
+  const handleRunReport = useCallback(async () => {
+    if (!hasLocationScope || !canKitchenTable) return;
+    setPage(1);
+    try {
+      await runReport(locationApiParams, { startDate, endDate });
+    } catch {
+      toast.error("Failed to run kitchen performance report.");
+    }
+  }, [
+    canKitchenTable,
+    endDate,
+    hasLocationScope,
+    locationApiParams,
+    runReport,
+    startDate,
+  ]);
 
   const handlePeriodChange = (next: KitchenPerformancePeriodValue) => {
     if (next.periodType === "custom" && (!next.periodStart || !next.periodEnd)) {
@@ -143,23 +142,8 @@ export const KitchenPerformance = () => {
     }
   };
 
-  const handleImport = async (
-    locationId: string,
-    range: { startDate: string; endDate: string },
-    file: File,
-  ) => {
-    const result = await kitchenPerformanceService.importCsv(locationId, range, file);
-    toast.success(
-      result.daysUpdated?.length
-        ? `Kitchen performance imported (${result.importedRows} rows, ${result.daysUpdated.length} day(s)).`
-        : `Kitchen performance imported (${result.importedRows} rows).`,
-    );
-    setPage(1);
-    navigate(
-      `/dashboard/kitchen-performance?startDate=${range.startDate}&endDate=${range.endDate}`,
-    );
-    await fetchKitchenRows();
-  };
+  const tableLoading = loading;
+  const showEmptyInstruction = !hasCachedReport && !loading;
 
   return (
     <Layout>
@@ -179,52 +163,66 @@ export const KitchenPerformance = () => {
                 className="min-w-[10rem]"
               />
             ) : null}
-            {canImportCsv && selectedLocations.length > 0 ? (
+            {canKitchenTable && hasLocationScope ? (
               <button
                 type="button"
-                onClick={() => setImportModalOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+                onClick={() => void handleRunReport()}
+                disabled={loading}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
               >
-                <ImportIcon className="w-4 h-4" />
-                Import CSV
+                {loading ? "Running…" : "Run Report"}
               </button>
             ) : null}
           </div>
         </div>
 
         {canKitchenTable ? (
-          <KitchenPerformanceTableCard
-            rows={rows}
-            loading={loading}
-            onView={(row) => {
-              const encoded = encodeURIComponent(row.deviceName);
-              navigate(
-                `/dashboard/kitchen-performance/${encoded}?startDate=${startDate}&endDate=${endDate}`,
-              );
-            }}
-            pagination={{
-              currentPage: page,
-              totalPages,
-              totalItems,
-              pageSize: PAGE_SIZE,
-              onPageChange: setPage,
-            }}
-          />
+          <>
+            {showEmptyInstruction ? (
+              <p className="mb-4 text-sm text-secondary">
+                Select a period and click Run Report to load kitchen performance data.
+              </p>
+            ) : null}
+            {!hasLocationScope ? (
+              <p className="mb-4 text-sm text-secondary">
+                Select at least one location to run a report.
+              </p>
+            ) : null}
+            <KitchenPerformanceTableCard
+              rows={rows}
+              loading={tableLoading}
+              emptyMessage={
+                showEmptyInstruction
+                  ? "No report run yet. Select a period and click Run Report."
+                  : undefined
+              }
+              onView={(row: KitchenPerformanceRow) => {
+                const encoded = encodeURIComponent(row.deviceName);
+                const locationId = row.locationId ?? currentLocation?._id ?? "";
+                const locationQuery = locationId ? `&locationId=${encodeURIComponent(locationId)}` : "";
+                navigate(
+                  `/dashboard/kitchen-performance/${encoded}?startDate=${startDate}&endDate=${endDate}${locationQuery}`,
+                );
+              }}
+              pagination={
+                hasCachedReport
+                  ? {
+                      currentPage: page,
+                      totalPages,
+                      totalItems,
+                      pageSize: PAGE_SIZE,
+                      onPageChange: setPage,
+                    }
+                  : undefined
+              }
+            />
+          </>
         ) : (
           <p className="text-sm text-secondary">
             You do not have access to view kitchen performance data.
           </p>
         )}
       </div>
-
-      <KitchenPerformanceImportModal
-        isOpen={canImportCsv && importModalOpen}
-        onClose={() => setImportModalOpen(false)}
-        onImport={handleImport}
-        defaultPeriod={period}
-        timezone={timezone}
-        locations={selectedLocations}
-      />
     </Layout>
   );
 };

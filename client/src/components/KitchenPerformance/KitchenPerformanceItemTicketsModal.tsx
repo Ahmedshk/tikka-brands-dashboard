@@ -2,8 +2,9 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { KitchenPerformanceTicketRow } from "../../types/kitchenPerformance.types";
 import {
-  formatDuration,
+  formatTicketCompletionDuration,
   formatTicketItemCount,
+  getTicketTimeDueForDisplay,
   TicketDateCell,
   TicketValueCell,
 } from "./kitchenPerformanceTicketUi";
@@ -104,16 +105,24 @@ export const KitchenPerformanceItemTicketsModal = ({
                           <TicketDateCell value={row.timeCreated} displayTimezone={displayTimezone} />
                         </td>
                         <td className="py-3 pr-4">
-                          <TicketDateCell value={row.timeDue} displayTimezone={displayTimezone} />
+                          <TicketDateCell
+                            value={getTicketTimeDueForDisplay(row)}
+                            displayTimezone={displayTimezone}
+                          />
                         </td>
                         <td className="py-3 pr-4">
                           <TicketDateCell
                             value={row.timeCompleted}
                             displayTimezone={displayTimezone}
-                            compareDueForCompletedAt={row.timeDue}
+                            compareDueForCompletedAt={getTicketTimeDueForDisplay(row)}
+                            highlightLate={
+                              getTicketTimeDueForDisplay(row)
+                                ? row.isLate ?? undefined
+                                : false
+                            }
                           />
                         </td>
-                        <td className="py-3 pr-4">{formatDuration(row.completionTimeSeconds)}</td>
+                        <td className="py-3 pr-4">{formatTicketCompletionDuration(row)}</td>
                         <td className="py-3 pr-4">
                           <TicketDateCell value={row.timeRecalled} displayTimezone={displayTimezone} />
                         </td>

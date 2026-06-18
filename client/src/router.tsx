@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
+import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Login } from './pages/auth/Login';
 import { ForgotPassword } from './pages/auth/ForgotPassword';
 import { SetPassword } from './pages/auth/SetPassword';
@@ -25,6 +25,7 @@ import { AlertsNotificationsSettings } from './pages/dashboard/AlertsNotificatio
 import { DataSyncSettings } from './pages/dashboard/DataSyncSettings';
 import { KitchenPerformance } from './pages/dashboard/KitchenPerformance';
 import { KitchenPerformanceDetails } from './pages/dashboard/KitchenPerformanceDetails';
+import { KitchenPerformanceReportProvider } from './context/KitchenPerformanceReportContext';
 import { ActivityLog } from './pages/dashboard/ActivityLog';
 import { RatingsAndReviews } from './pages/dashboard/RatingsAndReviews';
 import { Profile } from './pages/dashboard/Profile';
@@ -61,6 +62,12 @@ const DashboardRedirect = () => {
     : '/dashboard/no-access';
   return <Navigate to={to} replace />;
 };
+
+const KitchenPerformanceLayout = () => (
+  <KitchenPerformanceReportProvider>
+    <Outlet />
+  </KitchenPerformanceReportProvider>
+);
 
 export const router = createBrowserRouter([
   {
@@ -318,22 +325,21 @@ export const router = createBrowserRouter([
     element: (
       <ErrorBoundary>
         <ProtectedRoute>
-          <KitchenPerformance />
+          <KitchenPerformanceLayout />
         </ProtectedRoute>
       </ErrorBoundary>
     ),
     errorElement: <ErrorPage />,
-  },
-  {
-    path: '/dashboard/kitchen-performance/:deviceName',
-    element: (
-      <ErrorBoundary>
-        <ProtectedRoute>
-          <KitchenPerformanceDetails />
-        </ProtectedRoute>
-      </ErrorBoundary>
-    ),
-    errorElement: <ErrorPage />,
+    children: [
+      {
+        index: true,
+        element: <KitchenPerformance />,
+      },
+      {
+        path: ':deviceName',
+        element: <KitchenPerformanceDetails />,
+      },
+    ],
   },
   {
     path: '/dashboard/activity-log',

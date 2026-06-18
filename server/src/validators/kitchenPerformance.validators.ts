@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { withLocationQuery } from "./locationQuery.validators.js";
+import { locationQueryFields, withLocationQuery } from "./locationQuery.validators.js";
 
 const ymdDateSchema = z
   .string()
@@ -42,3 +42,30 @@ export const getKitchenPerformanceDetailsQuerySchema = z.object({
     path: ["endDate"],
   }),
 });
+
+export const runKitchenPerformanceReportBodySchema = z
+  .object({
+    query: z
+      .object({ ...locationQueryFields })
+      .superRefine((q, ctx) => {
+        const locationId = q.locationId;
+        const locationIds = q.locationIds;
+        const ok =
+          (typeof locationId === "string" && locationId.length > 0) ||
+          (Array.isArray(locationIds) && locationIds.length > 0);
+        if (!ok) {
+          ctx.addIssue({
+            code: "custom",
+            message: "locationId or locationIds is required",
+          });
+        }
+      }),
+    body: z.object({
+      startDate: ymdDateSchema,
+      endDate: ymdDateSchema,
+    }),
+  })
+  .refine((o) => o.body.startDate <= o.body.endDate, {
+    message: "startDate must be on or before endDate",
+    path: ["body", "endDate"],
+  });

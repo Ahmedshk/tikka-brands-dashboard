@@ -1,9 +1,12 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { KitchenPerformanceTicketRow } from "../../types/kitchenPerformance.types";
+import type {
+  KitchenPerformanceTicketLineItem,
+  KitchenPerformanceTicketRow,
+} from "../../types/kitchenPerformance.types";
 import { parseItemsInTicket } from "../../utils/kitchenPerformanceItemsInTicket";
 import { formatDateTimeParts } from "../../utils/dateTimeDisplayHelpers";
-import { formatDuration, isCompletedAfterDue } from "./kitchenPerformanceTicketUi";
+import { getTicketTimeDueForDisplay, isTicketCompletedLate, formatTicketCompletionDuration } from "./kitchenPerformanceTicketUi";
 
 interface KitchenPerformanceTicketDetailModalProps {
   isOpen: boolean;
@@ -24,6 +27,28 @@ function DetailRow({
   );
 }
 
+function TicketLineItemsList({
+  lineItems,
+}: Readonly<{ lineItems: KitchenPerformanceTicketLineItem[] }>) {
+  return (
+    <ul className="list-none space-y-3 m-0 p-0">
+      {lineItems.map((item, index) => (
+        <li key={`${item.itemName}-${index}`} className="break-words">
+          <div className="font-semibold">
+            {item.quantity} x {item.itemName}
+          </div>
+          {item.options.length > 0 ? (
+            <ul className="list-none space-y-0.5 m-0 mt-1 pl-4 p-0 text-secondary">
+              {item.options.map((option) => (
+                <li key={`${item.itemName}-${option}`}>{option}</li>
+              ))}
+            </ul>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
 function DateTimeInline({
   value,
   displayTimezone,
@@ -43,14 +68,18 @@ function DateTimeInline({
 function CompletedAtModalValue({
   timeCompleted,
   timeDue,
+  timeCreated,
+  isLate,
   displayTimezone,
 }: Readonly<{
   timeCompleted: string | null;
   timeDue: string | null;
+  timeCreated: string | null;
+  isLate?: boolean | null;
   displayTimezone: string;
 }>) {
   const parts = formatDateTimeParts(timeCompleted, displayTimezone);
-  const late = isCompletedAfterDue(timeCompleted, timeDue);
+  const late = isTicketCompletedLate({ isLate, timeCompleted, timeDue, timeCreated });
   if (parts.time === "—" && parts.date === "—") {
     return <span>—</span>;
   }
@@ -88,7 +117,14 @@ export const KitchenPerformanceTicketDetailModal = ({
 
   if (!isOpen || !row) return null;
 
-  const parsedItems = parseItemsInTicket(row.itemsInTicket);
+  const lineItems =
+    row.ticketLineItems && row.ticketLineItems.length > 0
+      ? row.ticketLineItems
+      : parseItemsInTicket(row.itemsInTicket).map((item) => ({
+          itemName: item.itemName,
+          quantity: item.quantity,
+          options: [],
+        }));
 
   return createPortal(
     <dialog
@@ -131,32 +167,31 @@ export const KitchenPerformanceTicketDetailModal = ({
               <DateTimeInline value={row.timeCreated} displayTimezone={displayTimezone} />
             </DetailRow>
             <DetailRow label="Time due">
-              <DateTimeInline value={row.timeDue} displayTimezone={displayTimezone} />
+              <DateTimeInline
+                value={getTicketTimeDueForDisplay(row)}
+                displayTimezone={displayTimezone}
+              />
             </DetailRow>
             <DetailRow label="Completed at">
               <CompletedAtModalValue
                 timeCompleted={row.timeCompleted}
                 timeDue={row.timeDue}
+                timeCreated={row.timeCreated}
+                isLate={row.isLate}
                 displayTimezone={displayTimezone}
               />
             </DetailRow>
             <DetailRow label="Completion time">
-              {formatDuration(row.completionTimeSeconds)}
+              {formatTicketCompletionDuration(row)}
             </DetailRow>
             <DetailRow label="Recalled at">
               <DateTimeInline value={row.timeRecalled} displayTimezone={displayTimezone} />
             </DetailRow>
             <DetailRow label="Items on ticket">
-              {parsedItems.length === 0 ? (
+              {lineItems.length === 0 ? (
                 <span>—</span>
               ) : (
-                <ul className="list-none space-y-1.5 m-0 p-0">
-                  {parsedItems.map((item, i) => (
-                    <li key={`${item.itemName}-${i}`} className="break-words">
-                      {item.quantity} × {item.itemName}
-                    </li>
-                  ))}
-                </ul>
+                <TicketLineItemsList lineItems={lineItems} />
               )}
             </DetailRow>
           </div>

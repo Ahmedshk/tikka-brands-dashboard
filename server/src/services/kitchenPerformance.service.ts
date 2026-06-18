@@ -1,19 +1,30 @@
-import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
+import { formatInTimeZone } from "date-fns-tz";
 import { LocationService } from "./location.service.js";
 import { ValidationError } from "../utils/errors.util.js";
 import { KitchenPerformanceRepository } from "../repositories/kitchenPerformance.repository.js";
 import { getCalendarYmdInTz } from "../utils/timezone.util.js";
+import {
+  parseKitchenPerformanceTimestamp,
+  sortKitchenPerformanceTicketsByTimeCreatedAsc,
+} from "../utils/kitchenPerformanceTimestamp.util.js";
+import { computeKitchenPerformanceLateKpis } from "../utils/kitchenPerformanceLateKpis.util.js";
+import {
+  normalizeKitchenPerformanceTimeDue,
+} from "../utils/kitchenPerformanceTimeDue.util.js";
+import { mapKitchenPerformanceStationType } from "../utils/kitchenPerformanceStationType.util.js";
 import type {
   KitchenPerformanceDetailsResult,
   KitchenPerformanceHourlyPointDto,
   KitchenPerformanceItemPerformanceRowDto,
   KitchenPerformanceListResult,
   KitchenPerformanceRawTicketInput,
+  KitchenPerformanceReportResult,
   KitchenPerformanceRowDto,
   KitchenPerformanceRowInput,
   KitchenPerformanceTicketKpisDto,
   KitchenPerformanceTicketRowDto,
 } from "../types/kitchenPerformance.types.js";
+import { runKitchenPerformanceReportingForLocations } from "../utils/kitchenPerformanceReportingOrchestrator.util.js";
 
 const REQUIRED_HEADERS = [
   "Device Name",
@@ -46,6 +57,7 @@ interface KitchenPerformanceLeanDoc {
   reportDate?: string;
   rows?: Array<{
     deviceName: string;
+    type?: string;
     completedTickets: number;
     avgCompletionTimeSeconds: number;
   }>;
@@ -107,21 +119,7 @@ function asNullableNumber(value: string | undefined): number | null {
  * Values with `Z` or a numeric offset are parsed as absolute instants.
  */
 function parseCsvTimestampInLocation(value: string | null, timezone: string): Date | null {
-  if (!value?.trim()) return null;
-  const s = value.trim();
-  const tz = timezone.trim();
-  if (s.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(s)) {
-    const normalized = s.includes("T") ? s : s.replace(" ", "T");
-    const parsed = new Date(normalized);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-  const normalized = s.replace(" ", "T");
-  try {
-    const parsed = fromZonedTime(normalized, tz);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  } catch {
-    return null;
-  }
+  return parseKitchenPerformanceTimestamp(value, timezone);
 }
 
 function formatYmdFromCalendarParts(y: number, m0: number, d: number): string {
@@ -242,6 +240,7 @@ function aggregateRowsFromRawTickets(
   return Array.from(grouped.values())
     .map((item) => ({
       deviceName: item.deviceName,
+      type: "Unknown",
       completedTickets: item.completedTickets,
       avgCompletionTimeSeconds:
         item.ticketsWithCompletionTime > 0
@@ -258,7 +257,12 @@ function aggregateRowsFromStoredRowSubdocuments(
 ): KitchenPerformanceRowInput[] {
   const grouped = new Map<
     string,
-    { deviceName: string; completedTickets: number; weightedTimeSum: number }
+    {
+      deviceName: string;
+      type: string;
+      completedTickets: number;
+      weightedTimeSum: number;
+    }
   >();
 
   for (const doc of datasets) {
@@ -267,9 +271,13 @@ function aggregateRowsFromStoredRowSubdocuments(
       if (!key) continue;
       const existing = grouped.get(key) ?? {
         deviceName: key,
+        type: row.type?.trim() || "Unknown",
         completedTickets: 0,
         weightedTimeSum: 0,
       };
+      if (existing.type === "Unknown" && row.type?.trim()) {
+        existing.type = row.type.trim();
+      }
       const n = row.completedTickets ?? 0;
       existing.completedTickets += n;
       existing.weightedTimeSum += row.avgCompletionTimeSeconds * n;
@@ -280,6 +288,7 @@ function aggregateRowsFromStoredRowSubdocuments(
   return Array.from(grouped.values())
     .map((item) => ({
       deviceName: item.deviceName,
+      type: item.type,
       completedTickets: item.completedTickets,
       avgCompletionTimeSeconds:
         item.completedTickets > 0
@@ -320,11 +329,18 @@ function computeTicketKpisAndRows(
     orderSource: ticket.orderSource,
     numberOfItems: ticket.numberOfItems,
     itemsInTicket: ticket.itemsInTicket,
+    ticketLineItems: null,
     timeCreated: ticket.timeCreated,
     timeCompleted: ticket.timeCompleted,
-    timeDue: ticket.timeDue,
+    timeDue: normalizeKitchenPerformanceTimeDue(
+      ticket.timeDue,
+      ticket.timeCreated,
+      ticket.timeDue,
+      ticket.timeCreated,
+    ),
     timeRecalled: ticket.timeRecalled,
     completionTimeSeconds: ticket.completionTimeSeconds,
+    isLate: null,
   }));
 
   const completionTimes = tickets
@@ -343,12 +359,19 @@ function computeTicketKpisAndRows(
 
   const recalledTickets = tickets.filter((ticket) => ticket.timeRecalled != null).length;
 
-  const ticketsPastDueTime = tickets.reduce((count, ticket) => {
-    const completed = parseCsvTimestampInLocation(ticket.timeCompleted, timezone);
-    const due = parseCsvTimestampInLocation(ticket.timeDue, timezone);
-    if (!completed || !due) return count;
-    return completed.getTime() > due.getTime() ? count + 1 : count;
-  }, 0);
+  const lateKpiRows = ticketRows.map((ticket) => ({
+    isLate:
+      ticket.isLate ??
+      (() => {
+        const completed = parseCsvTimestampInLocation(ticket.timeCompleted, timezone);
+        const due = parseCsvTimestampInLocation(ticket.timeDue, timezone);
+        if (!due || !completed) return null;
+        return completed.getTime() > due.getTime();
+      })(),
+    timeDue: ticket.timeDue,
+  }));
+
+  const lateKpis = computeKitchenPerformanceLateKpis(lateKpiRows, completedTickets);
 
   return {
     kpis: {
@@ -363,9 +386,11 @@ function computeTicketKpisAndRows(
         completedTickets > 0
           ? Number((completedItems / completedTickets).toFixed(2))
           : null,
-      ticketsPastDueTime,
+      ticketsPastDueTime: lateKpis.ticketsPastDueTime,
+      ticketsWithTimeDue: lateKpis.ticketsWithTimeDue,
+      ticketsLatePercent: lateKpis.ticketsLatePercent,
     },
-    ticketRows,
+    ticketRows: sortKitchenPerformanceTicketsByTimeCreatedAsc(ticketRows, timezone),
   };
 }
 
@@ -552,6 +577,7 @@ export class KitchenPerformanceService {
     const rows: KitchenPerformanceRowDto[] = sourceRows
       .map((row) => ({
         deviceName: row.deviceName,
+        type: mapKitchenPerformanceStationType(row.type),
         location: locationName,
         completedTickets: row.completedTickets,
         avgCompletionTimeSeconds: row.avgCompletionTimeSeconds,
@@ -587,6 +613,59 @@ export class KitchenPerformanceService {
       hourlyCompletedTickets,
       ticketRows,
       itemPerformanceRows,
+    };
+  }
+
+  async runReportFromSquare(
+    locationIds: string[],
+    startDate: string,
+    endDate: string,
+  ): Promise<KitchenPerformanceReportResult> {
+    if (locationIds.length === 0) {
+      throw new ValidationError("At least one location is required.");
+    }
+
+    const locationInputs = await Promise.all(
+      locationIds.map(async (locationId) => {
+        const creds = await this.locationService.getByIdWithCredentials(locationId);
+        if (!creds) {
+          throw new ValidationError(`Location not found: ${locationId}`);
+        }
+        if (!creds.squareAccessToken?.trim()) {
+          throw new ValidationError(
+            `Square credentials are not configured for ${creds.location.storeName ?? "this location"}.`,
+          );
+        }
+        const squareLocationId = creds.location.squareLocationId?.trim();
+        if (!squareLocationId) {
+          throw new ValidationError(
+            `Square location ID is not configured for ${creds.location.storeName ?? "this location"}.`,
+          );
+        }
+        return {
+          mongoLocationId: locationId,
+          squareLocationId,
+          accessToken: creds.squareAccessToken,
+          startDate,
+          endDate,
+          locationName: creds.location.storeName ?? "Unknown Location",
+          timezone: creds.location.timezone?.trim() || "America/Denver",
+        };
+      }),
+    );
+
+    const { listRows, detailsByKey } =
+      await runKitchenPerformanceReportingForLocations(locationInputs);
+
+    return {
+      listRows,
+      detailsByKey,
+      meta: {
+        startDate,
+        endDate,
+        locationIds,
+        fetchedAt: new Date().toISOString(),
+      },
     };
   }
 }

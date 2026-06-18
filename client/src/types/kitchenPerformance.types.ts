@@ -1,6 +1,8 @@
 export interface KitchenPerformanceRow {
   deviceName: string;
+  type: string;
   location: string;
+  locationId?: string;
   completedTickets: number;
   avgCompletionTimeSeconds: number;
 }
@@ -12,16 +14,24 @@ export interface KitchenPerformancePaginationMeta {
   totalPages: number;
 }
 
+export interface KitchenPerformanceTicketLineItem {
+  itemName: string;
+  quantity: number;
+  options: string[];
+}
+
 export interface KitchenPerformanceTicketRow {
   ticketName: string | null;
   orderSource: string | null;
   numberOfItems: number | null;
   itemsInTicket: string | null;
+  ticketLineItems?: KitchenPerformanceTicketLineItem[] | null;
   timeCreated: string | null;
   timeCompleted: string | null;
   timeDue: string | null;
   timeRecalled: string | null;
   completionTimeSeconds: number | null;
+  isLate?: boolean | null;
 }
 
 export interface KitchenPerformanceHourlyPoint {
@@ -45,6 +55,8 @@ export interface KitchenPerformanceTicketKpis {
   recalledTickets: number;
   avgItemsPerTicket: number | null;
   ticketsPastDueTime: number;
+  ticketsWithTimeDue?: number;
+  ticketsLatePercent?: number | null;
 }
 
 export interface KitchenPerformanceDetails {
@@ -52,4 +64,17 @@ export interface KitchenPerformanceDetails {
   hourlyCompletedTickets: KitchenPerformanceHourlyPoint[];
   ticketRows: KitchenPerformanceTicketRow[];
   itemPerformanceRows: KitchenPerformanceItemPerformanceRow[];
+}
+
+export interface KitchenPerformanceReportMeta {
+  startDate: string;
+  endDate: string;
+  locationIds: string[];
+  fetchedAt: string;
+}
+
+export interface KitchenPerformanceReportPayload {
+  listRows: KitchenPerformanceRow[];
+  detailsByKey: Record<string, KitchenPerformanceDetails>;
+  meta: KitchenPerformanceReportMeta;
 }

@@ -4,15 +4,17 @@ import { attachUserContext } from "../middleware/user-context.middleware.js";
 import { requirePermission, requireLocationAccess } from "../middleware/rbac.middleware.js";
 import { validate } from "../utils/zod.util.js";
 import {
-  getKitchenPerformanceQuerySchema,
   getKitchenPerformanceDetailsQuerySchema,
+  getKitchenPerformanceQuerySchema,
   importKitchenPerformanceBodySchema,
+  runKitchenPerformanceReportBodySchema,
 } from "../validators/kitchenPerformance.validators.js";
 import {
   getKitchenPerformanceDetails,
   getKitchenPerformance,
   importKitchenPerformanceCsv,
   handleKitchenPerformanceUploadError,
+  runKitchenPerformanceReport,
 } from "../controllers/kitchenPerformance.controller.js";
 
 const router = Router();
@@ -40,6 +42,13 @@ router.post(
   handleKitchenPerformanceUploadError,
   validate(importKitchenPerformanceBodySchema),
   importKitchenPerformanceCsv,
+);
+
+router.post(
+  "/report",
+  requireLocationAccess,
+  validate(runKitchenPerformanceReportBodySchema),
+  runKitchenPerformanceReport,
 );
 
 export default router;

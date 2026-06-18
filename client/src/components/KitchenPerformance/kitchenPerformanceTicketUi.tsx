@@ -1,21 +1,12 @@
 import { formatDateTimeParts } from "../../utils/dateTimeDisplayHelpers";
+import { getTicketCompletionTimeForDisplay } from "../../utils/kitchenPerformanceDuration.util";
+import {
+  getTicketTimeDueForDisplay,
+  isCompletedAfterDue,
+  isTicketCompletedLate,
+} from "../../utils/kitchenPerformanceTicketLate.util";
 
-function parseTicketDisplayInstant(value: string | null): number | null {
-  if (!value?.trim()) return null;
-  const parsed = new Date(value.trim().replace(" ", "T"));
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.getTime();
-}
-
-export function isCompletedAfterDue(
-  timeCompleted: string | null,
-  timeDue: string | null,
-): boolean {
-  const completedMs = parseTicketDisplayInstant(timeCompleted);
-  const dueMs = parseTicketDisplayInstant(timeDue);
-  if (completedMs == null || dueMs == null) return false;
-  return completedMs > dueMs;
-}
+export { getTicketTimeDueForDisplay, isCompletedAfterDue, isTicketCompletedLate };
 
 export function formatTicketItemCount(count: number | null): string {
   if (count == null || !Number.isFinite(count)) return "—";
@@ -24,14 +15,22 @@ export function formatTicketItemCount(count: number | null): string {
   return `${n} items`;
 }
 
+export function formatTicketCompletionDuration(row: {
+  completionTimeSeconds: number | null;
+  timeCreated: string | null;
+  timeCompleted: string | null;
+}): string {
+  return formatDuration(getTicketCompletionTimeForDisplay(row));
+}
+
 export function formatDuration(seconds: number | null): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return "—";
   const total = Math.floor(seconds);
   const hrs = Math.floor(total / 3600);
   const mins = Math.floor((total % 3600) / 60);
   const sec = total % 60;
-  if (hrs > 0) return `${hrs} hr ${mins} min ${sec} sec`;
-  if (mins > 0) return `${mins} min ${sec} sec`;
+  if (hrs > 0) return `${hrs} hr ${mins} min ${String(sec).padStart(2, "0")} sec`;
+  if (mins > 0) return `${mins} min ${String(sec).padStart(2, "0")} sec`;
   return `${sec} sec`;
 }
 
@@ -39,19 +38,23 @@ export function TicketDateCell({
   value,
   displayTimezone,
   compareDueForCompletedAt,
+  highlightLate,
   layout = "stacked",
 }: Readonly<{
   value: string | null;
   displayTimezone: string;
   /** When set, `value` is treated as completed-at; time is shown in red if after this due time. */
   compareDueForCompletedAt?: string | null;
+  highlightLate?: boolean;
   /** Mobile ticket rows: time and date on one line. */
   layout?: "stacked" | "inline";
 }>) {
   const parts = formatDateTimeParts(value, displayTimezone);
   const showLateCompletion =
-    compareDueForCompletedAt !== undefined &&
-    isCompletedAfterDue(value, compareDueForCompletedAt ?? null);
+    highlightLate === true ||
+    (highlightLate !== false &&
+      compareDueForCompletedAt !== undefined &&
+      isCompletedAfterDue(value, compareDueForCompletedAt ?? null));
   const timeClass = showLateCompletion ? "text-red-600 font-semibold" : "text-primary";
 
   if (parts.time === "—" && parts.date === "—") {

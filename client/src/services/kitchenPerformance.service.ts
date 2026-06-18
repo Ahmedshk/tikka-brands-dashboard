@@ -6,6 +6,7 @@ import type { ApiResponse } from "../types";
 import type {
   KitchenPerformanceDetails,
   KitchenPerformancePaginationMeta,
+  KitchenPerformanceReportPayload,
   KitchenPerformanceRow,
 } from "../types/kitchenPerformance.types";
 
@@ -109,6 +110,24 @@ export const kitchenPerformanceService = {
       throw new Error(
         res.data.message ?? "Failed to load kitchen performance details.",
       );
+    }
+    return res.data.data;
+  },
+
+  async runReport(
+    locationQuery: LocationApiParams | string,
+    range: KitchenPerformanceDateRange,
+  ): Promise<KitchenPerformanceReportPayload> {
+    const params = new URLSearchParams(resolveLocationQuery(locationQuery));
+    const res = await api.post<ApiResponse<KitchenPerformanceReportPayload>>(
+      `${API_ENDPOINTS.KITCHEN_PERFORMANCE.REPORT}?${params.toString()}`,
+      {
+        startDate: range.startDate,
+        endDate: range.endDate,
+      },
+    );
+    if (!res.data.success || !res.data.data) {
+      throw new Error(res.data.message ?? "Failed to run kitchen performance report.");
     }
     return res.data.data;
   },

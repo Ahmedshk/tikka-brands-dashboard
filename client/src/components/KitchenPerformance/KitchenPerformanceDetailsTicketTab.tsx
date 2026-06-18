@@ -9,12 +9,15 @@ import { KPICard } from "../common/KPICard";
 import { Spinner } from "../common/Spinner";
 import { TimeSeriesLineChart } from "../charts/TimeSeriesLineChart";
 import type {
-  KitchenPerformanceDetails as KitchenPerformanceDetailsData,
+  KitchenPerformanceTicketKpis,
   KitchenPerformanceTicketRow,
 } from "../../types/kitchenPerformance.types";
+import { formatKitchenPerformanceAvgItemsPerTicket } from "../../utils/kitchenPerformanceKpiDisplay.util";
 import {
   formatDuration,
+  formatTicketCompletionDuration,
   formatTicketItemCount,
+  getTicketTimeDueForDisplay,
   TicketDateCell,
   TicketValueCell,
 } from "./kitchenPerformanceTicketUi";
@@ -25,59 +28,65 @@ const cardClass =
 
 type Props = {
   loading: boolean;
-  details: KitchenPerformanceDetailsData | null;
+  kpis: KitchenPerformanceTicketKpis | null;
   ticketRows: KitchenPerformanceTicketRow[];
   chartXAxis: string[];
   chartSeriesData: number[];
   ticketsLatePercentageDisplay: string;
   displayTimezone: string;
+  completedAtFilterActive: boolean;
   onViewTicketDetail: (row: KitchenPerformanceTicketRow) => void;
 };
 
 export const KitchenPerformanceDetailsTicketTab = ({
   loading,
-  details,
+  kpis,
   ticketRows,
   chartXAxis,
   chartSeriesData,
   ticketsLatePercentageDisplay,
   displayTimezone,
+  completedAtFilterActive,
   onViewTicketDetail,
 }: Props) => {
+  const emptyTableMessage = completedAtFilterActive
+    ? "No tickets match this completed at range."
+    : "No data available";
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         <KPICard
           title="Completed Tickets"
-          value={String(details?.kpis.completedTickets ?? 0)}
+          value={String(kpis?.completedTickets ?? 0)}
           accentColor="green"
           rightIcon={<CompletedTicketsIcon className={KPI_ICON_CLASS} />}
           loading={loading}
         />
         <KPICard
           title="Completed Items"
-          value={String(details?.kpis.completedItems ?? 0)}
+          value={String(kpis?.completedItems ?? 0)}
           accentColor="blue"
           rightIcon={<CompletedItemsIcon className={KPI_ICON_CLASS} />}
           loading={loading}
         />
         <KPICard
           title="Avg. Completion Time"
-          value={formatDuration(details?.kpis.avgCompletionTimeSeconds ?? null)}
+          value={formatDuration(kpis?.avgCompletionTimeSeconds ?? null)}
           accentColor="gold"
           rightIcon={<AvgCompletionTimeIcon className={KPI_ICON_CLASS} />}
           loading={loading}
         />
         <KPICard
           title="Recalled Tickets"
-          value={String(details?.kpis.recalledTickets ?? 0)}
+          value={String(kpis?.recalledTickets ?? 0)}
           accentColor="purple"
           rightIcon={<RecalledTicketsIcon className={KPI_ICON_CLASS} />}
           loading={loading}
         />
         <KPICard
           title="Avg. Items per Ticket"
-          value={String(details?.kpis.avgItemsPerTicket ?? 0)}
+          value={formatKitchenPerformanceAvgItemsPerTicket(kpis?.avgItemsPerTicket)}
           accentColor="gray"
           rightIcon={<AvgItemsPerTicketIcon className={KPI_ICON_CLASS} />}
           loading={loading}
@@ -147,7 +156,7 @@ export const KitchenPerformanceDetailsTicketTab = ({
               <div className="md:hidden divide-y divide-gray-200 overflow-y-auto min-h-0">
                 {ticketRows.length === 0 ? (
                   <div className="py-8 text-center text-primary/80 text-sm">
-                    No data available
+                    {emptyTableMessage}
                   </div>
                 ) : (
                   ticketRows.map((row, index) => (
@@ -186,7 +195,7 @@ export const KitchenPerformanceDetailsTicketTab = ({
                         <div className="flex items-start gap-2">
                           <span className="text-secondary shrink-0">Time due:</span>
                           <TicketDateCell
-                            value={row.timeDue}
+                            value={getTicketTimeDueForDisplay(row)}
                             displayTimezone={displayTimezone}
                             layout="inline"
                           />
@@ -198,14 +207,19 @@ export const KitchenPerformanceDetailsTicketTab = ({
                           <TicketDateCell
                             value={row.timeCompleted}
                             displayTimezone={displayTimezone}
-                            compareDueForCompletedAt={row.timeDue}
+                            compareDueForCompletedAt={getTicketTimeDueForDisplay(row)}
+                            highlightLate={
+                              getTicketTimeDueForDisplay(row)
+                                ? row.isLate ?? undefined
+                                : false
+                            }
                             layout="inline"
                           />
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-secondary">Completion time:</span>
                           <span className="text-primary">
-                            {formatDuration(row.completionTimeSeconds)}
+                            {formatTicketCompletionDuration(row)}
                           </span>
                         </div>
                         <div className="flex items-start gap-2">
@@ -251,7 +265,7 @@ export const KitchenPerformanceDetailsTicketTab = ({
                           colSpan={8}
                           className="py-8 text-center text-primary/80 text-sm"
                         >
-                          No data available
+                          {emptyTableMessage}
                         </td>
                       </tr>
                     ) : (
@@ -273,17 +287,25 @@ export const KitchenPerformanceDetailsTicketTab = ({
                             />
                           </td>
                           <td className="py-3 pr-4">
-                            <TicketDateCell value={row.timeDue} displayTimezone={displayTimezone} />
+                            <TicketDateCell
+                              value={getTicketTimeDueForDisplay(row)}
+                              displayTimezone={displayTimezone}
+                            />
                           </td>
                           <td className="py-3 pr-4">
                             <TicketDateCell
                               value={row.timeCompleted}
                               displayTimezone={displayTimezone}
-                              compareDueForCompletedAt={row.timeDue}
+                              compareDueForCompletedAt={getTicketTimeDueForDisplay(row)}
+                            highlightLate={
+                              getTicketTimeDueForDisplay(row)
+                                ? row.isLate ?? undefined
+                                : false
+                            }
                             />
                           </td>
                           <td className="py-3 pr-4">
-                            {formatDuration(row.completionTimeSeconds)}
+                            {formatTicketCompletionDuration(row)}
                           </td>
                           <td className="py-3 pr-4">
                             <TicketDateCell
