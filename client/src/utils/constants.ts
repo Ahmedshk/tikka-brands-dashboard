@@ -47,6 +47,8 @@ export const API_ENDPOINTS = {
     IMPORT: "/kitchen-performance/import",
     DETAILS: "/kitchen-performance/details",
     REPORT: "/kitchen-performance/report",
+    REPORT_DETAILS: "/kitchen-performance/report/details",
+    REPORT_TICKET_MODIFIERS: "/kitchen-performance/report/ticket-modifiers",
   },
   ACTIVITY_LOG: {
     LIST: "/activity-log",

@@ -24,7 +24,12 @@ import type {
   KitchenPerformanceTicketKpisDto,
   KitchenPerformanceTicketRowDto,
 } from "../types/kitchenPerformance.types.js";
-import { runKitchenPerformanceReportingForLocations } from "../utils/kitchenPerformanceReportingOrchestrator.util.js";
+import {
+  runKitchenPerformanceDetailsForDevice,
+  runKitchenPerformanceReportingForLocations,
+  runKitchenPerformanceTicketModifiers,
+} from "../utils/kitchenPerformanceReportingOrchestrator.util.js";
+import { getLocationWithCredentialsCachedAcrossRequests } from "../utils/locationCredentialsCache.util.js";
 
 const REQUIRED_HEADERS = [
   "Device Name",
@@ -626,46 +631,100 @@ export class KitchenPerformanceService {
     }
 
     const locationInputs = await Promise.all(
-      locationIds.map(async (locationId) => {
-        const creds = await this.locationService.getByIdWithCredentials(locationId);
-        if (!creds) {
-          throw new ValidationError(`Location not found: ${locationId}`);
-        }
-        if (!creds.squareAccessToken?.trim()) {
-          throw new ValidationError(
-            `Square credentials are not configured for ${creds.location.storeName ?? "this location"}.`,
-          );
-        }
-        const squareLocationId = creds.location.squareLocationId?.trim();
-        if (!squareLocationId) {
-          throw new ValidationError(
-            `Square location ID is not configured for ${creds.location.storeName ?? "this location"}.`,
-          );
-        }
-        return {
-          mongoLocationId: locationId,
-          squareLocationId,
-          accessToken: creds.squareAccessToken,
-          startDate,
-          endDate,
-          locationName: creds.location.storeName ?? "Unknown Location",
-          timezone: creds.location.timezone?.trim() || "America/Denver",
-        };
-      }),
+      locationIds.map((locationId) =>
+        this.resolveSquareLocationInput(locationId, startDate, endDate),
+      ),
     );
 
-    const { listRows, detailsByKey } =
-      await runKitchenPerformanceReportingForLocations(locationInputs);
+    const listRows = await runKitchenPerformanceReportingForLocations(locationInputs);
 
     return {
       listRows,
-      detailsByKey,
       meta: {
         startDate,
         endDate,
         locationIds,
         fetchedAt: new Date().toISOString(),
       },
+    };
+  }
+
+  async runDeviceDetailsFromSquare(
+    locationId: string,
+    startDate: string,
+    endDate: string,
+    deviceName: string,
+  ): Promise<KitchenPerformanceDetailsResult> {
+    const trimmedDevice = deviceName.trim();
+    if (!trimmedDevice) {
+      throw new ValidationError("Device name is required.");
+    }
+
+    const input = await this.resolveSquareLocationInput(
+      locationId,
+      startDate,
+      endDate,
+    );
+
+    return runKitchenPerformanceDetailsForDevice({
+      ...input,
+      deviceName: trimmedDevice,
+    });
+  }
+
+  async runTicketModifiersFromSquare(
+    locationId: string,
+    startDate: string,
+    endDate: string,
+    orderIds: string[],
+  ): Promise<Record<string, Record<string, string[]>>> {
+    const input = await this.resolveSquareLocationInput(
+      locationId,
+      startDate,
+      endDate,
+    );
+
+    return runKitchenPerformanceTicketModifiers({
+      mongoLocationId: input.mongoLocationId,
+      squareLocationId: input.squareLocationId,
+      accessToken: input.accessToken,
+      startDate,
+      endDate,
+      orderIds,
+    });
+  }
+
+  private async resolveSquareLocationInput(
+    locationId: string,
+    startDate: string,
+    endDate: string,
+  ) {
+    const creds = await getLocationWithCredentialsCachedAcrossRequests(
+      this.locationService,
+      locationId,
+    );
+    if (!creds) {
+      throw new ValidationError(`Location not found: ${locationId}`);
+    }
+    if (!creds.squareAccessToken?.trim()) {
+      throw new ValidationError(
+        `Square credentials are not configured for ${creds.location.storeName ?? "this location"}.`,
+      );
+    }
+    const squareLocationId = creds.location.squareLocationId?.trim();
+    if (!squareLocationId) {
+      throw new ValidationError(
+        `Square location ID is not configured for ${creds.location.storeName ?? "this location"}.`,
+      );
+    }
+    return {
+      mongoLocationId: locationId,
+      squareLocationId,
+      accessToken: creds.squareAccessToken,
+      startDate,
+      endDate,
+      locationName: creds.location.storeName ?? "Unknown Location",
+      timezone: creds.location.timezone?.trim() || "America/Denver",
     };
   }
 }

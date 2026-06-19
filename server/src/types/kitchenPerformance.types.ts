@@ -37,6 +37,8 @@ export interface KitchenPerformanceTicketLineItemDto {
   itemName: string;
   quantity: number;
   options: string[];
+  orderId?: string | null;
+  variation?: string | null;
 }
 
 export interface KitchenPerformanceTicketRowDto {
@@ -94,6 +96,5 @@ export interface KitchenPerformanceReportMeta {
 
 export interface KitchenPerformanceReportResult {
   listRows: KitchenPerformanceRowDto[];
-  detailsByKey: Record<string, KitchenPerformanceDetailsResult>;
   meta: KitchenPerformanceReportMeta;
 }

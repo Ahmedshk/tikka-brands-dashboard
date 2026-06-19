@@ -170,3 +170,55 @@ export async function runKitchenPerformanceReport(
     next(err);
   }
 }
+
+export async function getKitchenPerformanceReportDetails(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { locationId, startDate, endDate, deviceName } = req.query as {
+      locationId: string;
+      startDate: string;
+      endDate: string;
+      deviceName: string;
+    };
+    const data = await service.runDeviceDetailsFromSquare(
+      locationId,
+      startDate,
+      endDate,
+      deviceName,
+    );
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getKitchenPerformanceReportTicketModifiers(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { locationId, startDate, endDate, orderIds } = req.query as {
+      locationId: string;
+      startDate: string;
+      endDate: string;
+      orderIds: string;
+    };
+    const parsedOrderIds = orderIds
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const data = await service.runTicketModifiersFromSquare(
+      locationId,
+      startDate,
+      endDate,
+      parsedOrderIds,
+    );
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}

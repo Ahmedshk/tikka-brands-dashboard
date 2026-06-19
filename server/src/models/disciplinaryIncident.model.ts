@@ -19,6 +19,8 @@ export interface DisciplinaryIncidentDocument extends Document {
 
   totalPoints: number;
 
+  businessLegalName: string;
+
   detailsOfIncident: string;
   supervisorCommitment: string;
   supervisorComments: string;
@@ -91,6 +93,7 @@ const disciplinaryIncidentSchema = new Schema<DisciplinaryIncidentDocument>(
       default: undefined,
     },
     totalPoints: { type: Number, required: true, default: 0 },
+    businessLegalName: { type: String, required: true, trim: true },
     detailsOfIncident: { type: String, required: true },
     supervisorCommitment: { type: String, required: true },
     supervisorComments: { type: String, required: true },

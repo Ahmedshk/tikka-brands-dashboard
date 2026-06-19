@@ -18,6 +18,8 @@ export interface KitchenPerformanceTicketLineItem {
   itemName: string;
   quantity: number;
   options: string[];
+  orderId?: string | null;
+  variation?: string | null;
 }
 
 export interface KitchenPerformanceTicketRow {
@@ -75,6 +77,10 @@ export interface KitchenPerformanceReportMeta {
 
 export interface KitchenPerformanceReportPayload {
   listRows: KitchenPerformanceRow[];
-  detailsByKey: Record<string, KitchenPerformanceDetails>;
   meta: KitchenPerformanceReportMeta;
 }
+
+export type KitchenPerformanceTicketModifiersLookup = Record<
+  string,
+  Record<string, string[]>
+>;

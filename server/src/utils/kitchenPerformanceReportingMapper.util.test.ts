@@ -52,7 +52,9 @@ describe("mapKdsStationSummaryRows", () => {
     assert.equal(rows.length, 2);
     assert.equal(rows[0]?.type, "Expeditor");
     assert.equal(rows[0]?.completedTickets, 64);
+    assert.equal(rows[0]?.avgCompletionTimeSeconds, 120);
     assert.equal(rows[1]?.type, "Prep");
+    assert.equal(rows[1]?.avgCompletionTimeSeconds, 90);
   });
 });
 

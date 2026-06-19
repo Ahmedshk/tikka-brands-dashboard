@@ -131,4 +131,48 @@ export const kitchenPerformanceService = {
     }
     return res.data.data;
   },
+
+  async getReportDetails(
+    locationId: string,
+    range: KitchenPerformanceDateRange,
+    deviceName: string,
+  ): Promise<KitchenPerformanceDetails> {
+    const params = new URLSearchParams({
+      locationId,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      deviceName,
+    });
+    const res = await api.get<ApiResponse<KitchenPerformanceDetails>>(
+      `${API_ENDPOINTS.KITCHEN_PERFORMANCE.REPORT_DETAILS}?${params.toString()}`,
+    );
+    if (!res.data.success || !res.data.data) {
+      throw new Error(
+        res.data.message ?? "Failed to load kitchen performance report details.",
+      );
+    }
+    return res.data.data;
+  },
+
+  async getReportTicketModifiers(
+    locationId: string,
+    range: KitchenPerformanceDateRange,
+    orderIds: string[],
+  ): Promise<Record<string, Record<string, string[]>>> {
+    const params = new URLSearchParams({
+      locationId,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      orderIds: orderIds.join(","),
+    });
+    const res = await api.get<ApiResponse<Record<string, Record<string, string[]>>>>(
+      `${API_ENDPOINTS.KITCHEN_PERFORMANCE.REPORT_TICKET_MODIFIERS}?${params.toString()}`,
+    );
+    if (!res.data.success || !res.data.data) {
+      throw new Error(
+        res.data.message ?? "Failed to load kitchen performance ticket modifiers.",
+      );
+    }
+    return res.data.data;
+  },
 };

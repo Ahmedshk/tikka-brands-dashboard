@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -42,8 +42,7 @@ export const KitchenPerformance = () => {
   const currentLocation = useSelector(selectCurrentLocation);
   const hasLocationScope = hasLocationSelection(locationApiParams);
   const canKitchenTable = useCanAccessComponent(PAGE_ID, "kitchen-performance");
-  const { reportPayload, cacheKey, loading, runReport, clearReport } =
-    useKitchenPerformanceReport();
+  const { reportPayload, cacheKey, loading, runReport } = useKitchenPerformanceReport();
   const [page, setPage] = useState(1);
 
   const browserDefaultTz = useMemo(
@@ -86,19 +85,10 @@ export const KitchenPerformance = () => {
     [locationApiParams, startDate, endDate],
   );
 
-  const hasCachedReport = cacheKey === activeCacheKey && reportPayload != null;
+  const reportMatchesFilters = cacheKey === activeCacheKey;
+  const hasReportData = reportPayload != null;
 
-  const prevActiveCacheKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    const prevKey = prevActiveCacheKeyRef.current;
-    prevActiveCacheKeyRef.current = activeCacheKey;
-    if (prevKey != null && prevKey !== activeCacheKey) {
-      setPage(1);
-      clearReport();
-    }
-  }, [activeCacheKey, clearReport]);
-
-  const allRows = hasCachedReport ? reportPayload.listRows : [];
+  const allRows = reportPayload?.listRows ?? [];
   const totalItems = allRows.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const rows = useMemo(() => {
@@ -143,7 +133,10 @@ export const KitchenPerformance = () => {
   };
 
   const tableLoading = loading;
-  const showEmptyInstruction = !hasCachedReport && !loading;
+  const showEmptyInstruction = !hasReportData && !loading;
+  const showStaleFiltersHint = hasReportData && !reportMatchesFilters && !loading;
+  const runReportDisabled =
+    loading || !hasLocationScope || (hasReportData && reportMatchesFilters);
 
   return (
     <Layout>
@@ -167,7 +160,7 @@ export const KitchenPerformance = () => {
               <button
                 type="button"
                 onClick={() => void handleRunReport()}
-                disabled={loading}
+                disabled={runReportDisabled}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
               >
                 {loading ? "Running…" : "Run Report"}
@@ -178,6 +171,11 @@ export const KitchenPerformance = () => {
 
         {canKitchenTable ? (
           <>
+            {showStaleFiltersHint ? (
+              <p className="mb-4 text-sm text-secondary">
+                Location or period changed. Click Run Report to refresh the table.
+              </p>
+            ) : null}
             {showEmptyInstruction ? (
               <p className="mb-4 text-sm text-secondary">
                 Select a period and click Run Report to load kitchen performance data.
@@ -200,12 +198,14 @@ export const KitchenPerformance = () => {
                 const encoded = encodeURIComponent(row.deviceName);
                 const locationId = row.locationId ?? currentLocation?._id ?? "";
                 const locationQuery = locationId ? `&locationId=${encodeURIComponent(locationId)}` : "";
+                const linkStartDate = reportPayload?.meta.startDate ?? startDate;
+                const linkEndDate = reportPayload?.meta.endDate ?? endDate;
                 navigate(
-                  `/dashboard/kitchen-performance/${encoded}?startDate=${startDate}&endDate=${endDate}${locationQuery}`,
+                  `/dashboard/kitchen-performance/${encoded}?startDate=${linkStartDate}&endDate=${linkEndDate}${locationQuery}`,
                 );
               }}
               pagination={
-                hasCachedReport
+                hasReportData
                   ? {
                       currentPage: page,
                       totalPages,

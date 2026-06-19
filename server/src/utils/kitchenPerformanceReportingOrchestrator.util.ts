@@ -5,7 +5,6 @@ import type {
 } from "../types/kitchenPerformance.types.js";
 import {
   buildItemSalesModifiersQuery,
-  buildKdsDeviceKpisQuery,
   buildKdsHourlyQuery,
   buildKdsItemPerformanceQuery,
   buildKdsLineItemsPerTicketQuery,
@@ -13,11 +12,19 @@ import {
   buildKdsTicketRowsQuery,
 } from "./kitchenPerformanceReportingQueries.util.js";
 import {
-  applyDedupedTicketCountsToStationSummaryRows,
-  applyFlooredAvgCompletionToStationSummaryRows,
-  buildKitchenPerformanceDetailsByDevice,
+  buildKitchenPerformanceDetailsForDevice,
   mapKdsStationSummaryRows,
+  serializeItemSalesModifierLookup,
 } from "./kitchenPerformanceReportingMapper.util.js";
+import { buildItemSalesModifierLookup } from "./kitchenPerformanceTicketLineItems.util.js";
+import {
+  buildKitchenPerformanceDetailsCacheKey as buildDetailsResultCacheKey,
+  buildKitchenPerformanceListCacheKey,
+  buildKitchenPerformanceModifiersCacheKey,
+  loadKitchenPerformanceDetailsCached,
+  loadKitchenPerformanceListCached,
+  loadKitchenPerformanceModifiersCached,
+} from "./kitchenPerformanceSquareCache.util.js";
 
 export interface KitchenPerformanceLocationReportInput {
   mongoLocationId: string;
@@ -29,106 +36,28 @@ export interface KitchenPerformanceLocationReportInput {
   timezone: string;
 }
 
-export interface KitchenPerformanceLocationReportResult {
-  listRows: KitchenPerformanceRowDto[];
-  detailsByKey: Record<string, KitchenPerformanceDetailsResult>;
+export interface KitchenPerformanceDeviceDetailsInput
+  extends KitchenPerformanceLocationReportInput {
+  deviceName: string;
 }
 
-export async function runKitchenPerformanceReportingForLocation(
-  input: KitchenPerformanceLocationReportInput,
-): Promise<KitchenPerformanceLocationReportResult> {
-  const {
-    mongoLocationId,
-    squareLocationId,
-    accessToken,
-    startDate,
-    endDate,
-    locationName,
-    timezone,
-  } = input;
-
-  const queryJobs: Array<{ name: string; query: Record<string, unknown> }> = [
-    {
-      name: "kds.stationSummary",
-      query: buildKdsStationSummaryQuery(squareLocationId, startDate, endDate),
-    },
-    {
-      name: "kds.ticketRows",
-      query: buildKdsTicketRowsQuery(squareLocationId, startDate, endDate),
-    },
-    {
-      name: "kds.hourly",
-      query: buildKdsHourlyQuery(squareLocationId, startDate, endDate),
-    },
-    {
-      name: "kds.lineItemsPerTicket",
-      query: buildKdsLineItemsPerTicketQuery(
-        squareLocationId,
-        startDate,
-        endDate,
-      ),
-    },
-    {
-      name: "kds.itemPerformance",
-      query: buildKdsItemPerformanceQuery(squareLocationId, startDate, endDate),
-    },
-    {
-      name: "kds.deviceKpis",
-      query: buildKdsDeviceKpisQuery(squareLocationId, startDate, endDate),
-    },
-    {
-      name: "itemSales.modifiers",
-      query: buildItemSalesModifiersQuery(squareLocationId, startDate, endDate),
-    },
-  ];
-
-  const results = await Promise.all(
-    queryJobs.map((job) =>
-      loadSquareReportingQuery(accessToken, job.query, { queryName: job.name }),
-    ),
-  );
-
-  const stationResult = results[0]!;
-  const ticketResult = results[1]!;
-  const hourlyResult = results[2]!;
-  const lineItemResult = results[3]!;
-  const itemPerformanceResult = results[4]!;
-  const deviceKpiResult = results[5]!;
-  const itemSalesResult = results[6]!;
-
-  const listRows = mapKdsStationSummaryRows(
-    stationResult.data,
-    mongoLocationId,
-    locationName,
-  );
-
-  const detailsByKey = buildKitchenPerformanceDetailsByDevice(
-    listRows,
-    ticketResult.data,
-    hourlyResult.data,
-    lineItemResult.data,
-    itemPerformanceResult.data,
-    deviceKpiResult.data,
-    itemSalesResult.data,
-    mongoLocationId,
-    timezone,
-  );
-
-  applyFlooredAvgCompletionToStationSummaryRows(
-    listRows,
-    ticketResult.data,
-    mongoLocationId,
-  );
-  applyDedupedTicketCountsToStationSummaryRows(
-    listRows,
-    ticketResult.data,
-    mongoLocationId,
-  );
-
-  return { listRows, detailsByKey };
+export interface KitchenPerformanceTicketModifiersInput {
+  mongoLocationId: string;
+  squareLocationId: string;
+  accessToken: string;
+  startDate: string;
+  endDate: string;
+  orderIds: string[];
 }
 
-const LOCATION_CONCURRENCY = 2;
+const DEFAULT_LOCATION_CONCURRENCY = 4;
+
+function resolveLocationConcurrency(): number {
+  const raw = process.env.KITCHEN_PERFORMANCE_LOCATION_CONCURRENCY;
+  if (!raw) return DEFAULT_LOCATION_CONCURRENCY;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 1 ? n : DEFAULT_LOCATION_CONCURRENCY;
+}
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -154,26 +83,178 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export async function runKitchenPerformanceReportingForLocations(
-  locations: KitchenPerformanceLocationReportInput[],
-): Promise<KitchenPerformanceLocationReportResult> {
-  const partials = await mapWithConcurrency(
-    locations,
-    LOCATION_CONCURRENCY,
-    (location) => runKitchenPerformanceReportingForLocation(location),
+export async function runKitchenPerformanceListForLocation(
+  input: KitchenPerformanceLocationReportInput,
+): Promise<KitchenPerformanceRowDto[]> {
+  const {
+    mongoLocationId,
+    squareLocationId,
+    accessToken,
+    startDate,
+    endDate,
+    locationName,
+  } = input;
+
+  const cacheKey = buildKitchenPerformanceListCacheKey(
+    mongoLocationId,
+    startDate,
+    endDate,
   );
 
-  const listRows = partials.flatMap((p) => p.listRows);
-  const detailsByKey: Record<string, KitchenPerformanceDetailsResult> = {};
-  for (const partial of partials) {
-    Object.assign(detailsByKey, partial.detailsByKey);
+  return loadKitchenPerformanceListCached(cacheKey, async () => {
+    const stationResult = await loadSquareReportingQuery(
+      accessToken,
+      buildKdsStationSummaryQuery(squareLocationId, startDate, endDate),
+      { queryName: "kds.stationSummary" },
+    );
+
+    return mapKdsStationSummaryRows(
+      stationResult.data,
+      mongoLocationId,
+      locationName,
+    );
+  });
+}
+
+export async function runKitchenPerformanceDetailsForDevice(
+  input: KitchenPerformanceDeviceDetailsInput,
+): Promise<KitchenPerformanceDetailsResult> {
+  const {
+    mongoLocationId,
+    squareLocationId,
+    accessToken,
+    startDate,
+    endDate,
+    timezone,
+    deviceName,
+  } = input;
+
+  const cacheKey = buildDetailsResultCacheKey(
+    mongoLocationId,
+    startDate,
+    endDate,
+    deviceName,
+  );
+
+  return loadKitchenPerformanceDetailsCached(cacheKey, async () => {
+    const queryJobs: Array<{ name: string; query: Record<string, unknown> }> = [
+      {
+        name: "kds.ticketRows",
+        query: buildKdsTicketRowsQuery(
+          squareLocationId,
+          startDate,
+          endDate,
+          deviceName,
+        ),
+      },
+      {
+        name: "kds.hourly",
+        query: buildKdsHourlyQuery(
+          squareLocationId,
+          startDate,
+          endDate,
+          deviceName,
+        ),
+      },
+      {
+        name: "kds.lineItemsPerTicket",
+        query: buildKdsLineItemsPerTicketQuery(
+          squareLocationId,
+          startDate,
+          endDate,
+          deviceName,
+        ),
+      },
+      {
+        name: "kds.itemPerformance",
+        query: buildKdsItemPerformanceQuery(
+          squareLocationId,
+          startDate,
+          endDate,
+          deviceName,
+        ),
+      },
+    ];
+
+    const results = await Promise.all(
+      queryJobs.map((job) =>
+        loadSquareReportingQuery(accessToken, job.query, { queryName: job.name }),
+      ),
+    );
+
+    const ticketResult = results[0]!;
+    const hourlyResult = results[1]!;
+    const lineItemResult = results[2]!;
+    const itemPerformanceResult = results[3]!;
+
+    return buildKitchenPerformanceDetailsForDevice(
+      deviceName,
+      ticketResult.data,
+      hourlyResult.data,
+      lineItemResult.data,
+      itemPerformanceResult.data,
+      timezone,
+    );
+  });
+}
+
+export async function runKitchenPerformanceTicketModifiers(
+  input: KitchenPerformanceTicketModifiersInput,
+): Promise<Record<string, Record<string, string[]>>> {
+  const {
+    mongoLocationId,
+    squareLocationId,
+    accessToken,
+    startDate,
+    endDate,
+    orderIds,
+  } = input;
+
+  const uniqueOrderIds = [...new Set(orderIds.map((id) => id.trim()).filter(Boolean))];
+  if (uniqueOrderIds.length === 0) {
+    return {};
   }
 
+  const cacheKey = buildKitchenPerformanceModifiersCacheKey(
+    mongoLocationId,
+    startDate,
+    endDate,
+    uniqueOrderIds,
+  );
+
+  return loadKitchenPerformanceModifiersCached(cacheKey, async () => {
+    const itemSalesResult = await loadSquareReportingQuery(
+      accessToken,
+      buildItemSalesModifiersQuery(
+        squareLocationId,
+        startDate,
+        endDate,
+        uniqueOrderIds,
+      ),
+      { queryName: "itemSales.modifiers" },
+    );
+
+    return serializeItemSalesModifierLookup(
+      buildItemSalesModifierLookup(itemSalesResult.data),
+    );
+  });
+}
+
+export async function runKitchenPerformanceReportingForLocations(
+  locations: KitchenPerformanceLocationReportInput[],
+): Promise<KitchenPerformanceRowDto[]> {
+  const partials = await mapWithConcurrency(
+    locations,
+    resolveLocationConcurrency(),
+    (location) => runKitchenPerformanceListForLocation(location),
+  );
+
+  const listRows = partials.flat();
   listRows.sort(
     (a, b) =>
       a.location.localeCompare(b.location) ||
       a.deviceName.localeCompare(b.deviceName),
   );
 
-  return { listRows, detailsByKey };
+  return listRows;
 }

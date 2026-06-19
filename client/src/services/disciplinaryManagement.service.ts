@@ -78,6 +78,7 @@ interface SignedDocument {
 interface IncidentCreatePayload {
   employeeId: string;
   locationId: string;
+  businessLegalName: string;
   appliedPolicies: {
     policyId: string;
     sectionId: string;

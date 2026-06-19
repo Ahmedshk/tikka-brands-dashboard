@@ -35,7 +35,6 @@ import {
 import {
   buildItemSalesModifierLookup,
   buildKitchenPerformanceTicketLineItem,
-  formatKitchenPerformanceItemsInTicket,
 } from "./kitchenPerformanceTicketLineItems.util.js";
 
 function formatHourLabel(hour24: number): string {
@@ -211,13 +210,18 @@ export function mapKdsStationSummaryRows(
     const deviceName = normalizeDeviceName(kdsStr(row, "KDS.device_code_name"));
     if (!deviceName) continue;
     const completedTickets = Math.round(kdsNum(row, "KDS.ticket_count") ?? 0);
+    const rawAvg = kdsNum(row, "KDS.avg_ticket_time_seconds");
+    const avgCompletionTimeSeconds =
+      rawAvg != null && Number.isFinite(rawAvg) && rawAvg > 0
+        ? Math.round(rawAvg)
+        : 0;
     mapped.push({
       deviceName,
       type: mapKitchenPerformanceStationType(kdsStr(row, "KDS.station_type")),
       location: kdsStr(row, "KDS.location_name") ?? fallbackLocationName,
       locationId: mongoLocationId,
       completedTickets,
-      avgCompletionTimeSeconds: 0,
+      avgCompletionTimeSeconds,
     });
   }
   return mapped.sort((a, b) => {
@@ -278,17 +282,6 @@ function mapTicketLineItems(
   );
 }
 
-function formatItemsInTicket(parts: LineItemParts[]): string | null {
-  if (parts.length === 0) return null;
-  return formatKitchenPerformanceItemsInTicket(
-    parts.map((part) => ({
-      itemName: part.itemName,
-      variation: part.variation,
-      quantity: part.quantity,
-    })),
-  );
-}
-
 function earliestRecall(parts: LineItemParts[]): string | null {
   const recalls = parts
     .map((p) => p.recalledAt)
@@ -333,7 +326,7 @@ function mapTicketRowsForDevice(
       ticketName: kdsStr(row, "KDS.ticket_name"),
       orderSource: kdsStr(row, "KDS.order_source"),
       numberOfItems: kdsNum(row, "KDS.line_item_count"),
-      itemsInTicket: formatItemsInTicket(lineParts),
+      itemsInTicket: null,
       ticketLineItems: mapTicketLineItems(lineParts, modifierLookup),
       timeCreated,
       timeCompleted,
@@ -521,48 +514,89 @@ export function mapKdsItemPerformanceRows(
   });
 }
 
+export function serializeItemSalesModifierLookup(
+  lookup: Map<string, Map<string, string[]>>,
+): Record<string, Record<string, string[]>> {
+  const serialized: Record<string, Record<string, string[]>> = {};
+  for (const [orderId, itemMap] of lookup.entries()) {
+    serialized[orderId] = Object.fromEntries(itemMap.entries());
+  }
+  return serialized;
+}
+
+export function buildKitchenPerformanceDetailsForDevice(
+  deviceName: string,
+  ticketRows: Record<string, unknown>[],
+  hourlyRows: Record<string, unknown>[],
+  lineItemRows: Record<string, unknown>[],
+  itemPerformanceRows: Record<string, unknown>[],
+  timezone: string,
+): KitchenPerformanceDetailsResult {
+  const lineItemsByDevice = buildLineItemsByTicket(lineItemRows);
+  const lineItemsByTicket = lineItemsByDevice.get(deviceName) ?? new Map();
+  const mappedTickets = mapTicketRowsForDevice(
+    ticketRows,
+    deviceName,
+    lineItemsByTicket,
+    new Map(),
+    timezone,
+  );
+
+  return {
+    kpis: mergeTicketKpisWithLateStats(
+      computeKpisFromTicketRows(mappedTickets),
+      mappedTickets,
+    ),
+    hourlyCompletedTickets: mapHourlyForDevice(hourlyRows, deviceName),
+    ticketRows: mappedTickets,
+    itemPerformanceRows: mapKdsItemPerformanceRows(
+      itemPerformanceRows,
+      lineItemRows,
+      deviceName,
+    ),
+  };
+}
+
 export function buildKitchenPerformanceDetailsByDevice(
   listRows: KitchenPerformanceRowDto[],
   ticketRows: Record<string, unknown>[],
   hourlyRows: Record<string, unknown>[],
   lineItemRows: Record<string, unknown>[],
   itemPerformanceRows: Record<string, unknown>[],
-  deviceKpiRows: Record<string, unknown>[],
+  _deviceKpiRows: Record<string, unknown>[],
   itemSalesRows: Record<string, unknown>[],
   mongoLocationId: string,
   timezone: string,
 ): Record<string, KitchenPerformanceDetailsResult> {
   const modifierLookup = buildItemSalesModifierLookup(itemSalesRows);
   const lineItemsByDevice = buildLineItemsByTicket(lineItemRows);
-  const deviceKpisByName = mapKdsDeviceKpisByName(deviceKpiRows);
   const detailsByKey: Record<string, KitchenPerformanceDetailsResult> = {};
 
   for (const listRow of listRows) {
     if (listRow.locationId !== mongoLocationId) continue;
-    const deviceName = listRow.deviceName;
-    const lineItemsByTicket = lineItemsByDevice.get(deviceName) ?? new Map();
+    const device = listRow.deviceName;
+    const lineItemsByTicket = lineItemsByDevice.get(device) ?? new Map();
     const mappedTickets = mapTicketRowsForDevice(
       ticketRows,
-      deviceName,
+      device,
       lineItemsByTicket,
       modifierLookup,
       timezone,
     );
 
     detailsByKey[
-      buildKitchenPerformanceDetailsCacheKey(mongoLocationId, deviceName)
+      buildKitchenPerformanceDetailsCacheKey(mongoLocationId, device)
     ] = {
       kpis: mergeTicketKpisWithLateStats(
-        deviceKpisByName.get(deviceName) ??
-          computeKpisFromTicketRows(mappedTickets),
+        computeKpisFromTicketRows(mappedTickets),
         mappedTickets,
       ),
-      hourlyCompletedTickets: mapHourlyForDevice(hourlyRows, deviceName),
+      hourlyCompletedTickets: mapHourlyForDevice(hourlyRows, device),
       ticketRows: mappedTickets,
       itemPerformanceRows: mapKdsItemPerformanceRows(
         itemPerformanceRows,
         lineItemRows,
-        deviceName,
+        device,
       ),
     };
   }

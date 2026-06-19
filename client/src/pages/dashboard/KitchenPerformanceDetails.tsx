@@ -3,8 +3,9 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import OperationsIcon from "@assets/icons/operations.svg?react";
 import { Layout } from "../../components/common/Layout";
+import { Spinner } from "../../components/common/Spinner";
 import { zonedWallTodayYmd } from "../../utils/kitchenPerformancePeriodRange";
-import { selectCurrentLocation, selectLocationApiParams } from "../../store/locationSelectors";
+import { selectCurrentLocation } from "../../store/locationSelectors";
 import { useCanAccessComponent } from "../../hooks/useCanAccessComponent";
 import { KitchenPerformanceCompletedAtFilter } from "../../components/KitchenPerformance/KitchenPerformanceCompletedAtFilter";
 import { KitchenPerformanceDetailsItemTab } from "../../components/KitchenPerformance/KitchenPerformanceDetailsItemTab";
@@ -28,7 +29,6 @@ import {
 } from "../../utils/kitchenPerformanceDetailsDateHelpers";
 import { resolveDisplayTimezone } from "../../utils/displayTimezoneHelpers";
 import { useKitchenPerformanceReport } from "../../context/KitchenPerformanceReportContext";
-import { buildKitchenPerformanceReportCacheKey } from "../../utils/kitchenPerformanceReportCache.util";
 import type {
   KitchenPerformanceDetails as KitchenPerformanceDetailsData,
   KitchenPerformanceTicketRow,
@@ -43,9 +43,9 @@ export const KitchenPerformanceDetails = () => {
   const { deviceName: encodedDeviceName } = useParams<{ deviceName: string }>();
   const [searchParams] = useSearchParams();
   const currentLocation = useSelector(selectCurrentLocation);
-  const locationApiParams = useSelector(selectLocationApiParams);
   const canFullPage = useCanAccessComponent(DETAILS_PAGE_ID, "full-page");
-  const { reportPayload, cacheKey, getDetails } = useKitchenPerformanceReport();
+  const { reportPayload, getDetails, fetchDetails, detailsLoading, detailsError } =
+    useKitchenPerformanceReport();
   const [activeTab, setActiveTab] = useState<DetailsTab>("ticket-performance");
   const [ticketDetailRow, setTicketDetailRow] = useState<KitchenPerformanceTicketRow | null>(
     null,
@@ -98,19 +98,32 @@ export const KitchenPerformanceDetails = () => {
   const startDate = isValidYmd(startParam) ? startParam! : zonedWallTodayYmd(timezone);
   const endDate = isValidYmd(endParam) ? endParam! : startDate;
 
-  const activeCacheKey = useMemo(
-    () => buildKitchenPerformanceReportCacheKey(locationApiParams, startDate, endDate),
-    [locationApiParams, startDate, endDate],
-  );
-
-  const hasCachedReport = cacheKey === activeCacheKey && reportPayload != null;
+  const hasListReport = reportPayload != null;
   const details: KitchenPerformanceDetailsData | null = useMemo(() => {
-    if (!hasCachedReport || !resolvedLocationId || !deviceName) return null;
+    if (!resolvedLocationId || !deviceName) return null;
     return getDetails(resolvedLocationId, deviceName);
-  }, [deviceName, getDetails, hasCachedReport, resolvedLocationId]);
+  }, [deviceName, getDetails, resolvedLocationId]);
 
-  const cacheMiss = !hasCachedReport || details == null;
-  const loading = false;
+  useEffect(() => {
+    if (!hasListReport || !resolvedLocationId || !deviceName) return;
+    if (details != null) return;
+    void fetchDetails(resolvedLocationId, deviceName, { startDate, endDate }).catch(() => {
+      /* surfaced via detailsError */
+    });
+  }, [
+    details,
+    deviceName,
+    endDate,
+    fetchDetails,
+    hasListReport,
+    resolvedLocationId,
+    startDate,
+  ]);
+
+  const cacheMiss = !hasListReport;
+  const detailsPending = hasListReport && details == null && detailsLoading;
+  const detailsLoadFailed = hasListReport && details == null && !detailsLoading && detailsError != null;
+  const loading = detailsPending;
 
   const selectedDateLabel = useMemo(
     () =>
@@ -218,6 +231,31 @@ export const KitchenPerformanceDetails = () => {
                 Go to Kitchen Performance
               </button>
             </div>
+          ) : detailsLoadFailed ? (
+            <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-secondary">
+              <p className="mb-4 text-red-600">
+                {detailsError ?? "Failed to load kitchen performance details."}
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  void fetchDetails(resolvedLocationId, deviceName, {
+                    startDate,
+                    endDate,
+                  })
+                }
+                className="inline-flex items-center px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+              >
+                Retry
+              </button>
+            </div>
+          ) : detailsPending || details == null ? (
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              <div className="min-h-[280px] flex flex-col items-center justify-center gap-3 text-primary p-6">
+                <Spinner size="xl" className="text-button-primary" />
+                <span className="text-sm">Loading kitchen performance...</span>
+              </div>
+            </div>
           ) : (
             <>
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -286,6 +324,8 @@ export const KitchenPerformanceDetails = () => {
                 onClose={() => setTicketDetailRow(null)}
                 row={ticketDetailRow}
                 displayTimezone={displayTimezone}
+                locationId={resolvedLocationId}
+                dateRange={{ startDate, endDate }}
               />
               <KitchenPerformanceItemTicketsModal
                 isOpen={itemTicketsModal != null}

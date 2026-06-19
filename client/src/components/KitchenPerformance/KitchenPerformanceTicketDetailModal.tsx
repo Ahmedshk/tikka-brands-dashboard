@@ -1,11 +1,17 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type {
   KitchenPerformanceTicketLineItem,
   KitchenPerformanceTicketRow,
 } from "../../types/kitchenPerformance.types";
+import type { KitchenPerformanceDateRange } from "../../services/kitchenPerformance.service";
 import { parseItemsInTicket } from "../../utils/kitchenPerformanceItemsInTicket";
+import {
+  collectKitchenPerformanceTicketOrderIds,
+  mergeKitchenPerformanceTicketLineItemOptions,
+} from "../../utils/kitchenPerformanceTicketModifiers.util";
 import { formatDateTimeParts } from "../../utils/dateTimeDisplayHelpers";
+import { useKitchenPerformanceReport } from "../../context/KitchenPerformanceReportContext";
 import { getTicketTimeDueForDisplay, isTicketCompletedLate, formatTicketCompletionDuration } from "./kitchenPerformanceTicketUi";
 
 interface KitchenPerformanceTicketDetailModalProps {
@@ -13,6 +19,8 @@ interface KitchenPerformanceTicketDetailModalProps {
   onClose: () => void;
   row: KitchenPerformanceTicketRow | null;
   displayTimezone: string;
+  locationId: string;
+  dateRange: KitchenPerformanceDateRange;
 }
 
 function DetailRow({
@@ -29,7 +37,8 @@ function DetailRow({
 
 function TicketLineItemsList({
   lineItems,
-}: Readonly<{ lineItems: KitchenPerformanceTicketLineItem[] }>) {
+  modifiersLoading,
+}: Readonly<{ lineItems: KitchenPerformanceTicketLineItem[]; modifiersLoading: boolean }>) {
   return (
     <ul className="list-none space-y-3 m-0 p-0">
       {lineItems.map((item, index) => (
@@ -37,6 +46,9 @@ function TicketLineItemsList({
           <div className="font-semibold">
             {item.quantity} x {item.itemName}
           </div>
+          {modifiersLoading && item.orderId ? (
+            <p className="m-0 mt-1 pl-4 text-secondary text-xs">Loading options…</p>
+          ) : null}
           {item.options.length > 0 ? (
             <ul className="list-none space-y-0.5 m-0 mt-1 pl-4 p-0 text-secondary">
               {item.options.map((option) => (
@@ -104,8 +116,15 @@ export const KitchenPerformanceTicketDetailModal = ({
   onClose,
   row,
   displayTimezone,
+  locationId,
+  dateRange,
 }: KitchenPerformanceTicketDetailModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const { fetchTicketModifiers } = useKitchenPerformanceReport();
+  const [modifiersByOrderId, setModifiersByOrderId] = useState<
+    Record<string, Record<string, string[]>>
+  >({});
+  const [modifiersLoading, setModifiersLoading] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !row) {
@@ -115,16 +134,55 @@ export const KitchenPerformanceTicketDetailModal = ({
     dialogRef.current?.showModal();
   }, [isOpen, row]);
 
+  const baseLineItems = useMemo(() => {
+    if (!row) return [];
+    if (row.ticketLineItems && row.ticketLineItems.length > 0) {
+      return row.ticketLineItems;
+    }
+    return parseItemsInTicket(row.itemsInTicket).map((item) => ({
+      itemName: item.itemName,
+      quantity: item.quantity,
+      options: [],
+    }));
+  }, [row]);
+
+  useEffect(() => {
+    if (!isOpen || !row || !locationId) {
+      setModifiersByOrderId({});
+      setModifiersLoading(false);
+      return;
+    }
+
+    const orderIds = collectKitchenPerformanceTicketOrderIds(baseLineItems);
+    if (orderIds.length === 0) {
+      setModifiersByOrderId({});
+      setModifiersLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setModifiersLoading(true);
+    void fetchTicketModifiers(locationId, dateRange, orderIds)
+      .then((lookup) => {
+        if (!cancelled) setModifiersByOrderId(lookup);
+      })
+      .catch(() => {
+        if (!cancelled) setModifiersByOrderId({});
+      })
+      .finally(() => {
+        if (!cancelled) setModifiersLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [baseLineItems, dateRange, fetchTicketModifiers, isOpen, locationId, row]);
+
   if (!isOpen || !row) return null;
 
-  const lineItems =
-    row.ticketLineItems && row.ticketLineItems.length > 0
-      ? row.ticketLineItems
-      : parseItemsInTicket(row.itemsInTicket).map((item) => ({
-          itemName: item.itemName,
-          quantity: item.quantity,
-          options: [],
-        }));
+  const lineItems = baseLineItems.map((item) =>
+    mergeKitchenPerformanceTicketLineItemOptions(item, modifiersByOrderId),
+  );
 
   return createPortal(
     <dialog
@@ -191,7 +249,10 @@ export const KitchenPerformanceTicketDetailModal = ({
               {lineItems.length === 0 ? (
                 <span>—</span>
               ) : (
-                <TicketLineItemsList lineItems={lineItems} />
+                <TicketLineItemsList
+                  lineItems={lineItems}
+                  modifiersLoading={modifiersLoading}
+                />
               )}
             </DetailRow>
           </div>

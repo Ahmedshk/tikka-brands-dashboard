@@ -455,7 +455,10 @@ export class DisciplinaryIncidentService {
     }
 
     return pdfSvc.generateIncidentReport({
-      companyName: process.env.COMPANY_NAME?.trim() || "Tikka Brands",
+      companyName:
+        incident.businessLegalName?.trim()
+        || process.env.COMPANY_NAME?.trim()
+        || "Tikka Brands",
       employeeName,
       employeeRole,
       locationName,
@@ -499,6 +502,7 @@ export class DisciplinaryIncidentService {
     data: {
       employeeId: string;
       locationId: string;
+      businessLegalName: string;
       appliedPolicies: IDisciplinaryIncident["appliedPolicies"];
       isImmediateTermination: boolean;
       immediateTerminationPolicies?: IDisciplinaryIncident["immediateTerminationPolicies"];
@@ -555,6 +559,7 @@ export class DisciplinaryIncidentService {
       immediateTerminationPolicy:
         data.immediateTerminationPolicy ?? data.immediateTerminationPolicies?.[0],
       totalPoints,
+      businessLegalName: data.businessLegalName.trim(),
       detailsOfIncident: data.detailsOfIncident,
       supervisorCommitment: data.supervisorCommitment,
       supervisorComments: data.supervisorComments,

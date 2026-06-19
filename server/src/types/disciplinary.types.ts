@@ -76,6 +76,8 @@ export interface IDisciplinaryIncident {
 
   totalPoints: number;
 
+  businessLegalName: string;
+
   detailsOfIncident: string;
   supervisorCommitment: string;
   supervisorComments: string;

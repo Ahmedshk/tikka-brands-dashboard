@@ -55,6 +55,7 @@ export const createIncidentSchema = z.object({
   body: z.object({
     employeeId: z.string().min(1, "Employee ID is required"),
     locationId: z.string().min(1, "Location ID is required"),
+    businessLegalName: z.string().trim().min(1, "Business legal name is required"),
     appliedPolicies: z.array(appliedPolicySchema).default([]),
     isImmediateTermination: z.boolean().default(false),
     immediateTerminationPolicies: z.array(appliedImmediateTerminationPolicySchema).optional(),

@@ -43,6 +43,28 @@ export const getKitchenPerformanceDetailsQuerySchema = z.object({
   }),
 });
 
+export const getKitchenPerformanceReportDetailsQuerySchema = z.object({
+  query: withLocationQuery({
+    startDate: ymdDateSchema,
+    endDate: ymdDateSchema,
+    deviceName: z.string().min(1, "Device name is required"),
+  }).refine((q) => q.startDate <= q.endDate, {
+    message: "startDate must be on or before endDate",
+    path: ["endDate"],
+  }),
+});
+
+export const getKitchenPerformanceReportTicketModifiersQuerySchema = z.object({
+  query: withLocationQuery({
+    startDate: ymdDateSchema,
+    endDate: ymdDateSchema,
+    orderIds: z.string().min(1, "At least one order ID is required"),
+  }).refine((q) => q.startDate <= q.endDate, {
+    message: "startDate must be on or before endDate",
+    path: ["endDate"],
+  }),
+});
+
 export const runKitchenPerformanceReportBodySchema = z
   .object({
     query: z

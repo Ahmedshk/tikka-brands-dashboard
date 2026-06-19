@@ -6,12 +6,16 @@ import { validate } from "../utils/zod.util.js";
 import {
   getKitchenPerformanceDetailsQuerySchema,
   getKitchenPerformanceQuerySchema,
+  getKitchenPerformanceReportDetailsQuerySchema,
+  getKitchenPerformanceReportTicketModifiersQuerySchema,
   importKitchenPerformanceBodySchema,
   runKitchenPerformanceReportBodySchema,
 } from "../validators/kitchenPerformance.validators.js";
 import {
   getKitchenPerformanceDetails,
   getKitchenPerformance,
+  getKitchenPerformanceReportDetails,
+  getKitchenPerformanceReportTicketModifiers,
   importKitchenPerformanceCsv,
   handleKitchenPerformanceUploadError,
   runKitchenPerformanceReport,
@@ -49,6 +53,20 @@ router.post(
   requireLocationAccess,
   validate(runKitchenPerformanceReportBodySchema),
   runKitchenPerformanceReport,
+);
+
+router.get(
+  "/report/details",
+  requireLocationAccess,
+  validate(getKitchenPerformanceReportDetailsQuerySchema),
+  getKitchenPerformanceReportDetails,
+);
+
+router.get(
+  "/report/ticket-modifiers",
+  requireLocationAccess,
+  validate(getKitchenPerformanceReportTicketModifiersQuerySchema),
+  getKitchenPerformanceReportTicketModifiers,
 );
 
 export default router;

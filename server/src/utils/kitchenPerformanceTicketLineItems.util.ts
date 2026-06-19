@@ -1,10 +1,7 @@
 import { formatKitchenPerformanceItemName } from "./kitchenPerformanceItemName.util.js";
+import type { KitchenPerformanceTicketLineItemDto } from "../types/kitchenPerformance.types.js";
 
-export interface KitchenPerformanceTicketLineItemDto {
-  itemName: string;
-  quantity: number;
-  options: string[];
-}
+export type { KitchenPerformanceTicketLineItemDto };
 
 const DEFAULT_VARIATION_LABELS = new Set(["regular", "default"]);
 
@@ -95,6 +92,8 @@ export function buildKitchenPerformanceTicketLineItem(
       orderId,
       modifierLookup,
     ),
+    orderId,
+    variation,
   };
 }
 

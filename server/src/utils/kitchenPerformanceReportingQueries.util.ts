@@ -35,17 +35,28 @@ export function buildKdsDateFilters(
   ];
 }
 
+function buildKdsDeviceFilter(deviceName: string): ReportingFilter {
+  return {
+    member: "KDS.device_code_name",
+    operator: "equals",
+    values: [deviceName],
+  };
+}
+
 function baseQuery(
   squareLocationId: string,
   startDate: string,
   endDate: string,
+  deviceName?: string,
 ): { filters: ReportingFilter[] } {
-  return {
-    filters: [
-      buildLocationFilter(squareLocationId),
-      ...buildKdsDateFilters(startDate, endDate),
-    ],
-  };
+  const filters: ReportingFilter[] = [
+    buildLocationFilter(squareLocationId),
+    ...buildKdsDateFilters(startDate, endDate),
+  ];
+  if (deviceName?.trim()) {
+    filters.push(buildKdsDeviceFilter(deviceName.trim()));
+  }
+  return { filters };
 }
 
 export function buildKdsStationSummaryQuery(
@@ -68,9 +79,10 @@ export function buildKdsTicketRowsQuery(
   squareLocationId: string,
   startDate: string,
   endDate: string,
+  deviceName?: string,
 ): Record<string, unknown> {
   return {
-    ...baseQuery(squareLocationId, startDate, endDate),
+    ...baseQuery(squareLocationId, startDate, endDate, deviceName),
     measures: ["KDS.avg_ticket_time_seconds"],
     dimensions: [
       "KDS.device_code_name",
@@ -110,9 +122,10 @@ export function buildKdsHourlyQuery(
   squareLocationId: string,
   startDate: string,
   endDate: string,
+  deviceName?: string,
 ): Record<string, unknown> {
   return {
-    ...baseQuery(squareLocationId, startDate, endDate),
+    ...baseQuery(squareLocationId, startDate, endDate, deviceName),
     measures: ["KDS.ticket_count"],
     dimensions: ["KDS.device_code_name", "KDS.local_hour"],
   };
@@ -122,9 +135,10 @@ export function buildKdsItemPerformanceQuery(
   squareLocationId: string,
   startDate: string,
   endDate: string,
+  deviceName?: string,
 ): Record<string, unknown> {
   return {
-    ...baseQuery(squareLocationId, startDate, endDate),
+    ...baseQuery(squareLocationId, startDate, endDate, deviceName),
     measures: [
       "KDS.quantity_sold",
       "KDS.avg_item_time_seconds",
@@ -140,9 +154,10 @@ export function buildKdsLineItemsPerTicketQuery(
   squareLocationId: string,
   startDate: string,
   endDate: string,
+  deviceName?: string,
 ): Record<string, unknown> {
   return {
-    ...baseQuery(squareLocationId, startDate, endDate),
+    ...baseQuery(squareLocationId, startDate, endDate, deviceName),
     measures: ["KDS.items_count"],
     dimensions: [
       "KDS.device_code_name",
@@ -186,16 +201,32 @@ export function buildItemSalesModifiersQuery(
   squareLocationId: string,
   startDate: string,
   endDate: string,
+  orderIds?: string[],
 ): Record<string, unknown> {
+  const filters: ReportingFilter[] = [
+    {
+      member: "ItemSales.location_id",
+      operator: "equals",
+      values: [squareLocationId],
+    },
+    ...buildItemSalesDateFilters(startDate, endDate),
+  ];
+  const uniqueOrderIds = [...new Set((orderIds ?? []).map((id) => id.trim()).filter(Boolean))];
+  if (uniqueOrderIds.length === 1) {
+    filters.push({
+      member: "ItemSales.order_id",
+      operator: "equals",
+      values: uniqueOrderIds,
+    });
+  } else if (uniqueOrderIds.length > 1) {
+    filters.push({
+      member: "ItemSales.order_id",
+      operator: "in",
+      values: uniqueOrderIds,
+    });
+  }
   return {
-    filters: [
-      {
-        member: "ItemSales.location_id",
-        operator: "equals",
-        values: [squareLocationId],
-      },
-      ...buildItemSalesDateFilters(startDate, endDate),
-    ],
+    filters,
     measures: ["ItemSales.items_sold_count"],
     dimensions: [
       "ItemSales.order_id",

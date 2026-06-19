@@ -27,7 +27,7 @@ interface AssignPointsModalProps {
   readonly onSuccess: () => void;
 }
 
-type Step = 'policies' | 'report';
+type Step = 'businessLegalName' | 'policies' | 'report';
 
 function autoResizeTextarea(element: HTMLTextAreaElement): void {
   element.style.height = 'auto';
@@ -61,10 +61,12 @@ export const AssignPointsModal = ({
   onSuccess,
 }: AssignPointsModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [step, setStep] = useState<Step>('policies');
+  const [step, setStep] = useState<Step>('businessLegalName');
   const [settings, setSettings] = useState<DisciplinarySettings | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  const [businessLegalName, setBusinessLegalName] = useState('');
 
   const [selectedPolicies, setSelectedPolicies] = useState<SelectedPolicy[]>([]);
   const [selectedTerminationPolicyIds, setSelectedTerminationPolicyIds] = useState<string[]>([]);
@@ -79,6 +81,7 @@ export const AssignPointsModal = ({
 
   const totalPoints = selectedPolicies.reduce((sum, p) => sum + p.points, 0);
   const isImmediateTermination = selectedTerminationPolicyIds.length > 0;
+  const isBusinessLegalNameStep = step === 'businessLegalName';
   const isPoliciesStep = step === 'policies';
 
   const detailsRef = useAutoResizeTextareaRef(detailsOfIncident);
@@ -104,7 +107,8 @@ export const AssignPointsModal = ({
   useEffect(() => {
     if (isOpen) {
       fetchSettings();
-      setStep('policies');
+      setStep('businessLegalName');
+      setBusinessLegalName('');
       setSelectedPolicies([]);
       setSelectedTerminationPolicyIds([]);
       setDetailsOfIncident('');
@@ -151,6 +155,7 @@ export const AssignPointsModal = ({
   };
 
   const handleSubmit = async () => {
+    if (!businessLegalName.trim()) { toast.error('Business legal name is required'); return; }
     if (!detailsOfIncident.trim()) { toast.error('Details of incident is required'); return; }
     if (!supervisorCommitment.trim()) { toast.error('Supervisor commitment is required'); return; }
     if (!supervisorComments.trim()) { toast.error('Supervisor comments is required'); return; }
@@ -168,6 +173,7 @@ export const AssignPointsModal = ({
       const payload: IncidentCreatePayload = {
         employeeId,
         locationId,
+        businessLegalName: businessLegalName.trim(),
         appliedPolicies: selectedPolicies,
         isImmediateTermination,
         immediateTerminationPolicies: terminationPolicies.length > 0 ? terminationPolicies : undefined,
@@ -192,7 +198,26 @@ export const AssignPointsModal = ({
   };
 
   let bodyContent: ReactNode;
-  if (loadingSettings) {
+  if (isBusinessLegalNameStep) {
+    bodyContent = (
+      <div>
+        <label htmlFor="business-legal-name" className="block text-xs font-medium text-secondary mb-1">
+          Business Legal Name *
+        </label>
+        <p className="text-xs text-tertiary mb-2">
+          This name appears on the generated Performance Improvement Plan (PIP) document.
+        </p>
+        <input
+          id="business-legal-name"
+          type="text"
+          value={businessLegalName}
+          onChange={(e) => setBusinessLegalName(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-primary bg-card-background focus:outline-none focus:ring-2 focus:ring-button-primary/30 focus:border-button-primary"
+          placeholder="e.g. Tikka Brands LLC"
+        />
+      </div>
+    );
+  } else if (loadingSettings) {
     bodyContent = (
       <div className="flex flex-col items-center justify-center py-12 gap-4">
         <Spinner size="lg" className="text-button-primary" />
@@ -401,13 +426,17 @@ export const AssignPointsModal = ({
         </div>
 
         {/* Steps indicator */}
-        <div className="flex items-center gap-2 px-6 py-3 bg-gray-50 text-xs">
+        <div className="flex items-center gap-2 px-6 py-3 bg-gray-50 text-xs flex-wrap">
+          <span className={`px-2.5 py-1 rounded-full font-medium ${step === 'businessLegalName' ? 'bg-button-primary text-white' : 'bg-gray-200 text-secondary'}`}>
+            1. Business Legal Name
+          </span>
+          <span className="text-gray-300">→</span>
           <span className={`px-2.5 py-1 rounded-full font-medium ${step === 'policies' ? 'bg-button-primary text-white' : 'bg-gray-200 text-secondary'}`}>
-            1. Select Policies
+            2. Select Policies
           </span>
           <span className="text-gray-300">→</span>
           <span className={`px-2.5 py-1 rounded-full font-medium ${step === 'report' ? 'bg-button-primary text-white' : 'bg-gray-200 text-secondary'}`}>
-            2. Incident Report
+            3. Incident Report
           </span>
         </div>
 
@@ -432,7 +461,25 @@ export const AssignPointsModal = ({
                 Back
               </button>
             )}
-            {step === 'policies' ? (
+            {step === 'policies' && (
+              <button
+                type="button"
+                onClick={() => setStep('businessLegalName')}
+                className="px-4 py-2 text-xs font-medium text-secondary border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                Back
+              </button>
+            )}
+            {step === 'businessLegalName' ? (
+              <button
+                type="button"
+                onClick={() => setStep('policies')}
+                disabled={!businessLegalName.trim()}
+                className="px-4 py-2 text-xs font-medium text-white bg-button-primary rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
+              >
+                Next: Select Policies
+              </button>
+            ) : step === 'policies' ? (
               <button
                 type="button"
                 onClick={() => setStep('report')}

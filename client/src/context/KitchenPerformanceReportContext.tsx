@@ -14,6 +14,7 @@ import {
 import type {
   KitchenPerformanceDetails,
   KitchenPerformanceReportPayload,
+  KitchenPerformanceTicketModifiersLookup,
 } from "../types/kitchenPerformance.types";
 import {
   buildKitchenPerformanceDetailsCacheKey,
@@ -25,6 +26,8 @@ interface KitchenPerformanceReportContextValue {
   cacheKey: string | null;
   loading: boolean;
   error: string | null;
+  detailsLoading: boolean;
+  detailsError: string | null;
   runReport: (
     locationApiParams: LocationApiParams,
     range: KitchenPerformanceDateRange,
@@ -34,6 +37,16 @@ interface KitchenPerformanceReportContextValue {
     locationId: string,
     deviceName: string,
   ) => KitchenPerformanceDetails | null;
+  fetchDetails: (
+    locationId: string,
+    deviceName: string,
+    range: KitchenPerformanceDateRange,
+  ) => Promise<KitchenPerformanceDetails>;
+  fetchTicketModifiers: (
+    locationId: string,
+    range: KitchenPerformanceDateRange,
+    orderIds: string[],
+  ) => Promise<KitchenPerformanceTicketModifiersLookup>;
 }
 
 const KitchenPerformanceReportContext =
@@ -43,14 +56,21 @@ export function KitchenPerformanceReportProvider({ children }: { children: React
   const [reportPayload, setReportPayload] = useState<KitchenPerformanceReportPayload | null>(
     null,
   );
+  const [detailsCache, setDetailsCache] = useState<
+    Record<string, KitchenPerformanceDetails>
+  >({});
   const [cacheKey, setCacheKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
 
   const clearReport = useCallback(() => {
     setReportPayload(null);
+    setDetailsCache({});
     setCacheKey(null);
     setError(null);
+    setDetailsError(null);
   }, []);
 
   const runReport = useCallback(
@@ -65,9 +85,11 @@ export function KitchenPerformanceReportProvider({ children }: { children: React
       try {
         const payload = await kitchenPerformanceService.runReport(locationApiParams, range);
         setReportPayload(payload);
+        setDetailsCache({});
         setCacheKey(nextCacheKey);
       } catch (err) {
         setReportPayload(null);
+        setDetailsCache({});
         setCacheKey(null);
         const message =
           err instanceof Error ? err.message : "Failed to run kitchen performance report.";
@@ -82,11 +104,57 @@ export function KitchenPerformanceReportProvider({ children }: { children: React
 
   const getDetails = useCallback(
     (locationId: string, deviceName: string): KitchenPerformanceDetails | null => {
-      if (!reportPayload) return null;
       const key = buildKitchenPerformanceDetailsCacheKey(locationId, deviceName);
-      return reportPayload.detailsByKey[key] ?? null;
+      return detailsCache[key] ?? null;
     },
-    [reportPayload],
+    [detailsCache],
+  );
+
+  const fetchDetails = useCallback(
+    async (
+      locationId: string,
+      deviceName: string,
+      range: KitchenPerformanceDateRange,
+    ): Promise<KitchenPerformanceDetails> => {
+      const key = buildKitchenPerformanceDetailsCacheKey(locationId, deviceName);
+      const cached = detailsCache[key];
+      if (cached) return cached;
+
+      setDetailsLoading(true);
+      setDetailsError(null);
+      try {
+        const details = await kitchenPerformanceService.getReportDetails(
+          locationId,
+          range,
+          deviceName,
+        );
+        setDetailsCache((prev) => ({ ...prev, [key]: details }));
+        return details;
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to load kitchen performance details.";
+        setDetailsError(message);
+        throw err;
+      } finally {
+        setDetailsLoading(false);
+      }
+    },
+    [detailsCache],
+  );
+
+  const fetchTicketModifiers = useCallback(
+    async (
+      locationId: string,
+      range: KitchenPerformanceDateRange,
+      orderIds: string[],
+    ): Promise<KitchenPerformanceTicketModifiersLookup> => {
+      return kitchenPerformanceService.getReportTicketModifiers(
+        locationId,
+        range,
+        orderIds,
+      );
+    },
+    [],
   );
 
   const value = useMemo(
@@ -95,11 +163,27 @@ export function KitchenPerformanceReportProvider({ children }: { children: React
       cacheKey,
       loading,
       error,
+      detailsLoading,
+      detailsError,
       runReport,
       clearReport,
       getDetails,
+      fetchDetails,
+      fetchTicketModifiers,
     }),
-    [reportPayload, cacheKey, loading, error, runReport, clearReport, getDetails],
+    [
+      reportPayload,
+      cacheKey,
+      loading,
+      error,
+      detailsLoading,
+      detailsError,
+      runReport,
+      clearReport,
+      getDetails,
+      fetchDetails,
+      fetchTicketModifiers,
+    ],
   );
 
   return (
