@@ -107,6 +107,9 @@ export function getNotificationNavigationTarget(
   if (type === 'alert_pip_pending') {
     return { path: '/dashboard/disciplinary-management', pageId: 'disciplinary-management' };
   }
+  if (type === 'alert_low_rating_review') {
+    return { path: '/dashboard/ratings-and-reviews', pageId: 'ratings-and-reviews' };
+  }
   if (type.startsWith('alert_')) {
     return { path: '/dashboard/command-center', pageId: 'command-center' };
   }
