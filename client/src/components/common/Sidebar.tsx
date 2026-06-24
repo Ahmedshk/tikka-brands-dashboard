@@ -1,5 +1,5 @@
 import { useState, useEffect, memo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectCurrentLocation } from '../../store/locationSelectors';
 import { useFilteredNavigation } from '../../hooks/useFilteredNavigation';
@@ -26,7 +26,6 @@ interface SidebarProps {
 }
 
 const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, onClose, onToggle }: SidebarProps) => {
-  const navigate = useNavigate();
   const filteredNav = useFilteredNavigation();
   const currentLocation = useSelector(selectCurrentLocation);
   const useDefaultLogo = SIDEBAR_DEFAULT_LOGO_PATHS.has(activePath);
@@ -60,8 +59,7 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
     }
   };
 
-  const handleChildClick = (path: string) => {
-    navigate(path);
+  const handleNavItemClick = () => {
     if (isMobile) {
       onClose();
     }
@@ -190,7 +188,7 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
         activePath={activePath}
         expandedItems={expandedItems}
         onParentClick={handleParentClick}
-        onChildClick={handleChildClick}
+        onNavItemClick={handleNavItemClick}
         isParentActive={isParentActive}
       />
     );
@@ -274,20 +272,19 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
                   {isDesktopExpanded && expandedItems.has(item.label) && (
                     <div className="pl-8 pr-2">
                       {item.children.map((child) => (
-                        <button
+                        <NavLink
                           key={child.path}
-                          type="button"
-                          onClick={() => handleChildClick(child.path)}
-                          className={`
-                            w-full px-4 py-2 cursor-pointer transition-all text-[10px] md:text-xs 2xl:text-sm text-left border-0 rounded-xl
-                            ${activePath === child.path
+                          to={child.path}
+                          className={({ isActive }) => `
+                            block w-full px-4 py-2 cursor-pointer transition-all text-[10px] md:text-xs 2xl:text-sm text-left no-underline rounded-xl
+                            ${isActive
                               ? 'bg-button-secondary text-primary font-bold'
                               : 'bg-transparent hover:bg-gray-50 text-primary'
                             }
                           `}
                         >
                           {child.label}
-                        </button>
+                        </NavLink>
                       ))}
                     </div>
                   )}
@@ -298,14 +295,13 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
                   if (!itemPath) return null;
 
                   return (
-                    <button
-                      type="button"
-                      onClick={() => handleChildClick(itemPath)}
+                    <NavLink
+                      to={itemPath}
                       title={isDesktopExpanded ? undefined : item.label}
-                      className={`
-                        w-full flex items-center rounded-xl border-0 cursor-pointer transition-all text-left
+                      className={({ isActive }) => `
+                        w-full flex items-center rounded-xl no-underline cursor-pointer transition-all text-left
                         ${isDesktopExpanded ? 'px-4 py-3 my-4' : 'justify-center p-3 my-1'}
-                        ${activePath === itemPath
+                        ${isActive
                           ? 'bg-button-secondary'
                           : 'bg-transparent hover:bg-gray-50'
                         }
@@ -320,7 +316,7 @@ const SidebarComponent = ({ activePath, expandedItems, onToggleExpand, isOpen, o
                           {item.label}
                         </span>
                       )}
-                    </button>
+                    </NavLink>
                   );
                 })()
               )}

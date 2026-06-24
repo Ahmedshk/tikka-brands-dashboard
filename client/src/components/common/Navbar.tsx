@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/store';
 import {
@@ -46,6 +46,7 @@ import {
   isSingleLocationOnlyRoute,
 } from '../../utils/locationScope';
 import { getUserProfileProxyImageUrl } from '../../utils/employeeBioHelpers';
+import { isModifiedNavigationClick } from '../../utils/navigationClickHelpers';
 import toast from 'react-hot-toast';
 import { Spinner } from './Spinner';
 import { Dropdown } from './Dropdown';
@@ -131,7 +132,7 @@ type NavbarNotificationListProps = {
   infiniteScrollActive: boolean;
   onLoadMore: () => void;
   dense?: boolean;
-  onNotificationClick: (n: NotificationItem) => void;
+  onNotificationLinkClick: (n: NotificationItem, event: React.MouseEvent<HTMLAnchorElement>) => void;
 };
 
 function NavbarNotificationList({
@@ -143,7 +144,7 @@ function NavbarNotificationList({
   infiniteScrollActive,
   onLoadMore,
   dense,
-  onNotificationClick,
+  onNotificationLinkClick,
 }: Readonly<NavbarNotificationListProps>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -210,33 +211,44 @@ function NavbarNotificationList({
           let ariaLabel = `${n.title}.`;
           if (!n.isRead) ariaLabel += ' Unread.';
           if (hasNavTarget) ariaLabel += ' Open related page.';
-          return (
-            <button
-              key={n._id}
-              type="button"
-              aria-label={ariaLabel}
-              onClick={() => onNotificationClick(n)}
-              className={`w-full text-left px-4 ${itemPy} border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${n.isRead ? '' : 'bg-blue-50/40'}`}
-            >
-              <div className="flex items-start gap-2">
-                {!n.isRead && <span className="w-2 h-2 rounded-full bg-button-primary mt-1.5 flex-shrink-0" />}
-                <div className="min-w-0 flex-1">
-                  <p className={titleClass}>{n.title}</p>
-                  {locationLine && (
-                    <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 truncate">
-                      <LocationIcon className="w-3 h-3 flex-shrink-0" aria-hidden />
-                      <span className="truncate">{locationLine}</span>
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
-                    {isLowRatingReviewAlertType(n.type)
-                      ? renderLowRatingReviewAlertBody(bodyText)
-                      : bodyText}
+          const rowClassName = `block w-full text-left px-4 ${itemPy} border-b border-gray-50 hover:bg-gray-50 transition-colors no-underline ${hasNavTarget ? 'cursor-pointer' : ''} ${n.isRead ? '' : 'bg-blue-50/40'}`;
+          const rowContent = (
+            <div className="flex items-start gap-2">
+              {!n.isRead && <span className="w-2 h-2 rounded-full bg-button-primary mt-1.5 flex-shrink-0" />}
+              <div className="min-w-0 flex-1">
+                <p className={titleClass}>{n.title}</p>
+                {locationLine && (
+                  <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 truncate">
+                    <LocationIcon className="w-3 h-3 flex-shrink-0" aria-hidden />
+                    <span className="truncate">{locationLine}</span>
                   </p>
-                  <p className={timeClass}>{formatTimeAgo(n.createdAt)}</p>
-                </div>
+                )}
+                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                  {isLowRatingReviewAlertType(n.type)
+                    ? renderLowRatingReviewAlertBody(bodyText)
+                    : bodyText}
+                </p>
+                <p className={timeClass}>{formatTimeAgo(n.createdAt)}</p>
               </div>
-            </button>
+            </div>
+          );
+          if (hasNavTarget && navTarget) {
+            return (
+              <Link
+                key={n._id}
+                to={navTarget.path}
+                aria-label={ariaLabel}
+                onClick={(e) => onNotificationLinkClick(n, e)}
+                className={rowClassName}
+              >
+                {rowContent}
+              </Link>
+            );
+          }
+          return (
+            <div key={n._id} aria-label={ariaLabel} className={rowClassName}>
+              {rowContent}
+            </div>
           );
         })}
         {hasMore && !loadingMore && (
@@ -255,7 +267,6 @@ function NavbarNotificationList({
 
 export const Navbar = () => {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
   const dispatch = useDispatch();
   const { logout } = useAuth();
   const user = useSelector((state: RootState) => state.auth.user);
@@ -381,26 +392,30 @@ export const Navbar = () => {
     notificationService.markAsRead(id).catch(() => {});
   }, [dispatch]);
 
-  const handleNotificationClick = useCallback(
-    (n: NotificationItem) => {
-      if (!n.isRead) handleMarkRead(n._id);
+  const handleNotificationLinkClick = useCallback(
+    (n: NotificationItem, event: React.MouseEvent<HTMLAnchorElement>) => {
+      if (isModifiedNavigationClick(event)) return;
       const target = getNotificationNavigationTarget(n);
-      if (!target) return;
+      if (!target) {
+        event.preventDefault();
+        return;
+      }
       if (!canAccessPage(user?.permissions, target.pageId)) {
+        event.preventDefault();
         toast.error("You don't have access to that page.");
         return;
       }
+      if (!n.isRead) handleMarkRead(n._id);
       const lid =
         n.data && typeof n.data.locationId === 'string' ? n.data.locationId.trim() : '';
       if (lid) {
         const loc = locations.find((l) => l._id === lid);
         if (loc) dispatch(clearToSingleLocation(loc));
       }
-      navigate(target.path);
       setNotificationDropdownOpen(false);
       setMobileMenuOpen(false);
     },
-    [dispatch, handleMarkRead, locations, navigate, user?.permissions],
+    [dispatch, handleMarkRead, locations, user?.permissions],
   );
 
   const handleMarkAllRead = useCallback(() => {
@@ -543,10 +558,10 @@ export const Navbar = () => {
       ? getUserProfileProxyImageUrl(user._id, user.profileImagePublicId)
       : null;
 
-  const goToProfile = () => {
+  const handleProfileLinkClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (isModifiedNavigationClick(event)) return;
     setUserDropdownOpen(false);
     closeMobileMenu();
-    navigate('/dashboard/profile');
   };
 
   const locationPlaceholder = getLocationPlaceholder(locationsLoading, locations.length);
@@ -689,7 +704,7 @@ export const Navbar = () => {
                   hasMore={notificationListHasMore}
                   infiniteScrollActive={isLgUp}
                   onLoadMore={loadMoreNotifications}
-                  onNotificationClick={handleNotificationClick}
+                  onNotificationLinkClick={handleNotificationLinkClick}
                 />
               </div>
             )}
@@ -717,13 +732,13 @@ export const Navbar = () => {
             {userDropdownOpen && (
               <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
                 <div className="py-2">
-                  <button
-                    type="button"
-                    onClick={goToProfile}
-                    className="w-full text-left px-4 py-2 text-sm text-primary hover:bg-gray-50 transition-colors cursor-pointer"
+                  <Link
+                    to="/dashboard/profile"
+                    onClick={handleProfileLinkClick}
+                    className="block w-full text-left px-4 py-2 text-sm text-primary hover:bg-gray-50 transition-colors no-underline"
                   >
                     Profile
-                  </button>
+                  </Link>
                   <div className="border-t border-gray-200 my-1" />
                   <button
                     type="button"
@@ -808,7 +823,7 @@ export const Navbar = () => {
                     infiniteScrollActive={!isLgUp && mobileMenuOpen}
                     onLoadMore={loadMoreNotifications}
                     dense
-                    onNotificationClick={handleNotificationClick}
+                    onNotificationLinkClick={handleNotificationLinkClick}
                   />
                 </div>
               )}
@@ -816,13 +831,13 @@ export const Navbar = () => {
           </div>
 
           {/* Action buttons: centered, light border */}
-          <button
-            type="button"
-            onClick={goToProfile}
-            className="w-full max-w-sm flex items-center justify-center gap-3 px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium text-primary hover:bg-gray-50 transition-colors cursor-pointer"
+          <Link
+            to="/dashboard/profile"
+            onClick={handleProfileLinkClick}
+            className="w-full max-w-sm flex items-center justify-center gap-3 px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium text-primary hover:bg-gray-50 transition-colors no-underline"
           >
             Profile
-          </button>
+          </Link>
           <button
             type="button"
             onClick={() => {

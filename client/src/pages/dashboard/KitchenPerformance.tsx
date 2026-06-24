@@ -10,7 +10,6 @@ import {
   selectLocationApiParams,
 } from "../../store/locationSelectors";
 import { hasLocationSelection } from "../../utils/locationSelectionHelpers";
-import type { KitchenPerformanceRow } from "../../types/kitchenPerformance.types";
 import {
   KitchenPerformancePeriodPicker,
   KitchenPerformanceTableCard,
@@ -24,6 +23,7 @@ import {
 } from "../../utils/kitchenPerformancePeriodRange";
 import { resolveDisplayTimezone } from "../../utils/displayTimezoneHelpers";
 import { useKitchenPerformanceReport } from "../../context/KitchenPerformanceReportContext";
+import { buildKitchenPerformanceDeviceDetailsUrlFromRow } from "../../utils/kitchenPerformanceNavigationHelpers";
 import { buildKitchenPerformanceReportCacheKey } from "../../utils/kitchenPerformanceReportCache.util";
 
 const PAGE_SIZE = 10;
@@ -194,14 +194,14 @@ export const KitchenPerformance = () => {
                   ? "No report run yet. Select a period and click Run Report."
                   : undefined
               }
-              onView={(row: KitchenPerformanceRow) => {
-                const encoded = encodeURIComponent(row.deviceName);
-                const locationId = row.locationId ?? currentLocation?._id ?? "";
-                const locationQuery = locationId ? `&locationId=${encodeURIComponent(locationId)}` : "";
+              getViewTo={(row) => {
                 const linkStartDate = reportPayload?.meta.startDate ?? startDate;
                 const linkEndDate = reportPayload?.meta.endDate ?? endDate;
-                navigate(
-                  `/dashboard/kitchen-performance/${encoded}?startDate=${linkStartDate}&endDate=${linkEndDate}${locationQuery}`,
+                return buildKitchenPerformanceDeviceDetailsUrlFromRow(
+                  row,
+                  linkStartDate,
+                  linkEndDate,
+                  currentLocation?._id,
                 );
               }}
               pagination={

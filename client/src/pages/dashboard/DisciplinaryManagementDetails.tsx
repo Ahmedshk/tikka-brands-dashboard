@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import { Layout } from '../../components/common/Layout';
@@ -114,14 +114,14 @@ function mapIncidents(details: EmployeeDetails): IncidentHistoryItem[] {
   });
 }
 
-function EmployeeNotFoundState({ onBack }: Readonly<{ onBack: () => void }>) {
+function EmployeeNotFoundState({ backTo }: Readonly<{ backTo: string }>) {
   return (
     <Layout>
       <div className="p-6">
         <p className="text-primary mb-4">Employee not found.</p>
-        <button type="button" onClick={onBack} className="text-quaternary hover:underline font-medium">
+        <Link to={backTo} className="text-quaternary hover:underline font-medium no-underline">
           ← Back to Disciplinary Management
-        </button>
+        </Link>
       </div>
     </Layout>
   );
@@ -336,7 +336,7 @@ export const DisciplinaryManagementDetails = () => {
 
   const showNotFound = employeeId == null || (loading === false && details == null);
   if (showNotFound) {
-    return <EmployeeNotFoundState onBack={() => navigate('/dashboard/disciplinary-management')} />;
+    return <EmployeeNotFoundState backTo="/dashboard/disciplinary-management" />;
   }
 
   const isCardLoading = loading || details == null;
@@ -365,7 +365,7 @@ export const DisciplinaryManagementDetails = () => {
         <DetailsPageHeader
           dateWindowStart={windowRange.start}
           dateWindowEnd={windowRange.end}
-          onBack={() => navigate('/dashboard/disciplinary-management')}
+          backTo="/dashboard/disciplinary-management"
           onAssignPoints={() => setAssignPointsOpen(true)}
           showAssignPoints={canAssignPoints}
         />

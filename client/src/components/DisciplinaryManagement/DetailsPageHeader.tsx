@@ -1,9 +1,10 @@
+import { Link } from 'react-router-dom';
 import AddIcon from '@assets/icons/add.svg?react';
 
 export interface DetailsPageHeaderProps {
   dateWindowStart: string;
   dateWindowEnd: string;
-  onBack: () => void;
+  backTo: string;
   onAssignPoints: () => void;
   /** When false, the Assign Points button is hidden (RBAC). */
   showAssignPoints?: boolean;
@@ -13,7 +14,7 @@ export const DetailsPageHeader = (props: DetailsPageHeaderProps) => {
   const {
     dateWindowStart,
     dateWindowEnd,
-    onBack,
+    backTo,
     onAssignPoints,
     showAssignPoints = true,
   } = props;
@@ -31,13 +32,12 @@ export const DetailsPageHeader = (props: DetailsPageHeaderProps) => {
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-gray-50 transition-colors"
+        <Link
+          to={backTo}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-gray-50 transition-colors no-underline"
         >
           ← Back
-        </button>
+        </Link>
         {showAssignPoints ? (
           <div className="flex flex-wrap items-center gap-2">
             <button

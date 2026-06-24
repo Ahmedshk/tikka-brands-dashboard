@@ -1,3 +1,4 @@
+import { NavLink } from 'react-router-dom';
 import type { NavigationItem } from '../../types/navigation.types';
 import MainLogo from '@assets/logos/main_logo.svg?react';
 import ArrowUpIcon from '@assets/icons/arrow_up.svg?react';
@@ -25,7 +26,7 @@ export interface MobileSidebarProps {
   activePath: string;
   expandedItems: Set<string>;
   onParentClick: (item: { label: string; children?: Array<{ path: string }> }) => void;
-  onChildClick: (path: string) => void;
+  onNavItemClick: () => void;
   isParentActive: (item: NavigationItem) => boolean;
 }
 
@@ -47,7 +48,7 @@ export function MobileSidebar(props: Readonly<MobileSidebarProps>) {
     activePath,
     expandedItems,
     onParentClick,
-    onChildClick,
+    onNavItemClick,
     isParentActive,
   } = props;
   return (
@@ -118,30 +119,34 @@ export function MobileSidebar(props: Readonly<MobileSidebarProps>) {
                 {expandedItems.has(item.label) && (
                   <div className="pl-8 pr-2">
                     {item.children.map((child) => (
-                      <button
+                      <NavLink
                         key={child.path}
-                        type="button"
-                        onClick={() => onChildClick(child.path)}
-                        className={`w-full px-4 py-2 cursor-pointer transition-all text-[10px] md:text-xs 2xl:text-sm text-left border-0 rounded-xl ${activePath === child.path ? 'bg-button-secondary text-primary font-bold' : 'bg-transparent hover:bg-gray-50 text-primary'}`}
+                        to={child.path}
+                        onClick={onNavItemClick}
+                        className={({ isActive }) =>
+                          `block w-full px-4 py-2 cursor-pointer transition-all text-[10px] md:text-xs 2xl:text-sm text-left no-underline rounded-xl ${isActive ? 'bg-button-secondary text-primary font-bold' : 'bg-transparent hover:bg-gray-50 text-primary'}`
+                        }
                       >
                         {child.label}
-                      </button>
+                      </NavLink>
                     ))}
                   </div>
                 )}
               </>
             ) : (
               item.path && (
-                <button
-                  type="button"
-                  onClick={() => onChildClick(item.path!)}
-                  className={`w-full flex items-center px-4 py-3 cursor-pointer transition-all text-left border-0 rounded-xl ${activePath === item.path ? 'bg-button-secondary' : 'bg-transparent hover:bg-gray-50'}`}
+                <NavLink
+                  to={item.path}
+                  onClick={onNavItemClick}
+                  className={({ isActive }) =>
+                    `w-full flex items-center px-4 py-3 cursor-pointer transition-all text-left no-underline rounded-xl ${isActive ? 'bg-button-secondary' : 'bg-transparent hover:bg-gray-50'}`
+                  }
                 >
                   <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
                   <span className={`flex-1 text-[10px] md:text-xs 2xl:text-sm ${activePath === item.path ? 'quaternary font-bold' : 'text-primary font-medium'}`}>
                     {item.label}
                   </span>
-                </button>
+                </NavLink>
               )
             )}
           </div>

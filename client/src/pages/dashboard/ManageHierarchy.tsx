@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate, useBlocker } from 'react-router-dom';
+import { Link, useBlocker } from 'react-router-dom';
 import { Layout } from '../../components/common/Layout';
 import { HierarchyTree, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP } from '../../components/RBAC';
 import type { HierarchyRoleItem, HierarchyTreeHandle } from '../../components/RBAC';
@@ -36,7 +36,6 @@ function mapsEqual(a: Map<string, string | null>, b: Map<string, string | null>)
 }
 
 export const ManageHierarchy = () => {
-  const navigate = useNavigate();
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -131,14 +130,13 @@ export const ManageHierarchy = () => {
         {/* Header */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard/rbac-management')}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            <Link
+              to="/dashboard/rbac-management"
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors inline-flex"
               title="Back to RBAC Management"
             >
               <FaArrowLeft className="w-4 h-4 text-primary" />
-            </button>
+            </Link>
             <h2 className="flex items-center gap-2 text-base md:text-lg 2xl:text-xl font-semibold text-primary">
               <AdminSettingsIcon className="w-4 h-4 md:w-5 md:h-5 2xl:w-6 2xl:h-6 text-primary" aria-hidden />
               Role Hierarchy

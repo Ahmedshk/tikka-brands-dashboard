@@ -1,9 +1,9 @@
 import type { DisciplinaryRow, DisciplinaryStatus } from '../../types/disciplinaryManagement.types';
 import { Pagination } from '../common/Pagination';
 import { Spinner } from '../common/Spinner';
+import { TableRowViewAction } from '../common/ViewActionLink';
 import PendingIcon from '@assets/icons/pending.svg?react';
 import CompliantIcon from '@assets/icons/compliant.svg?react';
-import ViewIcon from '@assets/icons/view.svg?react';
 
 const cardClass = 'bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden';
 
@@ -35,11 +35,12 @@ function getInitial(name: string): string {
 export interface DisciplinaryTableCardProps {
   rows: DisciplinaryRow[];
   loading?: boolean;
+  getViewTo?: (row: DisciplinaryRow, index: number) => string | undefined;
   onView?: (row: DisciplinaryRow, index: number) => void;
   pagination?: DisciplinaryTableCardPagination;
 }
 
-export const DisciplinaryTableCard = ({ rows, loading = false, onView, pagination }: DisciplinaryTableCardProps) => {
+export const DisciplinaryTableCard = ({ rows, loading = false, getViewTo, onView, pagination }: DisciplinaryTableCardProps) => {
   return (
     <div className={`${cardClass} flex flex-col min-h-0 overflow-hidden`}>
       <div className="rounded-t-xl bg-primary px-5 py-1 md:py-2 flex items-center flex-shrink-0">
@@ -108,15 +109,7 @@ export const DisciplinaryTableCard = ({ rows, loading = false, onView, paginatio
               </div>
 
               <div className="mt-3 flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={() => onView?.(row, index)}
-                  className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors inline-flex items-center justify-center"
-                  aria-label="View"
-                  title="View details"
-                >
-                  <ViewIcon className="w-4 h-4" />
-                </button>
+                <TableRowViewAction row={row} index={index} getViewTo={getViewTo} onView={onView} />
               </div>
             </div>
           ))}
@@ -179,15 +172,7 @@ export const DisciplinaryTableCard = ({ rows, loading = false, onView, paginatio
                     </div>
                   </td>
                   <td className="py-3 pr-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => onView?.(row, index)}
-                      className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors inline-flex items-center justify-center"
-                      aria-label="View"
-                      title="View details"
-                    >
-                      <ViewIcon className="w-4 h-4" />
-                    </button>
+                    <TableRowViewAction row={row} index={index} getViewTo={getViewTo} onView={onView} />
                   </td>
                 </tr>
               ))}

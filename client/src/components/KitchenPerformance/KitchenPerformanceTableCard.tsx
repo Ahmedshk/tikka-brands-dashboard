@@ -1,7 +1,7 @@
-import ViewIcon from "@assets/icons/view.svg?react";
 import type { KitchenPerformanceRow } from "../../types/kitchenPerformance.types";
 import { Pagination } from "../common/Pagination";
 import { Spinner } from "../common/Spinner";
+import { TableRowViewAction } from "../common/ViewActionLink";
 
 const cardClass = "bg-card-background rounded-xl shadow border border-gray-200 overflow-hidden";
 
@@ -17,6 +17,7 @@ interface KitchenPerformanceTableCardProps {
   rows: KitchenPerformanceRow[];
   loading?: boolean;
   emptyMessage?: string;
+  getViewTo?: (row: KitchenPerformanceRow, index: number) => string | undefined;
   onView?: (row: KitchenPerformanceRow, index: number) => void;
   pagination?: KitchenPerformanceTableCardPagination;
 }
@@ -36,6 +37,7 @@ export const KitchenPerformanceTableCard = ({
   rows,
   loading = false,
   emptyMessage = "No data available",
+  getViewTo,
   onView,
   pagination,
 }: KitchenPerformanceTableCardProps) => {
@@ -82,15 +84,7 @@ export const KitchenPerformanceTableCard = ({
                 </div>
               </div>
               <div className="mt-3 flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={() => onView?.(row, index)}
-                  className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors inline-flex items-center justify-center"
-                  aria-label="View"
-                  title="View details"
-                >
-                  <ViewIcon className="w-4 h-4" />
-                </button>
+                <TableRowViewAction row={row} index={index} getViewTo={getViewTo} onView={onView} />
               </div>
             </div>
           ))}
@@ -120,15 +114,7 @@ export const KitchenPerformanceTableCard = ({
                   <td className="py-3 pr-4 text-center font-semibold">{row.completedTickets}</td>
                   <td className="py-3 pr-4 text-center">{formatDuration(row.avgCompletionTimeSeconds)}</td>
                   <td className="py-3 pr-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => onView?.(row, index)}
-                      className="p-1.5 text-primary hover:bg-gray-200 rounded transition-colors inline-flex items-center justify-center"
-                      aria-label="View"
-                      title="View details"
-                    >
-                      <ViewIcon className="w-4 h-4" />
-                    </button>
+                    <TableRowViewAction row={row} index={index} getViewTo={getViewTo} onView={onView} />
                   </td>
                 </tr>
               ))}

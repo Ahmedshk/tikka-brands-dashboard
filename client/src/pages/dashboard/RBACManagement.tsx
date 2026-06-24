@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Layout } from '../../components/common/Layout';
 import { RBACTableCard, AddEditRoleModal } from '../../components/RBAC';
 import type { RoleRow } from '../../types/rbac.types';
@@ -13,7 +13,6 @@ import { Spinner } from '../../components/common/Spinner';
 const PAGE_SIZE = 10;
 
 export const RBACManagement = () => {
-  const navigate = useNavigate();
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,15 +103,14 @@ export const RBACManagement = () => {
             RBAC Management
           </h2>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard/rbac-management/hierarchy')}
-              className="flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 text-primary rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:bg-gray-50 transition-colors cursor-pointer"
+            <Link
+              to="/dashboard/rbac-management/hierarchy"
+              className="flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 text-primary rounded-xl text-xs md:text-sm 2xl:text-base font-medium hover:bg-gray-50 transition-colors no-underline"
               title="Manage role hierarchy"
             >
               <FaSitemap className="w-4 h-4 shrink-0" aria-hidden />
               Manage Hierarchy
-            </button>
+            </Link>
             <button
               type="button"
               onClick={openAdd}

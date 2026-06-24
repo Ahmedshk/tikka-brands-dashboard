@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Layout } from '../../components/common/Layout';
 import { CommandCenterKPICards } from '../../components/CommandCenter';
@@ -18,7 +17,6 @@ const SEARCH_DEBOUNCE_MS = 400;
 const PAGE_ID = 'disciplinary-management';
 
 export const DisciplinaryManagement = () => {
-  const navigate = useNavigate();
   const locationApiParams = useSelector(selectLocationApiParams);
   const hasLocationScope = hasLocationSelection(locationApiParams);
   const canTotalTeamKpi = useCanAccessComponent(PAGE_ID, 'total-team-members-kpi');
@@ -133,11 +131,9 @@ export const DisciplinaryManagement = () => {
             <DisciplinaryTableCard
               rows={rows}
               loading={tableLoading}
-              onView={(row) => {
-                if (row.id) {
-                  navigate(`/dashboard/disciplinary-management/${row.id}`);
-                }
-              }}
+              getViewTo={(row) =>
+                row.id ? `/dashboard/disciplinary-management/${row.id}` : undefined
+              }
               pagination={{
                 currentPage: page,
                 totalPages,

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import OperationsIcon from "@assets/icons/operations.svg?react";
 import { Layout } from "../../components/common/Layout";
@@ -28,6 +28,7 @@ import {
   isValidYmd,
 } from "../../utils/kitchenPerformanceDetailsDateHelpers";
 import { resolveDisplayTimezone } from "../../utils/displayTimezoneHelpers";
+import { buildKitchenPerformanceListUrl } from "../../utils/kitchenPerformanceNavigationHelpers";
 import { useKitchenPerformanceReport } from "../../context/KitchenPerformanceReportContext";
 import type {
   KitchenPerformanceDetails as KitchenPerformanceDetailsData,
@@ -44,7 +45,7 @@ export const KitchenPerformanceDetails = () => {
   const [searchParams] = useSearchParams();
   const currentLocation = useSelector(selectCurrentLocation);
   const canFullPage = useCanAccessComponent(DETAILS_PAGE_ID, "full-page");
-  const { reportPayload, getDetails, fetchDetails, detailsLoading, detailsError } =
+  const { getDetails, fetchDetails, detailsLoading, detailsError } =
     useKitchenPerformanceReport();
   const [activeTab, setActiveTab] = useState<DetailsTab>("ticket-performance");
   const [ticketDetailRow, setTicketDetailRow] = useState<KitchenPerformanceTicketRow | null>(
@@ -97,32 +98,38 @@ export const KitchenPerformanceDetails = () => {
 
   const startDate = isValidYmd(startParam) ? startParam! : zonedWallTodayYmd(timezone);
   const endDate = isValidYmd(endParam) ? endParam! : startDate;
+  const listBackUrl = buildKitchenPerformanceListUrl(startDate, endDate);
 
-  const hasListReport = reportPayload != null;
+  const hasRequiredRouteParams =
+    Boolean(deviceName) && isValidYmd(startDate) && isValidYmd(endDate);
+  const canFetchDetails = hasRequiredRouteParams && Boolean(resolvedLocationId);
+
   const details: KitchenPerformanceDetailsData | null = useMemo(() => {
     if (!resolvedLocationId || !deviceName) return null;
     return getDetails(resolvedLocationId, deviceName);
   }, [deviceName, getDetails, resolvedLocationId]);
 
   useEffect(() => {
-    if (!hasListReport || !resolvedLocationId || !deviceName) return;
+    if (!canFetchDetails) return;
     if (details != null) return;
     void fetchDetails(resolvedLocationId, deviceName, { startDate, endDate }).catch(() => {
       /* surfaced via detailsError */
     });
   }, [
+    canFetchDetails,
     details,
     deviceName,
     endDate,
     fetchDetails,
-    hasListReport,
     resolvedLocationId,
     startDate,
   ]);
 
-  const cacheMiss = !hasListReport;
-  const detailsPending = hasListReport && details == null && detailsLoading;
-  const detailsLoadFailed = hasListReport && details == null && !detailsLoading && detailsError != null;
+  const waitingForLocation = hasRequiredRouteParams && !resolvedLocationId;
+  const detailsPending =
+    canFetchDetails && details == null && (detailsLoading || waitingForLocation);
+  const detailsLoadFailed =
+    canFetchDetails && details == null && !detailsLoading && detailsError != null;
   const loading = detailsPending;
 
   const selectedDateLabel = useMemo(
@@ -196,40 +203,27 @@ export const KitchenPerformanceDetails = () => {
         </div>
 
         <div className="mb-4 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              navigate(
-                `/dashboard/kitchen-performance?startDate=${startDate}&endDate=${endDate}`,
-              )
-            }
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-gray-50 transition-colors"
+          <Link
+            to={listBackUrl}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-primary text-sm font-medium hover:bg-gray-50 transition-colors no-underline"
           >
             ← Back
-          </button>
+          </Link>
           <span className="text-sm text-secondary">
             Device: <span className="font-semibold text-primary">{deviceName || "—"}</span>
           </span>
         </div>
 
         {canFullPage ? (
-          cacheMiss ? (
+          !hasRequiredRouteParams ? (
             <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-secondary">
-              <p className="mb-4">
-                Kitchen performance details are not loaded for this period. Run a report on the
-                list page first.
-              </p>
-              <button
-                type="button"
-                onClick={() =>
-                  navigate(
-                    `/dashboard/kitchen-performance?startDate=${startDate}&endDate=${endDate}`,
-                  )
-                }
-                className="inline-flex items-center px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+              <p className="mb-4">Invalid or incomplete kitchen performance details link.</p>
+              <Link
+                to={listBackUrl}
+                className="inline-flex items-center px-4 py-2 rounded-lg bg-button-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity no-underline"
               >
                 Go to Kitchen Performance
-              </button>
+              </Link>
             </div>
           ) : detailsLoadFailed ? (
             <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-secondary">
