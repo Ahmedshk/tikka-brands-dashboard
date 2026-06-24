@@ -131,3 +131,30 @@ export function getNotificationNavigationTarget(
   }
   return null;
 }
+
+export const NOTIFICATION_READ_QUERY_PARAM = 'notificationId';
+export const NOTIFICATION_LOCATION_QUERY_PARAM = 'notificationLocationId';
+
+export function getNotificationLocationId(n: NotificationItem): string | undefined {
+  const lid = stringDataField(n.data, 'locationId');
+  return lid ?? undefined;
+}
+
+/** Appends notificationId (and optional locationId) for new-tab deep-link side effects. */
+export function buildNotificationLinkPath(
+  path: string,
+  notificationId: string,
+  locationId?: string | null,
+): string {
+  const qIndex = path.indexOf('?');
+  const pathname = qIndex === -1 ? path : path.slice(0, qIndex);
+  const search = qIndex === -1 ? '' : path.slice(qIndex + 1);
+  const params = new URLSearchParams(search);
+  params.set(NOTIFICATION_READ_QUERY_PARAM, notificationId);
+  const trimmedLocationId = locationId?.trim();
+  if (trimmedLocationId) {
+    params.set(NOTIFICATION_LOCATION_QUERY_PARAM, trimmedLocationId);
+  }
+  const qs = params.toString();
+  return qs ? `${pathname}?${qs}` : pathname;
+}

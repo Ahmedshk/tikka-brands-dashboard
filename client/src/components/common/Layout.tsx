@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { Spinner } from './Spinner';
 import { useSidebar } from '../../hooks/useSidebar';
+import { useMarkNotificationReadFromUrl } from '../../hooks/useMarkNotificationReadFromUrl';
 import type { RootState } from '../../store/store';
 
 const SIDEBAR_STORAGE_KEY = 'sidebarExpanded';
@@ -22,6 +23,7 @@ interface LayoutProps {
 
 export const Layout = ({ children }: LayoutProps) => {
   const { activePath, expandedItems, toggleExpand } = useSidebar();
+  useMarkNotificationReadFromUrl();
   const locationListHydrated = useSelector((state: RootState) => state.location.listHydrated);
   const [isSidebarOpen, setIsSidebarOpen] = useState(getInitialSidebarOpen);
 

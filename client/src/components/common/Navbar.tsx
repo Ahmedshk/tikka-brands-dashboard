@@ -22,7 +22,6 @@ import {
   setUnreadCount,
   setNotifications,
   appendNotifications,
-  markNotificationRead,
   markAllNotificationsRead,
 } from '../../store/slices/notification.slice';
 import { locationService } from '../../services/location.service';
@@ -35,6 +34,8 @@ import {
   alertNotificationBodyTextForDropdown,
   getNotificationNavigationTarget,
   resolveNotificationLocationLabel,
+  buildNotificationLinkPath,
+  getNotificationLocationId,
 } from '../../utils/notificationNavigation';
 import {
   isLowRatingReviewAlertType,
@@ -236,7 +237,7 @@ function NavbarNotificationList({
             return (
               <Link
                 key={n._id}
-                to={navTarget.path}
+                to={buildNotificationLinkPath(navTarget.path, n._id, getNotificationLocationId(n))}
                 aria-label={ariaLabel}
                 onClick={(e) => onNotificationLinkClick(n, e)}
                 className={rowClassName}
@@ -387,27 +388,29 @@ export const Navbar = () => {
     dispatch,
   ]);
 
-  const handleMarkRead = useCallback((id: string) => {
-    dispatch(markNotificationRead(id));
-    notificationService.markAsRead(id).catch(() => {});
-  }, [dispatch]);
-
   const handleNotificationLinkClick = useCallback(
     (n: NotificationItem, event: React.MouseEvent<HTMLAnchorElement>) => {
-      if (isModifiedNavigationClick(event)) return;
       const target = getNotificationNavigationTarget(n);
       if (!target) {
         event.preventDefault();
         return;
       }
-      if (!canAccessPage(user?.permissions, target.pageId)) {
+
+      const modified = isModifiedNavigationClick(event);
+
+      if (!modified && !canAccessPage(user?.permissions, target.pageId)) {
         event.preventDefault();
         toast.error("You don't have access to that page.");
         return;
       }
-      if (!n.isRead) handleMarkRead(n._id);
-      const lid =
-        n.data && typeof n.data.locationId === 'string' ? n.data.locationId.trim() : '';
+
+      if (modified) {
+        setNotificationDropdownOpen(false);
+        setMobileMenuOpen(false);
+        return;
+      }
+
+      const lid = getNotificationLocationId(n);
       if (lid) {
         const loc = locations.find((l) => l._id === lid);
         if (loc) dispatch(clearToSingleLocation(loc));
@@ -415,7 +418,7 @@ export const Navbar = () => {
       setNotificationDropdownOpen(false);
       setMobileMenuOpen(false);
     },
-    [dispatch, handleMarkRead, locations, user?.permissions],
+    [dispatch, locations, user?.permissions],
   );
 
   const handleMarkAllRead = useCallback(() => {

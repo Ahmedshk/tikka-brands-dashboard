@@ -1,4 +1,5 @@
 import api from "./api.service";
+import { isAxiosError } from "axios";
 
 export interface NotificationItem {
   _id: string;
@@ -39,7 +40,16 @@ export const notificationService = {
   },
 
   async markAsRead(id: string): Promise<void> {
-    await api.patch(`/notifications/${id}/read`);
+    try {
+      await api.patch(`/notifications/${id}/read`, undefined, {
+        skipGlobalErrorToast: true,
+      });
+    } catch (error) {
+      if (isAxiosError(error) && error.response?.status === 404) {
+        return;
+      }
+      throw error;
+    }
   },
 
   async markAllAsRead(): Promise<void> {
