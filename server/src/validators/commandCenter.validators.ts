@@ -5,6 +5,7 @@ const commandCenterMetricEnum = z.enum(["netSales", "laborCost", "reviewRating"]
 
 const commandCenterPeriodEnum = z.enum([
   "today",
+  "yesterday",
   "weekToDate",
   "monthToDate",
   "lastWeek",
@@ -35,11 +36,13 @@ export const getCommandCenterKPIsQuerySchema = z.object({
               .filter(
                 (p) =>
                   p === "today" ||
+                  p === "yesterday" ||
                   p === "weektodate" ||
                   p === "monthtodate" ||
                   p === "lastweek",
               )
               .map((p) => {
+                if (p === "yesterday") return "yesterday";
                 if (p === "weektodate") return "weekToDate";
                 if (p === "monthtodate") return "monthToDate";
                 if (p === "lastweek") return "lastWeek";

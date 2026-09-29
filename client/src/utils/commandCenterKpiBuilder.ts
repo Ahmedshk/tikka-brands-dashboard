@@ -39,6 +39,8 @@ function getRawNetSales(
   switch (period) {
     case "today":
       return "netSalesToday" in slice ? slice.netSalesToday : undefined;
+    case "yesterday":
+      return "netSalesYesterday" in slice ? slice.netSalesYesterday : undefined;
     case "weekToDate":
       return "netSalesWeekToDate" in slice ? slice.netSalesWeekToDate : undefined;
     case "monthToDate":
@@ -60,6 +62,8 @@ function getRawLaborCost(
   switch (period) {
     case "today":
       return "laborCostToday" in slice ? slice.laborCostToday : undefined;
+    case "yesterday":
+      return "laborCostYesterday" in slice ? slice.laborCostYesterday : undefined;
     case "weekToDate":
       return "laborCostWeekToDate" in slice ? slice.laborCostWeekToDate : undefined;
     case "monthToDate":

@@ -189,6 +189,32 @@ const KEYS_INTERSECTING_CACHE_MAX = 5_000;
 const businessDateKeysIntersectingCache = new Map<string, string[]>();
 
 /**
+ * Previous *business* day: the business-day window that closed when the current
+ * business day opened.
+ *
+ * `businessDateKeyForInstant` already rolls back to the previous date when the
+ * instant falls before businessStartTime (e.g. 02:00 Tuesday → Monday's key),
+ * so subtracting one calendar day from the *current* key yields the most recent
+ * completed business day rather than a raw calendar day. Keeping the result on a
+ * business-date key also lets it hit the daily rollups, which are keyed the same
+ * way.
+ */
+export function getPreviousBusinessDayRange(
+  timezone: string,
+  businessStartTime: string,
+  now: Date = new Date(),
+): TimeRange {
+  const tz = timezone.trim() || "UTC";
+  const bst = (businessStartTime ?? "00:00").trim() || "00:00";
+  const currentKey = businessDateKeyForInstant(now, tz, bst);
+  return businessDayUtcRangeIsoStrings(
+    tz,
+    bst,
+    addCalendarDaysToBusinessDateKey(currentKey, -1),
+  );
+}
+
+/**
  * Business date keys whose business-day UTC window intersects [startAt, endAt].
  */
 export function businessDateKeysIntersectingUtcRange(

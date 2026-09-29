@@ -36,6 +36,20 @@ export interface CommandCenterKPIsTodaySlice {
   reviewCountOverall?: number | null;
 }
 
+/** Yesterday slice when backend returns multi-period. */
+export interface CommandCenterKPIsYesterdaySlice {
+  netSalesYesterday?: number | null;
+  laborCostYesterday?: number | null;
+  laborCostPercentYesterday?: number | null;
+  laborCostGoal?: number;
+  laborCostGoalTolerance?: number;
+  laborCostStatusYesterday?: LaborCostStatus;
+  reviewRating?: number;
+  reviewCount?: number;
+  reviewRatingOverall?: number | null;
+  reviewCountOverall?: number | null;
+}
+
 /** Week-to-date slice when backend returns multi-period. */
 export interface CommandCenterKPIsWeekToDateSlice {
   netSalesWeekToDate?: number | null;
@@ -80,12 +94,14 @@ export interface CommandCenterKPIsLastWeekSlice {
 
 export type CommandCenterKPIPeriodSlice =
   | CommandCenterKPIsTodaySlice
+  | CommandCenterKPIsYesterdaySlice
   | CommandCenterKPIsWeekToDateSlice
   | CommandCenterKPIsMonthToDateSlice
   | CommandCenterKPIsLastWeekSlice;
 
 export interface CommandCenterKPIsDataMulti {
   today: CommandCenterKPIsTodaySlice;
+  yesterday?: CommandCenterKPIsYesterdaySlice;
   weekToDate?: CommandCenterKPIsWeekToDateSlice;
   monthToDate?: CommandCenterKPIsMonthToDateSlice;
   lastWeek?: CommandCenterKPIsLastWeekSlice;
@@ -107,7 +123,7 @@ export function isCommandCenterKPIsMulti(
 export function isCommandCenterKPIsDual(
   data: CommandCenterKPIsData | CommandCenterKPIsDataDual | CommandCenterKPIsDataMulti,
 ): data is CommandCenterKPIsDataDual {
-  return isCommandCenterKPIsMulti(data) && "weekToDate" in data && !("monthToDate" in data) && !("lastWeek" in data);
+  return isCommandCenterKPIsMulti(data) && "weekToDate" in data && !("monthToDate" in data) && !("lastWeek" in data) && !("yesterday" in data);
 }
 
 export interface HourlySalesRow {
@@ -303,6 +319,7 @@ export const commandCenterService = {
       metrics?: string[];
       periods?: (
         | "today"
+        | "yesterday"
         | "weekToDate"
         | "monthToDate"
         | "lastWeek"

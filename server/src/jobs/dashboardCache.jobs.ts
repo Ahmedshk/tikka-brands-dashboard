@@ -249,7 +249,7 @@ const HARDCODED_DEFAULT_ENTRIES: ReadonlyArray<DefaultEntry> = [
     endpoint: "command-center.kpis",
     params: {
       metrics: [...getAllMetricIdsForPage("command-center")].sort(),
-      periods: ["today", "weekToDate", "monthToDate", "lastWeek"].sort(),
+      periods: ["today", "yesterday", "weekToDate", "monthToDate", "lastWeek"].sort(),
     },
   },
   { endpoint: "command-center.hourly-sales", params: {} },

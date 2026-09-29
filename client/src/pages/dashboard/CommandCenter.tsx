@@ -133,7 +133,7 @@ export const CommandCenter = () => {
     commandCenterService
       .getKPIs(locationApiParams, {
         metrics: kpiMetrics,
-        periods: ['today', 'weekToDate', 'monthToDate', 'lastWeek'],
+        periods: ['today', 'yesterday', 'weekToDate', 'monthToDate', 'lastWeek'],
         signal: controller.signal,
       })
       .then(setKpis)

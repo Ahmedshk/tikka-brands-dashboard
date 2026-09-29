@@ -11,6 +11,7 @@ import {
   getTodayInTimezone,
   getWeekToDateRange,
 } from "./timezone.util.js";
+import { getPreviousBusinessDayRange } from "./businessDayUtcRange.util.js";
 import type {
   LocationForKpi,
   LaborGoals,
@@ -25,6 +26,8 @@ import { getReviewRatingSummariesForLocation } from "./googleBusinessReviewAggre
 export interface ReviewRatingKpiData {
   todayRating: number | null;
   todayCount: number | null;
+  yesterdayRating: number | null;
+  yesterdayCount: number | null;
   weekToDateRating: number | null;
   weekToDateCount: number | null;
   monthToDateRating: number | null;
@@ -50,6 +53,8 @@ export async function fetchReviewRatingKpiData(
   return {
     todayRating: summaries.today.averageRating,
     todayCount: summaries.today.reviewCount,
+    yesterdayRating: summaries.yesterday.averageRating,
+    yesterdayCount: summaries.yesterday.reviewCount,
     weekToDateRating: summaries.weekToDate.averageRating,
     weekToDateCount: summaries.weekToDate.reviewCount,
     monthToDateRating: summaries.monthToDate.averageRating,
@@ -110,6 +115,13 @@ export function getRangeMonthToDate(location: LocationForKpi): TimeRange {
   );
 }
 
+export function getRangeYesterday(location: LocationForKpi): TimeRange {
+  return getPreviousBusinessDayRange(
+    location.timezone,
+    location.businessStartTime ?? "00:00",
+  );
+}
+
 export function getRangeLastWeek(location: LocationForKpi): TimeRange {
   return getLastWeekRange(location.timezone);
 }
@@ -118,6 +130,8 @@ export function getRangeForPeriod(location: LocationForKpi, period: Period): Tim
   switch (period) {
     case "today":
       return getRangeToday(location);
+    case "yesterday":
+      return getRangeYesterday(location);
     case "weekToDate":
       return getRangeWeekToDate(location);
     case "monthToDate":
@@ -135,6 +149,8 @@ function periodMetricSuffix(period: Period): string {
   switch (period) {
     case "today":
       return "Today";
+    case "yesterday":
+      return "Yesterday";
     case "weekToDate":
       return "WeekToDate";
     case "monthToDate":
@@ -160,6 +176,11 @@ function reviewRatingForPeriod(
   switch (period) {
     case "today":
       return { rating: reviewRating.todayRating, count: reviewRating.todayCount };
+    case "yesterday":
+      return {
+        rating: reviewRating.yesterdayRating,
+        count: reviewRating.yesterdayCount,
+      };
     case "weekToDate":
       return {
         rating: reviewRating.weekToDateRating,

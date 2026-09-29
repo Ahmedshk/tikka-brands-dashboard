@@ -113,6 +113,8 @@ function summariesToReviewRatingData(
   return {
     todayRating: summaries.today.averageRating,
     todayCount: summaries.today.reviewCount,
+    yesterdayRating: summaries.yesterday.averageRating,
+    yesterdayCount: summaries.yesterday.reviewCount,
     weekToDateRating: summaries.weekToDate.averageRating,
     weekToDateCount: summaries.weekToDate.reviewCount,
     monthToDateRating: summaries.monthToDate.averageRating,

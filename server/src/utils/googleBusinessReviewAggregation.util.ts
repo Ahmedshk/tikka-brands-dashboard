@@ -9,6 +9,7 @@ import {
   getMonthToDateRange,
   getWeekToDateRange,
 } from "./timezone.util.js";
+import { getPreviousBusinessDayRange } from "./businessDayUtcRange.util.js";
 import type { LocationForKpi } from "../types/commandCenter.types.js";
 
 export interface ReviewRatingSummary {
@@ -143,6 +144,7 @@ export async function getReviewRatingSummariesForLocation(
   locationMongoId: string,
 ): Promise<{
   today: ReviewRatingSummary;
+  yesterday: ReviewRatingSummary;
   weekToDate: ReviewRatingSummary;
   monthToDate: ReviewRatingSummary;
   lastWeek: ReviewRatingSummary;
@@ -151,19 +153,21 @@ export async function getReviewRatingSummariesForLocation(
   const loc = location;
   const businessStart = loc.businessStartTime ?? "00:00";
   const todayRange = getBusinessStartTimeRange(loc.timezone, businessStart);
+  const yesterdayRange = getPreviousBusinessDayRange(loc.timezone, businessStart);
   const wtdRange = getWeekToDateRange(loc.timezone, businessStart);
   const mtdRange = getMonthToDateRange(loc.timezone, businessStart);
   const lastWeekRange = getLastWeekRange(loc.timezone);
 
-  const [today, weekToDate, monthToDate, lastWeek, overall] = await Promise.all([
+  const [today, yesterday, weekToDate, monthToDate, lastWeek, overall] = await Promise.all([
     aggregateReviewRatingForRange([locationMongoId], todayRange),
+    aggregateReviewRatingForRange([locationMongoId], yesterdayRange),
     aggregateReviewRatingForRange([locationMongoId], wtdRange),
     aggregateReviewRatingForRange([locationMongoId], mtdRange),
     aggregateReviewRatingForRange([locationMongoId], lastWeekRange),
     aggregateOverallReviewRatingFromSyncState([locationMongoId]),
   ]);
 
-  return { today, weekToDate, monthToDate, lastWeek, overall };
+  return { today, yesterday, weekToDate, monthToDate, lastWeek, overall };
 }
 
 export async function getReviewRatingSummariesForLocations(
@@ -171,6 +175,7 @@ export async function getReviewRatingSummariesForLocations(
   locations: LocationForKpi[],
 ): Promise<{
   today: ReviewRatingSummary;
+  yesterday: ReviewRatingSummary;
   weekToDate: ReviewRatingSummary;
   monthToDate: ReviewRatingSummary;
   lastWeek: ReviewRatingSummary;
@@ -180,6 +185,7 @@ export async function getReviewRatingSummariesForLocations(
   if (locationIds.length === 0) {
     return {
       today: empty,
+      yesterday: empty,
       weekToDate: empty,
       monthToDate: empty,
       lastWeek: empty,
@@ -191,6 +197,7 @@ export async function getReviewRatingSummariesForLocations(
   if (!primary) {
     return {
       today: empty,
+      yesterday: empty,
       weekToDate: empty,
       monthToDate: empty,
       lastWeek: empty,
@@ -200,17 +207,19 @@ export async function getReviewRatingSummariesForLocations(
 
   const businessStart = primary.businessStartTime ?? "00:00";
   const todayRange = getBusinessStartTimeRange(primary.timezone, businessStart);
+  const yesterdayRange = getPreviousBusinessDayRange(primary.timezone, businessStart);
   const wtdRange = getWeekToDateRange(primary.timezone, businessStart);
   const mtdRange = getMonthToDateRange(primary.timezone, businessStart);
   const lastWeekRange = getLastWeekRange(primary.timezone);
 
-  const [today, weekToDate, monthToDate, lastWeek, overall] = await Promise.all([
+  const [today, yesterday, weekToDate, monthToDate, lastWeek, overall] = await Promise.all([
     aggregateReviewRatingForRange(locationIds, todayRange),
+    aggregateReviewRatingForRange(locationIds, yesterdayRange),
     aggregateReviewRatingForRange(locationIds, wtdRange),
     aggregateReviewRatingForRange(locationIds, mtdRange),
     aggregateReviewRatingForRange(locationIds, lastWeekRange),
     aggregateOverallReviewRatingFromSyncState(locationIds),
   ]);
 
-  return { today, weekToDate, monthToDate, lastWeek, overall };
+  return { today, yesterday, weekToDate, monthToDate, lastWeek, overall };
 }
