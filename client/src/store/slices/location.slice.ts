@@ -21,9 +21,9 @@ function getStoredLocationId(): string | null {
 
 function setStoredLocationId(ids: readonly string[]) {
   try {
-    const serialized = serializeSelectedLocationIds(ids);
-    if (serialized) globalThis.localStorage?.setItem(STORAGE_KEY, serialized);
-    else globalThis.localStorage?.removeItem(STORAGE_KEY);
+    // An empty selection serializes to EMPTY_SELECTION_MARKER rather than '', so
+    // the key is always written and a cleared selection survives a reload.
+    globalThis.localStorage?.setItem(STORAGE_KEY, serializeSelectedLocationIds(ids));
   } catch {
     // ignore
   }
@@ -93,8 +93,9 @@ const locationSlice = createSlice({
     ) => {
       const { id, allAvailableIds } = action.payload;
       const current = new Set(state.selectedLocationIds);
+      // Unchecking the last location is allowed: it leaves an empty selection,
+      // which pages render as a "select a location" prompt.
       if (current.has(id)) {
-        if (current.size <= 1) return;
         current.delete(id);
       } else {
         current.add(id);
@@ -134,7 +135,13 @@ const locationSlice = createSlice({
       state.listHydrated = action.payload;
     },
     resetLocationState: () => {
-      setStoredLocationId([]);
+      // Clear the key outright (logout): unlike a user-cleared selection, this
+      // should fall back to the first-location default on the next load.
+      try {
+        globalThis.localStorage?.removeItem(STORAGE_KEY);
+      } catch {
+        // ignore
+      }
       return initialState;
     },
   },

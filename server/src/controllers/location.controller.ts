@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import {
   LocationService,
-  type GetLocationsPaginatedOptions,
 } from '../services/location.service.js';
+import { locationListFilterForUser } from '../utils/locationAccessFilter.util.js';
 import {
   validateLocationId,
   buildUpdateLocationData,
@@ -109,22 +109,12 @@ export const getLocations = async (
   try {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 10;
-    const allowedIds = req.user?.allowedLocationIds;
-    const locationRemovals = req.user?.locationRemovals ?? [];
 
-    const listOptions: GetLocationsPaginatedOptions | undefined =
-      Array.isArray(allowedIds) || locationRemovals.length > 0
-        ? {
-            ...(Array.isArray(allowedIds)
-              ? { allowedLocationIds: allowedIds }
-              : {}),
-            ...(locationRemovals.length > 0
-              ? { excludeLocationIds: locationRemovals }
-              : {}),
-          }
-        : undefined;
-
-    const result = await locationService.getPaginated(page, limit, listOptions);
+    const result = await locationService.getPaginated(
+      page,
+      limit,
+      locationListFilterForUser(req.user),
+    );
     const listItems: ILocationListItem[] = result.locations.map(toLocationListItem);
     res.status(200).json({
       success: true,

@@ -5,6 +5,7 @@ import { CommandCenterKPICards } from '../../components/CommandCenter';
 import { DisciplinaryToolbar, DisciplinaryTableCard } from '../../components/DisciplinaryManagement';
 import { selectLocationApiParams } from '../../store/locationSelectors';
 import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
+import { SelectLocationPrompt } from '../../components/common/SelectLocationPrompt';
 import TeamHrIcon from '@assets/icons/team_and_hr.svg?react';
 import CriticalIcon from '@assets/icons/critical.svg?react';
 import DisciplinaryReviewsDueIcon from '@assets/icons/disciplinary_reviews_due.svg?react';
@@ -116,6 +117,12 @@ export const DisciplinaryManagement = () => {
           </h2>
         </div>
 
+        {/* Records and KPIs are location data; with no selection there is
+            nothing to show, so prompt instead of an empty table. */}
+        {!hasLocationScope ? (
+          <SelectLocationPrompt subject="disciplinary records" />
+        ) : (
+          <>
         {disciplinaryKPIs.length > 0 ? <CommandCenterKPICards items={disciplinaryKPIs} /> : null}
 
         {canDisciplinaryRecords ? (
@@ -144,6 +151,8 @@ export const DisciplinaryManagement = () => {
             />
           </>
         ) : null}
+          </>
+        )}
       </div>
     </Layout>
   );

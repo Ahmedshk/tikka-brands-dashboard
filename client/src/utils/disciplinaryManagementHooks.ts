@@ -75,12 +75,15 @@ export function useDisciplinaryManagementData(params: {
     const { shouldLoad, needTable, needKpi, pageParam, searchParam } = requirements;
 
     if (!shouldLoad) {
-      if (!needTable) {
-        resetTable();
-      }
-      if (!needKpi) {
-        resetKpis();
-      }
+      // Reset unconditionally. Previously these were gated on `!needTable` /
+      // `!needKpi`, which was safe only because an empty selection was
+      // unreachable: `shouldLoad` could then only be false when the user lacked
+      // both permissions, so both resets ran. Now that clearing every location
+      // is allowed, `shouldLoad` is false while `needTable` is still true, and
+      // the conditional skips would leave the previous location's rows and KPIs
+      // on screen as if freshly loaded.
+      resetTable();
+      resetKpis();
       setTableLoading(false);
       setKpiLoading(false);
       return;

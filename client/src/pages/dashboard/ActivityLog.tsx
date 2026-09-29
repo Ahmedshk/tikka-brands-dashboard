@@ -9,6 +9,8 @@ import TextField from "@mui/material/TextField";
 import OperationsIcon from "@assets/icons/operations.svg?react";
 import { Dropdown } from "../../components/common/Dropdown";
 import { Layout } from "../../components/common/Layout";
+import { SelectLocationPrompt } from "../../components/common/SelectLocationPrompt";
+import { hasLocationSelection } from "../../utils/locationSelectionHelpers";
 import { ActivityLogDetailsModal, ActivityLogNotesModal, ActivityLogTableCard } from "../../components/ActivityLog";
 import { activityLogService } from "../../services/activityLog.service";
 import {
@@ -44,7 +46,9 @@ export const ActivityLog = () => {
   const locationApiParams = useSelector(selectLocationApiParams);
   const isMultiLocationView = useSelector(selectIsMultiLocationView);
   const currentLocation = useSelector(selectCurrentLocation);
-  const hasLocationScope = Object.keys(locationApiParams).length > 0;
+  // Use the shared helper rather than counting param keys: it is the same check
+  // every other page uses, and it stays correct if the params shape changes.
+  const hasLocationScope = hasLocationSelection(locationApiParams);
   const displayTimezone = useMemo(
     () => resolveDisplayTimezone(isMultiLocationView, currentLocation?.timezone),
     [isMultiLocationView, currentLocation?.timezone],
@@ -162,6 +166,10 @@ export const ActivityLog = () => {
 
         {canFullPage ? (
           <>
+            {/* The log is location data; with no selection it would show a
+                misleading "No data available". */}
+            {!hasLocationScope && <SelectLocationPrompt subject="activity" />}
+            {hasLocationScope && (
             <ActivityLogTableCard
               rows={filteredRows}
               loading={loading}
@@ -174,6 +182,7 @@ export const ActivityLog = () => {
                 setNotesModalRow(row);
               }}
             />
+            )}
 
             <ActivityLogDetailsModal
               open={selectedRow != null}

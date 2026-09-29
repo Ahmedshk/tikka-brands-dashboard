@@ -19,6 +19,7 @@ export const API_ENDPOINTS = {
   },
   HEALTH: "/health",
   LOCATIONS: "/locations",
+  LOCATION_GROUPS: "/location-groups",
   LOGOS: "/logos",
   GOALS: "/goals",
   COMMAND_CENTER: {

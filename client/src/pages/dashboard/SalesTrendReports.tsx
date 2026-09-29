@@ -32,6 +32,7 @@ import {
   selectLocationApiParams,
 } from '../../store/locationSelectors';
 import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
+import { SelectLocationPrompt } from '../../components/common/SelectLocationPrompt';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 import {
   sumTimeSeriesDataPoints,
@@ -641,11 +642,12 @@ export const SalesTrendReports = () => {
   const selectClass =
     'border border-gray-300 rounded-lg px-3 py-2 text-sm text-primary bg-white focus:outline-none focus:ring-2 focus:ring-quaternary/30';
 
+  // Full-page gate: the report, KPIs and category chart are all location data.
   if (selectedLocationIds.length === 0) {
     return (
       <Layout>
         <div className="p-6">
-          <p className="text-secondary">Select a location to view Sales Trend Report.</p>
+          <SelectLocationPrompt subject="the Sales Trend report" />
         </div>
       </Layout>
     );

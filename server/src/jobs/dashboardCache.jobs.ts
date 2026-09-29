@@ -23,6 +23,8 @@ import type { Request } from "express";
 import { performance } from "node:perf_hooks";
 import { logger } from "../utils/logger.util.js";
 import { LocationModel } from "../models/location.model.js";
+import { LocationGroupModel } from "../models/locationGroup.model.js";
+import { LocationGroupRepository } from "../repositories/locationGroup.repository.js";
 import { LocationService } from "../services/location.service.js";
 import { GoalService } from "../services/goal.service.js";
 import { putCachedResponse } from "../services/dashboardCache.service.js";
@@ -124,26 +126,44 @@ async function fetchAllLocationIds(): Promise<string[]> {
 }
 
 /**
+ * Resolves group -> member ids for the cron, which runs unfiltered as the
+ * system user rather than as a request, so it reuses the repository directly.
+ */
+const LocationGroupMemberResolver = {
+  async resolve(groupIds: string[]): Promise<Map<string, string[]>> {
+    return new LocationGroupRepository().findMemberIdsByGroupIds(groupIds);
+  },
+};
+
+/**
  * Build the all-locations response for one endpoint+params combination.
  * Returns the response body (the value the controller would `res.json({ data })`).
+ *
+ * `locationIds` scopes the computation to an explicit subset (a location group)
+ * instead of every location. It is passed as a query `locationIds` value, which
+ * `resolveTargetLocationIds` intersects with the system user's allow-list — the
+ * same path a real request with `?locationIds=` takes, so the cached body is
+ * identical to what a user selecting that group would receive.
  */
 async function computeAllLocationsResponse(args: {
   endpoint: DashboardEndpoint;
   params: Record<string, unknown>;
+  locationIds?: readonly string[];
 }): Promise<unknown> {
-  const { endpoint, params } = args;
-  const req = buildSystemReq({
-    locationId: ALL_LOCATIONS_ID,
-    ...params,
-  });
+  const { endpoint, params, locationIds } = args;
+  const scopeQuery: Record<string, unknown> =
+    locationIds != null && locationIds.length > 0
+      ? { locationIds: [...locationIds], ...params }
+      : { locationId: ALL_LOCATIONS_ID, ...params };
+  const req = buildSystemReq(scopeQuery);
 
   switch (endpoint) {
     case "sales-labor.sales-trend": {
-      const query = { locationId: ALL_LOCATIONS_ID, ...params } as SalesTrendQueryParams;
+      const query = { ...scopeQuery } as unknown as SalesTrendQueryParams;
       return await buildAllLocationsSalesTrend({ req, query, locationService });
     }
     case "sales-labor.sales-trend-kpi": {
-      const query = { locationId: ALL_LOCATIONS_ID, ...params } as SalesTrendKpiQueryParams;
+      const query = { ...scopeQuery } as unknown as SalesTrendKpiQueryParams;
       return await buildAllLocationsSalesTrendKpi({ req, query, locationService });
     }
     case "sales-labor.sales-by-category": {
@@ -255,6 +275,57 @@ const HARDCODED_DEFAULT_ENTRIES: ReadonlyArray<DefaultEntry> = [
   { endpoint: "command-center.hourly-sales", params: {} },
 ];
 
+/**
+ * Upper bound on how many location groups get pre-warmed per cycle.
+ *
+ * Each seeded group costs one full fan-out per default entry, so the work grows
+ * as `8 x (1 + groups)`. The history in this file is a warning: a cycle that grew
+ * to ~6 minutes froze the site every 15 minutes. Capping here keeps the cycle
+ * bounded no matter how many groups an admin creates; groups past the cap still
+ * work, they just warm on first use via the live-on-miss path.
+ */
+const MAX_SEEDED_LOCATION_GROUPS = 8;
+
+/**
+ * Groups worth pre-warming, largest first.
+ *
+ * Single-member groups are skipped: `resolveLocationScopeForRequest` returns the
+ * bare location id for a one-location request while `locationScopeForIds` always
+ * prefixes `__all__|`, so seeding them would write an entry nothing ever reads.
+ */
+async function fetchSeedableGroupScopes(): Promise<
+  Array<{ groupId: string; name: string; locationIds: string[] }>
+> {
+  const groups = await LocationGroupModel.find()
+    .select({ _id: 1, name: 1 })
+    .sort({ sortOrder: 1, createdAt: -1 })
+    .lean()
+    .exec();
+  if (groups.length === 0) return [];
+
+  const membersByGroup = await LocationGroupMemberResolver.resolve(
+    groups.map((g) => String(g._id)),
+  );
+
+  const seedable = groups
+    .map((g) => ({
+      groupId: String(g._id),
+      name: g.name,
+      locationIds: membersByGroup.get(String(g._id)) ?? [],
+    }))
+    .filter((g) => g.locationIds.length > 1)
+    .sort((a, b) => b.locationIds.length - a.locationIds.length);
+
+  if (seedable.length > MAX_SEEDED_LOCATION_GROUPS) {
+    logger.warn("[dashboard-cache] location-group seed trimmed by cap", {
+      total: seedable.length,
+      cap: MAX_SEEDED_LOCATION_GROUPS,
+      skipped: seedable.length - MAX_SEEDED_LOCATION_GROUPS,
+    });
+  }
+  return seedable.slice(0, MAX_SEEDED_LOCATION_GROUPS);
+}
+
 async function runRefreshCycle(): Promise<void> {
   const t0 = performance.now();
   const allLocationIds = await fetchAllLocationIds();
@@ -295,11 +366,51 @@ async function runRefreshCycle(): Promise<void> {
     }
   }
 
+  // Seed each location group under its own scope. Without this, the first user
+  // to select a group pays a live fan-out for that subset, since the seed above
+  // only covers the full all-locations scope. Bounded by
+  // MAX_SEEDED_LOCATION_GROUPS for the reasons in this file's history above.
+  let groupScopes: Array<{ groupId: string; name: string; locationIds: string[] }> = [];
+  try {
+    groupScopes = await fetchSeedableGroupScopes();
+  } catch (err) {
+    logger.warn("[dashboard-cache] group scope discovery failed", {
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  for (const groupScope of groupScopes) {
+    const scope = locationScopeForIds(groupScope.locationIds);
+    for (const def of HARDCODED_DEFAULT_ENTRIES) {
+      try {
+        const data = await computeAllLocationsResponse({
+          endpoint: def.endpoint,
+          params: def.params,
+          locationIds: groupScope.locationIds,
+        });
+        await putCachedResponse(
+          { endpoint: def.endpoint, locationScope: scope, params: def.params },
+          data,
+        );
+        refreshed += 1;
+      } catch (err) {
+        failed += 1;
+        logger.warn("[dashboard-cache] group seed failed", {
+          endpoint: def.endpoint,
+          groupId: groupScope.groupId,
+          groupName: groupScope.name,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
   logger.info("[dashboard-cache] cron tick", {
     entriesRefreshed: refreshed,
     entriesFailed: failed,
     totalMs: Math.round(performance.now() - t0),
     allLocationIdsCount: allLocationIds.length,
+    locationGroupsSeeded: groupScopes.length,
   });
 }
 

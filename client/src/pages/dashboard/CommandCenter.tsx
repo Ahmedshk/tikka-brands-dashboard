@@ -24,6 +24,7 @@ import {
   selectLocationApiParams,
 } from '../../store/locationSelectors';
 import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
+import { SelectLocationPrompt } from '../../components/common/SelectLocationPrompt';
 import {
   commandCenterService,
   type HourlySalesRow,
@@ -436,13 +437,16 @@ export const CommandCenter = () => {
           )}
         </div>
 
-        {!hasLocationScope && (
-          <p className="text-sm text-secondary mb-4">Select a location from the navbar to view KPIs.</p>
-        )}
         {error && (
           <p className="text-sm text-negative mb-4" role="alert">{error}</p>
         )}
 
+        {/* Everything below is location data; with no selection it would render
+            zeroed charts and "No active alerts", so show the prompt instead. */}
+        {!hasLocationScope ? (
+          <SelectLocationPrompt subject="KPIs" />
+        ) : (
+          <>
         {commandCenterKPIs.length > 0 && (
           <CommandCenterKPICards items={commandCenterKPIs} />
         )}
@@ -519,6 +523,8 @@ export const CommandCenter = () => {
             categoryTitle={historyModal.title}
             locationQuery={locationApiParams}
           />
+        )}
+          </>
         )}
       </div>
     </Layout>

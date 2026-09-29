@@ -7,7 +7,6 @@ import {
   syncLocationCatalog,
   setSelectedLocationIds,
   toggleLocationId,
-  selectAllLocationIds,
   clearToSingleLocation,
   setCurrentLocation,
   setLocationListHydrated,
@@ -17,7 +16,15 @@ import {
   selectCurrentLocation,
   selectSelectedLocationIds,
 } from '../../store/locationSelectors';
-import { formatLocationTriggerLabel } from '../../utils/locationSelectionHelpers';
+import {
+  formatLocationTriggerLabel,
+  toggleAllLocationsSelection,
+} from '../../utils/locationSelectionHelpers';
+import {
+  bucketLocationsByGroup,
+  toggleGroupMembers,
+  type LocationGroupBucket,
+} from '../../utils/locationGroupHelpers';
 import {
   setUnreadCount,
   setNotifications,
@@ -25,10 +32,11 @@ import {
   markAllNotificationsRead,
 } from '../../store/slices/notification.slice';
 import { locationService } from '../../services/location.service';
+import { locationGroupService } from '../../services/locationGroup.service';
 import { notificationService } from '../../services/notification.service';
 import type { NotificationItem } from '../../services/notification.service';
 import { useAuth } from '../../hooks/useAuth';
-import type { LocationListItem } from '../../types';
+import type { LocationListItem, LocationGroup } from '../../types';
 import { canAccessPage } from '../../config/permissions.config';
 import {
   alertNotificationBodyTextForDropdown,
@@ -99,12 +107,15 @@ type LocationTriggerContentProps = {
   locationsLoading: boolean;
   selectedIds: string[];
   locations: LocationListItem[];
+  /** Bucketed locations so a whole-group selection can read as the group name. */
+  buckets?: LocationGroupBucket[];
 };
 
 function LocationTriggerContent({
   locationsLoading,
   selectedIds,
   locations,
+  buckets,
 }: Readonly<LocationTriggerContentProps>) {
   if (locationsLoading) {
     return (
@@ -115,7 +126,12 @@ function LocationTriggerContent({
     );
   }
 
-  const label = formatLocationTriggerLabel(selectedIds, locations, locations.length);
+  const label = formatLocationTriggerLabel(
+    selectedIds,
+    locations,
+    locations.length,
+    buckets,
+  );
   return (
     <span className="text-xs md:text-sm 2xl:text-base text-primary truncate" title={label}>
       {label}
@@ -276,6 +292,7 @@ export const Navbar = () => {
   const currentLocationRef = useRef(currentLocation);
   currentLocationRef.current = currentLocation;
   const [locations, setLocations] = useState<LocationListItem[]>([]);
+  const [locationGroups, setLocationGroups] = useState<LocationGroup[]>([]);
   const hideLocationSelector = shouldHideLocationSelector(pathname);
   const [locationsLoading, setLocationsLoading] = useState(true);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
@@ -449,15 +466,22 @@ export const Navbar = () => {
     (async () => {
       setLocationsLoading(true);
       try {
-        const data = await locationService.getAll({
-          signal: controller.signal,
-          bustCache: true,
-        });
+        // Fetch both catalogs together; a groups failure must not blank out the
+        // location list, so they settle independently.
+        const [data, groups] = await Promise.allSettled([
+          locationService.getAll({ signal: controller.signal, bustCache: true }),
+          locationGroupService.getAll({ signal: controller.signal, bustCache: true }),
+        ]);
         if (controller.signal.aborted) return;
-        setLocations(data);
-        dispatch(setLocationCatalog({ locations: data, storedId: getStoredLocationId() }));
-      } catch {
-        if (!controller.signal.aborted) setLocations([]);
+        if (groups.status === 'fulfilled') setLocationGroups(groups.value);
+        if (data.status === 'fulfilled') {
+          setLocations(data.value);
+          dispatch(
+            setLocationCatalog({ locations: data.value, storedId: getStoredLocationId() }),
+          );
+        } else {
+          setLocations([]);
+        }
       } finally {
         if (!controller.signal.aborted) {
           setLocationsLoading(false);
@@ -469,6 +493,12 @@ export const Navbar = () => {
   }, [dispatch, userId, allowedLocationIdsKey, locationRemovalsKey, hideLocationSelector]);
 
   const locationIds = useMemo(() => locations.map((l) => l._id), [locations]);
+  // Groups are permission-filtered server-side, so bucketing the (already
+  // filtered) location list is enough to keep the two consistent.
+  const bucketedLocations = useMemo(
+    () => bucketLocationsByGroup(locations, locationGroups),
+    [locations, locationGroups],
+  );
   const offerMultiSelect = shouldOfferAllLocationsOption(pathname, locations.length);
   const singleLocationOnly = isSingleLocationOnlyRoute(pathname);
   const showMultiLocationSelector =
@@ -495,7 +525,9 @@ export const Navbar = () => {
     if (first) dispatch(setSelectedLocationIds([first]));
   }, [singleLocationOnly, selectedLocationIds, locations, dispatch]);
 
-  // Only one location available — always select it
+  // Only one location available — always select it. A tenant with a single
+  // location has nothing to choose, so this is the one case where the selection
+  // is forced non-empty.
   useEffect(() => {
     if (locations.length !== 1) return;
     if (selectedLocationIds.length === 1 && selectedLocationIds[0] === locations[0]?._id) return;
@@ -584,13 +616,21 @@ export const Navbar = () => {
                 onToggleLocation={(id) =>
                   dispatch(toggleLocationId({ id, allAvailableIds: locationIds }))
                 }
-                onMasterCheckboxChange={() => {
-                  if (selectedLocationIds.length === locations.length && locations[0]) {
-                    dispatch(setSelectedLocationIds([locations[0]._id]));
-                  } else {
-                    dispatch(selectAllLocationIds(locationIds));
-                  }
-                }}
+                onMasterCheckboxChange={() =>
+                  dispatch(
+                    setSelectedLocationIds(
+                      toggleAllLocationsSelection(selectedLocationIds, locationIds),
+                    ),
+                  )
+                }
+                groups={locationGroups}
+                onToggleGroup={(memberIds) =>
+                  dispatch(
+                    setSelectedLocationIds(
+                      toggleGroupMembers(selectedLocationIds, memberIds),
+                    ),
+                  )
+                }
                 disabled={locationsLoading}
                 triggerLabel={
                   <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
@@ -599,6 +639,7 @@ export const Navbar = () => {
                       locationsLoading={locationsLoading}
                       selectedIds={selectedLocationIds}
                       locations={locations}
+                      buckets={bucketedLocations.groups}
                     />
                   </span>
                 }
@@ -607,6 +648,16 @@ export const Navbar = () => {
                   locationsRefreshController.current?.abort();
                   const controller = new AbortController();
                   locationsRefreshController.current = controller;
+                  // Refresh groups too: an admin may have added or renamed one
+                  // since the last open, and the header checkboxes would
+                  // otherwise render against a stale grouping.
+                  locationGroupService
+                    .getAll({ signal: controller.signal, bustCache: true })
+                    .then((groups) => {
+                      if (controller.signal.aborted) return;
+                      setLocationGroups(groups);
+                    })
+                    .catch(() => {});
                   locationService
                     .getAll({ signal: controller.signal, bustCache: true })
                     .then((data) => {

@@ -22,6 +22,7 @@ import {
   selectSelectedLocations,
 } from '../../store/locationSelectors';
 import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
+import { SelectLocationPrompt } from '../../components/common/SelectLocationPrompt';
 import { calendarService } from '../../services/calendar.service';
 import type { CalendarEventDto, CalendarEventTypeDto } from '../../types/calendar.types';
 import { colorHexToCalendarBackground } from '../../utils/calendarColors';
@@ -169,9 +170,7 @@ export const CalendarEvents = () => {
           ) : null}
         </div>
 
-        {!hasCalendarScope && (
-          <p className="text-sm text-secondary">Select a location to view and manage events.</p>
-        )}
+        {!hasCalendarScope && <SelectLocationPrompt subject="events" />}
         {hasCalendarScope && loading && (
           <div className="flex justify-center py-16">
             <Spinner />

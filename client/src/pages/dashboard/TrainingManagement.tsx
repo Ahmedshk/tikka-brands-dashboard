@@ -23,9 +23,9 @@ import {
   selectCurrentLocation,
   selectIsMultiLocationView,
   selectLocationApiParams,
-  selectSelectedLocationIds,
 } from '../../store/locationSelectors';
 import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
+import { SelectLocationPrompt } from '../../components/common/SelectLocationPrompt';
 
 const PAGE_ID = 'training-management';
 const PAGE_SIZE = 10;
@@ -34,7 +34,6 @@ export const TrainingManagement = () => {
   const locationApiParams = useSelector(selectLocationApiParams);
   const isMultiLocationView = useSelector(selectIsMultiLocationView);
   const currentLocation = useSelector(selectCurrentLocation);
-  const selectedLocationIds = useSelector(selectSelectedLocationIds);
   const hasLocationScope = hasLocationSelection(locationApiParams);
   const [page, setPage] = useState(1);
   const [assignTrainingModalOpen, setAssignTrainingModalOpen] = useState(false);
@@ -194,6 +193,12 @@ export const TrainingManagement = () => {
           </h2>
         </div>
 
+        {/* Assignments are location data; with no selection the KPIs would read
+            0 and the card would say "No assignments yet". */}
+        {!hasLocationScope ? (
+          <SelectLocationPrompt subject="training assignments" />
+        ) : (
+          <>
         {trainingKPIs.length > 0 ? (
           <div className="mb-6">
             <CommandCenterKPICards items={trainingKPIs} />
@@ -202,9 +207,6 @@ export const TrainingManagement = () => {
 
         {canEmployeeTraining ? (
           <>
-            {selectedLocationIds.length === 0 && (
-              <p className="text-secondary text-sm mb-2">Select a location in the navbar to see assignments.</p>
-            )}
             <DisciplinaryToolbar
               searchValue={employeeTrainingSearchInput}
               onSearchChange={setEmployeeTrainingSearchInput}
@@ -249,6 +251,8 @@ export const TrainingManagement = () => {
             />
           </>
         ) : null}
+          </>
+        )}
       </div>
 
       <AssignTrainingModal

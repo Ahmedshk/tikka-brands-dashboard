@@ -94,8 +94,30 @@ export interface Location {
   marketManBuyerGuid?: string;
   googleBusinessAccountId?: string;
   googleBusinessLocationId?: string;
+  /** Group bucket in the header selector; absent/null means ungrouped. */
+  groupId?: string | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/**
+ * A header-selector bucket of locations, from `GET /location-groups`.
+ *
+ * `locationIds` is already narrowed to the current user's accessible locations,
+ * and groups with no accessible members are omitted by the server entirely.
+ */
+export interface LocationGroup {
+  _id: string;
+  name: string;
+  sortOrder: number;
+  locationIds: string[];
+}
+
+/** Group without member resolution, as used by the management UI. */
+export interface LocationGroupSummary {
+  _id: string;
+  name: string;
+  sortOrder: number;
 }
 
 /** The five numeric goal values and their tolerance % (shared shape). */

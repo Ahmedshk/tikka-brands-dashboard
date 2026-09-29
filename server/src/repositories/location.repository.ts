@@ -11,7 +11,8 @@ export interface LocationListFilter {
   excludeIds?: string[];
 }
 
-function toValidObjectIds(ids: string[]): mongoose.Types.ObjectId[] {
+/** Coerce a list of id strings to ObjectIds, silently dropping invalid ones. */
+export function toValidObjectIds(ids: string[]): mongoose.Types.ObjectId[] {
   const out: mongoose.Types.ObjectId[] = [];
   for (const raw of ids) {
     const id = raw.trim();
@@ -22,7 +23,13 @@ function toValidObjectIds(ids: string[]): mongoose.Types.ObjectId[] {
   return out;
 }
 
-function buildListMatchQuery(filter?: LocationListFilter): Record<string, unknown> {
+/**
+ * Build the `_id` match for an allow-list / removal filter.
+ *
+ * Exported so the location-group repository can resolve a group's member list
+ * with byte-for-byte identical access semantics instead of reimplementing them.
+ */
+export function buildListMatchQuery(filter?: LocationListFilter): Record<string, unknown> {
   if (!filter) return {};
   const hasAllowed = filter.allowedIds != null;
   const hasExclude =

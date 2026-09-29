@@ -1,6 +1,7 @@
 import { Router } from "express";
 import authRoutes from "./auth.routes.js";
 import locationRoutes from "./location.routes.js";
+import locationGroupRoutes from "./locationGroup.routes.js";
 import logoRoutes from "./logo.routes.js";
 import goalRoutes from "./goal.routes.js";
 import commandCenterRoutes from "./commandCenter.routes.js";
@@ -61,6 +62,9 @@ router.use("/users", userRoutes);
 
 // Location management (auth + role required)
 router.use("/locations", locationRoutes);
+
+// Location groups for the navbar selector (list: any authed user; mutations: location-management)
+router.use("/location-groups", locationGroupRoutes);
 
 // Logos (auth + role required)
 router.use("/logos", logoRoutes);

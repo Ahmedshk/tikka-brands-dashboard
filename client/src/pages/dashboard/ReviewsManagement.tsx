@@ -20,7 +20,8 @@ import {
   selectIsMultiLocationView,
   selectLocationApiParams,
 } from "../../store/locationSelectors";
-import { reviewCycleLocationQueryParams } from "../../utils/locationSelectionHelpers";
+import { reviewCycleLocationQueryParams, hasLocationSelection } from "../../utils/locationSelectionHelpers";
+import { SelectLocationPrompt } from "../../components/common/SelectLocationPrompt";
 import type { RootState } from "../../store/store";
 import TeamHrIcon from "@assets/icons/team_and_hr.svg?react";
 import { useReviewsManagementSectionAccess } from "../../utils/reviewsManagementPermissionHelpers";
@@ -59,6 +60,15 @@ export const ReviewsManagement = () => {
   const isMultiLocationView = useSelector(selectIsMultiLocationView);
   const user = useSelector((s: RootState) => s.auth.user);
 
+  /**
+   * This page has no location gate on its fetches, and the server treats a
+   * missing `locationId` as "no narrowing" (see
+   * `narrowEmployeeIdsByNavbarLocationId`). So an empty selection would return
+   * every location's review cycles. `hasLocationScope` is the single gate all
+   * fetchers below check, and the page renders a prompt instead of content.
+   */
+  const hasLocationScope = hasLocationSelection(locationApiParams);
+
   const applyLocationParams = useCallback(
     (params: Record<string, string>) => {
       Object.assign(params, reviewCycleLocationQueryParams(locationApiParams, allLocationsSelected));
@@ -96,6 +106,13 @@ export const ReviewsManagement = () => {
   const { canShowDonut, canPastReviews, canReviewCycles } = useReviewsManagementSectionAccess();
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
+    if (!hasLocationScope) {
+      setCycles([]);
+      setActiveCyclesTotalUnfiltered(0);
+      setSettings(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const params: Record<string, string> = {
@@ -119,7 +136,7 @@ export const ReviewsManagement = () => {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [applyLocationParams]);
+  }, [applyLocationParams, hasLocationScope]);
 
   useEffect(() => {
     const t = globalThis.setTimeout(() => {
@@ -136,6 +153,12 @@ export const ReviewsManagement = () => {
   }, [reviewCyclesSearchInput]);
 
   const loadActiveCyclesPreview = useCallback(async (search: string, signal?: AbortSignal) => {
+    if (!hasLocationScope) {
+      setActivePreviewCycles([]);
+      setActiveListTotal(0);
+      setActiveListLoading(false);
+      return;
+    }
     setActiveListLoading(true);
     try {
       const params: Record<string, string> = {
@@ -158,10 +181,15 @@ export const ReviewsManagement = () => {
     } finally {
       if (!signal?.aborted) setActiveListLoading(false);
     }
-  }, [applyLocationParams]);
+  }, [applyLocationParams, hasLocationScope]);
 
   const loadActiveCyclesModalPage = useCallback(
     async (page: number, search: string, signal?: AbortSignal) => {
+      if (!hasLocationScope) {
+        setActiveModalCycles([]);
+        setActiveModalLoading(false);
+        return;
+      }
       setActiveModalLoading(true);
       try {
         const params: Record<string, string> = {
@@ -184,10 +212,16 @@ export const ReviewsManagement = () => {
         if (!signal?.aborted) setActiveModalLoading(false);
       }
     },
-    [applyLocationParams],
+    [applyLocationParams, hasLocationScope],
   );
 
   const loadPastReviews = useCallback(async (search: string, signal?: AbortSignal) => {
+    if (!hasLocationScope) {
+      setPastPreviewCycles([]);
+      setPastListTotal(0);
+      setPastListLoading(false);
+      return;
+    }
     setPastListLoading(true);
     try {
       const params: Record<string, string> = {
@@ -210,10 +244,15 @@ export const ReviewsManagement = () => {
     } finally {
       if (!signal?.aborted) setPastListLoading(false);
     }
-  }, [applyLocationParams]);
+  }, [applyLocationParams, hasLocationScope]);
 
   const loadPastModalPage = useCallback(
     async (page: number, search: string, signal?: AbortSignal) => {
+      if (!hasLocationScope) {
+        setPastModalCycles([]);
+        setPastModalLoading(false);
+        return;
+      }
       setPastModalLoading(true);
       try {
         const params: Record<string, string> = {
@@ -236,7 +275,7 @@ export const ReviewsManagement = () => {
         if (!signal?.aborted) setPastModalLoading(false);
       }
     },
-    [applyLocationParams],
+    [applyLocationParams, hasLocationScope],
   );
 
   useEffect(() => {
@@ -390,6 +429,10 @@ export const ReviewsManagement = () => {
           )}
         </div>
 
+        {!hasLocationScope ? (
+          <SelectLocationPrompt subject="review cycles" />
+        ) : (
+          <>
         <ReviewsManagementTrackerDonuts donuts={visibleTrackerDonuts} loading={loading} />
 
         {canReviewCycles() && (
@@ -437,7 +480,8 @@ export const ReviewsManagement = () => {
             }}
           />
         )}
-
+          </>
+        )}
       </div>
 
       {canReviewCycles() && (

@@ -31,6 +31,7 @@ import {
   selectLocationApiParams,
 } from '../../store/locationSelectors';
 import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
+import { SelectLocationPrompt } from '../../components/common/SelectLocationPrompt';
 import { useCanAccessComponent } from '../../hooks/useCanAccessComponent';
 import {
   formatCurrency,
@@ -299,13 +300,16 @@ export const SalesLaborDetails = () => {
           </div>
         </div>
 
-        {!hasLocationScope && (
-          <p className="text-sm text-secondary mb-4">Select a location from the navbar to view Sales & Labor data.</p>
-        )}
         {error && (
           <p className="text-sm text-negative mb-4" role="alert">{error}</p>
         )}
 
+        {/* Everything below is location data; with no selection it would render
+            "—" KPIs and "No timesheet data", so show the prompt instead. */}
+        {!hasLocationScope ? (
+          <SelectLocationPrompt subject="Sales &amp; Labor data" />
+        ) : (
+          <>
         {salesLaborKPIs.length > 0 && <SalesLaborKPICards items={salesLaborKPIs} />}
 
         {(canHourly || canSources) && (
@@ -366,6 +370,8 @@ export const SalesLaborDetails = () => {
               />
             )}
           </div>
+        )}
+          </>
         )}
       </div>
     </Layout>

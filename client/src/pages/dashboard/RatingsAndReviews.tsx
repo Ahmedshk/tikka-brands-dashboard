@@ -21,6 +21,7 @@ import {
   selectLocationApiParams,
 } from '../../store/locationSelectors';
 import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
+import { SelectLocationPrompt } from '../../components/common/SelectLocationPrompt';
 import {
   googleBusinessReviewService,
   type GoogleBusinessReviewRow,
@@ -101,7 +102,13 @@ export const RatingsAndReviews = () => {
 
   useEffect(() => {
     if (!hasLocationScope) {
+      // Clear the summary and pagination too, not just the rows — otherwise
+      // clearing the selection leaves the previous location's rating and total
+      // count behind for the KPI cards and pager to render.
       setReviews([]);
+      setSummary({ averageRating: null, reviewCount: 0 });
+      setTotalPages(0);
+      setTotalItems(0);
       setLoading(false);
       return;
     }
@@ -214,7 +221,13 @@ export const RatingsAndReviews = () => {
           </div>
         </div>
 
-        {hasLocationScope ? <RatingsAndReviewsKPICards items={ratingsKPIs} /> : null}
+        {/* The review list is location data; with no selection it would show a
+            misleading "No reviews found", so show the prompt instead. */}
+        {!hasLocationScope ? (
+          <SelectLocationPrompt subject="reviews" />
+        ) : (
+          <>
+        <RatingsAndReviewsKPICards items={ratingsKPIs} />
 
         <div className="bg-card-background rounded-xl border border-gray-200 overflow-hidden">
           {loading ? (
@@ -281,6 +294,8 @@ export const RatingsAndReviews = () => {
               onPageChange={setPage}
             />
           </div>
+        )}
+          </>
         )}
       </div>
     </Layout>

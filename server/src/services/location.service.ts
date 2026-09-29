@@ -15,8 +15,8 @@ import { encryptCredentials, decryptCredentials } from '../utils/credentialsEncr
 import { buildLocationMongoUpdateQuery } from '../utils/locationUpdateMongoMutationHelpers.util.js';
 import { invalidateLocationCredentials } from '../utils/locationCredentialsCache.util.js';
 
-/** Safely coerce logoId (string, ObjectId, or populated doc) to string for API response. */
-function toLogoIdString(val: unknown): string | undefined {
+/** Safely coerce an ObjectId-ish value (string, ObjectId, or populated doc) to string. */
+function toIdString(val: unknown): string | undefined {
   if (val == null) return undefined;
   if (typeof val === 'string') return val;
   if (typeof val === 'object' && val !== null) {
@@ -30,26 +30,6 @@ function toLogoIdString(val: unknown): string | undefined {
   }
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
   return undefined;
-}
-
-export interface GetLocationsPaginatedOptions {
-  allowedLocationIds?: string[];
-  excludeLocationIds?: string[];
-}
-
-function toLocationListFilter(
-  options?: GetLocationsPaginatedOptions,
-): LocationListFilter | undefined {
-  if (!options) return undefined;
-  const hasAllowed = options.allowedLocationIds != null;
-  const hasExclude =
-    options.excludeLocationIds != null &&
-    options.excludeLocationIds.length > 0;
-  if (!hasAllowed && !hasExclude) return undefined;
-  return {
-    ...(hasAllowed ? { allowedIds: options.allowedLocationIds } : {}),
-    ...(hasExclude ? { excludeIds: options.excludeLocationIds } : {}),
-  };
 }
 
 export class LocationService {
@@ -129,9 +109,8 @@ export class LocationService {
   async getPaginated(
     page: number,
     limit: number,
-    options?: GetLocationsPaginatedOptions,
+    filter?: LocationListFilter,
   ): Promise<{ locations: ILocationResponse[]; total: number; page: number; limit: number; totalPages: number }> {
-    const filter = toLocationListFilter(options);
     const skip = (page - 1) * limit;
     const [docs, total] =
       filter === undefined
@@ -260,6 +239,7 @@ export class LocationService {
     marketManBuyerGuid?: string;
     googleBusinessAccountId?: string;
     googleBusinessLocationId?: string;
+    groupId?: unknown;
     createdAt: Date;
     updatedAt: Date;
   }): ILocationResponse {
@@ -278,7 +258,7 @@ export class LocationService {
       hasHomebaseApiKey: Boolean(doc.homebaseApiKeyEnc),
       hasSquareWebhookSignatureKey: Boolean(doc.squareWebhookSignatureKeyEnc),
       ...(() => {
-        const id = toLogoIdString(doc.logoId);
+        const id = toIdString(doc.logoId);
         return id == null ? {} : { logoId: id };
       })(),
       ...(doc.marketManBuyerGuid != null && doc.marketManBuyerGuid !== '' && { marketManBuyerGuid: doc.marketManBuyerGuid }),
@@ -288,6 +268,13 @@ export class LocationService {
       ...(doc.googleBusinessLocationId != null && doc.googleBusinessLocationId !== ''
         ? { googleBusinessLocationId: doc.googleBusinessLocationId }
         : {}),
+      // Group membership drives the header selector's bucket headers. Emitted on
+      // the full location response (not the list item) so the management UI can
+      // read it from GET /locations/:id.
+      ...(() => {
+        const groupId = toIdString(doc.groupId);
+        return groupId == null ? {} : { groupId };
+      })(),
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     };

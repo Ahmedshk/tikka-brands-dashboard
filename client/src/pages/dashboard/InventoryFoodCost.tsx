@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { Layout } from '../../components/common/Layout';
+import { SelectLocationPrompt } from '../../components/common/SelectLocationPrompt';
 import {
   InventoryKPICards,
   CostOfGoodsSoldCard,
@@ -363,9 +364,12 @@ export const InventoryFoodCost = () => {
           />
         )}
 
-        {!currentLocation && (
-          <p className="text-sm text-secondary mb-6">Select a location to view inventory KPIs.</p>
-        )}
+        {/* The cards below are location data; with no location they would show a
+            0% gauge and empty charts, so prompt instead. */}
+        {!currentLocation ? (
+          <SelectLocationPrompt subject="inventory KPIs" />
+        ) : (
+          <>
         {shouldFetchKpis && currentLocation && kpisError && (
           <p className="text-sm text-red-600 mb-6" role="alert">{kpisError}</p>
         )}
@@ -439,6 +443,8 @@ export const InventoryFoodCost = () => {
               />
             )}
           </div>
+        )}
+          </>
         )}
       </div>
 

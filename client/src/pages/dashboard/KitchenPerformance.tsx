@@ -10,6 +10,7 @@ import {
   selectLocationApiParams,
 } from "../../store/locationSelectors";
 import { hasLocationSelection } from "../../utils/locationSelectionHelpers";
+import { SelectLocationPrompt } from "../../components/common/SelectLocationPrompt";
 import {
   KitchenPerformancePeriodPicker,
   KitchenPerformanceTableCard,
@@ -169,6 +170,12 @@ export const KitchenPerformance = () => {
           </div>
         </div>
 
+        {/* The table is location data; with no selection it would show a
+            "No report run yet" message that names the wrong blocker. */}
+        {!hasLocationScope ? (
+          <SelectLocationPrompt subject="kitchen performance data" />
+        ) : (
+          <>
         {canKitchenTable ? (
           <>
             {showStaleFiltersHint ? (
@@ -179,11 +186,6 @@ export const KitchenPerformance = () => {
             {showEmptyInstruction ? (
               <p className="mb-4 text-sm text-secondary">
                 Select a period and click Run Report to load kitchen performance data.
-              </p>
-            ) : null}
-            {!hasLocationScope ? (
-              <p className="mb-4 text-sm text-secondary">
-                Select at least one location to run a report.
               </p>
             ) : null}
             <KitchenPerformanceTableCard
@@ -221,6 +223,8 @@ export const KitchenPerformance = () => {
           <p className="text-sm text-secondary">
             You do not have access to view kitchen performance data.
           </p>
+        )}
+          </>
         )}
       </div>
     </Layout>
