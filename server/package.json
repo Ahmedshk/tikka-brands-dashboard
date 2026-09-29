@@ -5,6 +5,8 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
+    "backfill-homebase-salaries": "tsx src/scripts/backfill-homebase-salaries.ts",
+    "test:homebase-salary": "tsx --test src/utils/homebaseSalary.util.test.ts src/services/homebaseSalary.service.test.ts",
     "dev": "tsx watch src/server.ts",
     "build": "tsc && node -e \"require('node:fs').mkdirSync('dist/utils',{recursive:true});require('node:fs').copyFileSync('src/utils/pinoExactLevelTransport.cjs','dist/utils/pinoExactLevelTransport.cjs')\"",
     "start": "node dist/server.js",

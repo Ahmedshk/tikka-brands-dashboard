@@ -6,7 +6,8 @@ import {
 } from "./squareIngest.service.js";
 import { fetchOrdersInRange, searchTeamMembers } from "./square.service.js";
 import type { TimeRange } from "../utils/businessHours.util.js";
-import { getTimecardsForDateRange } from "./homebase.service.js";
+import { getTimecardsForDateRange, getEmployeesForLocation } from "./homebase.service.js";
+import { observeHomebaseSalaries } from "./homebaseSalary.service.js";
 import {
   getValidCountDates,
   getOrderTrackerRanges,
@@ -130,6 +131,16 @@ export async function syncHomebaseTimecardsForLocation(
     locationId,
     cards as unknown as Record<string, unknown>[],
   );
+  // A manual historical timecard sync must still date newly observed rates today.
+  try {
+    const employees = await getEmployeesForLocation(homebaseUuid, creds.homebaseApiKey, { strictPayload: true });
+    await observeHomebaseSalaries(locationId, homebaseUuid, employees, {
+      timezone: creds.location.timezone,
+      businessStartTime: creds.location.businessStartTime || "00:00",
+    });
+  } catch (error) {
+    return { upserted, errors: [`Salary sync failed: ${error instanceof Error ? error.message : String(error)}`] };
+  }
   return { upserted, errors: [] };
 }
 

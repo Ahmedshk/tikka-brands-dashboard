@@ -180,7 +180,10 @@ function buildHourlyBuckets(
       parsed = { y, m0: m, d, hour: h };
     }
     const n = incrementLocalWallHour(parsed.y, parsed.m0, parsed.d, parsed.hour);
-    cursor = wallClockZonedHourStartFromYmdHour(n.y, n.m0, n.d, n.h, tz);
+    const next = wallClockZonedHourStartFromYmdHour(n.y, n.m0, n.d, n.h, tz);
+    // A nonexistent spring-forward wall hour can resolve back to cursor.
+    // Always advance so hourly labor reports cannot loop forever on that day.
+    cursor = next > cursor ? next : new Date(cursor.getTime() + 3_600_000);
   }
   return { keys, labels };
 }

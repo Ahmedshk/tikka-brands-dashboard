@@ -2,6 +2,7 @@
  * Per-business-day actuals for Goal Setting (Square + Homebase; rollup-first).
  */
 import mongoose from "mongoose";
+import { getSalaryCostInRange } from "./homebaseSalary.service.js";
 import { SquareOrderDailyRollupModel } from "../models/squareOrderDailyRollup.model.js";
 import { HomebaseTimecardDailyRollupModel } from "../models/homebaseTimecardDailyRollup.model.js";
 import { LocationService } from "./location.service.js";
@@ -145,7 +146,7 @@ export async function getGoalDailyActualsByDates(
       let hours: number | null = null;
       const hb = homebaseByKey.get(date);
       if (hb) {
-        laborCost = hb.totalLaborCost ?? 0;
+        laborCost = (hb.totalLaborCost ?? 0) + await getSalaryCostInRange(locationId, range, rollupCtx);
         hours = hb.totalPaidHours ?? 0;
       } else {
         const [lc, th] = await Promise.all([

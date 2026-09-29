@@ -26,7 +26,7 @@ import {
 } from "../services/dailyRollupBuilder.service.js";
 import {
   createMongoCatalogBatchRetrieve,
-  getLaborCostInRangeFromCache,
+  getTimecardLaborCostInRangeFromCache,
   getOrderStatsAndSourcesFromCache,
   getTotalHoursInRangeFromCache,
   loadSquareOrdersForMongoRange,
@@ -177,7 +177,7 @@ async function main(): Promise<void> {
         ([k, v]) => rolledSourcesMap.get(k) === v,
       );
 
-    const laborCache = await getLaborCostInRangeFromCache(locIdStr, range);
+    const laborCache = await getTimecardLaborCostInRangeFromCache(locIdStr, range);
     const hoursCache = await getTotalHoursInRangeFromCache(locIdStr, range);
     const rollupHb = await HomebaseTimecardDailyRollupModel.findOne({
       locationId: loc._id,

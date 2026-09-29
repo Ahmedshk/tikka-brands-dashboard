@@ -1,4 +1,6 @@
 import mongoose from "mongoose";
+import { getSalaryCostInRange, getSalaryDaysForRange } from "./homebaseSalary.service.js";
+import { addSalaryToBuckets, addSalaryToHourlySlots } from "../utils/homebaseSalary.util.js";
 import { SquareOrderModel } from "../models/squareOrder.model.js";
 import { HomebaseTimecardModel } from "../models/homebaseTimecard.model.js";
 import {
@@ -234,6 +236,20 @@ export async function getNetSalesDollarsInRangeFromCache(
 }
 
 export async function getLaborCostInRangeFromCache(
+  locationMongoId: string,
+  range: TimeRange,
+  rollupCtx?: RollupReadContext,
+  logContext?: string,
+): Promise<number> {
+  const [timecardCost, salaryCost] = await Promise.all([
+    getTimecardLaborCostInRangeFromCache(locationMongoId, range, rollupCtx, logContext),
+    getSalaryCostInRange(locationMongoId, range, rollupCtx),
+  ]);
+  return timecardCost + salaryCost;
+}
+
+/** Timecard-only rollups remain unchanged; callers add salaries once above. */
+export async function getTimecardLaborCostInRangeFromCache(
   locationMongoId: string,
   range: TimeRange,
   rollupCtx?: RollupReadContext,
@@ -673,6 +689,10 @@ export async function getLaborAndHoursTimeSeriesInRangeFromCache(
     hoursByKey,
     bst,
   );
+  addSalaryToBuckets(
+    await getSalaryDaysForRange(locationMongoId, range, { timezone, businessStartTime: bst || "00:00" }),
+    laborCostByKey, timezone, bst || "00:00", granularity,
+  );
   return {
     labels,
     laborCost: keys.map((k) => laborCostByKey[k] ?? 0),
@@ -881,6 +901,20 @@ export async function getSquareTeamMembersBatchFromCache(
 }
 
 export async function fetchHourlyLaborCostPerHourFromCache(
+  locationMongoId: string,
+  range: TimeRange,
+  timezone: string,
+  businessStartTime: string,
+  logContext?: string,
+): Promise<number[]> {
+  const [slots, days] = await Promise.all([
+    fetchHourlyTimecardLaborCostPerHourFromCache(locationMongoId, range, timezone, businessStartTime, logContext),
+    getSalaryDaysForRange(locationMongoId, range, { timezone, businessStartTime }),
+  ]);
+  return addSalaryToHourlySlots(slots, days);
+}
+
+async function fetchHourlyTimecardLaborCostPerHourFromCache(
   locationMongoId: string,
   range: TimeRange,
   timezone: string,

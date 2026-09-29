@@ -1,7 +1,7 @@
 /**
  * Normalize JSON body from GET /locations/{uuid}/employees (several envelope shapes).
  */
-export function parseHomebaseEmployeesJsonPayload(raw: unknown): unknown[] {
+export function parseHomebaseEmployeesJsonPayload(raw: unknown, strict = false): unknown[] {
   if (Array.isArray(raw)) {
     return raw;
   }
@@ -13,10 +13,12 @@ export function parseHomebaseEmployeesJsonPayload(raw: unknown): unknown[] {
     if (Array.isArray(obj.employees)) {
       return obj.employees;
     }
+    if (strict) throw new Error("Unrecognized Homebase employees response; salary history was not changed");
     const firstArray = Object.values(obj).find((v) => Array.isArray(v));
     if (firstArray) {
       return firstArray;
     }
   }
+  if (strict) throw new Error("Invalid Homebase employees response; salary history was not changed");
   return [];
 }

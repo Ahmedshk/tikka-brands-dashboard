@@ -222,6 +222,7 @@ async function fetchHomebaseEmployeesOnePage(
   locationUuid: string,
   page: number,
   apiKey: string,
+  strictPayload = false,
 ): Promise<HomebaseEmployee[]> {
   const res = await homebasePublicFetch(
     `/locations/${encodeURIComponent(locationUuid)}/employees`,
@@ -232,9 +233,8 @@ async function fetchHomebaseEmployeesOnePage(
     },
     apiKey,
   );
-  return parseHomebaseEmployeesJsonPayload(
-    await res.json(),
-  ) as HomebaseEmployee[];
+  const payload: unknown = await res.json();
+  return parseHomebaseEmployeesJsonPayload(payload, strictPayload) as HomebaseEmployee[];
 }
 
 /**
@@ -245,6 +245,7 @@ async function fetchHomebaseEmployeesOnePage(
 export async function getEmployeesForLocation(
   locationUuid: string,
   apiKey: string,
+  options?: { strictPayload?: boolean },
 ): Promise<HomebaseEmployee[]> {
   const uuid = locationUuid.trim();
   if (!uuid) return [];
@@ -253,7 +254,7 @@ export async function getEmployeesForLocation(
     uuid,
     apiKey,
     EMPLOYEES_PER_PAGE,
-    fetchHomebaseEmployeesOnePage,
+    (id, page, key) => fetchHomebaseEmployeesOnePage(id, page, key, options?.strictPayload),
   );
 }
 
