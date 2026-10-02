@@ -9,7 +9,13 @@ import type {
 
 export type LaborCostStatus = "green" | "red" | null;
 
+export interface CommandCenterLocationBreakdown {
+  locationId: string;
+  kpis: CommandCenterKPIsData | CommandCenterKPIsDataMulti;
+}
+
 export interface CommandCenterKPIsData {
+  locationBreakdown?: CommandCenterLocationBreakdown[];
   netSalesToday?: number | null;
   laborCostToday?: number | null;
   laborCostPercentToday?: number | null;
@@ -100,6 +106,7 @@ export type CommandCenterKPIPeriodSlice =
   | CommandCenterKPIsLastWeekSlice;
 
 export interface CommandCenterKPIsDataMulti {
+  locationBreakdown?: CommandCenterLocationBreakdown[];
   today: CommandCenterKPIsTodaySlice;
   yesterday?: CommandCenterKPIsYesterdaySlice;
   weekToDate?: CommandCenterKPIsWeekToDateSlice;

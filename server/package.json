@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
+    "test:command-center-breakdown": "tsx --test src/utils/commandCenterKpiBreakdown.util.test.ts src/utils/googleBusinessReviewBreakdown.util.test.ts",
     "test:location-groups": "tsx --test src/utils/locationGroupAccess.util.test.ts src/utils/locationGroupMembership.util.test.ts src/repositories/locationGroup.repository.test.ts",
     "backfill-homebase-salaries": "tsx src/scripts/backfill-homebase-salaries.ts",
     "test:homebase-salary": "tsx --test src/utils/homebaseSalary.util.test.ts src/services/homebaseSalary.service.test.ts",

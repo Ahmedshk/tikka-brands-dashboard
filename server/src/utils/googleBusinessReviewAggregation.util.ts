@@ -17,6 +17,76 @@ export interface ReviewRatingSummary {
   reviewCount: number;
 }
 
+export type ReviewRatingSummaries = Record<'today' | 'yesterday' | 'weekToDate' | 'monthToDate' | 'lastWeek' | 'overall', ReviewRatingSummary>;
+
+type ReviewGroup = { _id: Types.ObjectId; count: number; sum: number };
+
+function emptyReviewSummaries(): ReviewRatingSummaries {
+  const empty = () => ({ averageRating: null, reviewCount: 0 });
+  return { today: empty(), yesterday: empty(), weekToDate: empty(), monthToDate: empty(), lastWeek: empty(), overall: empty() };
+}
+
+/** Keep raw sums until the combined average is computed, avoiding rounded-average drift. */
+export function summarizeReviewGroups(rows: ReviewGroup[]): { combined: ReviewRatingSummary; byLocation: Map<string, ReviewRatingSummary> } {
+  let count = 0;
+  let sum = 0;
+  const byLocation = new Map<string, ReviewRatingSummary>();
+  for (const row of rows) {
+    count += row.count;
+    sum += row.sum;
+    byLocation.set(String(row._id), { averageRating: row.count > 0 ? roundRating(row.sum / row.count) : null, reviewCount: row.count });
+  }
+  return { combined: { averageRating: count > 0 ? roundRating(sum / count) : null, reviewCount: count }, byLocation };
+}
+
+/** One grouped query per period supplies both the total and all location rows. */
+export async function getReviewRatingBreakdownForLocations(
+  locationIds: string[], locations: LocationForKpi[],
+): Promise<{ combined: ReviewRatingSummaries; byLocation: Map<string, ReviewRatingSummaries> }> {
+  const combined = emptyReviewSummaries();
+  const byLocation = new Map<string, ReviewRatingSummaries>();
+  const contexts = locationIds.flatMap((id, index) => {
+    const loc = locations[index];
+    if (!loc || byLocation.has(id)) return [];
+    byLocation.set(id, emptyReviewSummaries());
+    const start = loc.businessStartTime ?? '00:00';
+    return [{ id, ranges: {
+      today: getBusinessStartTimeRange(loc.timezone, start),
+      yesterday: getPreviousBusinessDayRange(loc.timezone, start),
+      weekToDate: getWeekToDateRange(loc.timezone, start),
+      monthToDate: getMonthToDateRange(loc.timezone, start),
+      lastWeek: getLastWeekRange(loc.timezone),
+    } }];
+  });
+  if (!contexts.length) return { combined, byLocation };
+  const [, states] = await Promise.all([
+    Promise.all((['today', 'yesterday', 'weekToDate', 'monthToDate', 'lastWeek'] as const).map(async period => {
+    const rows = await GoogleBusinessReviewModel.aggregate<ReviewGroup>([
+      { $match: { $or: contexts.map(({ id, ranges }) => ({
+        locationId: new Types.ObjectId(id),
+        createTime: { $gte: new Date(ranges[period].startAt), $lte: new Date(ranges[period].endAt) },
+      })) } },
+      { $group: { _id: '$locationId', count: { $sum: 1 }, sum: { $sum: '$starRatingNumeric' } } },
+    ]);
+    const summary = summarizeReviewGroups(rows);
+    combined[period] = summary.combined;
+    for (const [id, value] of summary.byLocation) {
+      const target = byLocation.get(id);
+      if (target) target[period] = value;
+    }
+    })),
+    GoogleBusinessLocationSyncStateModel.find({
+      locationId: { $in: contexts.map(({ id }) => new Types.ObjectId(id)) }, lastSyncStatus: 'success',
+    }).select('locationId googleTotalReviewCount googleAverageRating').lean(),
+  ]);
+  combined.overall = computeWeightedReviewSummaryFromStates(states);
+  for (const state of states) {
+    const target = byLocation.get(String(state.locationId));
+    if (target) target.overall = computeWeightedReviewSummaryFromStates([state]);
+  }
+  return { combined, byLocation };
+}
+
 function roundRating(value: number): number {
   return Math.round(value * 10) / 10;
 }

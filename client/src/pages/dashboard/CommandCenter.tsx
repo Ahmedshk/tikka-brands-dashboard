@@ -22,6 +22,7 @@ import {
   selectCurrentLocation,
   selectIsMultiLocationView,
   selectLocationApiParams,
+  selectSelectedLocations,
 } from '../../store/locationSelectors';
 import { hasLocationSelection } from '../../utils/locationSelectionHelpers';
 import { SelectLocationPrompt } from '../../components/common/SelectLocationPrompt';
@@ -71,6 +72,7 @@ export const CommandCenter = () => {
   const locationApiParams = useSelector(selectLocationApiParams);
   const isMultiLocationView = useSelector(selectIsMultiLocationView);
   const currentLocation = useSelector(selectCurrentLocation);
+  const selectedLocations = useSelector(selectSelectedLocations);
   const hasLocationScope = hasLocationSelection(locationApiParams);
   const canNetSales = useCanAccessComponent(PAGE_ID, 'net-sales-kpi');
   const canLaborCost = useCanAccessComponent(PAGE_ID, 'labor-cost-kpi');
@@ -130,6 +132,7 @@ export const CommandCenter = () => {
     }
     const controller = new AbortController();
     setLoading(true);
+    setKpis(null);
     setError(null);
     commandCenterService
       .getKPIs(locationApiParams, {
@@ -137,7 +140,7 @@ export const CommandCenter = () => {
         periods: ['today', 'yesterday', 'weekToDate', 'monthToDate', 'lastWeek'],
         signal: controller.signal,
       })
-      .then(setKpis)
+      .then(data => { if (!controller.signal.aborted) setKpis(data); })
       .catch((err) => {
         if (controller.signal.aborted) return;
         setError(err instanceof Error ? err.message : "Failed to load KPIs");
@@ -448,7 +451,7 @@ export const CommandCenter = () => {
         ) : (
           <>
         {commandCenterKPIs.length > 0 && (
-          <CommandCenterKPICards items={commandCenterKPIs} />
+          <CommandCenterKPICards items={commandCenterKPIs} locations={selectedLocations} period={kpiPeriod} breakdown={kpis?.locationBreakdown} breakdownLoading={loading} />
         )}
 
         {(canHourlyChart || canLaborGauge) && (

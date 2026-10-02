@@ -15,7 +15,7 @@ import {
   type PeriodRangeKpis,
   type ReviewRatingKpiData,
 } from './commandCenterKpiLogic.js';
-import { getReviewRatingSummariesForLocations } from './googleBusinessReviewAggregation.util.js';
+import { getReviewRatingBreakdownForLocations, type ReviewRatingSummaries } from './googleBusinessReviewAggregation.util.js';
 import { buildEmptyHourlySalesRows } from './commandCenterHelpers.js';
 import { getBusinessStartTimeRange } from './timezone.util.js';
 import {
@@ -38,6 +38,7 @@ import {
   type AllLocationsPrefetchInput,
 } from './allLocationsDashboardPrefetch.util.js';
 import { performance } from 'node:perf_hooks';
+import { buildLocationKpiBreakdown } from './commandCenterKpiBreakdown.util.js';
 
 function sumNullable(vals: Array<number | null | undefined>): number | null {
   let any = false;
@@ -108,7 +109,7 @@ function average(nums: number[]): number {
 }
 
 function summariesToReviewRatingData(
-  summaries: Awaited<ReturnType<typeof getReviewRatingSummariesForLocations>>,
+  summaries: ReviewRatingSummaries,
 ): ReviewRatingKpiData {
   return {
     todayRating: summaries.today.averageRating,
@@ -188,12 +189,12 @@ export async function buildAllLocationsCommandCenterKpis(params: {
       for (const period of requestedPeriods) {
         emptyMulti[period] = {};
       }
-      return { dual: true, data: emptyMulti };
+      return { dual: true, data: { ...emptyMulti, locationBreakdown: [] } };
     }
     if (wantLegacyWeekToDateDual) {
-      return { dual: true, data: { today: {}, weekToDate: {} } };
+      return { dual: true, data: { today: {}, weekToDate: {}, locationBreakdown: [] } };
     }
-    return { dual: false, data: {} };
+    return { dual: false, data: { locationBreakdown: [] } };
   }
 
   const avgGoal = wantLaborCost ? average(perLoc.map((p) => p.laborCostGoal)) : 0;
@@ -213,6 +214,7 @@ export async function buildAllLocationsCommandCenterKpis(params: {
   }
 
   const kpisByPeriod: Partial<Record<Period, PeriodRangeKpis>> = {};
+  const perLocationKpis = perLoc.map(() => ({} as Partial<Record<Period, PeriodRangeKpis>>));
   for (const period of fetchPeriods) {
     const results = await Promise.all(
       perLoc.map(async (p) => {
@@ -232,6 +234,10 @@ export async function buildAllLocationsCommandCenterKpis(params: {
       }),
     );
 
+    results.forEach((value, index) => {
+      perLocationKpis[index]![period] = { ...value, laborCostStatus: laborStatus(value.laborCostPercent, perLoc[index]!.laborCostGoal) };
+    });
+
     const netSales = sumNullable(results.map((r) => r.netSales));
     const laborCost = sumNullable(results.map((r) => r.laborCost));
     const pct = laborPercent(netSales, laborCost);
@@ -244,15 +250,17 @@ export async function buildAllLocationsCommandCenterKpis(params: {
   }
 
   let reviewRatingData: ReviewRatingKpiData | undefined;
+  const perLocationReviews = new Map<string, ReviewRatingKpiData>();
   if (wantReviewRating) {
-    const summaries = await getReviewRatingSummariesForLocations(
+    const summaries = await getReviewRatingBreakdownForLocations(
       perLoc.map((p) => p.locationMongoId),
       perLoc.map((p) => p.loc),
     );
-    reviewRatingData = summariesToReviewRatingData(summaries);
+    reviewRatingData = summariesToReviewRatingData(summaries.combined);
+    for (const [id, summary] of summaries.byLocation) perLocationReviews.set(id, summariesToReviewRatingData(summary));
   }
 
-  let data: unknown;
+  let data: Record<string, unknown>;
   if (wantLegacyWeekToDateDual) {
     const todayKpis = kpisByPeriod.today;
     const wtdKpis = kpisByPeriod.weekToDate;
@@ -319,6 +327,12 @@ export async function buildAllLocationsCommandCenterKpis(params: {
       );
     }
   }
+
+  data.locationBreakdown = perLoc.map((p, index) => buildLocationKpiBreakdown({
+    locationId: p.locationMongoId, periods: fetchPeriods, metrics, kpisByPeriod: perLocationKpis[index]!,
+    laborCostGoal: p.laborCostGoal, laborCostGoalTolerance: p.laborCostGoalTolerance,
+    ...(perLocationReviews.has(p.locationMongoId) ? { reviewRating: perLocationReviews.get(p.locationMongoId)! } : {}),
+  }));
 
   summarizeAllLocationsTimings({
     route,

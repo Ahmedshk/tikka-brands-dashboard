@@ -48,6 +48,8 @@ export interface KPICardProps {
   loading?: boolean;
   /** Optional node rendered in the title row (e.g. period selector) */
   titleRight?: ReactNode;
+  /** Optional content below the summary value. */
+  children?: ReactNode;
 }
 
 const defaultBadgeClassName = 'bg-green-100 text-green-800';
@@ -69,6 +71,7 @@ export const KPICard = ({
   extraClassName = defaultExtraClassName,
   loading = false,
   titleRight,
+  children,
 }: KPICardProps) => {
   const hasRightContent = !loading && (rightIcon != null || badge != null || subtitle != null || extra != null);
 
@@ -134,6 +137,7 @@ export const KPICard = ({
           </>
         )}
       </div>
+      {children}
     </div>
   );
 };

@@ -42,6 +42,7 @@ import {
 import type { Period } from "../types/commandCenter.types.js";
 import { getBusinessStartTimeRange } from "../utils/timezone.util.js";
 import { serveDashboardWithCache } from "../services/dashboardCache.service.js";
+import { COMMAND_CENTER_KPI_BREAKDOWN_VERSION, withSingleLocationBreakdown } from "../utils/commandCenterKpiBreakdown.util.js";
 
 const goalService = new GoalService();
 const locationService = new LocationService();
@@ -102,7 +103,7 @@ export const getCommandCenterKPIs = async (
       req,
       res,
       endpoint: "command-center.kpis",
-      params: { metrics: sortedMetrics, periods: sortedPeriods },
+      params: { metrics: sortedMetrics, periods: sortedPeriods, breakdownVersion: COMMAND_CENTER_KPI_BREAKDOWN_VERSION },
       compute: async () => {
         if (sortedMetrics.length === 0) {
           const requestedPeriods: Period[] =
@@ -112,12 +113,12 @@ export const getCommandCenterKPIs = async (
             for (const period of requestedPeriods) {
               emptyMulti[period] = {};
             }
-            return emptyMulti;
+            return { ...emptyMulti, locationBreakdown: [] };
           }
           if (requestedPeriods[0] === "weekToDate") {
-            return { today: {}, weekToDate: {} };
+            return { today: {}, weekToDate: {}, locationBreakdown: [] };
           }
-          return {};
+          return { locationBreakdown: [] };
         }
 
         const targetIds = await resolveTargetLocationIds(req);
@@ -171,7 +172,7 @@ export const getCommandCenterKPIs = async (
             wantLaborCost,
             laborCostGoal,
           });
-          return buildMultiPeriodResponse(
+          return withSingleLocationBreakdown(buildMultiPeriodResponse(
             metrics,
             requestedPeriods,
             kpisByPeriod,
@@ -179,7 +180,7 @@ export const getCommandCenterKPIs = async (
             laborCostGoal,
             laborCostGoalTolerance,
             reviewRating,
-          );
+          ), singleLocationId);
         }
 
         const onlyPeriod = requestedPeriods[0] ?? "today";
@@ -204,7 +205,7 @@ export const getCommandCenterKPIs = async (
             laborCostGoalTolerance,
             reviewRating,
           );
-          return { today: todayData, weekToDate: weekToDateData };
+          return withSingleLocationBreakdown({ today: todayData, weekToDate: weekToDateData }, singleLocationId);
         }
 
         if (onlyPeriod !== "today") {
@@ -216,7 +217,7 @@ export const getCommandCenterKPIs = async (
             wantLaborCost,
             laborCostGoal,
           });
-          return buildMultiPeriodResponse(
+          return withSingleLocationBreakdown(buildMultiPeriodResponse(
             metrics,
             [onlyPeriod],
             kpisByPeriod,
@@ -224,7 +225,7 @@ export const getCommandCenterKPIs = async (
             laborCostGoal,
             laborCostGoalTolerance,
             reviewRating,
-          );
+          ), singleLocationId);
         }
 
         const kpis = await fetchTodayOnlyKpis(
@@ -235,7 +236,7 @@ export const getCommandCenterKPIs = async (
           wantLaborCost,
           laborCostGoal,
         );
-        return buildTodayOnlyData(
+        return withSingleLocationBreakdown(buildTodayOnlyData(
           metrics,
           wantNetSales,
           wantLaborCost,
@@ -244,7 +245,7 @@ export const getCommandCenterKPIs = async (
           laborCostGoal,
           laborCostGoalTolerance,
           reviewRating,
-        );
+        ), singleLocationId);
       },
     });
   } catch (error) {

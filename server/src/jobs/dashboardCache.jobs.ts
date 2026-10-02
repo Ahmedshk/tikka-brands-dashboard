@@ -30,6 +30,7 @@ import { GoalService } from "../services/goal.service.js";
 import { putCachedResponse } from "../services/dashboardCache.service.js";
 import { ALL_LOCATIONS_ID } from "../utils/locationScope.js";
 import { locationScopeForIds } from "../utils/dashboardCacheScope.util.js";
+import { COMMAND_CENTER_KPI_BREAKDOWN_VERSION } from "../utils/commandCenterKpiBreakdown.util.js";
 import { type DashboardEndpoint } from "../utils/dashboardCacheKey.util.js";
 import {
   buildAllLocationsSalesTrend,
@@ -270,6 +271,7 @@ const HARDCODED_DEFAULT_ENTRIES: ReadonlyArray<DefaultEntry> = [
     params: {
       metrics: [...getAllMetricIdsForPage("command-center")].sort(),
       periods: ["today", "yesterday", "weekToDate", "monthToDate", "lastWeek"].sort(),
+      breakdownVersion: COMMAND_CENTER_KPI_BREAKDOWN_VERSION,
     },
   },
   { endpoint: "command-center.hourly-sales", params: {} },

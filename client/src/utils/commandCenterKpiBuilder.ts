@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import {
-  isCommandCenterKPIsMulti,
   type CommandCenterKPIsData,
   type CommandCenterKPIsDataMulti,
   type CommandCenterKPIPeriodSlice,
@@ -22,11 +21,11 @@ function getSliceForPeriod(
   period: CommandCenterKPIPeriod,
 ): CommandCenterKPIPeriodSlice | undefined {
   if (kpis == null) return undefined;
-  if (isCommandCenterKPIsMulti(kpis)) {
-    return kpis[period];
+  if (['today', 'yesterday', 'weekToDate', 'monthToDate', 'lastWeek'].some(key => key in kpis)) {
+    return (kpis as CommandCenterKPIsDataMulti)[period];
   }
   if (period === "today") {
-    return kpis;
+    return kpis as CommandCenterKPIsData;
   }
   return undefined;
 }
