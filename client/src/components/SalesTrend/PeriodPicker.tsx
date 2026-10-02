@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { format, parse, subDays, startOfWeek, startOfMonth, startOfYear } from 'date-fns';
+import { format, parse, subDays, startOfWeek, startOfMonth, startOfYear, endOfWeek, endOfMonth, endOfYear, subMonths, subYears } from 'date-fns';
 import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -13,6 +13,10 @@ import type { SalesTrendPeriodType } from '../../services/commandCenter.service'
 
 export const PERIOD_OPTIONS: { value: SalesTrendPeriodType; label: string }[] = [
   { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'lastWeek', label: 'Last week' },
+  { value: 'lastMonth', label: 'Last month' },
+  { value: 'lastYear', label: 'Last year' },
   { value: 'last7days', label: 'Last 7 days' },
   { value: 'last30days', label: 'Last 30 days' },
   { value: 'last52weeks', label: 'Last 52 weeks' },
@@ -49,6 +53,22 @@ function getDisplayRangeForPeriodType(periodType: SalesTrendPeriodType): { start
   const today = new Date();
   const end = format(today, DATE_DISPLAY_FORMAT);
   switch (periodType) {
+    case 'yesterday': {
+      const day = format(subDays(today, 1), DATE_DISPLAY_FORMAT);
+      return { start: day, end: day };
+    }
+    case 'lastWeek': {
+      const day = subDays(startOfWeek(today, { weekStartsOn: 0 }), 7);
+      return { start: format(day, DATE_DISPLAY_FORMAT), end: format(endOfWeek(day, { weekStartsOn: 0 }), DATE_DISPLAY_FORMAT) };
+    }
+    case 'lastMonth': {
+      const day = subMonths(today, 1);
+      return { start: format(startOfMonth(day), DATE_DISPLAY_FORMAT), end: format(endOfMonth(day), DATE_DISPLAY_FORMAT) };
+    }
+    case 'lastYear': {
+      const day = subYears(today, 1);
+      return { start: format(startOfYear(day), DATE_DISPLAY_FORMAT), end: format(endOfYear(day), DATE_DISPLAY_FORMAT) };
+    }
     case 'today':
       return { start: end, end };
     case 'last7days':

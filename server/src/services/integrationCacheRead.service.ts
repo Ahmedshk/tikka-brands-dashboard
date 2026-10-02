@@ -45,6 +45,7 @@ import {
 import {
   tryGetHourlyNetSalesCentsBySlotFromRollups,
   tryGetLaborTotalsFromDailyRollupsSplit,
+  tryGetLaborTimeSeriesFromDailyRollups,
   tryGetOrderStatsAndSourcesFromDailyRollupsSplit,
 } from "./integrationRollupRead.service.js";
 import { logger } from "../utils/logger.util.js";
@@ -631,7 +632,7 @@ export async function searchOrdersInRangeWithCacheFallback(
   return searchOrdersInRangeFromCache(locationMongoId.trim(), range);
 }
 
-/** Labor time series from synced Homebase timecards (same bucket logic as live API). */
+/** Rollup-first non-hourly labor trends, with synced timecards as fallback. */
 export async function getLaborAndHoursTimeSeriesInRangeFromCache(
   locationMongoId: string,
   range: TimeRange,
@@ -667,28 +668,42 @@ export async function getLaborAndHoursTimeSeriesInRangeFromCache(
     hoursByKey[k] = 0;
   }
   const t0 = performance.now();
-  const timecards = await loadHomebaseTimecardsForMongoRange(
-    locationMongoId,
-    range,
+  const rolled = await tryGetLaborTimeSeriesFromDailyRollups(
+    locationMongoId, range, timezone, bst || "00:00", granularity, keys,
   );
-  logger.info("[sales-trend] labor time series: Homebase timecards from Mongo", {
-    granularity,
-    bucketCount: keys.length,
-    timecardCount: timecards.length,
-    loadTimecardsMs: Math.round(performance.now() - t0),
-    rangeStart: range.startAt,
-    rangeEnd: range.endAt,
-    locationMongoId,
-  });
-  aggregateTimecardsIntoBuckets(
-    timecards,
-    keys,
-    timezone,
-    granularity,
-    laborCostByKey,
-    hoursByKey,
-    bst,
-  );
+  if (rolled) {
+    keys.forEach((key, index) => {
+      laborCostByKey[key] = rolled.laborCost[index]!;
+      hoursByKey[key] = rolled.hours[index]!;
+    });
+    logger.info("[sales-trend] labor time series: Homebase daily rollups", {
+      granularity, bucketCount: keys.length, rollupReadMs: Math.round(performance.now() - t0),
+      rangeStart: range.startAt, rangeEnd: range.endAt, locationMongoId,
+    });
+  } else {
+    const timecards = await loadHomebaseTimecardsForMongoRange(
+      locationMongoId,
+      range,
+    );
+    logger.info("[sales-trend] labor time series: Homebase timecards from Mongo", {
+      granularity,
+      bucketCount: keys.length,
+      timecardCount: timecards.length,
+      loadTimecardsMs: Math.round(performance.now() - t0),
+      rangeStart: range.startAt,
+      rangeEnd: range.endAt,
+      locationMongoId,
+    });
+    aggregateTimecardsIntoBuckets(
+      timecards,
+      keys,
+      timezone,
+      granularity,
+      laborCostByKey,
+      hoursByKey,
+      bst,
+    );
+  }
   addSalaryToBuckets(
     await getSalaryDaysForRange(locationMongoId, range, { timezone, businessStartTime: bst || "00:00" }),
     laborCostByKey, timezone, bst || "00:00", granularity,

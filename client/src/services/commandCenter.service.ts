@@ -181,6 +181,10 @@ export interface TimesheetRow {
 
 export type SalesTrendPeriodType =
   | "today"
+  | "yesterday"
+  | "lastWeek"
+  | "lastMonth"
+  | "lastYear"
   | "last7days"
   | "last30days"
   | "last52weeks"
@@ -283,6 +287,8 @@ export interface SalesByCategoryData {
 export type SalesTrendGranularity = "hourly" | "daily" | "weekly" | "monthly";
 
 export interface SalesTrendLineData {
+  /** Full comparison range total before weekday alignment of plotted points. */
+  comparisonPeriodTotal?: number;
   xAxisLabels: string[];
   granularity: SalesTrendGranularity;
   /** Nulls indicate future/no-data buckets so the chart line breaks. */

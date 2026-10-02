@@ -184,6 +184,9 @@ function mergeSeries(results: Array<Extract<SalesTrendResult, { kind: 'series' }
     granularity: first.granularity,
     currentPeriod,
     comparisonPeriod,
+    ...(first.comparisonPeriodTotal == null ? {} : {
+      comparisonPeriodTotal: results.reduce((sum, result) => sum + (result.data.comparisonPeriodTotal ?? 0), 0),
+    }),
     periodRange: first.periodRange,
     comparisonRange: first.comparisonRange,
     ...(first.comparisonPeriodTooltipLabels ? { comparisonPeriodTooltipLabels: first.comparisonPeriodTooltipLabels } : {}),

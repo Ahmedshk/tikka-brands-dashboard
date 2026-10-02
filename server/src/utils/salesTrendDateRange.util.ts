@@ -5,6 +5,10 @@
 
 export type PeriodType =
   | "today"
+  | "yesterday"
+  | "lastWeek"
+  | "lastMonth"
+  | "lastYear"
   | "last7days"
   | "last30days"
   | "last52weeks"
@@ -182,6 +186,27 @@ export function getSalesTrendPeriodRange(
   }
 
   switch (periodType) {
+    case "yesterday":
+    case "lastWeek":
+    case "lastMonth":
+    case "lastYear": {
+      let start = addDays(y, m, d, -1);
+      let end = start;
+      if (periodType === "lastWeek") {
+        start = addDays(y, m, d, -getDayOfWeekInTz(y, m, d, tz) - 7);
+        end = addDays(start.y, start.m, start.d, 6);
+      } else if (periodType === "lastMonth") {
+        end = addDays(y, m, 1, -1);
+        start = { ...end, d: 1 };
+      } else if (periodType === "lastYear") {
+        start = { y: y - 1, m: 0, d: 1 };
+        end = { y: y - 1, m: 11, d: 31 };
+      }
+      return {
+        ...rangeFromCalendar(tz, (businessStartTime ?? "00:00").trim(), businessDayBoundariesEnabled(businessStartTime), start, end),
+        granularity: periodType === "yesterday" ? "hourly" : periodType === "lastYear" ? "monthly" : "daily",
+      };
+    }
     case "today":
       return getTodayPeriodRange(tz, y, m, d, businessStartTime);
     case "last7days":
@@ -1346,8 +1371,24 @@ export function getSalesTrendComparisonRange(
   const bizStart = (businessStartTime ?? "00:00").trim();
   const useBiz = businessDayBoundariesEnabled(businessStartTime);
 
-  if (periodType === "thisYear" && comparisonType === "priorYear") {
+  if ((periodType === "thisYear" || periodType === "lastYear") && comparisonType === "priorYear") {
     return getFullPriorCalendarYearComparison(periodStartAt, tz, bizStart, useBiz);
+  }
+
+  if (periodType === "lastMonth" && (comparisonType === "samePeriodPreviousMonth" || comparisonType === "priorYear")) {
+    const p = getDatePartsInTz(civilLabelStart, tz);
+    const target = comparisonType === "priorYear" ? { y: p.y - 1, m: p.m, d: 1 } : addDays(p.y, p.m, 1, -1);
+    const compStart = { ...target, d: 1 };
+    const compEnd = addDays(compStart.y, compStart.m + 1, 1, -1);
+    return rangeFromCalendar(tz, bizStart, useBiz, compStart, compEnd);
+  }
+  if (periodType === "lastWeek" && (comparisonType === "samePeriodPreviousMonth" || comparisonType === "priorYear")) {
+    return getComparisonRangeWithWeekLogic(comparisonType, civilLabelStart, civilLabelEnd, tz, bizStart, useBiz, "thisWeek");
+  }
+  if (periodType === "yesterday" && (comparisonType === "samePeriodPreviousMonth" || comparisonType === "priorYear")) {
+    const p = getDatePartsInTz(civilLabelStart, tz);
+    const target = mapCurrentDayToWeekAlignedComparisonDay(p.y, p.m, p.d, comparisonType, tz);
+    if (target) return rangeFromCalendar(tz, bizStart, useBiz, target, target);
   }
 
   const sameWeekUsesWeekOfMonth =

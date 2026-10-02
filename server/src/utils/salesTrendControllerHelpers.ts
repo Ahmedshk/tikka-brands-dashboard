@@ -16,6 +16,7 @@ import {
   getLaborAndHoursTimeSeriesInRangeFromCache,
 } from "../services/integrationCacheRead.service.js";
 import { probePairedSalesTrendRollups } from "./salesTrendPairedRollupProbe.util.js";
+import { alignCustomComparisonBucketKeys } from './salesTrendCustomWeekdayAlignment.util.js';
 import type {
   Granularity,
   PeriodRangeResult,
@@ -82,6 +83,8 @@ export interface SalesTrendBySourceData {
 }
 
 export interface SalesTrendSeriesData {
+  /** Full selected comparison range total, independent of missing weekday matches. */
+  comparisonPeriodTotal?: number;
   xAxisLabels: string[];
   granularity: Granularity;
   currentPeriod: (number | null)[];
@@ -351,6 +354,7 @@ function buildOrderMetricsNoDisplayRange(
 }
 
 export interface FetchOrderMetricsOptions {
+  preserveComparisonBuckets?: boolean;
   dataRange: TimeRange;
   displayRange: TimeRange;
   timezone: string;
@@ -461,7 +465,7 @@ export async function fetchSalesTrendOrderMetrics(
     return {
       xAxisLabels: displayBuckets.labels,
       currentPeriod: mapOrderMetricsToDisplay(opts.metric, displayBuckets, netSalesByKey, txnByKey),
-      comparisonPeriod: mapComparisonOrderMetrics(
+      comparisonPeriod: opts.preserveComparisonBuckets ? buildOrderMetricsNoDisplayRange(current, comp, opts.metric).comparisonPeriod : mapComparisonOrderMetrics(
         opts.metric,
         displayBuckets,
         comp?.netSales ?? [],
@@ -473,6 +477,7 @@ export async function fetchSalesTrendOrderMetrics(
 }
 
 export interface FetchLaborMetricsOptions {
+  preserveComparisonBuckets?: boolean;
   dataRange: TimeRange;
   displayRange: TimeRange;
   timezone: string;
@@ -587,7 +592,7 @@ export async function fetchSalesTrendLaborMetrics(
       return {
         xAxisLabels: displayBuckets.labels,
         currentPeriod: displayBuckets.keys.map((k) => (k in laborCostByKey ? laborCostByKey[k]! : null)),
-        comparisonPeriod: displayBuckets.keys.map((_, i) =>
+        comparisonPeriod: opts.preserveComparisonBuckets ? comp?.laborCost ?? [] : displayBuckets.keys.map((_, i) =>
           i < (comp?.laborCost.length ?? 0) ? comp!.laborCost[i]! : 0,
         ),
       };
@@ -595,7 +600,7 @@ export async function fetchSalesTrendLaborMetrics(
     return {
       xAxisLabels: displayBuckets.labels,
       currentPeriod: displayBuckets.keys.map((k) => (k in hoursByKey ? hoursByKey[k]! : null)),
-      comparisonPeriod: displayBuckets.keys.map((_, i) => (i < (comp?.hours.length ?? 0) ? comp!.hours[i]! : 0)),
+      comparisonPeriod: opts.preserveComparisonBuckets ? comp?.hours ?? [] : displayBuckets.keys.map((_, i) => (i < (comp?.hours.length ?? 0) ? comp!.hours[i]! : 0)),
     };
   }
   if (opts.metric === "laborCost") {
@@ -662,6 +667,8 @@ export function alignComparisonAndMaskFuture(opts: AlignComparisonOptions): {
     );
     const useThisMonthDowAlignment =
       opts.periodType === "thisMonth" && opts.comparisonType !== "none";
+    const useCustomDowAlignment = (opts.comparisonType === 'custom' || opts.periodType === 'lastMonth') && opts.seriesGranularity === 'daily';
+    const customKeys = useCustomDowAlignment ? alignCustomComparisonBucketKeys(currentBuckets.keys, compBuckets.keys) : [];
     const compByKey = new Map<string, number | null>();
     compBuckets.keys.forEach((k, i) => compByKey.set(k, i < comp.length ? (comp[i] ?? null) : null));
     const comparisonPeriodTooltipLabels: string[] = [];
@@ -670,7 +677,9 @@ export function alignComparisonAndMaskFuture(opts: AlignComparisonOptions): {
     for (let i = 0; i < n; i++) {
       const currentKey = currentBuckets.keys[i]!;
       let alignedCompKey = i < compBuckets.keys.length ? compBuckets.keys[i]! : "";
-      if (useThisMonthDowAlignment && opts.seriesGranularity === "daily") {
+      if (useCustomDowAlignment) {
+        alignedCompKey = customKeys[i] ?? '';
+      } else if (useThisMonthDowAlignment && opts.seriesGranularity === "daily") {
         const currentYmd = parseYmdBucketKey(currentKey);
         if (currentYmd) {
           const aligned = mapCurrentDayToWeekAlignedComparisonDay(
@@ -696,7 +705,7 @@ export function alignComparisonAndMaskFuture(opts: AlignComparisonOptions): {
       );
       compKeysForMask.push(alignedCompKey);
       let compValue: number | null = null;
-      if (useThisMonthDowAlignment && alignedCompKey) {
+      if (useCustomDowAlignment || (useThisMonthDowAlignment && alignedCompKey)) {
         compValue = compByKey.get(alignedCompKey) ?? null;
       } else if (i < comp.length) {
         compValue = comp[i] ?? null;
@@ -779,6 +788,7 @@ async function fetchSeriesMetricsPayload(
     seriesGranularity: SalesTrendGranularity;
     useDisplayRange: boolean;
     periodType: string;
+    preserveComparisonBuckets?: boolean;
     comparisonRange: TimeRange | null;
   },
 ): Promise<SeriesMetricsPayload> {
@@ -851,6 +861,7 @@ export async function getSalesTrendData(
       useDisplayRange,
       periodType,
       comparisonRange,
+      preserveComparisonBuckets: params.comparisonType === 'custom' || periodType === 'lastMonth',
     },
   );
 
@@ -867,6 +878,14 @@ export async function getSalesTrendData(
     currentPeriod: seriesPayload.currentPeriod,
     comparisonPeriod: seriesPayload.comparisonPeriod,
   });
+  let comparisonPeriodTotal: number | undefined;
+  if ((params.comparisonType === 'custom' || periodType === 'lastMonth') && comparisonRange) {
+    const comparisonBuckets = getOrderedBucketsAndLabels(comparisonRange, ctx.timezone, seriesGranularity, {
+      periodType, businessStartTime: ctx.businessStartTime,
+    });
+    comparisonPeriodTotal = maskFutureBuckets(seriesPayload.comparisonPeriod, comparisonBuckets.keys, ctx.timezone, seriesGranularity)
+      .reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  }
 
   const bucketOpts = {
     periodType,
@@ -897,6 +916,7 @@ export async function getSalesTrendData(
       granularity: period.granularity,
       currentPeriod: aligned.currentPeriod,
       comparisonPeriod: aligned.comparisonPeriod,
+      ...(comparisonPeriodTotal == null ? {} : { comparisonPeriodTotal }),
       periodRange: toLabelTimeRange(period),
       comparisonRange: comparison ? toLabelTimeRange(comparison) : null,
       ...(currentPeriodTooltipLabels == null

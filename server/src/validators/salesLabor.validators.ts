@@ -15,6 +15,10 @@ const salesLaborMetricEnum = z.enum([
 
 const periodTypeSchema = z.enum([
   "today",
+  "yesterday",
+  "lastWeek",
+  "lastMonth",
+  "lastYear",
   "last7days",
   "last30days",
   "last52weeks",

@@ -602,7 +602,9 @@ export const SalesTrendReports = () => {
     };
     const comparisonSeries: TimeSeriesSeries = {
       id: 'comparison',
-      label: getComparisonLabel(comparison),
+      label: (['yesterday', 'lastWeek', 'lastMonth', 'lastYear'].includes(period.periodType) && comparison.comparisonType !== 'custom'
+        ? getComparisonOptionsForPeriod(period.periodType).find((option) => option.value === comparison.comparisonType)?.label
+        : undefined) ?? getComparisonLabel(comparison),
       data: trendData.comparisonPeriod,
       color: '#9ca3af',
       ...(showComparison && axisLen > 0
@@ -615,7 +617,7 @@ export const SalesTrendReports = () => {
         : {}),
     };
     const currentTotal = sumTimeSeriesDataPoints(trendData.currentPeriod);
-    const comparisonTotalPts = sumTimeSeriesDataPoints(trendData.comparisonPeriod);
+    const comparisonTotalPts = trendData.comparisonPeriodTotal ?? sumTimeSeriesDataPoints(trendData.comparisonPeriod);
     const lineLegend = showComparison
       ? {
           currentTotal,
@@ -632,7 +634,7 @@ export const SalesTrendReports = () => {
       yAxis,
       lineLegend,
     };
-  }, [trendData, metric, comparison]);
+  }, [trendData, metric, comparison, period.periodType]);
 
   const trendChartLegendTotals = salesTrendLineChartPropsToLegendTotals(chartProps);
 

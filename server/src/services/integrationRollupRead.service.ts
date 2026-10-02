@@ -51,6 +51,7 @@ import {
 import { loadSquareOrderHourlyRollupsForDates } from "../utils/hourlyRollupLoader.util.js";
 import { dedupInflight } from "../utils/inflightDedup.util.js";
 import { computeRollupUncoveredSubRanges } from "../utils/rollupSplitRange.util.js";
+import { sundayWeekStartYmdForBusinessDateKey } from "../utils/rollupPeriodKeys.util.js";
 
 const ROLLUP_READ_ENABLED =
   (process.env.ROLLUP_READ_ENABLED ?? "true").trim().toLowerCase() !== "false";
@@ -213,6 +214,48 @@ export async function tryGetLaborTotalsFromDailyRollups(
     }
   }
   return { totalLaborCost, totalPaidHours };
+}
+
+/**
+ * Labor trend fast path for complete business-day ranges. Daily rollups use
+ * the same clock-in allocation as non-hourly timecard trends; aggregate their
+ * costs and paid hours into the requested chart keys. Salary is added by the
+ * caller. Partial days, missing/invalid rows and hourly charts use timecards.
+ */
+export async function tryGetLaborTimeSeriesFromDailyRollups(
+  locationMongoId: string,
+  range: TimeRange,
+  timezone: string,
+  businessStartTime: string,
+  granularity: SalesTrendGranularity,
+  bucketKeys: readonly string[],
+): Promise<{ laborCost: number[]; hours: number[] } | null> {
+  if (!ROLLUP_READ_ENABLED || granularity === "hourly" || bucketKeys.length === 0) return null;
+  const dateKeys = fullBusinessDaysCoveredByRange(range, timezone, businessStartTime);
+  const first = dateKeys[0];
+  const last = dateKeys.at(-1);
+  if (!first || !last) return null;
+  // Do not silently omit a leading/trailing partial day, even when all full
+  // days inside the range have rollups.
+  if (new Date(range.startAt).getTime() !== new Date(businessDayUtcRangeIsoStrings(timezone, businessStartTime, first).startAt).getTime() ||
+      new Date(range.endAt).getTime() !== new Date(businessDayUtcRangeIsoStrings(timezone, businessStartTime, last).endAt).getTime()) return null;
+
+  const rows = await loadHomebaseTimecardDailyRollupsForDates(locationMongoId, dateKeys);
+  const byDate = new Map(rows.map(row => [row.businessDateKey, row]));
+  const indices = new Map(bucketKeys.map((key, index) => [key, index]));
+  const laborCost = bucketKeys.map(() => 0);
+  const hours = bucketKeys.map(() => 0);
+  for (const dateKey of dateKeys) {
+    const row = byDate.get(dateKey);
+    if (!row || !Number.isFinite(row.totalLaborCost) || !Number.isFinite(row.totalPaidHours)) return null;
+    const key = granularity === "daily" ? dateKey : granularity === "monthly" ? dateKey.slice(0, 7)
+      : sundayWeekStartYmdForBusinessDateKey(dateKey, timezone);
+    const index = indices.get(key);
+    if (index == null) return null;
+    laborCost[index] = laborCost[index]! + row.totalLaborCost;
+    hours[index] = hours[index]! + row.totalPaidHours;
+  }
+  return { laborCost, hours };
 }
 
 export async function tryGetNetSalesDollarsFromDailyRollups(

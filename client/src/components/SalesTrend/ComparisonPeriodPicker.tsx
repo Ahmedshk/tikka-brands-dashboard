@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { format, parse, addDays, addYears, differenceInCalendarDays } from 'date-fns';
+import { format, parse, addDays, addYears, differenceInCalendarDays, startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths, subYears } from 'date-fns';
 import Popover from '@mui/material/Popover';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -29,8 +29,8 @@ function getComparisonEndFromStart(
   // Do not use new Date(iso): yyyy-MM-dd is parsed as UTC midnight and formats as the prior local day in US TZs.
   const start = parseISODateToLocal(startIso);
   if (!start) return startIso;
-  if (periodType === 'today') return startIso;
-  if (periodType === 'last7days' || periodType === 'thisWeek') {
+  if (periodType === 'today' || periodType === 'yesterday') return startIso;
+  if (periodType === 'last7days' || periodType === 'thisWeek' || periodType === 'lastWeek') {
     return format(addDays(start, 6), 'yyyy-MM-dd');
   }
   if (periodType === 'last30days' || periodType === 'thisMonth') {
@@ -38,6 +38,13 @@ function getComparisonEndFromStart(
   }
   if (periodType === 'last52weeks') {
     return format(addDays(start, 363), 'yyyy-MM-dd');
+  }
+  if (periodType === 'lastMonth' || periodType === 'lastYear') {
+    const day = periodType === 'lastMonth' ? subMonths(new Date(), 1) : subYears(new Date(), 1);
+    const offset = periodType === 'lastMonth'
+      ? differenceInCalendarDays(endOfMonth(day), startOfMonth(day))
+      : differenceInCalendarDays(endOfYear(day), startOfYear(day));
+    return format(addDays(start, offset), 'yyyy-MM-dd');
   }
   if (periodType === 'thisYear') {
     return format(addYears(start, 1), 'yyyy-MM-dd');
@@ -61,6 +68,39 @@ export function getComparisonOptionsForPeriod(
   const currentYear = new Date().getFullYear();
   const customRangeDays = context?.customRangeDays;
   switch (periodType) {
+    case 'yesterday':
+      return [
+        { value: 'none', label: 'None' },
+        { value: '1DayPrior', label: 'Day before yesterday' },
+        { value: 'samePeriodPreviousWeek', label: 'Same day previous week' },
+        { value: 'samePeriodPreviousMonth', label: 'Same weekday previous month' },
+        { value: 'priorYear', label: 'Same weekday previous year' },
+        { value: 'custom', label: 'Custom' },
+      ];
+    case 'lastWeek':
+      return [
+        { value: 'none', label: 'None' },
+        { value: 'samePeriodPreviousWeek', label: 'Week before last' },
+        { value: 'samePeriodPreviousMonth', label: 'Same week previous month' },
+        { value: 'priorYear', label: 'Same week previous year' },
+        { value: 'custom', label: 'Custom' },
+      ];
+    case 'lastMonth':
+      return [
+        { value: 'none', label: 'None' },
+        { value: 'samePeriodPreviousMonth', label: 'Month before last' },
+        { value: 'priorYear', label: 'Same month previous year' },
+        { value: 'custom', label: 'Custom' },
+      ];
+    case 'lastYear':
+      return [
+        { value: 'none', label: 'None' },
+        { value: 'priorYear', label: `Year ${currentYear - 2}` },
+        { value: 'year2Before', label: `Year ${currentYear - 3}` },
+        { value: 'year3Before', label: `Year ${currentYear - 4}` },
+        { value: 'year4Before', label: `Year ${currentYear - 5}` },
+        { value: 'custom', label: 'Custom' },
+      ];
     case 'today':
       return [
         { value: 'none', label: 'None' },

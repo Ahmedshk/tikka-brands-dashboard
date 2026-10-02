@@ -1,4 +1,4 @@
-import { format, parse, startOfMonth, startOfWeek, startOfYear, subMonths, subYears } from 'date-fns';
+import { format, parse, startOfMonth, startOfWeek, startOfYear, subMonths, subYears, subDays, endOfWeek, endOfMonth, endOfYear } from 'date-fns';
 import type { ComparisonPeriodPickerValue } from '../components/SalesTrend/ComparisonPeriodPicker';
 import type { PeriodPickerValue } from '../components/SalesTrend/PeriodPicker';
 import type { SalesTrendComparisonType } from '../services/commandCenter.service';
@@ -104,6 +104,22 @@ function getCivilPeriodKeys(period: PeriodPickerValue, timezone: string): { star
   const todayDate = parse(today, 'yyyy-MM-dd', new Date());
 
   switch (period.periodType) {
+    case 'yesterday': {
+      const day = format(subDays(todayDate, 1), 'yyyy-MM-dd');
+      return { start: day, end: day };
+    }
+    case 'lastWeek': {
+      const day = subDays(startOfWeek(todayDate, { weekStartsOn: 0 }), 7);
+      return { start: format(day, 'yyyy-MM-dd'), end: format(endOfWeek(day, { weekStartsOn: 0 }), 'yyyy-MM-dd') };
+    }
+    case 'lastMonth': {
+      const day = subMonths(todayDate, 1);
+      return { start: format(startOfMonth(day), 'yyyy-MM-dd'), end: format(endOfMonth(day), 'yyyy-MM-dd') };
+    }
+    case 'lastYear': {
+      const day = subYears(todayDate, 1);
+      return { start: format(startOfYear(day), 'yyyy-MM-dd'), end: format(endOfYear(day), 'yyyy-MM-dd') };
+    }
     case 'last7days': {
       const start = shiftCivilDateKey(today, -6);
       return start ? { start, end: today } : undefined;
@@ -139,6 +155,11 @@ function shiftComparisonCivilRange(
   periodType: PeriodPickerValue['periodType'],
 ): { start: string; end: string } | undefined {
   const { start, end } = periodKeys;
+  if (periodType === 'lastMonth' && (comparisonType === 'samePeriodPreviousMonth' || comparisonType === 'priorYear')) {
+    const date = parse(start, 'yyyy-MM-dd', new Date());
+    const target = comparisonType === 'priorYear' ? subYears(date, 1) : subMonths(date, 1);
+    return { start: format(startOfMonth(target), 'yyyy-MM-dd'), end: format(endOfMonth(target), 'yyyy-MM-dd') };
+  }
 
   switch (comparisonType) {
     case 'none':
@@ -242,6 +263,9 @@ export function formatSalesTrendComparisonDateRangeDisplay(
 ): string | undefined {
   if (comparison.comparisonType === 'none') return undefined;
   const tz = (locationTimezone ?? '').trim() || 'UTC';
+  if (apiRange && ['yesterday', 'lastWeek', 'lastMonth', 'lastYear'].includes(period.periodType)) {
+    return formatIsoDateRange(apiRange.startAt, apiRange.endAt, tz);
+  }
   const fromPicker = formatComparisonLabelFromPicker(period, comparison, tz);
   if (fromPicker) return fromPicker;
   const range = normalizeApiRange(apiRange);

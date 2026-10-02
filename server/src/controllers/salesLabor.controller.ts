@@ -263,7 +263,9 @@ export const getSalesTrend = async (
       req,
       res,
       endpoint: "sales-labor.sales-trend",
-      params: { ...cacheParams, labelRangeV: SALES_TREND_LABEL_RANGE_CACHE_V },
+      params: { ...cacheParams, labelRangeV: SALES_TREND_LABEL_RANGE_CACHE_V,
+        ...(params.comparisonType === 'custom' ? { weekdayAlignmentV: 1 } : {}),
+      },
       compute: async () => {
         const targetIds = await resolveTargetLocationIds(req);
         if (targetIds.length > 1) {
@@ -292,7 +294,7 @@ export const getSalesTrend = async (
             squareOrderSeries:
               "rollup attempt when mongo location id present — see server logger [sales-trend] for ROLLUPS vs rollup miss → orders per request",
             laborSeries:
-              "mongo_homebase_timecards (getLaborAndHoursTimeSeriesInRangeFromCache)",
+              "daily rollups for complete non-hourly ranges, otherwise Mongo Homebase timecards; salary added separately",
             stackedBySource: params.groupBy === "source",
           },
         );
