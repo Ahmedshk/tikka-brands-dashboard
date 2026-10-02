@@ -2,14 +2,11 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 import { ILocation } from '../types/location.types.js';
 
 export interface LocationDocument
-  extends Omit<ILocation, '_id' | 'createdAt' | 'updatedAt' | 'groupId'>, Document {
+  extends Omit<ILocation, '_id' | 'createdAt' | 'updatedAt' | 'groupId' | 'groupIds'>, Document {
   _id: Types.ObjectId;
-  /**
-   * Stored as an ObjectId ref. `ILocation` types this as a string because that
-   * is the form the API emits, so it is re-declared here to keep Mongoose query
-   * typings (`{ groupId: ObjectId }`) valid.
-   */
+  /** Legacy membership, merged into groupIds on the next membership write. */
   groupId?: Types.ObjectId;
+  groupIds: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -98,16 +95,17 @@ const locationSchema = new Schema<LocationDocument>(
       required: true,
       default: 0,
     },
-    /**
-     * Optional group this location is bucketed under in the header location
-     * selector. Null/absent means the location falls into the "Ungrouped"
-     * section. A location belongs to at most one group.
-     */
+    /** Legacy single-group field, retained for existing location documents. */
     groupId: {
       type: Schema.Types.ObjectId,
       ref: 'LocationGroup',
       required: false,
       default: undefined,
+    },
+    /** A location may appear under every group it belongs to. */
+    groupIds: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'LocationGroup' }],
+      default: [],
     },
   },
   {
@@ -116,9 +114,9 @@ const locationSchema = new Schema<LocationDocument>(
 );
 
 locationSchema.index({ sortOrder: 1 });
-// Group buckets read by sortOrder within each group; groupId leading also serves
-// the membership lookups that resolve a group's member list.
+// Keep the legacy index while existing membership is converted on write.
 locationSchema.index({ groupId: 1, sortOrder: 1 });
+locationSchema.index({ groupIds: 1, sortOrder: 1 });
 locationSchema.index({ createdAt: -1 });
 
 export const LocationModel = mongoose.model<LocationDocument>('Location', locationSchema);

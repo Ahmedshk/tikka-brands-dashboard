@@ -18,10 +18,8 @@ export interface LocationGroupModalProps {
 /**
  * Create / edit a location group: a name plus a checkbox list of locations.
  *
- * Membership is checked here and applied as a whole set by the parent, so a
- * group is never left half-updated. On edit, unchecking a location that belongs
- * to *another* group is intentionally not offered: a location belongs to at most
- * one group, so the parent moves it rather than duplicating it.
+ * Checkboxes edit only this group's membership. A location's memberships in
+ * other groups are preserved when it is checked or unchecked here.
  */
 export function LocationGroupModal({
   isOpen,
@@ -213,12 +211,10 @@ export function LocationGroupModal({
                     ))}
                   </div>
                 )}
-                {isEdit ? (
-                  <p className="text-xs text-secondary mt-2">
-                    Removing a location here moves it to Ungrouped. Checking a
-                    location that already belongs to another group moves it here.
-                  </p>
-                ) : null}
+                <p className="text-xs text-secondary mt-2">
+                  Locations can belong to multiple groups. These selections apply
+                  only to this group.
+                </p>
               </div>
             </div>
             <div className="px-5 py-4 border-t border-gray-200 flex flex-wrap justify-end gap-2 shrink-0">

@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { LocationListItem } from '../../types';
+import { normalizeSelectionScopes, selectedIdsFromScopes, type LocationSelectionScopes } from '../../utils/locationScopedSelection';
 import {
   normalizeSelection,
   parseStoredLocationSelection,
@@ -8,6 +9,7 @@ import {
 } from '../../utils/locationSelectionHelpers';
 
 const STORAGE_KEY = 'tikka_current_location_id';
+const SCOPES_STORAGE_KEY = 'tikka_location_selection_scopes';
 
 export { ALL_LOCATIONS_ID };
 
@@ -19,11 +21,24 @@ function getStoredLocationId(): string | null {
   }
 }
 
-function setStoredLocationId(ids: readonly string[]) {
+function getStoredScopes(ids: readonly string[]): LocationSelectionScopes | null {
+  try {
+    const raw: unknown = JSON.parse(globalThis.localStorage?.getItem(SCOPES_STORAGE_KEY) ?? 'null');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    if (!Object.values(raw).every(value => Array.isArray(value) && value.every(id => typeof id === 'string'))) return null;
+    const scopes = normalizeSelectionScopes(raw as LocationSelectionScopes, ids);
+    const scopedIds = selectedIdsFromScopes(scopes);
+    return ids.length === scopedIds.length && ids.every(id => scopedIds.includes(id)) ? scopes : null;
+  } catch { return null; }
+}
+
+function setStoredLocationId(ids: readonly string[], scopes: LocationSelectionScopes | null = null) {
   try {
     // An empty selection serializes to EMPTY_SELECTION_MARKER rather than '', so
     // the key is always written and a cleared selection survives a reload.
     globalThis.localStorage?.setItem(STORAGE_KEY, serializeSelectedLocationIds(ids));
+    if (scopes) globalThis.localStorage?.setItem(SCOPES_STORAGE_KEY, JSON.stringify(scopes));
+    else globalThis.localStorage?.removeItem(SCOPES_STORAGE_KEY);
   } catch {
     // ignore
   }
@@ -31,6 +46,7 @@ function setStoredLocationId(ids: readonly string[]) {
 
 interface LocationState {
   selectedLocationIds: string[];
+  selectedLocationScopes: LocationSelectionScopes | null;
   /** Cached lookup for single-location display and notification deep-links. */
   locationById: Record<string, LocationListItem>;
   /** Count of locations in the navbar list (set when list is fetched). */
@@ -41,6 +57,7 @@ interface LocationState {
 
 const initialState: LocationState = {
   selectedLocationIds: [],
+  selectedLocationScopes: null,
   locationById: {},
   availableLocationCount: 0,
   listHydrated: false,
@@ -60,7 +77,8 @@ const locationSlice = createSlice({
       state.locationById = Object.fromEntries(locations.map((l) => [l._id, l]));
       const stored = action.payload.storedId ?? getStoredLocationId();
       state.selectedLocationIds = parseStoredLocationSelection(stored, availableIds);
-      setStoredLocationId(state.selectedLocationIds);
+      state.selectedLocationScopes = getStoredScopes(state.selectedLocationIds);
+      setStoredLocationId(state.selectedLocationIds, state.selectedLocationScopes);
     },
     /** Refresh catalog (e.g. dropdown open) without re-reading localStorage or resetting valid selection. */
     syncLocationCatalog: (state, action: PayloadAction<{ locations: LocationListItem[] }>) => {
@@ -74,8 +92,14 @@ const locationSlice = createSlice({
         normalized.some((id, i) => id !== state.selectedLocationIds[i]);
       if (selectionChanged) {
         state.selectedLocationIds = normalized;
-        setStoredLocationId(state.selectedLocationIds);
+        if (state.selectedLocationScopes) state.selectedLocationScopes = normalizeSelectionScopes(state.selectedLocationScopes, normalized);
+        setStoredLocationId(state.selectedLocationIds, state.selectedLocationScopes);
       }
+    },
+    setScopedLocationSelection: (state, action: PayloadAction<LocationSelectionScopes>) => {
+      state.selectedLocationScopes = normalizeSelectionScopes(action.payload, Object.keys(state.locationById));
+      state.selectedLocationIds = selectedIdsFromScopes(state.selectedLocationScopes);
+      setStoredLocationId(state.selectedLocationIds, state.selectedLocationScopes);
     },
     setSelectedLocationIds: (state, action: PayloadAction<string[]>) => {
       const availableIds = Object.keys(state.locationById);
@@ -85,6 +109,7 @@ const locationSlice = createSlice({
         normalized.some((id, i) => id !== state.selectedLocationIds[i]);
       if (!selectionChanged) return;
       state.selectedLocationIds = normalized;
+      state.selectedLocationScopes = null;
       setStoredLocationId(state.selectedLocationIds);
     },
     toggleLocationId: (
@@ -101,21 +126,25 @@ const locationSlice = createSlice({
         current.add(id);
       }
       state.selectedLocationIds = normalizeSelection([...current], allAvailableIds);
+      state.selectedLocationScopes = null;
       state.availableLocationCount = allAvailableIds.length;
       setStoredLocationId(state.selectedLocationIds);
     },
     selectAllLocationIds: (state, action: PayloadAction<string[]>) => {
       state.selectedLocationIds = normalizeSelection(action.payload, action.payload);
+      state.selectedLocationScopes = null;
       state.availableLocationCount = action.payload.length;
       setStoredLocationId(state.selectedLocationIds);
     },
     clearToSingleLocation: (state, action: PayloadAction<LocationListItem>) => {
       state.locationById[action.payload._id] = action.payload;
       state.selectedLocationIds = [action.payload._id];
+      state.selectedLocationScopes = null;
       setStoredLocationId(state.selectedLocationIds);
     },
     /** @deprecated Use setSelectedLocationIds — maps to single id */
     setCurrentLocation: (state, action: PayloadAction<LocationListItem | null>) => {
+      state.selectedLocationScopes = null;
       if (!action.payload) {
         state.selectedLocationIds = [];
         setStoredLocationId([]);
@@ -129,6 +158,7 @@ const locationSlice = createSlice({
     setAllLocationsSelected: (state) => {
       const allIds = Object.keys(state.locationById);
       state.selectedLocationIds = normalizeSelection(allIds, allIds);
+      state.selectedLocationScopes = null;
       setStoredLocationId(state.selectedLocationIds);
     },
     setLocationListHydrated: (state, action: PayloadAction<boolean>) => {
@@ -139,6 +169,7 @@ const locationSlice = createSlice({
       // should fall back to the first-location default on the next load.
       try {
         globalThis.localStorage?.removeItem(STORAGE_KEY);
+        globalThis.localStorage?.removeItem(SCOPES_STORAGE_KEY);
       } catch {
         // ignore
       }
@@ -151,6 +182,7 @@ export const {
   setLocationCatalog,
   syncLocationCatalog,
   setSelectedLocationIds,
+  setScopedLocationSelection,
   toggleLocationId,
   selectAllLocationIds,
   clearToSingleLocation,

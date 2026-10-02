@@ -21,8 +21,8 @@ export type GroupCheckboxState = 'checked' | 'unchecked' | 'indeterminate';
  * `locations` is already narrowed to what the user may see and `groups` already
  * carries only the member ids they may see, so a location missing from every
  * group is genuinely ungrouped from this user's perspective. Members are
- * emitted in the incoming list order so the existing location sortOrder is
- * preserved inside each bucket.
+ * emitted under every group they belong to, in the incoming list order so the
+ * existing location sortOrder is preserved inside each bucket.
  *
  * Groups that end up with no visible members are omitted, so a header is never
  * rendered with nothing under it.
@@ -38,7 +38,6 @@ export function bucketLocationsByGroup(
   for (const group of ordered) {
     const members: LocationListItem[] = [];
     for (const loc of locations) {
-      if (claimed.has(loc._id)) continue;
       if (!group.locationIds.includes(loc._id)) continue;
       claimed.add(loc._id);
       members.push(loc);
@@ -110,8 +109,8 @@ export function toggleGroupMembers(
  * Membership writes needed to turn a group's current members into `locationIds`.
  *
  * Kept separate from the modal so the diff is testable without a component, and
- * so a location can never be left in two groups: everything checked but not
- * current is added, everything current but unchecked is released to Ungrouped.
+ * so each write affects only this group: newly checked members are added and
+ * unchecked members are removed while their other memberships are preserved.
  */
 export function planGroupMembership(
   currentMemberIds: readonly string[],
@@ -120,8 +119,8 @@ export function planGroupMembership(
   const current = new Set(currentMemberIds);
   const next = new Set(locationIds);
   return {
-    toAdd: locationIds.filter((id) => !current.has(id)),
-    toRelease: currentMemberIds.filter((id) => !next.has(id)),
+    toAdd: [...next].filter((id) => !current.has(id)),
+    toRelease: [...current].filter((id) => !next.has(id)),
   };
 }
 

@@ -9,6 +9,7 @@ import {
   type LocationGroupBucket,
 } from '../../utils/locationGroupHelpers';
 import { PortalMenu } from './PortalMenu';
+import { resolveSelectionScopes, toggleScopeMembers, selectionLabelBuckets, UNGROUPED_SCOPE, type LocationSelectionScopes } from '../../utils/locationScopedSelection';
 
 const triggerBaseClass =
   'w-full px-3 py-2 border border-gray-300 rounded-lg text-primary bg-white focus:outline-none focus:ring-2 focus:ring-gray-300/50 min-w-0 text-left flex items-center justify-between gap-2 disabled:opacity-70 disabled:cursor-not-allowed';
@@ -31,6 +32,8 @@ export type LocationMultiSelectDropdownProps = {
   groups?: LocationGroup[];
   /** Toggle every member of a group. Receives the group's visible member ids. */
   onToggleGroup?: (memberIds: string[]) => void;
+  selectionScopes?: LocationSelectionScopes | null;
+  onScopedSelectionChange?: (scopes: LocationSelectionScopes) => void;
   disabled?: boolean;
   className?: string;
   triggerLabel?: ReactNode;
@@ -45,6 +48,8 @@ export function LocationMultiSelectDropdown({
   onMasterCheckboxChange,
   groups,
   onToggleGroup,
+  selectionScopes = null,
+  onScopedSelectionChange,
   disabled = false,
   className = '',
   triggerLabel,
@@ -56,10 +61,6 @@ export function LocationMultiSelectDropdown({
   const masterRef = useRef<HTMLInputElement>(null);
   const groupRefs = useRef(new Map<string, HTMLInputElement>());
 
-  const allSelected =
-    locations.length > 0 && selectedIds.length === locations.length;
-  const someSelected = selectedIds.length > 0 && !allSelected;
-
   const { groups: buckets, ungrouped } = useMemo(
     () =>
       groups
@@ -70,12 +71,23 @@ export function LocationMultiSelectDropdown({
   // Without groups every location sits in one flat list, matching the
   // pre-grouping markup exactly.
   const hasGroupSections = buckets.length > 0;
+  const scopes = useMemo(() => resolveSelectionScopes(selectedIds, selectionScopes, { groups: buckets, ungrouped }),
+    [selectedIds, selectionScopes, buckets, ungrouped]);
+  const allScopes = useMemo(() => Object.fromEntries([
+    ...buckets.map(bucket => [bucket.group._id, bucket.locations.map(loc => loc._id)]),
+    ...(ungrouped.length ? [[UNGROUPED_SCOPE, ungrouped.map(loc => loc._id)]] : []),
+  ]) as LocationSelectionScopes, [buckets, ungrouped]);
+  const allSelected = locations.length > 0 && (onScopedSelectionChange
+    ? Object.entries(allScopes).every(([scope, ids]) => ids.every(id => scopes[scope]?.includes(id)))
+    : selectedIds.length === locations.length);
+  const someSelected = selectedIds.length > 0 && !allSelected;
+  const sectionIds = (scope: string) => onScopedSelectionChange ? scopes[scope] ?? [] : selectedIds;
 
   const displayLabel = formatLocationTriggerLabel(
     selectedIds,
     locations,
     locations.length,
-    buckets,
+    onScopedSelectionChange ? selectionLabelBuckets(scopes, buckets) : buckets,
   );
 
   useEffect(() => {
@@ -94,12 +106,13 @@ export function LocationMultiSelectDropdown({
     for (const bucket of buckets) {
       const el = groupRefs.current.get(bucket.group._id);
       if (!el) continue;
-      el.indeterminate = groupCheckboxState(selectedIds, bucket.locations.map((l) => l._id)) === 'indeterminate';
+      el.indeterminate = groupCheckboxState(onScopedSelectionChange ? scopes[bucket.group._id] ?? [] : selectedIds, bucket.locations.map((l) => l._id)) === 'indeterminate';
     }
-  }, [buckets, selectedIds, open]);
+  }, [buckets, selectedIds, scopes, onScopedSelectionChange, open]);
 
   const handleMasterChange = () => {
-    onMasterCheckboxChange();
+    if (onScopedSelectionChange) onScopedSelectionChange(allSelected ? {} : allScopes);
+    else onMasterCheckboxChange();
   };
 
   const locationRowClass =
@@ -107,18 +120,20 @@ export function LocationMultiSelectDropdown({
   const groupHeaderRowClass =
     'flex items-center gap-2 text-sm text-primary cursor-pointer py-2 px-3 hover:bg-gray-100 bg-gray-50 font-semibold';
 
-  const renderLocationRow = (loc: LocationListItem, indented: boolean) => (
+  const renderLocationRow = (loc: LocationListItem, indented: boolean, scope = UNGROUPED_SCOPE) => (
     <label
       key={loc._id}
       role="option"
-      aria-selected={selectedIds.includes(loc._id)}
+      aria-selected={sectionIds(scope).includes(loc._id)}
       className={`${locationRowClass} ${indented ? 'pl-8' : ''}`}
     >
       <input
         type="checkbox"
         className="rounded border-gray-300"
-        checked={selectedIds.includes(loc._id)}
-        onChange={() => onToggleLocation(loc._id)}
+        checked={sectionIds(scope).includes(loc._id)}
+        onChange={() => onScopedSelectionChange
+          ? onScopedSelectionChange(toggleScopeMembers(scopes, scope, [loc._id]))
+          : onToggleLocation(loc._id)}
       />
       <span className="truncate">{loc.storeName}</span>
     </label>
@@ -194,7 +209,7 @@ export function LocationMultiSelectDropdown({
 
         {buckets.map((bucket) => {
           const memberIds = bucket.locations.map((l) => l._id);
-          const state = groupCheckboxState(selectedIds, memberIds);
+          const state = groupCheckboxState(sectionIds(bucket.group._id), memberIds);
           return (
             <div key={bucket.group._id}>
               <label className={groupHeaderRowClass}>
@@ -208,11 +223,13 @@ export function LocationMultiSelectDropdown({
                   checked={state === 'checked'}
                   aria-checked={state === 'indeterminate' ? 'mixed' : state === 'checked'}
                   aria-label={`Select all locations in ${bucket.group.name}`}
-                  onChange={() => onToggleGroup?.(memberIds)}
+                  onChange={() => onScopedSelectionChange
+                    ? onScopedSelectionChange(toggleScopeMembers(scopes, bucket.group._id, memberIds))
+                    : onToggleGroup?.(memberIds)}
                 />
                 <span className="truncate">{bucket.group.name}</span>
               </label>
-              {bucket.locations.map((loc) => renderLocationRow(loc, true))}
+              {bucket.locations.map((loc) => renderLocationRow(loc, true, bucket.group._id))}
             </div>
           );
         })}

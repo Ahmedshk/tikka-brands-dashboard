@@ -94,8 +94,10 @@ export interface Location {
   marketManBuyerGuid?: string;
   googleBusinessAccountId?: string;
   googleBusinessLocationId?: string;
-  /** Group bucket in the header selector; absent/null means ungrouped. */
+  /** Legacy single-group membership. */
   groupId?: string | null;
+  /** Groups this location belongs to. */
+  groupIds?: string[];
   createdAt?: string;
   updatedAt?: string;
 }

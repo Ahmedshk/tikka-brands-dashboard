@@ -60,17 +60,17 @@ test('bucketLocationsByGroup: omits groups with no visible members', () => {
   assert.deepEqual(result.groups.map((b) => b.group.name), ['West']);
 });
 
-test('bucketLocationsByGroup: a location in two groups is claimed by the first only', () => {
+test('bucketLocationsByGroup: a location appears in every group it belongs to', () => {
   const result = bucketLocationsByGroup(
     [loc('a'), loc('b')],
     [group('g1', 'First', ['a'], 1), group('g2', 'Second', ['a', 'b'], 2)],
   );
   assert.deepEqual(result.groups[0]?.locations.map((l) => l._id), ['a']);
-  assert.deepEqual(result.groups[1]?.locations.map((l) => l._id), ['b']);
+  assert.deepEqual(result.groups[1]?.locations.map((l) => l._id), ['a', 'b']);
   assert.deepEqual(result.ungrouped, []);
 });
 
-test('bucketLocationsByGroup: every location lands in exactly one bucket', () => {
+test('bucketLocationsByGroup: disjoint groups cover every location once', () => {
   const locations = [loc('a'), loc('b'), loc('c'), loc('d'), loc('e')];
   const result = bucketLocationsByGroup(locations, [
     group('g1', 'West', ['a', 'b']),
@@ -190,18 +190,44 @@ test('planGroupMembership: newly checked locations are added', () => {
   assert.deepEqual(plan.toRelease, []);
 });
 
-test('planGroupMembership: unchecked locations are released to ungrouped', () => {
+test('planGroupMembership: unchecked locations are removed from this group', () => {
   const plan = planGroupMembership(['a', 'b', 'c'], ['a']);
   assert.deepEqual(plan.toAdd, []);
   assert.deepEqual(plan.toRelease.sort(), ['b', 'c']);
 });
 
-test('planGroupMembership: a move both releases from the old set and adds to the new', () => {
-  // 'a' currently belongs to this group and is being handed to another; 'c' is
-  // being taken in. Exactly one write per affected location.
+test('planGroupMembership: replacing members adds and removes only changed locations', () => {
   const plan = planGroupMembership(['a', 'b'], ['b', 'c']);
   assert.deepEqual(plan.toAdd, ['c']);
   assert.deepEqual(plan.toRelease, ['a']);
+});
+
+test('overlapping group selections dedupe IDs and keep shared checkbox states in sync', () => {
+  const result = bucketLocationsByGroup([loc('a'), loc('b'), loc('c'), loc('d')], [
+    group('g1', 'First', ['a', 'b']), group('g2', 'Second', ['b', 'c']),
+  ]);
+  const first = result.groups[0]!.locations.map(l => l._id);
+  const second = result.groups[1]!.locations.map(l => l._id);
+  const selected = toggleGroupMembers(toggleGroupMembers([], first), second);
+  assert.deepEqual([...selected].sort(), ['a', 'b', 'c']);
+  assert.equal(groupCheckboxState(selected, first), 'checked');
+  assert.equal(groupCheckboxState(selected, second), 'checked');
+  const afterUncheck = toggleGroupMembers(selected, first);
+  assert.deepEqual(afterUncheck, ['c']);
+  assert.equal(groupCheckboxState(afterUncheck, second), 'indeterminate');
+  assert.deepEqual(result.ungrouped.map(l => l._id), ['d']);
+});
+
+test('removing a shared member from one group keeps it visible under its remaining group', () => {
+  const result = bucketLocationsByGroup([loc('a'), loc('b')], [
+    group('g1', 'First', ['b']), group('g2', 'Second', ['a', 'b']),
+  ]);
+  assert.deepEqual(result.groups[1]!.locations.map(l => l._id), ['a', 'b']);
+  assert.deepEqual(result.ungrouped, []);
+});
+
+test('planGroupMembership: duplicate inputs do not produce repeated membership writes', () => {
+  assert.deepEqual(planGroupMembership(['a', 'a'], ['b', 'b']), { toAdd: ['b'], toRelease: ['a'] });
 });
 
 test('planGroupMembership: emptying a group releases every member', () => {

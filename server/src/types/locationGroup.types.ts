@@ -3,12 +3,12 @@
  *
  * A group is a *display* construct for the header location selector: it buckets
  * locations under a named, checkable header. Membership lives on the location
- * (`Location.groupId`, nullable) so a location belongs to at most one group and
- * the header can never render the same location under two headers.
+ * (`Location.groupIds`) so a location can belong to multiple groups and appear
+ * under each of their headers. Legacy `groupId` membership is also read.
  *
  * Groups are never an identity for a selection — the client expands a group to
- * its member location ids and stores those, so deleting a group or moving a
- * location between groups cannot change what a saved selection means.
+ * its member location ids and stores those without duplicates, so editing or
+ * deleting a group cannot change what a saved selection means.
  */
 
 export interface ILocationGroup {

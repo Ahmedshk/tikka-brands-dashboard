@@ -6,6 +6,7 @@ import {
   setLocationCatalog,
   syncLocationCatalog,
   setSelectedLocationIds,
+  setScopedLocationSelection,
   toggleLocationId,
   clearToSingleLocation,
   setCurrentLocation,
@@ -22,9 +23,9 @@ import {
 } from '../../utils/locationSelectionHelpers';
 import {
   bucketLocationsByGroup,
-  toggleGroupMembers,
   type LocationGroupBucket,
 } from '../../utils/locationGroupHelpers';
+import { resolveSelectionScopes, selectionLabelBuckets } from '../../utils/locationScopedSelection';
 import {
   setUnreadCount,
   setNotifications,
@@ -289,6 +290,7 @@ export const Navbar = () => {
   const user = useSelector((state: RootState) => state.auth.user);
   const currentLocation = useSelector(selectCurrentLocation);
   const selectedLocationIds = useSelector(selectSelectedLocationIds);
+  const selectionScopes = useSelector((state: RootState) => state.location.selectedLocationScopes);
   const currentLocationRef = useRef(currentLocation);
   currentLocationRef.current = currentLocation;
   const [locations, setLocations] = useState<LocationListItem[]>([]);
@@ -624,13 +626,8 @@ export const Navbar = () => {
                   )
                 }
                 groups={locationGroups}
-                onToggleGroup={(memberIds) =>
-                  dispatch(
-                    setSelectedLocationIds(
-                      toggleGroupMembers(selectedLocationIds, memberIds),
-                    ),
-                  )
-                }
+                selectionScopes={selectionScopes}
+                onScopedSelectionChange={(scopes) => dispatch(setScopedLocationSelection(scopes))}
                 disabled={locationsLoading}
                 triggerLabel={
                   <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
@@ -639,7 +636,7 @@ export const Navbar = () => {
                       locationsLoading={locationsLoading}
                       selectedIds={selectedLocationIds}
                       locations={locations}
-                      buckets={bucketedLocations.groups}
+                      buckets={selectionLabelBuckets(resolveSelectionScopes(selectedLocationIds, selectionScopes, bucketedLocations), bucketedLocations.groups)}
                     />
                   </span>
                 }

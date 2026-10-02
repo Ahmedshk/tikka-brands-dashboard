@@ -74,8 +74,7 @@ function DragHandle({ attributes, listeners }: Readonly<{
 
 /**
  * Handle a group create/edit from the modal, applying the membership as a whole
- * set: checked locations move into the group, unchecked ones are released to
- * Ungrouped, so a location can never end up in two groups.
+ * set. Adding or removing a member affects only the group being edited.
  */
 export async function applyGroupFormSubmission(args: {
   editGroup: LocationGroup | null;
@@ -96,14 +95,12 @@ export async function applyGroupFormSubmission(args: {
     await locationGroupService.update(editGroup._id, name);
   }
   const { toAdd, toRelease } = planGroupMembership(editGroup.locationIds, locationIds);
-  // Sequential, not parallel: each write is a small update and this keeps
-  // server load predictable when a large group is reassigned.
+  // Apply the membership diff without rewriting unchanged locations.
   for (const id of toAdd) {
     await locationGroupService.assignLocation(id, editGroup._id);
   }
-  // Released with null so the location falls back to Ungrouped.
   for (const id of toRelease) {
-    await locationGroupService.assignLocation(id, null);
+    await locationGroupService.assignLocation(id, editGroup._id, 'remove');
   }
 }
 
@@ -261,7 +258,7 @@ export function LocationGroupManager({
     if (!deleting) return;
     setDeletingBusy(true);
     try {
-      // Server releases members to Ungrouped; the locations themselves survive.
+      // Server removes this group's memberships while retaining other groups.
       await locationGroupService.delete(deleting._id);
       setDeleting(null);
       onChanged();
@@ -336,7 +333,7 @@ export function LocationGroupManager({
           title="Delete location group"
           message={
             deleting.locationIds.length > 0
-              ? `"${deleting.name}" has ${deleting.locationIds.length} location(s). Deleting it moves them to Ungrouped. The locations themselves are not deleted.`
+              ? `"${deleting.name}" has ${deleting.locationIds.length} location(s). Deleting it removes them from this group. They remain in their other groups, or become Ungrouped if they have no groups left.`
               : `Are you sure you want to delete "${deleting.name}"?`
           }
           confirmLabel="Delete"

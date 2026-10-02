@@ -115,9 +115,9 @@ export const locationGroupService = {
     invalidateLocationGroupListCache();
   },
 
-  /** Move a location into a group, or clear membership with `null`. */
-  async assignLocation(locationId: string, groupId: string | null): Promise<void> {
-    const res = await api.put<ApiResponse>(`${BASE}/locations/${locationId}`, { groupId });
+  /** Add/remove one group while preserving the location's other memberships. */
+  async assignLocation(locationId: string, groupId: string, action: 'add' | 'remove' = 'add'): Promise<void> {
+    const res = await api.put<ApiResponse>(`${BASE}/locations/${locationId}`, { groupId, action });
     if (!res.data.success) {
       throw new Error(res.data.message ?? 'Failed to update location group');
     }

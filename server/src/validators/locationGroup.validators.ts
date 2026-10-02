@@ -40,7 +40,8 @@ export const assignLocationGroupSchema = z.object({
     id: z.string().min(1),
   }),
   body: z.object({
-    // `null` clears membership; the string form must be a valid ObjectId.
-    groupId: z.string().trim().min(1).nullable().optional(),
+    // Explicit null clears all memberships for legacy API callers.
+    groupId: z.string().trim().regex(/^[a-f\d]{24}$/i, 'Invalid group ID').nullable(),
+    action: z.enum(['add', 'remove']).default('add'),
   }),
 });

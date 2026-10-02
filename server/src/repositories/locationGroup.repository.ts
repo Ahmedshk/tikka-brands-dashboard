@@ -9,6 +9,7 @@ import type {
   UpdateLocationGroupData,
 } from '../types/locationGroup.types.js';
 import { LocationListFilter, buildListMatchQuery, toValidObjectIds } from './location.repository.js';
+import { locationGroupIds, locationGroupIdsExpression } from '../utils/locationGroupMembership.util.js';
 
 const LIST_SORT = { sortOrder: 1 as const, createdAt: -1 as const };
 
@@ -83,37 +84,40 @@ export class LocationGroupRepository {
     return docs.map((d) => String(d._id));
   }
 
-  /**
-   * Clear `groupId` on every location that referenced `groupId`.
-   *
-   * Location documents are hard-deleted elsewhere without referential cleanup,
-   * so without this a deleted group would leave members pointing at a document
-   * that no longer exists and they would silently vanish from the selector.
-   */
+  /** Remove only the deleted group's membership, preserving every other group. */
   async unassignLocations(groupId: string): Promise<void> {
     if (!mongoose.Types.ObjectId.isValid(groupId)) return;
+    const oid = new mongoose.Types.ObjectId(groupId);
     await LocationModel.updateMany(
-      { groupId: new mongoose.Types.ObjectId(groupId) },
-      { $set: { groupId: undefined } },
+      { $or: [{ groupIds: oid }, { groupId: oid }] },
+      [
+        { $set: { groupIds: { $setDifference: [locationGroupIdsExpression, [oid]] } } },
+        { $unset: 'groupId' },
+      ],
+      { updatePipeline: true },
     ).exec();
   }
 
   /**
-   * Move a location into a group, or clear its membership when `groupId` is null.
+   * Add/remove one membership atomically. Explicit null clears all memberships
+   * for compatibility with the original API.
    * Returns false when the location id is invalid or matches no document.
    */
   async assignLocationToGroup(
     locationId: string,
     groupId: string | null,
+    action: 'add' | 'remove' = 'add',
   ): Promise<boolean> {
     if (!mongoose.Types.ObjectId.isValid(locationId)) return false;
-    const update =
-      groupId == null
-        ? { $unset: { groupId: 1 } }
-        : { $set: { groupId: new mongoose.Types.ObjectId(groupId) } };
+    if (groupId != null && !mongoose.Types.ObjectId.isValid(groupId)) return false;
+    const oid = groupId == null ? null : new mongoose.Types.ObjectId(groupId);
+    const groupIds = oid == null ? [] : action === 'remove'
+      ? { $setDifference: [locationGroupIdsExpression, [oid]] }
+      : { $setUnion: [locationGroupIdsExpression, [oid]] };
     const result = await LocationModel.updateOne(
       { _id: new mongoose.Types.ObjectId(locationId) },
-      update,
+      [{ $set: { groupIds } }, { $unset: 'groupId' }],
+      { updatePipeline: true },
     ).exec();
     return result.matchedCount > 0;
   }
@@ -137,23 +141,29 @@ export class LocationGroupRepository {
     // Reuse the location repository's access filter so a group's member list is
     // narrowed by exactly the same allow-list/removal rules as GET /locations.
     const accessMatch = buildListMatchQuery(filter);
-    const query: Record<string, unknown> = { groupId: { $in: oids } };
+    const requested = new Set(oids.map(String));
+    const query: Record<string, unknown> = {
+      $or: [{ groupIds: { $in: oids } }, { groupId: { $in: oids } }],
+    };
     if (Object.keys(accessMatch).length > 0) {
       query.$and = [accessMatch];
     }
 
     const docs = (await LocationModel.find(query)
-      .select({ _id: 1, groupId: 1 })
+      .select({ _id: 1, groupId: 1, groupIds: 1 })
       .sort({ sortOrder: 1, createdAt: -1 })
       .lean()
-      .exec()) as unknown as Array<{ _id: mongoose.Types.ObjectId; groupId?: mongoose.Types.ObjectId }>;
+      .exec()) as unknown as Array<{
+        _id: mongoose.Types.ObjectId; groupId?: mongoose.Types.ObjectId; groupIds?: mongoose.Types.ObjectId[];
+      }>;
 
     for (const doc of docs) {
-      if (doc.groupId == null) continue;
-      const key = String(doc.groupId);
-      const list = out.get(key);
-      if (list) list.push(String(doc._id));
-      else out.set(key, [String(doc._id)]);
+      for (const key of locationGroupIds(doc)) {
+        if (!requested.has(key)) continue;
+        const list = out.get(key);
+        if (list) list.push(String(doc._id));
+        else out.set(key, [String(doc._id)]);
+      }
     }
     return out;
   }

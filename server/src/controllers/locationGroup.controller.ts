@@ -119,7 +119,7 @@ export const reorderLocationGroups = async (
   }
 };
 
-/** Move a location into a group, or clear its membership with `groupId: null`. */
+/** Add/remove one group membership; explicit null clears all memberships. */
 export const assignLocationToGroup = async (
   req: Request,
   res: Response,
@@ -127,10 +127,12 @@ export const assignLocationToGroup = async (
 ): Promise<void> => {
   try {
     const raw = req.body.groupId;
-    if (raw != null && typeof raw !== 'string') {
+    if (raw !== null && typeof raw !== 'string') {
       throw new BadRequestError('groupId must be a string or null');
     }
-    await locationGroupService.assignLocation(param(req, 'id'), raw ?? null);
+    const action = req.body.action ?? 'add';
+    if (action !== 'add' && action !== 'remove') throw new BadRequestError('Invalid membership action');
+    await locationGroupService.assignLocation(param(req, 'id'), raw, action);
     res.status(200).json({ success: true, data: { success: true } });
   } catch (error) {
     next(error);

@@ -19,12 +19,10 @@ export interface ILocation {
   googleBusinessLocationId?: string;
   /** Global display order (ascending) for lists and dropdowns. */
   sortOrder?: number;
-  /**
-   * Group this location is bucketed under in the header selector; absent or null
-   * means ungrouped. String form (for API responses and client types) — the
-   * Mongoose document overrides this to ObjectId.
-   */
+  /** Legacy membership, supported when reading existing documents. */
   groupId?: string | null;
+  /** Groups this location belongs to; empty means ungrouped. */
+  groupIds?: string[];
   createdAt?: Date;
   updatedAt?: Date;
 }

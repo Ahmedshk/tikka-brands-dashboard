@@ -128,9 +128,8 @@ export class LocationGroupService {
   /**
    * Delete a group and release its members.
    *
-   * Membership is unassigned rather than cascading the locations away: the
-   * group is a display bucket, and a location losing its group should fall into
-   * the "Ungrouped" section rather than disappear from the selector.
+   * Remove this group's memberships. Locations retain their other groups, or
+   * appear in Ungrouped when they no longer belong to any group.
    */
   async delete(id: string): Promise<void> {
     const group = await this.getById(id);
@@ -157,10 +156,10 @@ export class LocationGroupService {
     await this.repository.bulkUpdateSortOrder(trimmed);
   }
 
-  /** Move a location into a group, or clear its membership when null. */
-  async assignLocation(locationId: string, groupId: string | null): Promise<void> {
+  /** Add/remove one membership, or clear all memberships with explicit null. */
+  async assignLocation(locationId: string, groupId: string | null, action: 'add' | 'remove' = 'add'): Promise<void> {
     if (groupId != null) await this.getById(groupId);
-    const ok = await this.repository.assignLocationToGroup(locationId, groupId);
+    const ok = await this.repository.assignLocationToGroup(locationId, groupId, action);
     if (!ok) throw new NotFoundError('Location not found');
   }
 }

@@ -14,6 +14,7 @@ import { NotFoundError, BadRequestError } from '../utils/errors.util.js';
 import { encryptCredentials, decryptCredentials } from '../utils/credentialsEncryption.util.js';
 import { buildLocationMongoUpdateQuery } from '../utils/locationUpdateMongoMutationHelpers.util.js';
 import { invalidateLocationCredentials } from '../utils/locationCredentialsCache.util.js';
+import { locationGroupIds } from '../utils/locationGroupMembership.util.js';
 
 /** Safely coerce an ObjectId-ish value (string, ObjectId, or populated doc) to string. */
 function toIdString(val: unknown): string | undefined {
@@ -240,6 +241,7 @@ export class LocationService {
     googleBusinessAccountId?: string;
     googleBusinessLocationId?: string;
     groupId?: unknown;
+    groupIds?: readonly unknown[];
     createdAt: Date;
     updatedAt: Date;
   }): ILocationResponse {
@@ -268,13 +270,7 @@ export class LocationService {
       ...(doc.googleBusinessLocationId != null && doc.googleBusinessLocationId !== ''
         ? { googleBusinessLocationId: doc.googleBusinessLocationId }
         : {}),
-      // Group membership drives the header selector's bucket headers. Emitted on
-      // the full location response (not the list item) so the management UI can
-      // read it from GET /locations/:id.
-      ...(() => {
-        const groupId = toIdString(doc.groupId);
-        return groupId == null ? {} : { groupId };
-      })(),
+      groupIds: locationGroupIds(doc),
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     };
