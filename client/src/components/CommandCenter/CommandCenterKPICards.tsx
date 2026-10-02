@@ -73,8 +73,8 @@ export const CommandCenterKPICards = ({ items, locations = [], period = 'today',
                       }).find(item => item.title === kpi.title) : undefined;
                       return (
                         <div key={locationId} className="flex items-start justify-between gap-3 py-2 text-xs md:text-sm">
-                          <dt className="min-w-0 text-primary break-words">{location.storeName}</dt>
-                          <dd className="shrink-0 text-right text-secondary font-semibold">
+                          <dt className="min-w-0 flex-1 text-primary break-words">{location.storeName}</dt>
+                          <dd className="shrink-0 whitespace-nowrap text-right text-secondary font-semibold">
                             {breakdownLoading ? (
                               <span className="inline-flex" role="status">
                                 <Spinner size="sm" className="text-button-primary" />
@@ -82,7 +82,7 @@ export const CommandCenterKPICards = ({ items, locations = [], period = 'today',
                               </span>
                             ) : value?.value ?? 'Unavailable'}
                             {kpi.title === 'Review Rating' && !breakdownLoading && value?.extra &&
-                              <span className="block text-[10px] md:text-xs text-primary font-normal">{value.extra}</span>}
+                              <span className="ml-1 text-primary font-normal">({value.extra})</span>}
                           </dd>
                         </div>
                       );
